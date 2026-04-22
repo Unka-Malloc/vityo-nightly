@@ -14,31 +14,32 @@ Primary paths:
 
 1. `README.md`
 2. `docs/`
-3. `scripts/repo-hygiene-gate.py`
-4. `scripts/docs-index.py`
-5. `scripts/docs-lifecycle.py`
-6. `scripts/docs-audit.py`
-7. `scripts/team-docs-gate.py`
-8. `scripts/docs-gate.sh`
-9. `scripts/delivery-gate.sh`
-10. `scripts/bootstrap-dev-env.sh`
-11. `scripts/bootstrap-dev-container.sh`
-12. `scripts/bootstrap-dev-env-macos.sh`
-13. `scripts/bootstrap-dev-env-windows.ps1`
-14. `scripts/bootstrap-workspace.sh`
-15. `scripts/bootstrap-workspace.ps1`
-16. `scripts/android-sdk-profile.sh`
-17. `scripts/android-sdk-profile.ps1`
-18. `scripts/apple-platform-profile.sh`
-19. `scripts/verify-android-device.sh`
-20. `scripts/verify-android-device.ps1`
-21. `scripts/verify-apple-device.sh`
-22. `docker/`
-23. `.devcontainer/`
-24. `toolchain/android-sdk-profiles.csv`
-25. `toolchain/apple-platform-profiles.csv`
-26. `prototype/README.md`
-27. `frontend/styio_view_app/README.md`
+3. `docs/external/`
+4. `scripts/repo-hygiene-gate.py`
+5. `scripts/docs-index.py`
+6. `scripts/docs-lifecycle.py`
+7. `scripts/docs-audit.py`
+8. `scripts/team-docs-gate.py`
+9. `scripts/docs-gate.sh`
+10. `scripts/delivery-gate.sh`
+11. `scripts/bootstrap-dev-env.sh`
+12. `scripts/bootstrap-dev-container.sh`
+13. `scripts/bootstrap-dev-env-macos.sh`
+14. `scripts/bootstrap-dev-env-windows.ps1`
+15. `scripts/bootstrap-workspace.sh`
+16. `scripts/bootstrap-workspace.ps1`
+17. `scripts/android-sdk-profile.sh`
+18. `scripts/android-sdk-profile.ps1`
+19. `scripts/apple-platform-profile.sh`
+20. `scripts/verify-android-device.sh`
+21. `scripts/verify-android-device.ps1`
+22. `scripts/verify-apple-device.sh`
+23. `docker/`
+24. `.devcontainer/`
+25. `toolchain/android-sdk-profiles.csv`
+26. `toolchain/apple-platform-profiles.csv`
+27. `prototype/README.md`
+28. `frontend/styio_view_app/README.md`
 
 Key SSOTs:
 
@@ -67,11 +68,12 @@ Key SSOTs:
 13. 新增 external audit、agent findings、contract package 或 toolchain handoff 时，同批刷新 collection `README.md` / `INDEX.md`，并确保缺口被路由到 owner runbook，而不是停留在审计摘要里。
 14. 本轮最小闭环只要求 `repo-hygiene --mode tracked`、`docs-audit`、Flutter analyze/test 和三仓合同测试；product gate 项保持 `STYIO_VIEW_PRODUCT_GATE=1` 的显式扩展验证，不写成默认必过项。
 15. Keep [../specs/POST-COMMIT-CI-CHECKS.md](../specs/POST-COMMIT-CI-CHECKS.md) aligned with actual GitHub Actions monitoring practice whenever commit, push, or CI handoff rules change.
+16. 外部上游 handoff 统一收在 `docs/external/for-*`，不要在 docs 根目录重新创建 `for-*` collection。
 
 ## Change Classes
 
 1. Small: 链接修复、索引补全、history 补记或局部文案整理。运行 repo hygiene 和 docs gate。
-2. Medium: docs 树结构、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package、post-push CI checking rules 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
+2. Medium: docs 树结构、`docs/external/` handoff 路径、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package、post-push CI checking rules 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
 3. High: owner 文档迁移、文档策略重构、团队边界调整或交付纪律变化。走协调 review。
 
 ## Required Gates

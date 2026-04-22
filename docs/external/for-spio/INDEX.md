@@ -1,6 +1,6 @@
 # For Spio Index
 
-**Purpose:** Provide the generated inventory for `docs/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md).
+**Purpose:** Provide the generated inventory for `docs/external/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md).
 
 **Last updated:** 2026-04-21
 

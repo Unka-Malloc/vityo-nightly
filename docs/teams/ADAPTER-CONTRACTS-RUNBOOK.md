@@ -15,8 +15,8 @@ Primary paths:
 1. `frontend/styio_view_app/lib/src/backend_toolchain/`
 2. `frontend/styio_view_app/lib/src/integration/`
 3. `docs/contracts/`
-4. `docs/for-styio/`
-5. `docs/for-spio/`
+4. `docs/external/for-styio/`
+5. `docs/external/for-spio/`
 6. `docs/specs/AGENT-PROVIDER-ADAPTER-SCHEMA.md`
 7. `docs/specs/PROFILE-SYNC-ADAPTER-SCHEMA.md`
 8. `docs/specs/HOSTED-WORKSPACE-RECORD-SCHEMA.md`
@@ -24,15 +24,15 @@ Primary paths:
 Key SSOTs:
 
 1. `Contracts README -> ../contracts/README.md`
-2. `For Styio README -> ../for-styio/README.md`
-3. `For Spio README -> ../for-spio/README.md`
+2. `For Styio README -> ../external/for-styio/README.md`
+3. `For Spio README -> ../external/for-spio/README.md`
 4. `仓库边界 -> ../specs/REPOSITORY-MAP.md`
 
 ## Daily Workflow
 
 1. 先判断当前变更属于产品自有合同、对上游的 handoff，还是 integration layer 的消费适配。
 2. 合同变化先改 `docs/contracts/` 或对应 schema，再改消费层和测试目录映射。
-3. 上游缺能力时，把缺口记在 `for-styio/` 或 `for-spio/`，不要直接在前端层静默降级产品语义。
+3. 上游缺能力时，把缺口记在 `external/for-styio/` 或 `external/for-spio/`，不要直接在前端层静默降级产品语义。
 4. 若 contract 与既有计划或实现冲突，先显式指出冲突，再改文档和代码。
 5. `backend_toolchain/` 是新的后端工具链边界；`integration/` 只保留 legacy export façade，不能在 façade 中继续加入新的解析、路由或 hosted 语义。
 6. integration 层的卫生修复如果改变了 workflow selection、runtime event replay、hosted payload 解码、overlay 文件系统枚举覆盖或 Web-only hosted shim，也要同步记录到本 runbook 或对应合同文档，避免代码表面和交接说明漂移。

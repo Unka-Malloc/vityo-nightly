@@ -1,6 +1,6 @@
 # For Styio Index
 
-**Purpose:** Provide the generated inventory for `docs/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md).
+**Purpose:** Provide the generated inventory for `docs/external/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md).
 
 **Last updated:** 2026-04-17
 

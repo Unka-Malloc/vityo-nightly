@@ -30,7 +30,7 @@
 | 三仓文件治理对齐 | `../plans/Styio-Ecosystem-File-Governance-Alignment-Plan.md` | 链接，不重写治理里程碑定义 |
 | 第三方依赖清单 | `THIRD-PARTY.md` | 与实现同步更新 |
 | 跨工作流实施计划 | `../plans/Styio-View-Implementation-Plan.md` | 链接 |
-| `styio` 对接边界与接口合同 | `../for-styio/` | 链接 |
+| `styio` 对接边界与接口合同 | `../external/for-styio/` | 链接 |
 | 冻结里程碑与任务清单 | `../milestones/<YYYY-MM-DD>/00-Milestone-Index.md` | 链接 |
 | 测试与验收映射 | `../assets/workflow/TEST-CATALOG.md` | 链接 |
 | 架构裁决 | `../adr/` | 只保留决策摘要 |
@@ -60,7 +60,7 @@
 | `docs/rollups/` | 当前状态摘要与活跃 gap ledger |
 | `docs/history/` | 按日记录与恢复信息 |
 | `docs/archive/` | 已归档 provenance 与 lifecycle 元数据 |
-| `docs/for-styio/` | 与上游 `styio` 的接口、责任边界与对接清单 |
+| `docs/external/for-styio/` | 与上游 `styio` 的接口、责任边界与对接清单 |
 | `docs/teams/` | 团队 runbook、ownership 路由与 handoff 入口 |
 
 ## 2. 联动更新规则

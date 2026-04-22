@@ -16,8 +16,7 @@
 | `audit/` | [Audit Index](./audit/INDEX.md) | Define the repository-local audit queue for security, correctness, and design defects discovered before they are converted into normal tracked work. |
 | `contracts/` | [Contracts Index](./contracts/INDEX.md) | 冻结 styio-view 产品拥有的 adapter 合同；这些合同定义前端需要什么，而不是上游当前碰巧提供什么。 |
 | `design/` | [Design Index](./design/INDEX.md) | 定义 docs/design/ 作为产品与系统级 SSOT 的范围；具体文件见 INDEX.md。 |
-| `for-spio/` | [For Spio Index](./for-spio/INDEX.md) | 集中维护 styio-view 需要上游 spio 提供、确认或共同定义的 machine contract；凡是会影响项目图、toolchain、workflow success payload、registry/package 状态的内容，统一收在这里。 |
-| `for-styio/` | [For Styio Index](./for-styio/INDEX.md) | 集中维护 styio-view 需要上游 styio 提供、确认或共同定义的对接内容；凡是会影响语言服务、执行、runtime 事件、compile-plan consumer 与 machine-info 的内容，统一收在这里。 |
+| `external/` | [External Docs Index](./external/INDEX.md) | 集中维护 styio-view 与外部上游仓库之间的 handoff 文档入口。 |
 | `history/` | [History Index](./history/INDEX.md) | 定义 docs/history/ 的按日记录范围；具体日期索引见 INDEX.md。 |
 | `milestones/` | [Milestones Index](./milestones/INDEX.md) | 定义 docs/milestones/ 中冻结里程碑文档的范围；具体批次索引见 INDEX.md。 |
 | `plans/` | [Plans Index](./plans/INDEX.md) | 定义 docs/plans/ 中跨里程碑实施计划的范围；具体计划索引见 INDEX.md。 |

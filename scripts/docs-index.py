@@ -23,8 +23,9 @@ COLLECTION_DIRS = [
     Path("docs/assets/workflow"),
     Path("docs/contracts"),
     Path("docs/design"),
-    Path("docs/for-spio"),
-    Path("docs/for-styio"),
+    Path("docs/external"),
+    Path("docs/external/for-spio"),
+    Path("docs/external/for-styio"),
     Path("docs/history"),
     Path("docs/milestones"),
     Path("docs/plans"),
@@ -44,8 +45,9 @@ INDEX_META = {
     "docs/assets/workflow": ("Workflow Assets Index", "Provide the generated inventory for `docs/assets/workflow/`; test and workflow assets live in [README.md](./README.md)."),
     "docs/contracts": ("Contracts Index", "Provide the generated inventory for `docs/contracts/`; adapter-contract boundaries live in [README.md](./README.md)."),
     "docs/design": ("Design Index", "Provide the generated inventory for `docs/design/`; product and system SSOT boundaries live in [README.md](./README.md)."),
-    "docs/for-spio": ("For Spio Index", "Provide the generated inventory for `docs/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md)."),
-    "docs/for-styio": ("For Styio Index", "Provide the generated inventory for `docs/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md)."),
+    "docs/external": ("External Docs Index", "Provide the generated inventory for `docs/external/`; upstream handoff boundaries live in [README.md](./README.md)."),
+    "docs/external/for-spio": ("For Spio Index", "Provide the generated inventory for `docs/external/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md)."),
+    "docs/external/for-styio": ("For Styio Index", "Provide the generated inventory for `docs/external/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md)."),
     "docs/history": ("History Index", "Provide the generated inventory for `docs/history/`; recovery-note rules live in [README.md](./README.md)."),
     "docs/milestones": ("Milestones Index", "Provide the generated inventory for `docs/milestones/`; freeze-batch rules live in [README.md](./README.md)."),
     "docs/plans": ("Plans Index", "Provide the generated inventory for `docs/plans/`; plan boundaries and sequencing rules live in [README.md](./README.md)."),
@@ -198,7 +200,7 @@ def render_index(base: Path) -> str:
 
 def sync_indexes(check: bool) -> int:
     failures: list[str] = []
-    for rel_dir in COLLECTION_DIRS:
+    for rel_dir in sorted(COLLECTION_DIRS, key=lambda path: len(path.parts), reverse=True):
         base = ROOT / rel_dir
         index_path = base / "INDEX.md"
         expected = render_index(base)

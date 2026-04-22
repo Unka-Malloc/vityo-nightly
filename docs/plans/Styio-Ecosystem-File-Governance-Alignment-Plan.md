@@ -11,7 +11,7 @@
 `view` 当前目录结构已经具备产品化形态，但治理自动化最弱；本计划要求 `view` 对齐到与 `nightly` / `spio` 等强的文件治理水位：
 
 1. 补齐 `docs/archive/` 与轻量 `docs/rollups/`。
-2. 为 `docs/plans/`、`docs/history/`、`docs/for-*`、`docs/contracts/` 建立可检查的索引和 lifecycle 规则。
+2. 为 `docs/plans/`、`docs/history/`、`docs/external/for-*`、`docs/contracts/` 建立可检查的索引和 lifecycle 规则。
 3. 升级 `scripts/repo-hygiene-gate.py`，让它覆盖 docs 入口、索引、临时产物和 fixture 反忽略策略。
 
 ## 里程碑映射

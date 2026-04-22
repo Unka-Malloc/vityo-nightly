@@ -1,6 +1,6 @@
 # Styio View Independent Work Breakdown
 
-**Purpose:** 把 `styio-view` 在不依赖上游新接口的前提下可独立推进的工作拆开，同时明确哪些能力必须转到 `../for-styio/` 或 `../for-spio/`。
+**Purpose:** 把 `styio-view` 在不依赖上游新接口的前提下可独立推进的工作拆开，同时明确哪些能力必须转到 `../external/for-styio/` 或 `../external/for-spio/`。
 
 **Last updated:** 2026-04-21
 
@@ -85,7 +85,7 @@
 
 ## 3. 必须等待 `styio` 的对接面
 
-统一放到 `../for-styio/`：
+统一放到 `../external/for-styio/`：
 
 1. 真实 `TokenSpan / SemanticSpan / Diagnostic / QuickFix / TextEdit`
 2. minimal compilable unit resolution
@@ -96,7 +96,7 @@
 
 ## 4. 必须等待 `spio` 的对接面
 
-统一放到 `../for-spio/`：
+统一放到 `../external/for-spio/`：
 
 1. project graph payload
 2. workflow success payload
