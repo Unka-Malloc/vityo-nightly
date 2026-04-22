@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../integration/adapter_contracts.dart';
-import '../integration/execution_adapter.dart';
-import '../integration/execution_route_summary.dart';
-import '../integration/project_graph_contract.dart';
+import '../backend_toolchain/adapter_contracts.dart';
+import '../backend_toolchain/execution_adapter.dart';
+import '../backend_toolchain/execution_route_summary.dart';
+import '../backend_toolchain/project_graph_contract.dart';
 import '../module_host/module_definition.dart';
 import '../module_host/module_manifest.dart';
 import '../platform/platform_target.dart';
@@ -38,8 +38,7 @@ class RuntimeSurface extends StatelessWidget {
             ModuleSlot.runtimeSurface ||
             ModuleSlot.localRuntime ||
             ModuleSlot.cloudRuntime ||
-            ModuleSlot.debugTools =>
-              true,
+            ModuleSlot.debugTools => true,
             _ => false,
           },
         )
@@ -52,9 +51,10 @@ class RuntimeSurface extends StatelessWidget {
     final replay = summarizeRuntimeReplay(runtimeEvents);
     final graph = summarizeRuntimeGraph(runtimeEvents);
     final debugLanes = summarizeRuntimeDebugLanes(runtimeEvents);
-    final laneCount = runtimeModules.any(
-      (module) => module.manifest.slot == ModuleSlot.localRuntime,
-    )
+    final laneCount =
+        runtimeModules.any(
+          (module) => module.manifest.slot == ModuleSlot.localRuntime,
+        )
         ? 3
         : (replay.lanes.isNotEmpty ? replay.lanes.length : 1);
     final executionCapability = adapterCapabilities
@@ -84,9 +84,7 @@ class RuntimeSurface extends StatelessWidget {
     final cardSpacing = viewportProfile.isMobile ? 12.0 : 14.0;
 
     return _SurfaceFrame(
-      key: ValueKey(
-        'runtime-surface-${viewportProfile.label.toLowerCase()}',
-      ),
+      key: ValueKey('runtime-surface-${viewportProfile.label.toLowerCase()}'),
       title: 'Runtime Surface',
       subtitle:
           '${platformTarget.label} runtime route aligned to the ${viewportProfile.label.toLowerCase()} shell.',
@@ -127,9 +125,7 @@ class RuntimeSurface extends StatelessWidget {
                 SizedBox(height: cardSpacing),
                 _RuntimeDebugLaneSection(debugLanes: debugLanes),
                 SizedBox(height: cardSpacing),
-                _RuntimeEventSection(
-                  replay: replay,
-                ),
+                _RuntimeEventSection(replay: replay),
                 SizedBox(height: cardSpacing),
                 _ModuleChipSection(
                   title: 'Mounted Runtime Modules',
@@ -182,9 +178,7 @@ class RuntimeSurface extends StatelessWidget {
                 SizedBox(height: cardSpacing),
                 _RuntimeDebugLaneSection(debugLanes: debugLanes),
                 SizedBox(height: cardSpacing),
-                _RuntimeEventSection(
-                  replay: replay,
-                ),
+                _RuntimeEventSection(replay: replay),
                 SizedBox(height: cardSpacing),
                 _ModuleChipSection(
                   title: 'Mounted Runtime Modules',
@@ -297,10 +291,7 @@ class _ExecutionSessionSection extends StatelessWidget {
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
-            Text(
-              session.statusMessage,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(session.statusMessage, style: theme.textTheme.bodySmall),
             const SizedBox(height: 6),
             Text(
               'session ${session.sessionId} · $runtimeEventCount runtime event(s)',
@@ -336,9 +327,7 @@ class _ExecutionSessionSection extends StatelessWidget {
 }
 
 class _RuntimeEventSection extends StatelessWidget {
-  const _RuntimeEventSection({
-    required this.replay,
-  });
+  const _RuntimeEventSection({required this.replay});
 
   final RuntimeReplaySummary replay;
 
@@ -381,7 +370,9 @@ class _RuntimeEventSection extends StatelessWidget {
                   .toList(growable: false),
             ),
             const SizedBox(height: 12),
-            ...replay.events.take(6).map(
+            ...replay.events
+                .take(6)
+                .map(
                   (event) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
@@ -398,9 +389,7 @@ class _RuntimeEventSection extends StatelessWidget {
 }
 
 class _RuntimeLaneSection extends StatelessWidget {
-  const _RuntimeLaneSection({
-    required this.replay,
-  });
+  const _RuntimeLaneSection({required this.replay});
 
   final RuntimeReplaySummary replay;
 
@@ -476,9 +465,7 @@ class _RuntimeLaneSection extends StatelessWidget {
 }
 
 class _RuntimeGraphSection extends StatelessWidget {
-  const _RuntimeGraphSection({
-    required this.graph,
-  });
+  const _RuntimeGraphSection({required this.graph});
 
   final RuntimeGraphSummary graph;
 
@@ -503,24 +490,20 @@ class _RuntimeGraphSection extends StatelessWidget {
               style: theme.textTheme.bodySmall,
             )
           else ...[
-            Text(
-              graph.summarySentence,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(graph.summarySentence, style: theme.textTheme.bodySmall),
             if (graph.routeTraceLabel != null) ...[
               const SizedBox(height: 10),
               Text('Route Trace', style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
-              Text(
-                graph.routeTraceLabel!,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(graph.routeTraceLabel!, style: theme.textTheme.bodySmall),
             ],
             if (graph.routeCheckpoints.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text('Route Checkpoints', style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
-              ...graph.routeCheckpoints.take(8).map(
+              ...graph.routeCheckpoints
+                  .take(8)
+                  .map(
                     (checkpoint) => Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Text(
@@ -598,7 +581,9 @@ class _RuntimeGraphSection extends StatelessWidget {
                                 style: theme.textTheme.titleSmall,
                               ),
                               const SizedBox(height: 6),
-                              ...detail.timelineCheckpoints.take(2).map(
+                              ...detail.timelineCheckpoints
+                                  .take(2)
+                                  .map(
                                     (checkpoint) => Padding(
                                       padding: const EdgeInsets.only(bottom: 4),
                                       child: Text(
@@ -691,10 +676,13 @@ class _RuntimeGraphSection extends StatelessWidget {
                               ],
                               if (detail.timelineCheckpoints.isNotEmpty) ...[
                                 const SizedBox(height: 8),
-                                ...detail.timelineCheckpoints.take(2).map(
+                                ...detail.timelineCheckpoints
+                                    .take(2)
+                                    .map(
                                       (checkpoint) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 4),
+                                        padding: const EdgeInsets.only(
+                                          bottom: 4,
+                                        ),
                                         child: Text(
                                           '${checkpoint.clockLabel} ${checkpoint.sourceEventKind}${checkpoint.detailLabel == null ? '' : ' · ${checkpoint.detailLabel!}'}',
                                           style: theme.textTheme.bodySmall,
@@ -737,9 +725,7 @@ class _RuntimeGraphSection extends StatelessWidget {
 }
 
 class _RuntimeDebugLaneSection extends StatelessWidget {
-  const _RuntimeDebugLaneSection({
-    required this.debugLanes,
-  });
+  const _RuntimeDebugLaneSection({required this.debugLanes});
 
   final List<RuntimeDebugLaneSummary> debugLanes;
 
@@ -781,8 +767,10 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
                         children: [
                           Text(lane.title, style: theme.textTheme.titleMedium),
                           const SizedBox(height: 6),
-                          Text(lane.statusLabel,
-                              style: theme.textTheme.bodySmall),
+                          Text(
+                            lane.statusLabel,
+                            style: theme.textTheme.bodySmall,
+                          ),
                           const SizedBox(height: 6),
                           Text(
                             '${lane.eventCount} event(s) · ${lane.windowLabel}',
@@ -822,7 +810,9 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
                               style: theme.textTheme.titleSmall,
                             ),
                             const SizedBox(height: 6),
-                            ...lane.checkpoints.take(3).map(
+                            ...lane.checkpoints
+                                .take(3)
+                                .map(
                                   (checkpoint) => Padding(
                                     padding: const EdgeInsets.only(bottom: 4),
                                     child: Text(
@@ -850,10 +840,7 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
 }
 
 class _ModuleChipSection extends StatelessWidget {
-  const _ModuleChipSection({
-    required this.title,
-    required this.modules,
-  });
+  const _ModuleChipSection({required this.title, required this.modules});
 
   final String title;
   final List<ModuleDefinition> modules;
@@ -884,9 +871,7 @@ class _ModuleChipSection extends StatelessWidget {
               runSpacing: 10,
               children: modules
                   .map(
-                    (module) => Chip(
-                      label: Text(module.manifest.displayName),
-                    ),
+                    (module) => Chip(label: Text(module.manifest.displayName)),
                   )
                   .toList(growable: false),
             ),

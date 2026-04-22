@@ -99,6 +99,7 @@ REQUIRED_GITIGNORE_PATTERNS = (
     "tmp/",
     "*.tmp",
     "*.log",
+    "docs/audit/defects/",
     "!docs/**/build/",
     "!docs/**/build/**",
     "!docs/**/build-*/",
@@ -223,6 +224,9 @@ def check_worktree_files(files: list[str], max_file_bytes: int) -> list[str]:
         path = REPO_ROOT / rel_path
         if not path.exists():
             continue
+        if rel_path.startswith("docs/audit/defects/"):
+            errors.append(f"{rel_path}: active audit defect records must stay untracked")
+            continue
         if has_forbidden_path_part(rel_path):
             errors.append(f"{rel_path}: contains forbidden generated/dependency path part")
             continue
@@ -267,6 +271,8 @@ def check_push_history(rev_range: str, max_file_bytes: int) -> list[str]:
         object_type, _oid, object_size, rel_path = parts
         if object_type != "blob" or not rel_path:
             continue
+        if rel_path.startswith("docs/audit/defects/"):
+            errors.append(f"{rel_path}: appears in pushed history range {rev_range}; active audit defect records must stay untracked")
         if has_forbidden_path_part(rel_path):
             errors.append(f"{rel_path}: appears in pushed history range {rev_range} and contains a forbidden generated/dependency path part")
         if has_forbidden_file_suffix(rel_path):

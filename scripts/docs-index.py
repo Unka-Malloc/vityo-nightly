@@ -18,6 +18,7 @@ COLLECTION_DIRS = [
     Path("docs/adr"),
     Path("docs/archive"),
     Path("docs/archive/history"),
+    Path("docs/audit"),
     Path("docs/assets"),
     Path("docs/assets/workflow"),
     Path("docs/contracts"),
@@ -30,6 +31,7 @@ COLLECTION_DIRS = [
     Path("docs/review"),
     Path("docs/rollups"),
     Path("docs/specs"),
+    Path("docs/specs/audit"),
     Path("docs/teams"),
 ]
 INDEX_META = {
@@ -37,6 +39,7 @@ INDEX_META = {
     "docs/adr": ("ADR Index", "Provide the generated inventory for `docs/adr/`; decision-record conventions live in [README.md](./README.md)."),
     "docs/archive": ("Archive Index", "Provide the generated inventory for `docs/archive/`; archive boundaries and lifecycle rules live in [README.md](./README.md)."),
     "docs/archive/history": ("Archive History Index", "Provide the generated inventory for `docs/archive/history/`; archived daily provenance snapshots live in [README.md](./README.md)."),
+    "docs/audit": ("Audit Index", "Provide the generated inventory for `docs/audit/`; transient defect records live in ignored `docs/audit/defects/` and are enforced by external `audit` runs."),
     "docs/assets": ("Assets Index", "Provide the generated inventory for `docs/assets/`; reusable workflow assets and templates live in [README.md](./README.md)."),
     "docs/assets/workflow": ("Workflow Assets Index", "Provide the generated inventory for `docs/assets/workflow/`; test and workflow assets live in [README.md](./README.md)."),
     "docs/contracts": ("Contracts Index", "Provide the generated inventory for `docs/contracts/`; adapter-contract boundaries live in [README.md](./README.md)."),
@@ -49,6 +52,7 @@ INDEX_META = {
     "docs/review": ("Review Index", "Provide the generated inventory for `docs/review/`; open-conflict and unresolved-risk boundaries live in [README.md](./README.md)."),
     "docs/rollups": ("Rollups Index", "Provide the generated inventory for `docs/rollups/`; compressed active summaries live in [README.md](./README.md)."),
     "docs/specs": ("Specs Index", "Provide the generated inventory for `docs/specs/`; collaboration, repository, and documentation-rule boundaries live in [README.md](./README.md)."),
+    "docs/specs/audit": ("Audit Specs Index", "Provide the generated inventory for `docs/specs/audit/`; audit checklist ownership lives in [README.md](./README.md)."),
     "docs/teams": ("Teams Index", "Provide the generated inventory for `docs/teams/`; team ownership and runbook boundaries live in [README.md](./README.md)."),
 }
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)

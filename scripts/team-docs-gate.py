@@ -29,6 +29,7 @@ TEAM_RULES: tuple[TeamRule, ...] = (
         (
             "frontend/styio_view_app/lib/src/app/",
             "frontend/styio_view_app/lib/src/editor/",
+            "frontend/styio_view_app/lib/src/frontend_shell/",
             "frontend/styio_view_app/lib/src/language/",
             "prototype/",
         ),
@@ -59,6 +60,7 @@ TEAM_RULES: tuple[TeamRule, ...] = (
         "Adapter / Contracts",
         Path("docs/teams/ADAPTER-CONTRACTS-RUNBOOK.md"),
         (
+            "frontend/styio_view_app/lib/src/backend_toolchain/",
             "frontend/styio_view_app/lib/src/integration/",
             "docs/contracts/",
             "docs/for-spio/",

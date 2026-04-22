@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../integration/adapter_contracts.dart';
+import '../backend_toolchain/adapter_contracts.dart';
 import '../module_host/module_definition.dart';
 import '../module_host/module_manifest.dart';
 import '../platform/platform_target.dart';
@@ -135,9 +135,7 @@ class _AgentSection extends StatelessWidget {
 }
 
 class _AdapterSection extends StatelessWidget {
-  const _AdapterSection({
-    required this.adapterCapabilities,
-  });
+  const _AdapterSection({required this.adapterCapabilities});
 
   final List<AdapterCapabilitySnapshot> adapterCapabilities;
 
@@ -171,9 +169,7 @@ class _AdapterSection extends StatelessWidget {
 }
 
 class _AgentModuleSection extends StatelessWidget {
-  const _AgentModuleSection({
-    required this.modules,
-  });
+  const _AgentModuleSection({required this.modules});
 
   final List<ModuleDefinition> modules;
 
@@ -206,9 +202,7 @@ class _AgentModuleSection extends StatelessWidget {
               runSpacing: 10,
               children: modules
                   .map(
-                    (module) => Chip(
-                      label: Text(module.manifest.displayName),
-                    ),
+                    (module) => Chip(label: Text(module.manifest.displayName)),
                   )
                   .toList(growable: false),
             ),

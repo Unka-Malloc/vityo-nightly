@@ -2,7 +2,7 @@
 
 **Purpose:** 把 `styio-view` 在不依赖上游新接口的前提下可独立推进的工作拆开，同时明确哪些能力必须转到 `../for-styio/` 或 `../for-spio/`。
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-21
 
 **Status:** Active breakdown
 
@@ -15,6 +15,23 @@
 3. 完成后不会推翻未来的 adapter 结构
 
 ## 2. 当前可独立推进的工作包
+
+### 2.0 2026-04-21 已闭环工作包
+
+以下独立工作包已有当前代码和测试证据，可从“独立可做”的待办池中移出：
+
+1. `2.1 Shell And Viewport` 已闭合：Flutter 主壳、桌面/移动视窗族、侧栏/底部 surface/状态栏、命令路由均有实现与 smoke/command/viewport 测试覆盖。
+2. `2.2 Editor Core` 已闭合到当前阶段：`DocumentState / SelectionState / undo-redo`、键盘编辑、source buffer fidelity、glyph substitution 光标映射、completion/formatting/quick-fix 交互链已有 editor 和 language smoke 测试覆盖。
+3. `2.4 Project UI And Persistence` 已闭合到当前阶段：canonical project state、本地文件系统持久化、Web/内存持久化、文件切换、文档缓存、revision 管理已有 project graph、workspace store、shell smoke 测试覆盖。
+4. `2.6 Runtime And Agent Shells` 中 runtime/debug shell 已闭合：runtime replay、thread lane、graph summary、debug console replay 已有 widget 测试覆盖。agent profile/provider route/context channel persistence contract 已有 `agent_profile_test.dart` 覆盖；真实 provider 调用、密钥注入和 local/cloud execution 仍不在本次闭环范围内。
+5. `2.5 Module Host` 已闭合到 lifecycle policy 层：core/optional lifecycle、staged update flag、optional uninstall reclamation policy 已有 `module_lifecycle_test.dart` 覆盖。真实安装包 staging、平台文件删除和按端 package/cache/data 回收仍需 integration gate。
+6. `2.7 Theme System` 已闭合到 token persistence 层：preset + user override token round-trip、persisted hash color decode 已有 `styio_theme_test.dart` 覆盖。可视化主题编辑面板、用户 profile store 和跨会话 UI 验证仍需后续 gate。
+
+仍不应标为完成：
+
+1. `2.5 Module Host` 的真实安装/更新包处理、平台文件删除和平台化资源回收。
+2. `2.7 Theme System` 的可编辑主题面板、本地 profile store 和跨会话 UI 验证。
+3. `W9 Mobile And Hosted` 的 Android 本地优先执行路径、移动端交互矩阵和真机/模拟器 platform gate；当前仅能提交 hosted/iOS/Web route 与 Android route metadata 的测试锚点。
 
 ### 2.1 Shell And Viewport
 
@@ -89,7 +106,8 @@
 
 ## 5. 当前执行顺序建议
 
-1. 继续推进编辑器和 project graph UI
-2. 保持主壳只依赖 adapter
-3. 用已发布 CLI 能力继续推进 scratch execution
-4. 把所有上游缺口集中沉淀到 handoff 文档
+1. 保持主壳只依赖 adapter，并把新增后端能力继续收敛到 `backend_toolchain` surface。
+2. 推进 agent 真实 provider 调用、密钥注入和 local/cloud bridge execution gate。
+3. 推进 theme editor、用户 profile store 和跨会话 UI 验证。
+4. 推进 module 真实安装/更新包处理、平台文件删除和回收 integration gate。
+5. 把新增上游缺口继续集中沉淀到 handoff 文档。

@@ -71,6 +71,17 @@ jobs:
           cd prototype && npm ci
           cd ../frontend/styio_view_app && flutter pub get
 
+      - name: Flutter lifecycle unit tests
+        working-directory: styio-view/frontend/styio_view_app
+        run: >
+          flutter test
+          test/module_lifecycle_test.dart
+          test/runtime_surfaces_test.dart
+          test/hosted_control_plane_client_test.dart
+          test/shell_model_test.dart
+          test/execution_adapter_test.dart
+          test/workspace_document_store_test.dart
+
       - name: Docs gate
         working-directory: styio-view
         run: ./scripts/docs-gate.sh

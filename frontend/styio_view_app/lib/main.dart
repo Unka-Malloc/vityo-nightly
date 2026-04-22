@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'src/app/app_bootstrap.dart';
-import 'src/app/styio_view_app.dart';
+import 'src/frontend_shell/frontend_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/dependency_source_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/dependency_source_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {

@@ -2,7 +2,7 @@
 
 **Purpose:** 定义 `styio-view` 的系统层次、adapter 边界、平台执行后端与主线实现策略；具体产品语义以 [Styio-View-Product-Spec.md](./Styio-View-Product-Spec.md) 为准。
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-21
 
 **Status:** Draft SSOT
 
@@ -30,6 +30,23 @@ flowchart TB
   Panels --> Profile["Profile / Prompt / Theme Store"]
   Panels --> Agent["Local or Cloud Agent Layer"]
 ```
+
+## 1.1 前端 / 后端切面
+
+这里的“前端 / 后端”不是按单一仓库目录硬切，而是按产品责任切：
+
+- 前端是面向用户的 `Flutter UI Runtime + Custom Editor Engine + Panels + Module Host`，负责编辑、浏览、交互和状态呈现。
+- 后端是 `styio-view` 背后的整条工具链面，包含 adapter layer、local CLI / FFI、hosted control plane，以及上游 `spio` / `styio` 提供的 machine contract。
+- `prototype/` 与 `frontend/styio_view_app/lib/src/app|editor|runtime|agent|theme|module_host|platform` 属于前端主面；`frontend/styio_view_app/lib/src/frontend_shell/` 是这组壳层模块对外聚合的显式入口边界。
+- `frontend/styio_view_app/lib/src/backend_toolchain/` 是后端工具链接入的实现根目录，承载 adapter、hosted control plane codec 和产品运维 lane。
+- `frontend/styio_view_app/lib/src/integration/` 只保留 legacy compatibility exports；它继续服务旧 import 路径，但不再承载新的后端实现。
+
+非协商规则：
+
+1. 前端不重新实现 compiler、resolver、registry、publish、worker scheduling 语义。
+2. 后端不输出只为某个页面私定的状态拼装；它输出 machine contract 和 domain payload。
+3. Web hosted workspace、iOS cloud-only、Android cloud fallback 都属于后端执行/工具链路线，不属于前端业务逻辑。
+4. 新增后端实现默认进入 `backend_toolchain/`；`integration/` 不得重新生长成第二套逻辑根目录。
 
 ## 2. 主要层次
 
@@ -100,6 +117,7 @@ flowchart TB
 1. `styio-view` 拥有产品合同，上游来适配。
 2. Flutter 主线不依赖上游内部源码结构、类名或某个专门命名的 native 包。
 3. 缺能力时，adapter 返回 capability gap，不让 UI 崩溃或猜状态。
+4. `DependencySourceAdapter`、`DeploymentAdapter`、`ToolchainManagementAdapter` 这三条产品运维 lane 也属于同一后端工具链面，不能回流进 UI 层自行实现。
 
 ### 2.5 Language Workspace Service
 
@@ -189,10 +207,13 @@ flowchart TB
 
 当前已落地的实现入口：
 
-1. `frontend/styio_view_app/lib/src/integration/adapter_contracts.dart`
-2. `frontend/styio_view_app/lib/src/integration/project_graph_contract.dart`
-3. `frontend/styio_view_app/lib/src/integration/project_graph_adapter.dart`
-4. `frontend/styio_view_app/lib/src/integration/execution_adapter.dart`
-5. `frontend/styio_view_app/lib/src/integration/runtime_event_adapter.dart`
-6. `frontend/styio_view_app/lib/src/app/app_bootstrap.dart`
-7. `frontend/styio_view_app/lib/src/app/layout/styio_shell_scaffold.dart`
+1. `frontend/styio_view_app/lib/src/frontend_shell/frontend_shell.dart`
+2. `frontend/styio_view_app/lib/src/backend_toolchain/backend_toolchain.dart`
+3. `frontend/styio_view_app/lib/src/backend_toolchain/adapter_contracts.dart`
+4. `frontend/styio_view_app/lib/src/backend_toolchain/project_graph_contract.dart`
+5. `frontend/styio_view_app/lib/src/backend_toolchain/project_graph_adapter.dart`
+6. `frontend/styio_view_app/lib/src/backend_toolchain/execution_adapter.dart`
+7. `frontend/styio_view_app/lib/src/backend_toolchain/runtime_event_adapter.dart`
+8. `frontend/styio_view_app/lib/src/integration/`
+9. `frontend/styio_view_app/lib/src/app/app_bootstrap.dart`
+10. `frontend/styio_view_app/lib/src/app/layout/styio_shell_scaffold.dart`

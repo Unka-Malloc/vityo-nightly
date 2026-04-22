@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/execution_route_summary.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_route_summary.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
@@ -155,9 +155,7 @@ void main() {
             'compile_plan': <int>[1],
           },
           integrationPhase: 'compile-plan-live',
-          featureFlags: <String, bool>{
-            'compile_plan_consumer': true,
-          },
+          featureFlags: <String, bool>{'compile_plan_consumer': true},
         ),
         notes: <String>[],
       ),
@@ -186,6 +184,78 @@ void main() {
 
     expect(summary.title, 'Project route live through spio');
     expect(summary.previewOnly, isFalse);
+  });
+
+  test('project JIT route stays blocked without a published JIT contract', () {
+    final summary = summarizeExecutionRoute(
+      platformTarget: PlatformTarget.macos,
+      routeIntent: ExecutionRouteIntent.jit,
+      projectGraph: const ProjectGraphSnapshot(
+        id: 'demo-jit',
+        title: 'Demo JIT',
+        kind: ProjectKind.package,
+        workspaceRoot: '/workspace/demo-jit',
+        workspaceMembers: <String>[],
+        manifestPath: '/workspace/demo-jit/spio.toml',
+        lockfilePath: '/workspace/demo-jit/spio.lock',
+        toolchainPinPath: '/workspace/demo-jit/spio-toolchain.toml',
+        dependencies: <ProjectDependencySnapshot>[],
+        packages: <ProjectPackageSnapshot>[],
+        targets: <ProjectTargetDescriptor>[],
+        editorFiles: <String>['/workspace/demo-jit/src/main.styio'],
+        toolchain: ToolchainStatusSnapshot(
+          source: ToolchainResolutionSource.projectPin,
+          detail: 'project pin',
+        ),
+        lockState: ProjectLockState.unknown,
+        vendorState: ProjectVendorState.present,
+        activeCompiler: CompilerHandshakeSnapshot(
+          binaryPath: '/toolchains/styio/bin/styio',
+          tool: 'styio',
+          compilerVersion: '0.1.0',
+          channel: 'stable',
+          variant: 'desktop',
+          capabilities: <String>[
+            'machine_info_json',
+            'jsonl_diagnostics',
+            'single_file_entry',
+          ],
+          supportedContractVersions: <String, List<int>>{
+            'machine_info': <int>[1],
+            'compile_plan': <int>[1],
+          },
+          integrationPhase: 'compile-plan-live',
+          featureFlags: <String, bool>{'compile_plan_consumer': true},
+        ),
+        notes: <String>[],
+      ),
+      adapterCapabilities: const <AdapterCapabilitySnapshot>[
+        AdapterCapabilitySnapshot(
+          adapterKind: AdapterKind.cli,
+          languageService: AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.partial,
+            detail: 'partial',
+          ),
+          projectGraph: AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.partial,
+            detail: 'partial',
+          ),
+          execution: AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.available,
+            detail: 'live compile-plan handoff',
+          ),
+          runtimeEvents: AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.unavailable,
+            detail: 'n/a',
+          ),
+        ),
+      ],
+    );
+
+    expect(summary.title, 'JIT route blocked by missing compiler contract');
+    expect(summary.primaryAdapterKind, AdapterKind.cli);
+    expect(summary.previewOnly, isTrue);
+    expect(summary.body, contains('has not advertised a JIT contract'));
   });
 
   test('hosted web route is live once cloud project workflow is published', () {
@@ -248,4 +318,163 @@ void main() {
     expect(summary.primaryAdapterKind, AdapterKind.cloud);
     expect(summary.previewOnly, isFalse);
   });
+
+  test('jit route stays blocked until a local adapter publishes support', () {
+    final summary = summarizeExecutionRoute(
+      platformTarget: PlatformTarget.macos,
+      projectGraph: _packageGraph(),
+      adapterCapabilities: _capabilities(
+        cliExecution: AdapterCapabilityLevel.partial,
+      ),
+      routeIntent: ExecutionRouteIntent.jit,
+    );
+
+    expect(summary.title, 'JIT route blocked by missing compiler contract');
+    expect(summary.primaryAdapterKind, AdapterKind.cli);
+    expect(summary.previewOnly, isTrue);
+    expect(summary.jitRoute.blocked, isTrue);
+  });
+
+  test(
+    'jit route is live when the active compiler advertises a jit contract',
+    () {
+      final projectGraph = _packageGraph(jitReady: true);
+      final summary = summarizeExecutionRoute(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+        adapterCapabilities: _capabilities(
+          cliExecution: AdapterCapabilityLevel.available,
+        ),
+        routeIntent: ExecutionRouteIntent.jit,
+      );
+
+      expect(projectGraph.jitRouteAdvertised, isTrue);
+      expect(summary.title, 'JIT route live through local CLI');
+      expect(summary.primaryAdapterKind, AdapterKind.cli);
+      expect(summary.previewOnly, isFalse);
+      expect(summary.jitRoute.blocked, isFalse);
+    },
+  );
+
+  test('android workflow remains local-first while cloud fallback is live', () {
+    final summary = summarizeExecutionRoute(
+      platformTarget: PlatformTarget.android,
+      projectGraph: _packageGraph(),
+      adapterCapabilities: _capabilities(
+        cliExecution: AdapterCapabilityLevel.partial,
+        cloudExecution: AdapterCapabilityLevel.available,
+      ),
+    );
+
+    expect(summary.title, 'Project route live with cloud fallback');
+    expect(summary.primaryAdapterKind, AdapterKind.cli);
+    expect(summary.previewOnly, isFalse);
+    expect(summary.body, contains('Android keeps local-first intent'));
+    expect(
+      summary.jitRoute.title,
+      'Android JIT route pending local compiler support',
+    );
+    expect(summary.jitRoute.blocked, isTrue);
+  });
+}
+
+ProjectGraphSnapshot _packageGraph({bool jitReady = false}) {
+  return ProjectGraphSnapshot(
+    id: jitReady ? 'demo-jit' : 'demo-route',
+    title: jitReady ? 'Demo JIT' : 'Demo Route',
+    kind: ProjectKind.package,
+    workspaceRoot: '/workspace/demo-route',
+    workspaceMembers: const <String>[],
+    manifestPath: '/workspace/demo-route/spio.toml',
+    dependencies: const <ProjectDependencySnapshot>[],
+    packages: const <ProjectPackageSnapshot>[],
+    targets: const <ProjectTargetDescriptor>[],
+    editorFiles: const <String>['/workspace/demo-route/src/main.styio'],
+    toolchain: const ToolchainStatusSnapshot(
+      source: ToolchainResolutionSource.projectPin,
+      detail: 'project pin',
+    ),
+    lockState: ProjectLockState.fresh,
+    vendorState: ProjectVendorState.present,
+    activeCompiler: CompilerHandshakeSnapshot(
+      binaryPath: '/toolchains/styio/bin/styio',
+      tool: 'styio',
+      compilerVersion: '0.1.0',
+      channel: 'stable',
+      variant: 'desktop',
+      capabilities: const <String>['machine_info_json'],
+      supportedContractVersions: <String, List<int>>{
+        'machine_info': const <int>[1],
+        if (jitReady) 'jit_route': const <int>[1],
+      },
+      integrationPhase: jitReady ? 'jit-live' : 'bootstrap-single-file',
+    ),
+    notes: const <String>[],
+  );
+}
+
+List<AdapterCapabilitySnapshot> _capabilities({
+  AdapterCapabilityLevel cliExecution = AdapterCapabilityLevel.unavailable,
+  AdapterCapabilityLevel cloudExecution = AdapterCapabilityLevel.unavailable,
+  AdapterCapabilityLevel ffiExecution = AdapterCapabilityLevel.unavailable,
+}) {
+  return <AdapterCapabilitySnapshot>[
+    AdapterCapabilitySnapshot(
+      adapterKind: AdapterKind.cli,
+      languageService: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.partial,
+        detail: 'partial',
+      ),
+      projectGraph: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.partial,
+        detail: 'partial',
+      ),
+      execution: AdapterEndpointCapability(
+        level: cliExecution,
+        detail: 'cli execution',
+      ),
+      runtimeEvents: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.unavailable,
+        detail: 'runtime events not used',
+      ),
+    ),
+    AdapterCapabilitySnapshot(
+      adapterKind: AdapterKind.cloud,
+      languageService: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.unavailable,
+        detail: 'not used',
+      ),
+      projectGraph: AdapterEndpointCapability(
+        level: cloudExecution,
+        detail: 'cloud project graph',
+      ),
+      execution: AdapterEndpointCapability(
+        level: cloudExecution,
+        detail: 'cloud execution',
+      ),
+      runtimeEvents: AdapterEndpointCapability(
+        level: cloudExecution,
+        detail: 'cloud runtime events',
+      ),
+    ),
+    AdapterCapabilitySnapshot(
+      adapterKind: AdapterKind.ffi,
+      languageService: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.unavailable,
+        detail: 'not used',
+      ),
+      projectGraph: const AdapterEndpointCapability(
+        level: AdapterCapabilityLevel.unavailable,
+        detail: 'not used',
+      ),
+      execution: AdapterEndpointCapability(
+        level: ffiExecution,
+        detail: 'ffi execution',
+      ),
+      runtimeEvents: AdapterEndpointCapability(
+        level: ffiExecution,
+        detail: 'ffi runtime events',
+      ),
+    ),
+  ];
 }

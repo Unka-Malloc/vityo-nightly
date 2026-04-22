@@ -19,6 +19,14 @@ Styio View 是面向 `styio` 生态的专属编辑器与运行视窗项目。
 
 实际实现入口见 [frontend/styio_view_app/README.md](frontend/styio_view_app/README.md)。
 
+## Frontend / Backend Split
+
+- 前端是面向用户的编辑器、运行视窗和产品交互界面，入口在 `frontend/styio_view_app/` 与 `prototype/`。
+- 后端不是单一服务，而是 `styio-view` 背后的整条工具链面：adapter layer、local CLI/FFI、hosted control plane，以及上游 `spio` / `styio` 合同。
+- 前端只编排和展示 machine contract；工具链解析、依赖/发布/执行语义、仓库与云平台行为都留在后端。
+
+系统级边界定义见 [docs/design/Styio-View-System-Architecture.md](docs/design/Styio-View-System-Architecture.md)。
+
 ## Fresh Dev Environment
 
 容器 / 虚拟机：

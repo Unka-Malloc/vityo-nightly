@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-04-19
+**Last updated:** 2026-04-23
 
 ## Mission
 
@@ -21,6 +21,7 @@ Primary paths:
 7. `prototype/editor-modules/`
 8. `prototype/workspace/`
 9. `prototype/README.md`
+10. `frontend/styio_view_app/lib/src/frontend_shell/`
 
 Key SSOTs:
 
@@ -37,11 +38,13 @@ Key SSOTs:
 5. 手写原型入口或自测说明变化时，同批更新 `prototype/README.md`，不要把 focused editor 运行方式留在仓库级入口里漂移。
 6. Flutter 主壳与手写原型的工具链说明必须保持显式版本钉住：Flutter `3.41.7` / Dart `3.11.5`、Node.js `v24.15.0` LTS、Chromium `147.0.7727.101`。
 7. `prototype/package.json` 与 `package-lock.json` 的 Node 依赖必须用锁文件可复现的精确版本，并优先用 `npm ci` 而不是 `npm install`。
+8. Flutter shell 的 app bootstrap、workspace controller、document store 和 command registry 只能消费 `backend_toolchain` 的正式 adapter surface；legacy `integration/` export 只用于兼容测试。
+9. product gate 测试若需要 `STYIO_VIEW_PRODUCT_GATE=1`，在本轮最小闭环中保持显式跳过策略，不把 gated workflow 写成默认 shell 验证要求。
 
 ## Change Classes
 
 1. Small: 局部输入、选区、布局或 inspector 文案修正。运行最小自测。
-2. Medium: focused editor 主线、language feedback、source fidelity 或 editor state 行为变化。补测试目录映射并跑两条主验证线。
+2. Medium: focused editor 主线、language feedback、source fidelity、workspace document store、command route 或 editor state 行为变化。补测试目录映射并跑两条主验证线。
 3. High: 显示替换与源码关系、最小可编译单元交互、editor 主工作流或主布局架构变化。走协调 review，并同步设计/ADR/里程碑。
 
 ## Required Gates

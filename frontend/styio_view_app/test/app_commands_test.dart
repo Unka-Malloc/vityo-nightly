@@ -14,25 +14,27 @@ void main() {
     );
   });
 
-  test('command registry resolves descriptors and shortcuts for source ops',
-      () {
-    final fetch = StyioCommandRegistry.descriptorFor(
-      AppCommandId.fetchDependencies,
-    );
-    final vendor = StyioCommandRegistry.descriptorFor(
-      AppCommandId.vendorDependencies,
-    );
+  test(
+    'command registry resolves descriptors and shortcuts for source ops',
+    () {
+      final fetch = StyioCommandRegistry.descriptorFor(
+        AppCommandId.fetchDependencies,
+      );
+      final vendor = StyioCommandRegistry.descriptorFor(
+        AppCommandId.vendorDependencies,
+      );
 
-    expect(fetch.label, 'Fetch');
-    expect(fetch.shortcutHint, 'Cmd/Ctrl+Shift+F');
-    expect(fetch.primary, isTrue);
-    expect(fetch.shortcuts, hasLength(2));
+      expect(fetch.label, 'Fetch');
+      expect(fetch.shortcutHint, 'Cmd/Ctrl+Shift+F');
+      expect(fetch.primary, isTrue);
+      expect(fetch.shortcuts, hasLength(2));
 
-    expect(vendor.label, 'Vendor');
-    expect(vendor.shortcutHint, 'Cmd/Ctrl+Shift+V');
-    expect(vendor.primary, isTrue);
-    expect(vendor.shortcuts, hasLength(2));
-  });
+      expect(vendor.label, 'Vendor');
+      expect(vendor.shortcutHint, 'Cmd/Ctrl+Shift+V');
+      expect(vendor.primary, isTrue);
+      expect(vendor.shortcuts, hasLength(2));
+    },
+  );
 
   test('command registry exposes toolchain and deployment route commands', () {
     expect(
@@ -56,10 +58,7 @@ void main() {
     );
     expect(
       StyioCommandRegistry.deploymentCommands.map((command) => command.id),
-      <AppCommandId>[
-        AppCommandId.packProject,
-        AppCommandId.preparePublish,
-      ],
+      <AppCommandId>[AppCommandId.packProject, AppCommandId.preparePublish],
     );
     expect(
       StyioCommandRegistry.workflowCommands.map((command) => command.id),

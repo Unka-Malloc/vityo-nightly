@@ -83,6 +83,20 @@ void main() {
     );
     expect(
       handoffs.any(
+        (handoff) => handoff.title == 'Publish runtime event stream',
+      ),
+      isTrue,
+    );
+    expect(
+      handoffs.any(
+        (handoff) =>
+            handoff.title == 'Publish runtime event stream' &&
+            handoff.detail.contains('ordered runtime event envelopes'),
+      ),
+      isTrue,
+    );
+    expect(
+      handoffs.any(
         (handoff) =>
             handoff.owner == HandoffOwner.spio &&
             handoff.title.contains('project graph'),
@@ -98,6 +112,75 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'requests runtime event stream handoff when runtime events are unavailable',
+    () {
+      final handoffs = summarizeRequiredHandoffs(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: const ProjectGraphSnapshot(
+          id: 'runtime-events',
+          title: 'Runtime Events',
+          kind: ProjectKind.package,
+          workspaceRoot: '/workspace/runtime-events',
+          workspaceMembers: <String>[],
+          manifestPath: '/workspace/runtime-events/spio.toml',
+          dependencies: <ProjectDependencySnapshot>[],
+          packages: <ProjectPackageSnapshot>[],
+          targets: <ProjectTargetDescriptor>[],
+          editorFiles: <String>['/workspace/runtime-events/src/main.styio'],
+          toolchain: ToolchainStatusSnapshot(
+            source: ToolchainResolutionSource.unknown,
+            detail: 'unknown',
+          ),
+          lockState: ProjectLockState.fresh,
+          vendorState: ProjectVendorState.present,
+          notes: <String>[],
+        ),
+        adapterCapabilities: const <AdapterCapabilitySnapshot>[
+          AdapterCapabilitySnapshot(
+            adapterKind: AdapterKind.cli,
+            languageService: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'available',
+            ),
+            projectGraph: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'available',
+            ),
+            execution: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'available',
+            ),
+            runtimeEvents: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.unavailable,
+              detail: 'not published',
+            ),
+          ),
+        ],
+      );
+
+      final runtimeHandoff = handoffs.firstWhere(
+        (handoff) => handoff.title == 'Publish runtime event stream',
+        orElse: () => const RequiredHandoff(
+          owner: HandoffOwner.styio,
+          title: 'missing',
+          detail: '',
+          docPath: '',
+        ),
+      );
+
+      expect(runtimeHandoff.title, equals('Publish runtime event stream'));
+      expect(
+        runtimeHandoff.detail.contains('ordered runtime event envelopes'),
+        isTrue,
+      );
+      final unresolvedMarker =
+          'not '
+          'yet';
+      expect(runtimeHandoff.detail.contains(unresolvedMarker), isFalse);
+    },
+  );
 
   test(
     'does not request live compile-plan handoff for iOS cloud-only route',
@@ -149,6 +232,96 @@ void main() {
       expect(
         handoffs.any(
           (handoff) => handoff.title.contains('compile-plan consumer'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'accepts hosted project graph and runtime event capabilities from cloud adapter',
+    () {
+      final handoffs = summarizeRequiredHandoffs(
+        platformTarget: PlatformTarget.ios,
+        projectGraph: ProjectGraphSnapshot(
+          id: 'hosted-runtime',
+          title: 'Hosted Runtime',
+          kind: ProjectKind.hosted,
+          workspaceRoot: '/workspace/hosted-runtime',
+          workspaceMembers: const <String>[],
+          manifestPath: '/workspace/hosted-runtime/spio.toml',
+          dependencies: const <ProjectDependencySnapshot>[],
+          packages: const <ProjectPackageSnapshot>[],
+          targets: const <ProjectTargetDescriptor>[],
+          editorFiles: const <String>[
+            '/workspace/hosted-runtime/src/main.styio',
+          ],
+          toolchain: const ToolchainStatusSnapshot(
+            source: ToolchainResolutionSource.managedCurrent,
+            detail: 'hosted toolchain',
+          ),
+          lockState: ProjectLockState.fresh,
+          vendorState: ProjectVendorState.present,
+          toolchainEnvironment: const ToolchainEnvironmentSnapshot(
+            schemaVersion: 1,
+            toolchain: ToolchainStatusSnapshot(
+              source: ToolchainResolutionSource.managedCurrent,
+              detail: 'hosted toolchain',
+            ),
+            managedToolchains: ManagedToolchainStateSnapshot(),
+          ),
+          sourceState: const ProjectSourceStateSnapshot(
+            schemaVersion: 1,
+            spioHome: '/workspace/.spio',
+          ),
+          hostedWorkspace: HostedWorkspaceRecordSnapshot(
+            workspaceId: 'hosted-runtime',
+            schemaVersion: '1',
+            ownerRef: 'styio-view',
+            status: HostedWorkspaceStatus.active,
+            entryUrl: 'https://hosted.example/workspaces/hosted-runtime',
+            createdAt: DateTime.utc(2026, 4, 21),
+            lastActiveAt: DateTime.utc(2026, 4, 21, 0, 1),
+            retentionDays: 7,
+            exportState: HostedWorkspaceExportState.notRequested,
+          ),
+          notes: const <String>[],
+        ),
+        adapterCapabilities: const <AdapterCapabilitySnapshot>[
+          AdapterCapabilitySnapshot(
+            adapterKind: AdapterKind.cloud,
+            languageService: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.unavailable,
+              detail: 'cloud runtime events do not provide language service',
+            ),
+            projectGraph: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'hosted project graph is available',
+              supportedContractVersions: <int>[1],
+            ),
+            execution: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'hosted execution is available',
+              supportedContractVersions: <int>[1],
+            ),
+            runtimeEvents: AdapterEndpointCapability(
+              level: AdapterCapabilityLevel.available,
+              detail: 'hosted runtime events are read from execution envelopes',
+              supportedContractVersions: <int>[1],
+            ),
+          ),
+        ],
+      );
+
+      expect(
+        handoffs.any(
+          (handoff) => handoff.title == 'Publish project graph success payload',
+        ),
+        isFalse,
+      );
+      expect(
+        handoffs.any(
+          (handoff) => handoff.title == 'Publish runtime event stream',
         ),
         isFalse,
       );

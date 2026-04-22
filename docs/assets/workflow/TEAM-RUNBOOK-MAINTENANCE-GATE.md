@@ -2,7 +2,7 @@
 
 **Purpose:** Define the delivery gate that requires team runbooks under `docs/teams/` to be updated and kept in the standard template shape when files in corresponding team-owned folders are added, modified, renamed, or deleted.
 
-**Last updated:** 2026-04-19
+**Last updated:** 2026-04-23
 
 ## Command
 
@@ -51,10 +51,10 @@ All non-coordination runbooks must follow [TEAM-RUNBOOK-TEMPLATE.md](./TEAM-RUNB
 
 | Team doc | Watched paths |
 |----------|---------------|
-| `SHELL-EDITOR-RUNBOOK.md` | `frontend/styio_view_app/lib/src/app/`, `frontend/styio_view_app/lib/src/editor/`, `frontend/styio_view_app/lib/src/language/`, `prototype/` |
+| `SHELL-EDITOR-RUNBOOK.md` | `frontend/styio_view_app/lib/src/app/`, `frontend/styio_view_app/lib/src/editor/`, `frontend/styio_view_app/lib/src/frontend_shell/`, `frontend/styio_view_app/lib/src/language/`, `prototype/` |
 | `RUNTIME-AGENT-RUNBOOK.md` | `frontend/styio_view_app/lib/src/runtime/`, `frontend/styio_view_app/lib/src/agent/` |
 | `MODULE-PLATFORM-RUNBOOK.md` | `frontend/styio_view_app/lib/src/module_host/`, `frontend/styio_view_app/lib/src/platform/`, module manifests, capability matrices, platform bootstrap script |
-| `ADAPTER-CONTRACTS-RUNBOOK.md` | integration layer, `docs/contracts/`, `docs/for-styio/`, `docs/for-spio/` |
+| `ADAPTER-CONTRACTS-RUNBOOK.md` | `frontend/styio_view_app/lib/src/backend_toolchain/`, legacy integration façade, `docs/contracts/`, `docs/for-styio/`, `docs/for-spio/` |
 | `THEME-UX-RUNBOOK.md` | `frontend/styio_view_app/lib/src/theme/`, shared prototype style files |
 | `DOCS-DELIVERY-RUNBOOK.md` | `README.md`, `docs/`, docs scripts, hygiene/docs/delivery gate scripts |
 

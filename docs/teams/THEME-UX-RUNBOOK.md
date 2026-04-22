@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 theme、视觉系统、样式层和 UX guardrail 的日常维护入口。
 
-**Last updated:** 2026-04-16
+**Last updated:** 2026-04-23
 
 ## Mission
 
@@ -32,11 +32,13 @@ Key SSOTs:
 2. 所有窄屏、侧栏、抽屉和弹窗变更，都要先检查内部组件是否溢出父容器。
 3. 若同一视觉系统同时作用于 Flutter 主壳和手写原型，先明确 canonical token/source 在哪一边，再同步另一边。
 4. 视觉变更不应绕过产品语义或 adapter 边界；必要时拉对应消费团队一起 review。
+5. `StyioThemeOverride` 只冻结最小 theme token override、JSON round-trip 和 Material color binding；本轮不新增完整主题编辑器、远程 profile sync 或用户市场主题。
+6. 默认 palette、font size、chip/button/card constraints 变化必须通过 Flutter widget tests 或明确的视觉验收说明确认，不把产品 gate 截图测试写成默认必过项。
 
 ## Change Classes
 
 1. Small: 局部 spacing、颜色、字体或样式整理。跑最小自测并检查容器约束。
-2. Medium: palette 结构、theme 配置、layout strategy 或 editor style 系统变化。补 handbook 或 UX 文档。
+2. Medium: palette 结构、theme override JSON、theme 配置、layout strategy 或 editor style 系统变化。补 handbook 或 UX 文档。
 3. High: 默认视觉基线、字体来源、主题系统分层或跨主线布局策略变化。走协调 review。
 
 ## Required Gates
@@ -45,7 +47,7 @@ Minimum:
 
 ```bash
 cd prototype && npm run selftest:editor
-cd frontend/styio_view_app && flutter analyze
+cd frontend/styio_view_app && flutter analyze && flutter test
 ```
 
 ## Cross-Team Dependencies

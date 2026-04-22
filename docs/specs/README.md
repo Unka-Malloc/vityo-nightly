@@ -12,3 +12,4 @@
 4. UX、可访问性、性能和布局维护准则。
 5. 不在此目录维护具体 feature 的产品行为规格。
 6. 手写 Web IDE 原型线的工程方法、重构原则与实现工作流，也在此目录维护。
+7. 代码审计与 agent review 的强制规则维护在 [audit/CODE-AUDIT-CHECKLIST.md](./audit/CODE-AUDIT-CHECKLIST.md)；所有 agent 必须先按其中七大设计原则检查实现。

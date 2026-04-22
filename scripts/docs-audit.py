@@ -15,6 +15,7 @@ REQUIRED_COLLECTION_DIRS = [
     DOCS / "adr",
     DOCS / "archive",
     DOCS / "archive" / "history",
+    DOCS / "audit",
     DOCS / "assets",
     DOCS / "assets" / "workflow",
     DOCS / "contracts",
@@ -27,6 +28,7 @@ REQUIRED_COLLECTION_DIRS = [
     DOCS / "review",
     DOCS / "rollups",
     DOCS / "specs",
+    DOCS / "specs" / "audit",
     DOCS / "teams",
 ]
 PURPOSE_RE = re.compile(r"^\*\*Purpose:\*\*\s+.+$", re.M)

@@ -12,6 +12,32 @@
 
 当前标准 Flutter 基线固定为 `3.41.7`，配套 Dart SDK 固定为 `3.11.5`。
 
+## Frontend vs Backend Boundary
+
+前端拥有：
+
+1. `lib/src/frontend_shell/` 作为用户壳层的显式入口边界
+2. `app / editor / runtime / agent / theme / module_host / platform` 的用户交互与显示语义
+3. 桌面、移动端与 Web 的壳层和页面编排
+4. 面向人的工作区、运行视图、agent 面板和主题体验
+
+后端拥有：
+
+1. `lib/src/backend_toolchain/` 作为工具链后端与 adapter 实现的显式入口边界
+2. local CLI / FFI / hosted control plane 的能力提供
+3. `spio` / `styio` 的 project graph、toolchain、dependency、execution、deployment、runtime-event 合同
+
+兼容层：
+
+1. `lib/src/integration/` 现在只保留 legacy import façade，继续导出 `backend_toolchain`，不再承载新的后端逻辑
+
+规则：
+
+1. Flutter 主壳不重新实现编译器、包管理器或 registry/cloud 语义。
+2. UI 只能消费 adapter 合同和 machine payload，不能依赖上游私有目录结构。
+3. Web 与 iOS 的 hosted/cloud 路线仍然属于后端工具链面，不属于前端业务逻辑。
+4. 新的工具链实现默认落在 `backend_toolchain/`；`integration/` 只能做兼容导出，不能重新长出实现分支。
+
 ## 当前状态
 
 当前目录已经具备可运行的 Flutter 工程，当前本机验证状态：
@@ -38,6 +64,7 @@
 20. `Runtime Surface` 已复用同一份 execution route summary，并能显示最近一次执行的 `unit range / stdout / stderr / diagnostics` 统计
 21. 工作区侧栏新增 `Required Handoffs` 卡，只表达 `styio-view` 还需要 `styio` / `spio` 提供哪些 machine contract，不替上游做内部实现规划
 22. `Project Graph` 现在已细化到 `workspace members / packages / dependencies / targets` 四层展示，并继续保持 canonical file inference 与正式 machine payload 解耦
+23. `lib/src/backend_toolchain/` 已成为工具链后端实现根目录，`lib/src/integration/` 收窄为兼容导出层，`lib/src/frontend_shell/` 作为用户壳层入口边界
 
 ## 生成六端 runner
 
@@ -68,9 +95,11 @@ flutter run -d macos
 ## 当前目录结构
 
 ```text
+lib/src/frontend_shell
+lib/src/backend_toolchain
 lib/src/app
 lib/src/editor
-lib/src/integration
+lib/src/integration  # compatibility exports only
 lib/src/language
 lib/src/runtime
 lib/src/agent

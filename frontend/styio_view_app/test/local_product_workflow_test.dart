@@ -9,15 +9,15 @@ import 'package:styio_view_app/src/app/state/workspace_controller.dart';
 import 'package:styio_view_app/src/app/state/workspace_document_store_types.dart';
 import 'package:styio_view_app/src/editor/document_state.dart';
 import 'package:styio_view_app/src/editor/editor_controller.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/dependency_source_adapter.dart';
-import 'package:styio_view_app/src/integration/deployment_adapter.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/execution_route_summary.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
-import 'package:styio_view_app/src/integration/runtime_event_adapter.dart';
-import 'package:styio_view_app/src/integration/toolchain_management_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/dependency_source_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/deployment_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_route_summary.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/runtime_event_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/toolchain_management_adapter.dart';
 import 'package:styio_view_app/src/language/simple_styio_language_service.dart';
 import 'package:styio_view_app/src/module_host/module_registry.dart';
 import 'package:styio_view_app/src/platform/native_module_loader.dart';
@@ -84,8 +84,9 @@ void main() {
     () async {
       final workspaceRoot = _env('STYIO_VIEW_PRODUCT_WORKSPACE_ROOT')!;
       final styioBinaryPath = _env('STYIO_VIEW_PRODUCT_STYIO_BIN')!;
-      final alternateStyioBinaryPath =
-          _env('STYIO_VIEW_PRODUCT_STYIO_ALT_BIN')!;
+      final alternateStyioBinaryPath = _env(
+        'STYIO_VIEW_PRODUCT_STYIO_ALT_BIN',
+      )!;
       final previousCurrentDirectory = Directory.current;
       Directory.current = workspaceRoot;
       try {
@@ -116,8 +117,13 @@ void main() {
           reason:
               'Desktop local workflow should install the primary compiler through local spio.',
         );
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(installedToolchains, isNotEmpty);
         final primaryCompiler = installedToolchains.firstWhere(
@@ -152,12 +158,18 @@ void main() {
           reason:
               'Desktop local workflow should install the alternate compiler identity.',
         );
-        final refreshedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final refreshedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(
-          refreshedToolchains
-              .any((toolchain) => toolchain.compilerVersion == '0.0.2'),
+          refreshedToolchains.any(
+            (toolchain) => toolchain.compilerVersion == '0.0.2',
+          ),
           isTrue,
         );
         final alternateCompiler = refreshedToolchains.firstWhere(
@@ -266,8 +278,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the local product workflow test.'
         : missingEnv.isNotEmpty
-            ? 'Missing required local product gate env: ${missingEnv.join(', ')}'
-            : false,
+        ? 'Missing required local product gate env: ${missingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -279,11 +291,16 @@ void main() {
       Directory.current = workspaceRoot;
       try {
         final shell = await _createLocalShell();
-        expect(shell.workspaceController.activeProject.hasHostedWorkspace,
-            isFalse);
+        expect(
+          shell.workspaceController.activeProject.hasHostedWorkspace,
+          isFalse,
+        );
         expect(shell.workspaceController.activeProject.packages.length, 2);
         expect(
-          shell.workspaceController.activeProject.packageDistribution
+          shell
+              .workspaceController
+              .activeProject
+              .packageDistribution
               ?.publishablePackages,
           2,
         );
@@ -292,8 +309,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -311,8 +333,9 @@ void main() {
         );
         expect(pin.succeeded, isTrue);
 
-        final publishBlockedReason =
-            shell.blockedReasonForCommand(AppCommandId.preparePublish);
+        final publishBlockedReason = shell.blockedReasonForCommand(
+          AppCommandId.preparePublish,
+        );
         expect(
           publishBlockedReason,
           contains('Multiple publish-ready packages are available'),
@@ -336,8 +359,10 @@ void main() {
           targetKind: ProjectTargetKind.bin,
         );
         await shell.executeCommand(AppCommandId.run);
-        expect(shell.lastExecutionSession?.status,
-            ExecutionSessionStatus.succeeded);
+        expect(
+          shell.lastExecutionSession?.status,
+          ExecutionSessionStatus.succeeded,
+        );
         expect(shell.lastExecutionSession?.kind, 'run');
 
         await _openPackageTarget(
@@ -346,13 +371,13 @@ void main() {
           targetKind: ProjectTargetKind.test,
         );
         await shell.executeCommand(AppCommandId.run);
-        expect(shell.lastExecutionSession?.status,
-            ExecutionSessionStatus.succeeded);
+        expect(
+          shell.lastExecutionSession?.status,
+          ExecutionSessionStatus.succeeded,
+        );
         expect(shell.lastExecutionSession?.kind, 'test');
 
-        final explicitPack = await shell.packProject(
-          packageName: 'acme/tool',
-        );
+        final explicitPack = await shell.packProject(packageName: 'acme/tool');
         expect(explicitPack.succeeded, isTrue);
         _expectArchivePresent(
           explicitPack,
@@ -398,8 +423,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the local product workflow test.'
         : workspaceMissingEnv.isNotEmpty
-            ? 'Missing required local workspace product gate env: ${workspaceMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required local workspace product gate env: ${workspaceMissingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -417,8 +442,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -439,7 +469,9 @@ void main() {
         await _loadActiveDocumentText(shell, '>_("broken"\n');
         await shell.executeCommand(AppCommandId.run);
         expect(
-            shell.lastExecutionSession?.status, ExecutionSessionStatus.failed);
+          shell.lastExecutionSession?.status,
+          ExecutionSessionStatus.failed,
+        );
         expect(shell.lastExecutionSession?.diagnostics, isNotEmpty);
         expect(
           shell.lastRuntimeEvents.map((event) => event.eventKind),
@@ -456,8 +488,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -516,8 +553,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the local product workflow test.'
         : failureMissingEnv.isNotEmpty
-            ? 'Missing required local failure-path env: ${failureMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required local failure-path env: ${failureMissingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -525,8 +562,9 @@ void main() {
     () async {
       final publishWorkspaceRoot = _env('STYIO_VIEW_PRODUCT_WORKSPACE4_ROOT')!;
       final consumeWorkspaceRoot = _env('STYIO_VIEW_PRODUCT_WORKSPACE5_ROOT')!;
-      final failingConsumeWorkspaceRoot =
-          _env('STYIO_VIEW_PRODUCT_WORKSPACE6_ROOT')!;
+      final failingConsumeWorkspaceRoot = _env(
+        'STYIO_VIEW_PRODUCT_WORKSPACE6_ROOT',
+      )!;
       final styioBinaryPath = _env('STYIO_VIEW_PRODUCT_STYIO_BIN')!;
       final registryRoot = _env('STYIO_VIEW_PRODUCT_REGISTRY_ROOT')!;
 
@@ -536,8 +574,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -601,8 +644,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -627,19 +675,28 @@ void main() {
         };
         expect(
           shell.workspaceController.activeProject.dependencies.any(
-                  (dependency) =>
-                      dependency.packageIdentity == 'acme/registry-feed' &&
-                      dependency.registryRoot != null &&
-                      acceptedRegistryRoots
-                          .contains(dependency.registryRoot)) ||
-              shell.workspaceController.activeProject.packageDistribution
+                (dependency) =>
+                    dependency.packageIdentity == 'acme/registry-feed' &&
+                    dependency.registryRoot != null &&
+                    acceptedRegistryRoots.contains(dependency.registryRoot),
+              ) ||
+              shell
+                      .workspaceController
+                      .activeProject
+                      .packageDistribution
                       ?.registrySources
-                      .any((registry) =>
-                          acceptedRegistryRoots
-                              .contains(registry.registryRoot) &&
-                          registry.packages.contains('acme/registry-client')) ==
+                      .any(
+                        (registry) =>
+                            acceptedRegistryRoots.contains(
+                              registry.registryRoot,
+                            ) &&
+                            registry.packages.contains('acme/registry-client'),
+                      ) ==
                   true ||
-              (shell.workspaceController.activeProject.sourceState
+              (shell
+                          .workspaceController
+                          .activeProject
+                          .sourceState
                           ?.declaredRegistryDependencies ??
                       0) >
                   0,
@@ -668,8 +725,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         final primaryCompiler = installedToolchains.firstWhere(
           (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -716,8 +778,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the local product workflow test.'
         : registryMissingEnv.isNotEmpty
-            ? 'Missing required local registry-path env: ${registryMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required local registry-path env: ${registryMissingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -734,8 +796,13 @@ void main() {
             styioBinaryPath: styioBinaryPath,
           );
           expect(install.succeeded, isTrue);
-          final installedToolchains = shell.workspaceController.activeProject
-                  .toolchainEnvironment?.managedToolchains.installed ??
+          final installedToolchains =
+              shell
+                  .workspaceController
+                  .activeProject
+                  .toolchainEnvironment
+                  ?.managedToolchains
+                  .installed ??
               const <ManagedToolchainInstallSnapshot>[];
           final primaryCompiler = installedToolchains.firstWhere(
             (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -771,9 +838,7 @@ void main() {
             spioHomeDirectory.deleteSync(recursive: true);
           }
 
-          final offlineFetch = await shell.fetchDependencies(
-            offline: true,
-          );
+          final offlineFetch = await shell.fetchDependencies(offline: true);
           expect(offlineFetch.succeeded, isTrue);
           expect(
             shell.lastDependencySourceCommand?.status,
@@ -784,8 +849,13 @@ void main() {
             styioBinaryPath: styioBinaryPath,
           );
           expect(reinstall.succeeded, isTrue);
-          final refreshedToolchains = shell.workspaceController.activeProject
-                  .toolchainEnvironment?.managedToolchains.installed ??
+          final refreshedToolchains =
+              shell
+                  .workspaceController
+                  .activeProject
+                  .toolchainEnvironment
+                  ?.managedToolchains
+                  .installed ??
               const <ManagedToolchainInstallSnapshot>[];
           final refreshedPrimaryCompiler = refreshedToolchains.firstWhere(
             (toolchain) => toolchain.compilerVersion == '0.0.1',
@@ -841,8 +911,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the local product workflow test.'
         : offlineMissingEnv.isNotEmpty
-            ? 'Missing required local vendored/offline env: ${offlineMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required local vendored/offline env: ${offlineMissingEnv.join(', ')}'
+        : false,
   );
 }
 
@@ -887,7 +957,8 @@ Future<ShellModel> _createLocalShell() async {
     seededDocuments: seededDocuments,
   );
   final editorController = EditorSessionController(
-    initialDocument: seededDocuments[workspaceController.activeFilePath] ??
+    initialDocument:
+        seededDocuments[workspaceController.activeFilePath] ??
         EditorSessionController.seedDocumentForPath(
           workspaceController.activeFilePath,
         ),
@@ -896,20 +967,19 @@ Future<ShellModel> _createLocalShell() async {
 
   return ShellModel(
     platformTarget: PlatformTarget.macos,
-    supplementalAdapterCapabilities: normalizeCapabilitySnapshots(
-      <AdapterCapabilitySnapshot>[
-        buildFfiAdapterCapability(
-          visible: true,
-          executionSlotVisible: true,
-          detail: 'Desktop local workflow keeps the native bridge available.',
-        ),
-        buildCloudAdapterCapability(
-          supportsCloudExecution: false,
-          supportsHostedProjectGraph: false,
-          detail: 'Desktop local workflow stays on the CLI-owned route.',
-        ),
-      ],
-    ),
+    supplementalAdapterCapabilities:
+        normalizeCapabilitySnapshots(<AdapterCapabilitySnapshot>[
+          buildFfiAdapterCapability(
+            visible: true,
+            executionSlotVisible: true,
+            detail: 'Desktop local workflow keeps the native bridge available.',
+          ),
+          buildCloudAdapterCapability(
+            supportsCloudExecution: false,
+            supportsHostedProjectGraph: false,
+            detail: 'Desktop local workflow stays on the CLI-owned route.',
+          ),
+        ]),
     projectGraphAdapter: projectGraphAdapter,
     workspaceController: workspaceController,
     workspaceDocumentStore: workspaceDocumentStore,
@@ -935,10 +1005,7 @@ Future<ShellModel> _createLocalShell() async {
   );
 }
 
-Future<void> _openTarget(
-  ShellModel shell,
-  ProjectTargetKind targetKind,
-) async {
+Future<void> _openTarget(ShellModel shell, ProjectTargetKind targetKind) async {
   final target = shell.workspaceController.targets.firstWhere(
     (candidate) => candidate.kind == targetKind,
   );
@@ -949,19 +1016,12 @@ Future<void> _openTarget(
       ? await file.readAsString()
       : EditorSessionController.seedDocumentForPath(target.filePath).text;
   shell.editorController.loadDocument(
-    DocumentState(
-      documentId: target.filePath,
-      text: text,
-      revision: 0,
-    ),
+    DocumentState(documentId: target.filePath, text: text, revision: 0),
   );
   await _settleAsync();
 }
 
-Future<void> _loadActiveDocumentText(
-  ShellModel shell,
-  String text,
-) async {
+Future<void> _loadActiveDocumentText(ShellModel shell, String text) async {
   final activePath = shell.workspaceController.activeFilePath;
   shell.editorController.loadDocument(
     DocumentState(
@@ -996,11 +1056,7 @@ Future<void> _openResolvedTarget(
       ? await file.readAsString()
       : EditorSessionController.seedDocumentForPath(target.filePath).text;
   shell.editorController.loadDocument(
-    DocumentState(
-      documentId: target.filePath,
-      text: text,
-      revision: 0,
-    ),
+    DocumentState(documentId: target.filePath, text: text, revision: 0),
   );
   await _settleAsync();
 }
@@ -1060,9 +1116,7 @@ Future<Directory> _createOfflineVendoredWorkspace() async {
 }
 
 String _createWorkspaceGitRepo(Directory repoRoot) {
-  File(
-    '${repoRoot.path}${Platform.pathSeparator}spio.toml',
-  )
+  File('${repoRoot.path}${Platform.pathSeparator}spio.toml')
     ..createSync(recursive: true)
     ..writeAsStringSync(
       '[spio]\n'
@@ -1072,8 +1126,8 @@ String _createWorkspaceGitRepo(Directory repoRoot) {
       'resolver = "1"\n',
     );
   File(
-    '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}feed${Platform.pathSeparator}spio.toml',
-  )
+      '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}feed${Platform.pathSeparator}spio.toml',
+    )
     ..createSync(recursive: true)
     ..writeAsStringSync(
       '[spio]\n'
@@ -1091,13 +1145,13 @@ String _createWorkspaceGitRepo(Directory repoRoot) {
       'util = { package = "acme/util", path = "../util" }\n',
     );
   File(
-    '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}feed${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
-  )
+      '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}feed${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
+    )
     ..createSync(recursive: true)
     ..writeAsStringSync('// feed fixture\n');
   File(
-    '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}util${Platform.pathSeparator}spio.toml',
-  )
+      '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}util${Platform.pathSeparator}spio.toml',
+    )
     ..createSync(recursive: true)
     ..writeAsStringSync(
       '[spio]\n'
@@ -1113,45 +1167,35 @@ String _createWorkspaceGitRepo(Directory repoRoot) {
       'path = "src/lib.styio"\n',
     );
   File(
-    '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}util${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
-  )
+      '${repoRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}util${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
+    )
     ..createSync(recursive: true)
     ..writeAsStringSync('// util fixture\n');
 
   _runGit(repoRoot, <String>['init', '--initial-branch=main']);
-  _runGit(
-    repoRoot,
-    <String>[
-      '-c',
-      'user.email=styio-view-test@example.com',
-      '-c',
-      'user.name=styio-view-test',
-      'add',
-      '.',
-    ],
-  );
-  _runGit(
-    repoRoot,
-    <String>[
-      '-c',
-      'user.email=styio-view-test@example.com',
-      '-c',
-      'user.name=styio-view-test',
-      'commit',
-      '--quiet',
-      '-m',
-      'initial',
-    ],
-  );
+  _runGit(repoRoot, <String>[
+    '-c',
+    'user.email=styio-view-test@example.com',
+    '-c',
+    'user.name=styio-view-test',
+    'add',
+    '.',
+  ]);
+  _runGit(repoRoot, <String>[
+    '-c',
+    'user.email=styio-view-test@example.com',
+    '-c',
+    'user.name=styio-view-test',
+    'commit',
+    '--quiet',
+    '-m',
+    'initial',
+  ]);
   return _runGit(repoRoot, <String>['rev-parse', 'HEAD']);
 }
 
 String _runGit(Directory repoRoot, List<String> args) {
-  final result = Process.runSync(
-    'git',
-    args,
-    workingDirectory: repoRoot.path,
-  );
+  final result = Process.runSync('git', args, workingDirectory: repoRoot.path);
   expect(
     result.exitCode,
     0,

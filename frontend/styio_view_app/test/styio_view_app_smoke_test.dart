@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/app/app_bootstrap.dart';
-import 'package:styio_view_app/src/app/state/workspace_document_store.dart';
-import 'package:styio_view_app/src/app/state/shell_model.dart';
-import 'package:styio_view_app/src/app/state/shell_scope.dart';
-import 'package:styio_view_app/src/app/state/workspace_controller.dart';
-import 'package:styio_view_app/src/app/styio_view_app.dart';
-import 'package:styio_view_app/src/app/layout/styio_shell_scaffold.dart';
+import 'package:styio_view_app/src/frontend_shell/frontend_shell.dart';
 import 'package:styio_view_app/src/editor/editor_controller.dart';
 import 'package:styio_view_app/src/editor/document_state.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/dependency_source_adapter.dart';
-import 'package:styio_view_app/src/integration/deployment_adapter.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
-import 'package:styio_view_app/src/integration/runtime_event_adapter.dart';
-import 'package:styio_view_app/src/integration/toolchain_management_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/dependency_source_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/deployment_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/runtime_event_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/toolchain_management_adapter.dart';
 import 'package:styio_view_app/src/language/language_contract.dart';
 import 'package:styio_view_app/src/language/simple_styio_language_service.dart';
 import 'package:styio_view_app/src/module_host/module_registry.dart';
@@ -32,10 +26,7 @@ void main() {
     );
     if (mobileInspectorScroll.evaluate().isNotEmpty) {
       for (var attempt = 0; attempt < 2; attempt += 1) {
-        await tester.drag(
-          mobileInspectorScroll,
-          const Offset(0, -260),
-        );
+        await tester.drag(mobileInspectorScroll, const Offset(0, -260));
         await tester.pumpAndSettle();
       }
     }
@@ -45,8 +36,9 @@ void main() {
     final root = target == PlatformTarget.ios
         ? '/workspace/cloud-preview'
         : '/workspace/demo';
-    final title =
-        target == PlatformTarget.ios ? 'Cloud Preview Project' : 'Demo Project';
+    final title = target == PlatformTarget.ios
+        ? 'Cloud Preview Project'
+        : 'Demo Project';
     const packageName = 'demo/app';
     final targets = <ProjectTargetDescriptor>[
       ProjectTargetDescriptor(
@@ -166,9 +158,7 @@ void main() {
         platformTarget: target,
         definitions: const [],
       ),
-      nativeModuleLoader: NoopNativeModuleLoader(
-        platformTarget: target,
-      ),
+      nativeModuleLoader: NoopNativeModuleLoader(platformTarget: target),
       projectGraphAdapter: projectGraphAdapter,
       supplementalAdapterCapabilities: normalizeCapabilitySnapshots([
         buildFfiAdapterCapability(
@@ -204,7 +194,8 @@ void main() {
   }
 
   Future<AppBootstrap> createLiveWorkflowBootstrap(
-      PlatformTarget target) async {
+    PlatformTarget target,
+  ) async {
     final projectSnapshot = createProjectSnapshot(target).copyWith(
       activeCompiler: const CompilerHandshakeSnapshot(
         binaryPath: '/toolchains/styio/bin/styio',
@@ -304,7 +295,7 @@ void main() {
           ],
         ),
         notes: <String>[
-          'Live workflow fixture exposes managed toolchain state.'
+          'Live workflow fixture exposes managed toolchain state.',
         ],
       ),
       packageDistribution: const PackageDistributionSnapshot(
@@ -376,9 +367,7 @@ void main() {
         platformTarget: target,
         definitions: const [],
       ),
-      nativeModuleLoader: NoopNativeModuleLoader(
-        platformTarget: target,
-      ),
+      nativeModuleLoader: NoopNativeModuleLoader(platformTarget: target),
       projectGraphAdapter: _FakeProjectGraphAdapter(projectSnapshot),
       supplementalAdapterCapabilities: normalizeCapabilitySnapshots([
         buildFfiAdapterCapability(
@@ -420,14 +409,16 @@ void main() {
 
     final bootstrap = await createBootstrap(PlatformTarget.macos);
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+    await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
     expect(
-        find.byKey(const ValueKey('shell-viewport-desktop')), findsOneWidget);
+      find.byKey(const ValueKey('shell-viewport-desktop')),
+      findsOneWidget,
+    );
     expect(
-        find.byKey(const ValueKey('editor-viewport-desktop')), findsOneWidget);
+      find.byKey(const ValueKey('editor-viewport-desktop')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('language-pane-desktop')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('editor-language-family-desktop')),
@@ -513,16 +504,10 @@ void main() {
     expect(find.text('demo/app'), findsWidgets);
     expect(find.text('Adapter Routes'), findsWidgets);
     expect(
-      find.byKey(
-        const ValueKey('required-handoffs-card'),
-        skipOffstage: false,
-      ),
+      find.byKey(const ValueKey('required-handoffs-card'), skipOffstage: false),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('command-strip-run')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('command-strip-run')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('command-strip-fetchDependencies')),
       findsOneWidget,
@@ -556,10 +541,7 @@ void main() {
       find.byKey(const ValueKey('inline-language-feedback-desktop')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('active-token-context')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('active-token-context')), findsOneWidget);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -572,10 +554,7 @@ void main() {
     await tester.tap(find.text('Debug'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('debug-surface-desktop')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('debug-surface-desktop')), findsOneWidget);
   });
 
   testWidgets('builds shared shell scaffold in mobile viewport family', (
@@ -588,13 +567,13 @@ void main() {
 
     final bootstrap = await createBootstrap(PlatformTarget.android);
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+    await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
     expect(find.byKey(const ValueKey('shell-viewport-mobile')), findsOneWidget);
     expect(
-        find.byKey(const ValueKey('editor-viewport-mobile')), findsOneWidget);
+      find.byKey(const ValueKey('editor-viewport-mobile')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('editor-language-family-mobile')),
       findsOneWidget,
@@ -617,82 +596,78 @@ void main() {
     shell.selectBottomTab(BottomSurfaceTab.agent);
     await tester.pumpAndSettle();
 
-    await tester.drag(
-      find.byType(Scrollable).first,
-      const Offset(0, -720),
-    );
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -720));
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(
-        const ValueKey('agent-surface-mobile'),
-        skipOffstage: false,
-      ),
+      find.byKey(const ValueKey('agent-surface-mobile'), skipOffstage: false),
       findsOneWidget,
     );
   });
 
-  testWidgets('executes sample project workflow through sidebar mainline lanes',
-      (tester) async {
-    tester.view.physicalSize = const Size(1600, 1200);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'executes sample project workflow through sidebar mainline lanes',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final bootstrap = await createLiveWorkflowBootstrap(PlatformTarget.macos);
+      final bootstrap = await createLiveWorkflowBootstrap(PlatformTarget.macos);
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+      await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
-    final workspaceSidebarScrollable = find.descendant(
-      of: find.byKey(const ValueKey('workspace-sidebar-scroll')),
-      matching: find.byType(Scrollable),
-    );
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('project-operations-card')),
-      120,
-      scrollable: workspaceSidebarScrollable,
-    );
-    await tester.pumpAndSettle();
-
-    final shell = ShellScope.of(
-      tester.element(find.byType(StyioShellScaffold)),
-    );
-
-    Future<void> tapWorkflowAction(String key) async {
+      final workspaceSidebarScrollable = find.descendant(
+        of: find.byKey(const ValueKey('workspace-sidebar-scroll')),
+        matching: find.byType(Scrollable),
+      );
       await tester.scrollUntilVisible(
-        find.byKey(ValueKey(key)),
+        find.byKey(const ValueKey('project-operations-card')),
         120,
         scrollable: workspaceSidebarScrollable,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(ValueKey(key)));
-      await tester.pumpAndSettle();
-    }
 
-    await tapWorkflowAction('project-operation-useActiveCompiler');
-    await tapWorkflowAction('project-operation-fetchDependencies');
-    await tapWorkflowAction('project-operation-vendorDependencies');
-    await tapWorkflowAction('project-operation-run');
-    await tapWorkflowAction('project-operation-preparePublish');
+      final shell = ShellScope.of(
+        tester.element(find.byType(StyioShellScaffold)),
+      );
 
-    expect(shell.lastToolchainCommand?.succeeded, isTrue);
-    expect(shell.lastDependencySourceCommand?.command, 'vendor');
-    expect(shell.lastDependencySourceCommand?.succeeded, isTrue);
-    expect(
-        shell.lastExecutionSession?.status, ExecutionSessionStatus.succeeded);
-    expect(shell.lastDeploymentCommand?.succeeded, isTrue);
-    expect(shell.lastRuntimeEvents, hasLength(2));
+      Future<void> tapWorkflowAction(String key) async {
+        await tester.scrollUntilVisible(
+          find.byKey(ValueKey(key)),
+          120,
+          scrollable: workspaceSidebarScrollable,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+      }
 
-    expect(find.text('execution succeeded'), findsOneWidget);
-    expect(find.text('dependencies succeeded'), findsOneWidget);
-    expect(find.text('environment succeeded'), findsOneWidget);
-    expect(find.text('deployment succeeded'), findsOneWidget);
-    expect(find.text('workflow blockers 0'), findsOneWidget);
-    expect(find.textContaining('runtime 2'), findsWidgets);
-    expect(find.textContaining('publishable 1'), findsWidgets);
-  });
+      await tapWorkflowAction('project-operation-useActiveCompiler');
+      await tapWorkflowAction('project-operation-fetchDependencies');
+      await tapWorkflowAction('project-operation-vendorDependencies');
+      await tapWorkflowAction('project-operation-run');
+      await tapWorkflowAction('project-operation-preparePublish');
+
+      expect(shell.lastToolchainCommand?.succeeded, isTrue);
+      expect(shell.lastDependencySourceCommand?.command, 'vendor');
+      expect(shell.lastDependencySourceCommand?.succeeded, isTrue);
+      expect(
+        shell.lastExecutionSession?.status,
+        ExecutionSessionStatus.succeeded,
+      );
+      expect(shell.lastDeploymentCommand?.succeeded, isTrue);
+      expect(shell.lastRuntimeEvents, hasLength(2));
+
+      expect(find.text('execution succeeded'), findsOneWidget);
+      expect(find.text('dependencies succeeded'), findsOneWidget);
+      expect(find.text('environment succeeded'), findsOneWidget);
+      expect(find.text('deployment succeeded'), findsOneWidget);
+      expect(find.text('workflow blockers 0'), findsOneWidget);
+      expect(find.textContaining('runtime 2'), findsWidgets);
+      expect(find.textContaining('publishable 1'), findsWidgets);
+    },
+  );
 
   testWidgets('keeps mobile editor layout on wide iOS viewport', (
     tester,
@@ -704,13 +679,13 @@ void main() {
 
     final bootstrap = await createBootstrap(PlatformTarget.ios);
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+    await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
     expect(find.byKey(const ValueKey('shell-viewport-mobile')), findsOneWidget);
     expect(
-        find.byKey(const ValueKey('editor-viewport-mobile')), findsOneWidget);
+      find.byKey(const ValueKey('editor-viewport-mobile')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('editor-language-family-mobile')),
       findsOneWidget,
@@ -741,14 +716,9 @@ void main() {
     );
     bootstrap.editorController.selectCollapsed(sourceOffset + 2);
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+    await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
-    expect(
-      find.byKey(const ValueKey('active-token-context')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('active-token-context')), findsOneWidget);
     expect(find.textContaining('Token `source`'), findsOneWidget);
   });
 
@@ -769,9 +739,7 @@ void main() {
       ),
     );
 
-    await tester.pumpWidget(
-      StyioViewApp(bootstrap: bootstrap),
-    );
+    await tester.pumpWidget(StyioViewApp(bootstrap: bootstrap));
 
     await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
     await tester.pump();
@@ -792,8 +760,9 @@ void main() {
 
     expect(bootstrap.editorController.document.text.endsWith('}'), isTrue);
     expect(
-      bootstrap.editorController.analysis.diagnostics
-          .where((item) => item.code == 'unclosed-block'),
+      bootstrap.editorController.analysis.diagnostics.where(
+        (item) => item.code == 'unclosed-block',
+      ),
       isEmpty,
     );
   });
@@ -805,28 +774,27 @@ class _FakeProjectGraphAdapter implements ProjectGraphAdapter {
   final ProjectGraphSnapshot projectSnapshot;
 
   @override
-  AdapterCapabilitySnapshot get capabilitySnapshot =>
-      const AdapterCapabilitySnapshot(
-        adapterKind: AdapterKind.cli,
-        languageService: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.partial,
-          detail:
-              'Smoke test CLI adapter keeps language-service contracts partial.',
-        ),
-        projectGraph: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.available,
-          detail:
-              'Smoke test project graph is resolved from a canonical fixture.',
-        ),
-        execution: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Fake project graph adapter does not own execution routes.',
-        ),
-        runtimeEvents: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Fake project graph adapter does not emit runtime events.',
-        ),
-      );
+  AdapterCapabilitySnapshot
+  get capabilitySnapshot => const AdapterCapabilitySnapshot(
+    adapterKind: AdapterKind.cli,
+    languageService: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.partial,
+      detail:
+          'Smoke test CLI adapter keeps language-service contracts partial.',
+    ),
+    projectGraph: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.available,
+      detail: 'Smoke test project graph is resolved from a canonical fixture.',
+    ),
+    execution: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Fake project graph adapter does not own execution routes.',
+    ),
+    runtimeEvents: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Fake project graph adapter does not emit runtime events.',
+    ),
+  );
 
   @override
   Future<ProjectGraphSnapshot> loadProjectGraph() async => projectSnapshot;
@@ -1026,28 +994,27 @@ class _LiveExecutionAdapter implements ExecutionAdapter {
   const _LiveExecutionAdapter();
 
   @override
-  AdapterCapabilitySnapshot get capabilitySnapshot =>
-      const AdapterCapabilitySnapshot(
-        adapterKind: AdapterKind.cli,
-        languageService: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail:
-              'Live workflow fixture does not expose language-service data.',
-        ),
-        projectGraph: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Live workflow execution stays on the published shell route.',
-        ),
-        execution: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.available,
-          detail:
-              'Live workflow fixture exposes project execution through compile-plan v1.',
-        ),
-        runtimeEvents: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.partial,
-          detail: 'Live workflow fixture replays published runtime events.',
-        ),
-      );
+  AdapterCapabilitySnapshot
+  get capabilitySnapshot => const AdapterCapabilitySnapshot(
+    adapterKind: AdapterKind.cli,
+    languageService: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Live workflow fixture does not expose language-service data.',
+    ),
+    projectGraph: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Live workflow execution stays on the published shell route.',
+    ),
+    execution: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.available,
+      detail:
+          'Live workflow fixture exposes project execution through compile-plan v1.',
+    ),
+    runtimeEvents: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.partial,
+      detail: 'Live workflow fixture replays published runtime events.',
+    ),
+  );
 
   @override
   Future<ExecutionSession> runActiveDocument({
@@ -1062,9 +1029,7 @@ class _LiveExecutionAdapter implements ExecutionAdapter {
       status: ExecutionSessionStatus.succeeded,
       statusMessage: 'Live workflow fixture executed the active project route.',
       diagnostics: <Diagnostic>[],
-      stdoutEvents: <ExecutionLogEvent>[
-        ExecutionLogEvent(message: 'run-ok'),
-      ],
+      stdoutEvents: <ExecutionLogEvent>[ExecutionLogEvent(message: 'run-ok')],
       stderrEvents: <ExecutionLogEvent>[],
     );
   }
@@ -1186,10 +1151,7 @@ class _LiveDeploymentAdapter implements DeploymentAdapter {
     return _success('publish', packageName: packageName);
   }
 
-  DeploymentCommandResult _success(
-    String command, {
-    String? packageName,
-  }) {
+  DeploymentCommandResult _success(String command, {String? packageName}) {
     return DeploymentCommandResult(
       command: command,
       status: DeploymentCommandStatus.succeeded,

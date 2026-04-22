@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 `styio-view` 文档树、里程碑、history、repo hygiene 与交付文档的日常维护入口。
 
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-23
 
 ## Mission
 
@@ -47,6 +47,8 @@ Key SSOTs:
 3. `测试目录 -> ../assets/workflow/TEST-CATALOG.md`
 4. `文件治理镜像 -> ../plans/Styio-Ecosystem-File-Governance-Alignment-Plan.md`
 5. `当前状态摘要 -> ../rollups/CURRENT-STATE.md`
+6. `外部审计入口 -> ../audit/README.md`
+7. `后端工具链 handoff -> ../plans/Styio-View-Toolchain-Backend-Handoff-Plan.md`
 
 ## Daily Workflow
 
@@ -62,11 +64,13 @@ Key SSOTs:
 10. Windows Android profile 入口和 macOS Apple profile 入口必须与 Linux 规则同步：`scripts/android-sdk-profile.ps1`、`scripts/apple-platform-profile.sh`、`toolchain/apple-platform-profiles.csv`、macOS/Windows bootstrap 与仓库级 build/dev-env 文档要一起维护，不能只更新单一平台脚本。
 11. 真实设备验证入口也属于交付表面：Android bash/PowerShell 验证脚本和 Apple 设备验证脚本必须与 profile CSV、bootstrap、仓库级 build/dev-env 文档同步更新，不能单独漂移。
 12. 根 `README.md` 只保留仓库级一跳入口；多平台 bootstrap、profile 切换和真实设备验证的细节统一收在 `docs/BUILD-AND-DEV-ENV.md`，不要在 README、runbook 和子系统文档里各自维护平行说明。
+13. 新增 external audit、agent findings、contract package 或 toolchain handoff 时，同批刷新 collection `README.md` / `INDEX.md`，并确保缺口被路由到 owner runbook，而不是停留在审计摘要里。
+14. 本轮最小闭环只要求 `repo-hygiene --mode tracked`、`docs-audit`、Flutter analyze/test 和三仓合同测试；product gate 项保持 `STYIO_VIEW_PRODUCT_GATE=1` 的显式扩展验证，不写成默认必过项。
 
 ## Change Classes
 
 1. Small: 链接修复、索引补全、history 补记或局部文案整理。运行 repo hygiene 和 docs gate。
-2. Medium: docs 树结构、里程碑映射、测试目录映射、archive/rollup lifecycle 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
+2. Medium: docs 树结构、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
 3. High: owner 文档迁移、文档策略重构、团队边界调整或交付纪律变化。走协调 review。
 
 ## Required Gates
