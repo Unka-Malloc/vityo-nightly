@@ -66,11 +66,12 @@ Key SSOTs:
 12. 根 `README.md` 只保留仓库级一跳入口；多平台 bootstrap、profile 切换和真实设备验证的细节统一收在 `docs/BUILD-AND-DEV-ENV.md`，不要在 README、runbook 和子系统文档里各自维护平行说明。
 13. 新增 external audit、agent findings、contract package 或 toolchain handoff 时，同批刷新 collection `README.md` / `INDEX.md`，并确保缺口被路由到 owner runbook，而不是停留在审计摘要里。
 14. 本轮最小闭环只要求 `repo-hygiene --mode tracked`、`docs-audit`、Flutter analyze/test 和三仓合同测试；product gate 项保持 `STYIO_VIEW_PRODUCT_GATE=1` 的显式扩展验证，不写成默认必过项。
+15. Keep [../specs/POST-COMMIT-CI-CHECKS.md](../specs/POST-COMMIT-CI-CHECKS.md) aligned with actual GitHub Actions monitoring practice whenever commit, push, or CI handoff rules change.
 
 ## Change Classes
 
 1. Small: 链接修复、索引补全、history 补记或局部文案整理。运行 repo hygiene 和 docs gate。
-2. Medium: docs 树结构、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
+2. Medium: docs 树结构、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package、post-push CI checking rules 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
 3. High: owner 文档迁移、文档策略重构、团队边界调整或交付纪律变化。走协调 review。
 
 ## Required Gates
