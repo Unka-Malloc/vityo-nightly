@@ -2,7 +2,7 @@
 
 **Purpose:** 定义 `docs/specs/` 中协作、依赖和仓库规则的范围；文件索引见 [INDEX.md](./INDEX.md)。
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-24
 
 ## Scope
 
@@ -14,3 +14,4 @@
 6. 手写 Web IDE 原型线的工程方法、重构原则与实现工作流，也在此目录维护。
 7. 代码审计与 agent review 的强制规则维护在 [audit/CODE-AUDIT-CHECKLIST.md](./audit/CODE-AUDIT-CHECKLIST.md)；所有 agent 必须先按其中七大设计原则检查实现。
 8. Post-push GitHub Actions checking rules live in [POST-COMMIT-CI-CHECKS.md](./POST-COMMIT-CI-CHECKS.md).
+9. 技术栈、自研组件、开源组件和依赖 manifest 清单维护规则维护在 [TECHNOLOGY-COMPONENT-INVENTORY.md](./TECHNOLOGY-COMPONENT-INVENTORY.md)。
