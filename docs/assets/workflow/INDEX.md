@@ -11,7 +11,7 @@
 | Path | Entry | Summary |
 |------|-------|---------|
 | `CHECKPOINT-HEALTH.md` | [Checkpoint Health](./CHECKPOINT-HEALTH.md) | Define the repository-wide build/test health entrypoint for styio-view so CI and checkpoint delivery can call one script instead of wiring Flutter and prototype verification inline. |
-| `DELIVERY-GATE.md` | [Delivery Gate](./DELIVERY-GATE.md) | Define the common delivery-floor entrypoint for styio-view so contributors can run repository hygiene, the unified docs gate, and checkpoint health through one command before checkpoint merge or branch delivery. |
+| `DELIVERY-GATE.md` | [Delivery Gate](./DELIVERY-GATE.md) | Define the common delivery-floor entrypoint for styio-view so contributors can run repository hygiene, the unified docs gate, external audit, and checkpoint health through one command before checkpoint merge or branch delivery. |
 | `DOCS-GATE.md` | [Docs Gate](./DOCS-GATE.md) | Define the common docs/process gate entrypoint for styio-view so contributors can run owner-runbook maintenance, docs audit, and ecosystem CLI contract consistency through one command. |
 | `REPO-HYGIENE.md` | [Repository Hygiene](./REPO-HYGIENE.md) | Define the repository hygiene entrypoint for styio-view so contributors and CI use one script to reject generated artifacts, dependency payloads, and undocumented binary blobs. |
 | `TEAM-RUNBOOK-MAINTENANCE-GATE.md` | [Team Runbook Maintenance Gate](./TEAM-RUNBOOK-MAINTENANCE-GATE.md) | Define the delivery gate that requires team runbooks under docs/teams/ to be updated and kept in the standard template shape when files in corresponding team-owned folders are added, modified, renamed, or deleted. |

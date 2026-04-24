@@ -1,6 +1,6 @@
 # Delivery Gate
 
-**Purpose:** Define the common delivery-floor entrypoint for `styio-view` so contributors can run repository hygiene, the unified docs gate, and checkpoint health through one command before checkpoint merge or branch delivery.
+**Purpose:** Define the common delivery-floor entrypoint for `styio-view` so contributors can run repository hygiene, the unified docs gate, external `audit`, and checkpoint health through one command before checkpoint merge or branch delivery.
 
 **Last updated:** 2026-04-19
 
@@ -24,8 +24,11 @@ Docs/process-only delivery:
 ./scripts/delivery-gate.sh --mode checkpoint --skip-health
 ```
 
+Use `--audit-bin ../audit/bin/audit` to force a specific audit checkout. Use `--skip-audit` only for explicitly scoped docs/process recovery where external audit is run separately.
+
 ## What It Runs
 
 1. `python3 scripts/repo-hygiene-gate.py`
 2. `./scripts/docs-gate.sh`
-3. `./scripts/checkpoint-health.sh`
+3. external `audit gate --project styio-view`
+4. `./scripts/checkpoint-health.sh`

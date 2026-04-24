@@ -6,13 +6,15 @@ usage() {
 Usage: scripts/delivery-gate.sh [options]
 
 Run the common Styio delivery floor by composing repository hygiene, the docs
-gate, and checkpoint health into one entrypoint.
+gate, external audit, and checkpoint health into one entrypoint.
 
 Options:
   --mode <checkpoint|push>  Delivery mode (default: checkpoint)
   --base <ref>              Base ref for team-docs-gate branch checks
   --range <rev-range>       Explicit revision range for repo-hygiene push mode
   --skip-health             Skip checkpoint-health (docs/process-only deliveries)
+  --skip-audit              Skip external audit gate
+  --audit-bin <path>        Explicit audit executable
   -h, --help                Show this help
 USAGE
 }
@@ -37,6 +39,8 @@ MODE="checkpoint"
 BASE_REF=""
 REV_RANGE=""
 RUN_HEALTH=1
+RUN_AUDIT=1
+AUDIT_BIN="${STYIO_AUDIT_BIN:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,6 +59,14 @@ while [[ $# -gt 0 ]]; do
     --skip-health)
       RUN_HEALTH=0
       shift
+      ;;
+    --skip-audit)
+      RUN_AUDIT=0
+      shift
+      ;;
+    --audit-bin)
+      AUDIT_BIN="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -100,6 +112,29 @@ esac
 
 run_cmd "${REPO_CMD[@]}"
 run_cmd "${DOCS_GATE_CMD[@]}"
+
+if [[ "$RUN_AUDIT" -eq 1 ]]; then
+  if [[ -z "$AUDIT_BIN" ]]; then
+    if [[ -x "$ROOT/../audit/bin/audit" ]]; then
+      AUDIT_BIN="$ROOT/../audit/bin/audit"
+    elif [[ -x "$HOME/audit/bin/audit" ]]; then
+      AUDIT_BIN="$HOME/audit/bin/audit"
+    elif command -v audit >/dev/null 2>&1; then
+      AUDIT_BIN="$(command -v audit)"
+    fi
+  fi
+  if [[ -z "$AUDIT_BIN" || ! -x "$AUDIT_BIN" ]]; then
+    echo "audit executable not found; set STYIO_AUDIT_BIN or pass --audit-bin" >&2
+    exit 2
+  fi
+  AUDIT_ROOT="$(cd "$(dirname "$AUDIT_BIN")/.." && pwd)"
+  if git -C "$AUDIT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log "audit commit: $(git -C "$AUDIT_ROOT" rev-parse HEAD)"
+  fi
+  run_cmd "$AUDIT_BIN" gate --repo "$ROOT" --project styio-view
+else
+  log "audit skipped"
+fi
 
 if [[ "$RUN_HEALTH" -eq 1 ]]; then
   run_cmd "${HEALTH_CMD[@]}"

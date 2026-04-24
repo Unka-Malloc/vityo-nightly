@@ -87,7 +87,7 @@ python3 scripts/repo-hygiene-gate.py --mode tracked
 ./scripts/delivery-gate.sh --mode checkpoint --skip-health
 ```
 
-`scripts/delivery-gate.sh` 会在交付时统一组合 repo hygiene、docs gate 和 checkpoint health。
+`scripts/delivery-gate.sh` 会在交付时统一组合 repo hygiene、docs gate、external audit 和 checkpoint health。
 
 ## Cross-Team Dependencies
 
