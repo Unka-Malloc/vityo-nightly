@@ -1,6 +1,7 @@
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 (async () => {
-  const browser = await chromium.launch();
+  const executablePath = process.env.STYIO_CHROME_PATH || process.env.CHROME_EXECUTABLE || '/usr/bin/chromium';
+  const browser = await chromium.launch({ executablePath });
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('http://127.0.0.1:4181/styio-hyper-vis.html');

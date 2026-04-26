@@ -86,31 +86,33 @@ void main() {
     expect(controller.selection.isCollapsed, isTrue);
   });
 
-  test('applies completion item by replacing the active token at caret edge',
-      () {
-    final controller = EditorSessionController(
-      initialDocument: const DocumentState(
-        documentId: 'sample.styio',
-        text: 'pip',
-        revision: 0,
-      ),
-      languageService: const SimpleStyioLanguageService(),
-      initialSelection: const SelectionState.collapsed(3),
-    );
+  test(
+    'applies completion item by replacing the active token at caret edge',
+    () {
+      final controller = EditorSessionController(
+        initialDocument: const DocumentState(
+          documentId: 'sample.styio',
+          text: 'pip',
+          revision: 0,
+        ),
+        languageService: const SimpleStyioLanguageService(),
+        initialSelection: const SelectionState.collapsed(3),
+      );
 
-    const pipelineCompletion = CompletionItem(
-      label: 'pipeline',
-      kind: CompletionItemKind.keyword,
-      insertText: 'pipeline ',
-      detail: 'Declare a pipeline.',
-    );
+      const pipelineCompletion = CompletionItem(
+        label: 'pipeline',
+        kind: CompletionItemKind.keyword,
+        insertText: 'pipeline ',
+        detail: 'Declare a pipeline.',
+      );
 
-    controller.applyCompletionItem(pipelineCompletion);
+      controller.applyCompletionItem(pipelineCompletion);
 
-    expect(controller.document.text, 'pipeline ');
-    expect(controller.selection.end, 'pipeline '.length);
-    expect(controller.canUndo, isTrue);
-  });
+      expect(controller.document.text, 'pipeline ');
+      expect(controller.selection.end, 'pipeline '.length);
+      expect(controller.canUndo, isTrue);
+    },
+  );
 
   test('applies formatting edits and preserves collapsed caret position', () {
     final controller = EditorSessionController(

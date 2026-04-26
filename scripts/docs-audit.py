@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import os
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,18 +15,21 @@ REQUIRED_COLLECTION_DIRS = [
     DOCS / "adr",
     DOCS / "archive",
     DOCS / "archive" / "history",
+    DOCS / "audit",
     DOCS / "assets",
     DOCS / "assets" / "workflow",
     DOCS / "contracts",
     DOCS / "design",
-    DOCS / "for-spio",
-    DOCS / "for-styio",
+    DOCS / "external",
+    DOCS / "external" / "for-spio",
+    DOCS / "external" / "for-styio",
     DOCS / "history",
     DOCS / "milestones",
     DOCS / "plans",
     DOCS / "review",
     DOCS / "rollups",
     DOCS / "specs",
+    DOCS / "specs" / "audit",
     DOCS / "teams",
 ]
 PURPOSE_RE = re.compile(r"^\*\*Purpose:\*\*\s+.+$", re.M)
@@ -84,6 +88,8 @@ def main() -> int:
     errors.extend(check_history_names())
     errors.extend(run_check([sys.executable, "scripts/docs-index.py", "--check"]))
     errors.extend(run_check([sys.executable, "scripts/docs-lifecycle.py", "validate"]))
+    if os.environ.get("STYIO_SKIP_TEAM_DOC_GATE") != "1":
+        errors.extend(run_check([sys.executable, "scripts/team-docs-gate.py"]))
 
     if errors:
         sys.stderr.write("docs audit failed:\n")

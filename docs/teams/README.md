@@ -22,7 +22,7 @@
 
 1. 若一次变更改变了 owned surface、review 触发条件、checkpoint 路径或 handoff 方式，同批更新受影响的 runbook。
 2. 若团队边界发生变化，同时更新受影响的 runbook 和 [COORDINATION-RUNBOOK.md](./COORDINATION-RUNBOOK.md)。
-3. 在自动化 gate 落地前，reviewer 应把 team runbook 的过期视为交付缺陷。
+3. `scripts/team-docs-gate.py` 是本目录的自动化入口；当 owned surface 变化时，同批更新对应 runbook。
 4. 若 runbook 与 owner 文档冲突，以 owner 文档为准。
 
 ## Inventory

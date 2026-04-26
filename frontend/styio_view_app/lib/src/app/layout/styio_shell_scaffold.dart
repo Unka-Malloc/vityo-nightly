@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../agent/agent_surface.dart';
 import '../../editor/editor_surface.dart';
-import '../../integration/adapter_contracts.dart';
-import '../../integration/dependency_source_adapter.dart';
-import '../../integration/deployment_adapter.dart';
-import '../../integration/execution_adapter.dart';
-import '../../integration/execution_route_summary.dart';
-import '../../integration/project_graph_contract.dart';
-import '../../integration/required_handoff_summary.dart';
-import '../../integration/toolchain_management_adapter.dart';
+import '../../backend_toolchain/adapter_contracts.dart';
+import '../../backend_toolchain/dependency_source_adapter.dart';
+import '../../backend_toolchain/deployment_adapter.dart';
+import '../../backend_toolchain/execution_adapter.dart';
+import '../../backend_toolchain/execution_route_summary.dart';
+import '../../backend_toolchain/project_graph_contract.dart';
+import '../../backend_toolchain/required_handoff_summary.dart';
+import '../../backend_toolchain/toolchain_management_adapter.dart';
 import '../../module_host/module_definition.dart';
 import '../../module_host/module_manifest.dart';
 import '../../platform/platform_target.dart';
@@ -162,10 +162,7 @@ class _TopBar extends StatelessWidget {
               viewportProfile.isMobile || constraints.maxWidth < 900;
 
           return Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 18,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
             child: compact
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,10 +262,7 @@ class _ShellStatusBar extends StatelessWidget {
         border: Border.all(color: theme.dividerColor),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: viewportProfile.isMobile
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,8 +346,8 @@ class _DesktopShellBody extends StatelessWidget {
     final bottomSurfaceHeight = viewportProfile.height >= 840
         ? 250.0
         : viewportProfile.height >= 680
-            ? 200.0
-            : 160.0;
+        ? 200.0
+        : 160.0;
 
     return KeyedSubtree(
       key: const ValueKey('shell-viewport-desktop'),
@@ -391,10 +385,7 @@ class _DesktopShellBody extends StatelessWidget {
                   viewportProfile: viewportProfile,
                 ),
                 const SizedBox(height: 10),
-                SizedBox(
-                  height: bottomSurfaceHeight,
-                  child: bottomSurface,
-                ),
+                SizedBox(height: bottomSurfaceHeight, child: bottomSurface),
               ],
             ),
           ),
@@ -444,15 +435,9 @@ class _MobileShellBody extends StatelessWidget {
             child: _ModuleSidebar(shell: shell),
           ),
           const SizedBox(height: 16),
-          _BottomSurfaceTabs(
-            shell: shell,
-            viewportProfile: viewportProfile,
-          ),
+          _BottomSurfaceTabs(shell: shell, viewportProfile: viewportProfile),
           const SizedBox(height: 10),
-          SizedBox(
-            height: bottomSurfaceHeight,
-            child: bottomSurface,
-          ),
+          SizedBox(height: bottomSurfaceHeight, child: bottomSurface),
         ],
       ),
     );
@@ -460,9 +445,7 @@ class _MobileShellBody extends StatelessWidget {
 }
 
 class _WorkspaceSidebar extends StatelessWidget {
-  const _WorkspaceSidebar({
-    required this.shell,
-  });
+  const _WorkspaceSidebar({required this.shell});
 
   final ShellModel shell;
 
@@ -535,7 +518,8 @@ class _WorkspaceSidebar extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _ProjectTargetTile(
                     target: target,
-                    active: target.filePath ==
+                    active:
+                        target.filePath ==
                         shell.workspaceController.activeFilePath,
                     onTap: () => shell.workspaceController.openTarget(target),
                   ),
@@ -561,9 +545,7 @@ class _WorkspaceSidebar extends StatelessWidget {
 }
 
 class _ProjectSummaryCard extends StatelessWidget {
-  const _ProjectSummaryCard({
-    required this.project,
-  });
+  const _ProjectSummaryCard({required this.project});
 
   final ProjectGraphSnapshot project;
 
@@ -599,10 +581,7 @@ class _ProjectSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              project.toolchain.detail,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(project.toolchain.detail, style: theme.textTheme.bodySmall),
             if (project.manifestPath != null) ...[
               const SizedBox(height: 6),
               Text(
@@ -626,10 +605,7 @@ class _ProjectSummaryCard extends StatelessWidget {
             ],
             if (project.notes.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Text(
-                project.notes.first,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(project.notes.first, style: theme.textTheme.bodySmall),
             ],
           ],
         ),
@@ -673,10 +649,7 @@ class _ProjectWorkflowCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(summary.title, style: theme.textTheme.titleSmall),
             const SizedBox(height: 8),
-            Text(
-              summary.body,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(summary.body, style: theme.textTheme.bodySmall),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -690,6 +663,11 @@ class _ProjectWorkflowCard extends StatelessWidget {
                 ),
                 if (project.compilePlanConsumerAdvertised)
                   const Chip(label: Text('compile-plan detected')),
+                Chip(
+                  label: Text(
+                    summary.jitRoute.blocked ? 'JIT blocked' : 'JIT live',
+                  ),
+                ),
               ],
             ),
           ],
@@ -700,9 +678,7 @@ class _ProjectWorkflowCard extends StatelessWidget {
 }
 
 class _CompilerHandshakeCard extends StatelessWidget {
-  const _CompilerHandshakeCard({
-    required this.project,
-  });
+  const _CompilerHandshakeCard({required this.project});
 
   final ProjectGraphSnapshot project;
 
@@ -740,10 +716,7 @@ class _CompilerHandshakeCard extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
-              Text(
-                compiler.contractSummary,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(compiler.contractSummary, style: theme.textTheme.bodySmall),
               const SizedBox(height: 6),
               Text(
                 compiler.capabilitySummary,
@@ -790,10 +763,12 @@ class _RequiredHandoffsCard extends StatelessWidget {
       adapterCapabilities: adapterCapabilities,
     );
     final blockingCount = handoffs.where((handoff) => handoff.blocking).length;
-    final styioCount =
-        handoffs.where((handoff) => handoff.owner == HandoffOwner.styio).length;
-    final spioCount =
-        handoffs.where((handoff) => handoff.owner == HandoffOwner.spio).length;
+    final styioCount = handoffs
+        .where((handoff) => handoff.owner == HandoffOwner.styio)
+        .length;
+    final spioCount = handoffs
+        .where((handoff) => handoff.owner == HandoffOwner.spio)
+        .length;
 
     return DecoratedBox(
       key: const ValueKey('required-handoffs-card'),
@@ -841,9 +816,7 @@ class _RequiredHandoffsCard extends StatelessWidget {
 }
 
 class _ProjectOperationsCard extends StatelessWidget {
-  const _ProjectOperationsCard({
-    required this.shell,
-  });
+  const _ProjectOperationsCard({required this.shell});
 
   final ShellModel shell;
 
@@ -976,8 +949,10 @@ class _ProjectOperationsCard extends StatelessWidget {
     final dependencyStatus = _dependencyStatusLabel(lastDependency);
     final toolchainStatus = _toolchainStatusLabel(lastToolchain);
     final deploymentStatus = _deploymentStatusLabel(lastDeployment);
-    final deploymentPackage =
-        _stringPayload(lastDeployment?.payload, 'package');
+    final deploymentPackage = _stringPayload(
+      lastDeployment?.payload,
+      'package',
+    );
     final deploymentArchive = _stringPayload(
       lastDeployment?.payload,
       'archive_path',
@@ -1043,12 +1018,8 @@ class _ProjectOperationsCard extends StatelessWidget {
                         : 'pin active',
                   ),
                 ),
-                Chip(
-                  label: Text('publishable $publishablePackages'),
-                ),
-                Chip(
-                  label: Text('blocked $blockedPackages'),
-                ),
+                Chip(label: Text('publishable $publishablePackages')),
+                Chip(label: Text('blocked $blockedPackages')),
                 Chip(
                   label: Text(
                     'workflow blockers ${StyioCommandRegistry.workflowCommands.where((command) => shell.blockedReasonForCommand(command.id) != null).length}',
@@ -1061,10 +1032,7 @@ class _ProjectOperationsCard extends StatelessWidget {
               Text('Current Blockers', style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
               for (final blocker in blockedWorkflowPreview) ...[
-                Text(
-                  blocker,
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text(blocker, style: theme.textTheme.bodySmall),
                 const SizedBox(height: 4),
               ],
               const SizedBox(height: 8),
@@ -1187,23 +1155,12 @@ class _WorkflowLanePanel extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                _WorkflowStatusChip(
-                  label: statusLabel,
-                  color: statusColor,
-                ),
+                Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
+                _WorkflowStatusChip(label: statusLabel, color: statusColor),
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              detail,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(detail, style: theme.textTheme.bodySmall),
             if (metaLabels.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -1216,11 +1173,7 @@ class _WorkflowLanePanel extends StatelessWidget {
             ],
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: actions,
-              ),
+              Wrap(spacing: 8, runSpacing: 8, children: actions),
             ],
           ],
         ),
@@ -1230,10 +1183,7 @@ class _WorkflowLanePanel extends StatelessWidget {
 }
 
 class _WorkflowStatusChip extends StatelessWidget {
-  const _WorkflowStatusChip({
-    required this.label,
-    required this.color,
-  });
+  const _WorkflowStatusChip({required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -1247,19 +1197,14 @@ class _WorkflowStatusChip extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        child: Text(label, style: Theme.of(context).textTheme.bodySmall),
       ),
     );
   }
 }
 
 class _RequiredHandoffTile extends StatelessWidget {
-  const _RequiredHandoffTile({
-    required this.handoff,
-  });
+  const _RequiredHandoffTile({required this.handoff});
 
   final RequiredHandoff handoff;
 
@@ -1283,28 +1228,15 @@ class _RequiredHandoffTile extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Chip(label: Text(handoff.owner.label)),
-                Chip(
-                  label: Text(
-                    handoff.blocking ? 'blocking' : 'follow-up',
-                  ),
-                ),
+                Chip(label: Text(handoff.blocking ? 'blocking' : 'follow-up')),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              handoff.title,
-              style: theme.textTheme.titleSmall,
-            ),
+            Text(handoff.title, style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
-            Text(
-              handoff.detail,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(handoff.detail, style: theme.textTheme.bodySmall),
             const SizedBox(height: 6),
-            Text(
-              handoff.docPath,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(handoff.docPath, style: theme.textTheme.bodySmall),
           ],
         ),
       ),
@@ -1331,10 +1263,7 @@ class _WorkspaceFileTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Ink(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: active ? const Color(0xFFF1ECE3) : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
@@ -1346,12 +1275,7 @@ class _WorkspaceFileTile extends StatelessWidget {
               size: 18,
             ),
             const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                file,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
+            Expanded(child: Text(file, style: theme.textTheme.bodyMedium)),
           ],
         ),
       ),
@@ -1378,10 +1302,7 @@ class _ProjectTargetTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       child: Ink(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: active ? const Color(0xFFF1ECE3) : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
@@ -1395,10 +1316,7 @@ class _ProjectTargetTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('${target.kind.name} ${target.name}'),
-                  Text(
-                    target.packageName,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  Text(target.packageName, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
@@ -1410,9 +1328,7 @@ class _ProjectTargetTile extends StatelessWidget {
 }
 
 class _ProjectPackageTile extends StatelessWidget {
-  const _ProjectPackageTile({
-    required this.package,
-  });
+  const _ProjectPackageTile({required this.package});
 
   final ProjectPackageSnapshot package;
 
@@ -1426,10 +1342,7 @@ class _ProjectPackageTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1445,10 +1358,7 @@ class _ProjectPackageTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              package.rootPath,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(package.rootPath, style: theme.textTheme.bodySmall),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -1473,9 +1383,7 @@ class _ProjectPackageTile extends StatelessWidget {
 }
 
 class _WorkspaceMemberTile extends StatelessWidget {
-  const _WorkspaceMemberTile({
-    required this.memberPath,
-  });
+  const _WorkspaceMemberTile({required this.memberPath});
 
   final String memberPath;
 
@@ -1489,19 +1397,13 @@ class _WorkspaceMemberTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
             const Icon(Icons.folder_open_rounded, size: 18),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                memberPath,
-                style: theme.textTheme.bodyMedium,
-              ),
+              child: Text(memberPath, style: theme.textTheme.bodyMedium),
             ),
           ],
         ),
@@ -1511,9 +1413,7 @@ class _WorkspaceMemberTile extends StatelessWidget {
 }
 
 class _ProjectDependencyTile extends StatelessWidget {
-  const _ProjectDependencyTile({
-    required this.dependency,
-  });
+  const _ProjectDependencyTile({required this.dependency});
 
   final ProjectDependencySnapshot dependency;
 
@@ -1527,10 +1427,7 @@ class _ProjectDependencyTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1549,10 +1446,7 @@ class _ProjectDependencyTile extends StatelessWidget {
               style: theme.textTheme.titleSmall,
             ),
             const SizedBox(height: 6),
-            Text(
-              dependency.requirement,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(dependency.requirement, style: theme.textTheme.bodySmall),
           ],
         ),
       ),
@@ -1561,9 +1455,7 @@ class _ProjectDependencyTile extends StatelessWidget {
 }
 
 class _ModuleSidebar extends StatelessWidget {
-  const _ModuleSidebar({
-    required this.shell,
-  });
+  const _ModuleSidebar({required this.shell});
 
   final ShellModel shell;
 
@@ -1617,9 +1509,7 @@ class _ModuleSidebar extends StatelessWidget {
 }
 
 class _AdapterCapabilityTile extends StatelessWidget {
-  const _AdapterCapabilityTile({
-    required this.capability,
-  });
+  const _AdapterCapabilityTile({required this.capability});
 
   final AdapterCapabilitySnapshot capability;
 
@@ -1652,10 +1542,7 @@ class _AdapterCapabilityTile extends StatelessWidget {
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            Text(
-              capability.execution.detail,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(capability.execution.detail, style: theme.textTheme.bodySmall),
           ],
         ),
       ),
@@ -1697,11 +1584,7 @@ class _BottomSurfaceTabs extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: tabs,
-          ),
+          Wrap(spacing: 10, runSpacing: 10, children: tabs),
           const SizedBox(height: 8),
           Text(
             'Mobile shell keeps runtime, agent, and debug on one vertical route. Hardware keyboard shortcuts remain optional.',
@@ -1724,7 +1607,8 @@ class _BottomSurfaceTabs extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: Tooltip(
-                message: shell.blockedReasonForCommand(command.id) ??
+                message:
+                    shell.blockedReasonForCommand(command.id) ??
                     '${command.description} (${command.shortcutHint})',
                 child: ActionChip(
                   key: ValueKey('command-strip-${command.id.name}'),
@@ -1802,10 +1686,7 @@ class _SurfaceTabChip extends StatelessWidget {
           color: active ? const Color(0xFFEFE7DA) : const Color(0xFFF7F2E9),
           borderRadius: BorderRadius.circular(999),
         ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 10,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Text(label),
       ),
     );
@@ -1847,16 +1728,11 @@ class _ModuleTile extends StatelessWidget {
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
-                Chip(
-                  label: Text(mounted ? 'Mounted' : 'Visible'),
-                ),
+                Chip(label: Text(mounted ? 'Mounted' : 'Visible')),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              module.manifest.description,
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(module.manifest.description, style: theme.textTheme.bodySmall),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,

@@ -3,11 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'shell_model.dart';
 
 class ShellScope extends InheritedNotifier<ShellModel> {
-  const ShellScope({
-    super.key,
-    required ShellModel model,
-    required super.child,
-  }) : super(notifier: model);
+  const ShellScope({super.key, required ShellModel model, required super.child})
+    : super(notifier: model);
 
   static ShellModel of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<ShellScope>();

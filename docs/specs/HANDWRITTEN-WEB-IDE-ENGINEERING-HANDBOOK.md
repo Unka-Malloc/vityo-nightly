@@ -4,7 +4,7 @@
 
 **Scope:** 本文只覆盖 `prototype/` 下的手写 Web IDE，不覆盖 Flutter 主壳。
 
-**Last updated:** 2026-04-13
+**Last updated:** 2026-04-21
 
 ## 1. 产品定位
 
@@ -55,25 +55,25 @@
 
 ## 3.1 文件边界
 
-1. [prototype/editor.html]($HOME/DevSpace/styio-view/prototype/editor.html)
+1. [prototype/editor.html](../../prototype/editor.html)
    负责结构与 DOM 锚点。
-2. [prototype/editor.css]($HOME/DevSpace/styio-view/prototype/editor.css)
+2. [prototype/editor.css](../../prototype/editor.css)
    负责视觉系统、布局、状态样式与尺寸变量。
-3. [prototype/editor.js]($HOME/DevSpace/styio-view/prototype/editor.js)
+3. [prototype/editor.js](../../prototype/editor.js)
    负责状态、事件、渲染、workspace、配置导入导出与行为编排。
-4. [prototype/editor-modules/runtime-config.js]($HOME/DevSpace/styio-view/prototype/editor-modules/runtime-config.js)
+4. [prototype/editor-modules/runtime-config.js](../../prototype/editor-modules/runtime-config.js)
    负责默认配置、存储 key、初始状态模板。
-5. [prototype/editor-modules/enums.js]($HOME/DevSpace/styio-view/prototype/editor-modules/enums.js)
+5. [prototype/editor-modules/enums.js](../../prototype/editor-modules/enums.js)
    负责枚举与稳定 key。
-6. [prototype/editor-modules/theme-presets.js]($HOME/DevSpace/styio-view/prototype/editor-modules/theme-presets.js)
+6. [prototype/editor-modules/theme-presets.js](../../prototype/editor-modules/theme-presets.js)
    负责 Theme / Editor 主题模板、字体模板、字号模板。
-7. [prototype/editor-modules/glyph-presets.js]($HOME/DevSpace/styio-view/prototype/editor-modules/glyph-presets.js)
+7. [prototype/editor-modules/glyph-presets.js](../../prototype/editor-modules/glyph-presets.js)
    负责 glyph、symbol color、block / line / selection 预设。
-8. [prototype/editor-modules/render-pipeline.js]($HOME/DevSpace/styio-view/prototype/editor-modules/render-pipeline.js)
+8. [prototype/editor-modules/render-pipeline.js](../../prototype/editor-modules/render-pipeline.js)
    负责渲染切片调度。
-9. [prototype/editor-modules/surface-actions.js]($HOME/DevSpace/styio-view/prototype/editor-modules/surface-actions.js)
+9. [prototype/editor-modules/surface-actions.js](../../prototype/editor-modules/surface-actions.js)
    负责 `Theme / Editor` 风格行为的层级定义。
-10. [prototype/dev_server.py]($HOME/DevSpace/styio-view/prototype/dev_server.py)
+10. [prototype/dev_server.py](../../prototype/dev_server.py)
     负责本地开发服务、workspace API、浏览器文件浏览 API。
 
 ## 3.2 状态分层
@@ -114,7 +114,7 @@
 
 ## 4.1 渲染切片
 
-当前渲染切片定义在 [render-pipeline.js]($HOME/DevSpace/styio-view/prototype/editor-modules/render-pipeline.js)：
+当前渲染切片定义在 [render-pipeline.js](../../prototype/editor-modules/render-pipeline.js)：
 
 1. `themeAppearance`
 2. `settingsControls`
@@ -150,7 +150,7 @@
 2. `selectSurfacePalette(surfaceKey, paletteKey)`
 3. `dispatchSurfaceAction(action, applyState, options)`
 
-这三者都在 [editor.js]($HOME/DevSpace/styio-view/prototype/editor.js) 中。
+这三者都在 [editor.js](../../prototype/editor.js) 中。
 
 ## 5. 行为层级模型
 
@@ -210,7 +210,7 @@
 
 ## 6. 当前分层规则的落点
 
-动作模板定义在 [surface-actions.js]($HOME/DevSpace/styio-view/prototype/editor-modules/surface-actions.js)。
+动作模板定义在 [surface-actions.js](../../prototype/editor-modules/surface-actions.js)。
 
 关键约束：
 
@@ -272,7 +272,7 @@
    - `section`
    - `leaf`
 3. 如果它是预设型能力，先加模板，再加状态 key，再加 UI
-4. 在 [surface-actions.js]($HOME/DevSpace/styio-view/prototype/editor-modules/surface-actions.js) 中声明动作
+4. 在 [surface-actions.js](../../prototype/editor-modules/surface-actions.js) 中声明动作
 5. 按钮事件只调用统一 action 分发
 6. 确认对应的 `persistTarget`
 7. 确认对应的 `renderTarget`

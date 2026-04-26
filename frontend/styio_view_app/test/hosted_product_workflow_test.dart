@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,17 +9,17 @@ import 'package:styio_view_app/src/app/state/workspace_controller.dart';
 import 'package:styio_view_app/src/app/state/workspace_document_store_types.dart';
 import 'package:styio_view_app/src/editor/document_state.dart';
 import 'package:styio_view_app/src/editor/editor_controller.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/dependency_source_adapter.dart';
-import 'package:styio_view_app/src/integration/deployment_adapter.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/execution_route_summary.dart';
-import 'package:styio_view_app/src/integration/hosted_control_plane.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter_io.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
-import 'package:styio_view_app/src/integration/runtime_event_adapter.dart';
-import 'package:styio_view_app/src/integration/toolchain_management_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/dependency_source_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/deployment_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_route_summary.dart';
+import 'package:styio_view_app/src/backend_toolchain/hosted_control_plane.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter_io.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/runtime_event_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/toolchain_management_adapter.dart';
 import 'package:styio_view_app/src/language/simple_styio_language_service.dart';
 import 'package:styio_view_app/src/module_host/module_registry.dart';
 import 'package:styio_view_app/src/platform/native_module_loader.dart';
@@ -73,8 +74,9 @@ void main() {
     'hosted control plane supports environment, dependency, execution, and preflight workflow lanes',
     () async {
       final styioBinaryPath = _env('STYIO_VIEW_PRODUCT_STYIO_BIN')!;
-      final alternateStyioBinaryPath =
-          _env('STYIO_VIEW_PRODUCT_STYIO_ALT_BIN')!;
+      final alternateStyioBinaryPath = _env(
+        'STYIO_VIEW_PRODUCT_STYIO_ALT_BIN',
+      )!;
 
       for (final scenario in const <_HostedScenario>[
         _HostedScenario(
@@ -93,8 +95,9 @@ void main() {
           expectCloudPrimary: true,
         ),
       ]) {
-        final shell =
-            await _createHostedShell(platformTarget: scenario.platformTarget);
+        final shell = await _createHostedShell(
+          platformTarget: scenario.platformTarget,
+        );
         expect(
           shell.workspaceController.activeProject.hasHostedWorkspace,
           isTrue,
@@ -122,8 +125,13 @@ void main() {
               '${scenario.label} should install the managed compiler through hosted spio. '
               'status=${install.status.name} message=${install.statusMessage}',
         );
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(installedToolchains, isNotEmpty);
         final primaryCompiler = installedToolchains.firstWhere(
@@ -159,12 +167,18 @@ void main() {
               '${scenario.label} should install the alternate managed compiler through hosted spio. '
               'status=${installAlternate.status.name} message=${installAlternate.statusMessage}',
         );
-        final refreshedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final refreshedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(
-          refreshedToolchains
-              .any((toolchain) => toolchain.compilerVersion == '0.0.2'),
+          refreshedToolchains.any(
+            (toolchain) => toolchain.compilerVersion == '0.0.2',
+          ),
           isTrue,
           reason:
               '${scenario.label} should retain the alternate compiler after refresh.',
@@ -251,10 +265,7 @@ void main() {
         );
 
         await _openTarget(shell, ProjectTargetKind.bin);
-        await _loadActiveDocumentText(
-          shell,
-          '>_("broken"\n',
-        );
+        await _loadActiveDocumentText(shell, '>_("broken"\n');
         await shell.executeCommand(AppCommandId.run);
         expect(
           shell.lastExecutionSession?.status,
@@ -307,8 +318,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the live hosted product workflow test.'
         : missingEnv.isNotEmpty
-            ? 'Missing required hosted product gate env: ${missingEnv.join(', ')}'
-            : false,
+        ? 'Missing required hosted product gate env: ${missingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -354,7 +365,10 @@ void main() {
               '${scenario.label} should load a multi-package hosted workspace.',
         );
         expect(
-          shell.workspaceController.activeProject.packageDistribution
+          shell
+              .workspaceController
+              .activeProject
+              .packageDistribution
               ?.publishablePackages,
           2,
           reason:
@@ -365,8 +379,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(install.succeeded, isTrue, reason: scenario.label);
-        final installedToolchains = shell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final installedToolchains =
+            shell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(installedToolchains, isNotEmpty, reason: scenario.label);
         final primaryCompiler = installedToolchains.firstWhere(
@@ -392,8 +411,9 @@ void main() {
               '${scenario.label} should resolve the primary compiler before workspace execution.',
         );
 
-        final publishBlockedReason =
-            shell.blockedReasonForCommand(AppCommandId.preparePublish);
+        final publishBlockedReason = shell.blockedReasonForCommand(
+          AppCommandId.preparePublish,
+        );
         expect(
           publishBlockedReason,
           contains('Multiple publish-ready packages are available'),
@@ -450,9 +470,7 @@ void main() {
         expect(shell.lastExecutionSession?.kind, 'test');
         expect(shell.lastRuntimeEvents, isNotEmpty);
 
-        final explicitPack = await shell.packProject(
-          packageName: 'acme/tool',
-        );
+        final explicitPack = await shell.packProject(packageName: 'acme/tool');
         expect(explicitPack.succeeded, isTrue, reason: scenario.label);
         _expectArchivePresent(
           explicitPack,
@@ -506,8 +524,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the live hosted product workflow test.'
         : workspaceMissingEnv.isNotEmpty
-            ? 'Missing required hosted workspace product gate env: ${workspaceMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required hosted workspace product gate env: ${workspaceMissingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -554,11 +572,7 @@ void main() {
           reason:
               '${scenario.label} should fail hosted dependency fetch for the broken dependency source.',
         );
-        expect(
-          fetch.statusMessage,
-          isNotEmpty,
-          reason: scenario.label,
-        );
+        expect(fetch.statusMessage, isNotEmpty, reason: scenario.label);
         expect(
           fetch.errorPayload,
           isNotNull,
@@ -581,11 +595,7 @@ void main() {
           reason:
               '${scenario.label} should fail hosted publish preflight for the non-publishable package.',
         );
-        expect(
-          preflight.statusMessage,
-          isNotEmpty,
-          reason: scenario.label,
-        );
+        expect(preflight.statusMessage, isNotEmpty, reason: scenario.label);
         expect(
           preflight.errorPayload,
           isNotNull,
@@ -633,8 +643,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the live hosted product workflow test.'
         : failureMissingEnv.isNotEmpty
-            ? 'Missing required hosted failure-path env: ${failureMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required hosted failure-path env: ${failureMissingEnv.join(', ')}'
+        : false,
   );
 
   test(
@@ -664,8 +674,8 @@ void main() {
           registryRootBase,
           scenario.label,
         );
-        final scenarioRegistryUri =
-            scenarioRegistryRoot.absolute.uri.toString();
+        final scenarioRegistryUri = scenarioRegistryRoot.absolute.uri
+            .toString();
 
         await _rewriteManifestRegistryRoot(
           manifestPath: _env('STYIO_VIEW_HOSTED_MANIFEST5_PATH')!,
@@ -695,8 +705,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(publishInstall.succeeded, isTrue, reason: scenario.label);
-        final publishToolchains = publishShell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final publishToolchains =
+            publishShell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(publishToolchains, isNotEmpty, reason: scenario.label);
         final primaryCompiler = publishToolchains.firstWhere(
@@ -790,8 +805,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(consumeInstall.succeeded, isTrue, reason: scenario.label);
-        final consumeToolchains = consumeShell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final consumeToolchains =
+            consumeShell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(consumeToolchains, isNotEmpty, reason: scenario.label);
         final consumeCompiler = consumeToolchains.firstWhere(
@@ -822,15 +842,23 @@ void main() {
                     dependency.registryRoot != null &&
                     acceptedRegistryRoots.contains(dependency.registryRoot),
               ) ||
-              consumeShell.workspaceController.activeProject.packageDistribution
+              consumeShell
+                      .workspaceController
+                      .activeProject
+                      .packageDistribution
                       ?.registrySources
                       .any(
-                    (registry) =>
-                        acceptedRegistryRoots.contains(registry.registryRoot) &&
-                        registry.packages.contains('acme/registry-client'),
-                  ) ==
+                        (registry) =>
+                            acceptedRegistryRoots.contains(
+                              registry.registryRoot,
+                            ) &&
+                            registry.packages.contains('acme/registry-client'),
+                      ) ==
                   true ||
-              (consumeShell.workspaceController.activeProject.sourceState
+              (consumeShell
+                          .workspaceController
+                          .activeProject
+                          .sourceState
                           ?.declaredRegistryDependencies ??
                       0) >
                   0,
@@ -871,8 +899,13 @@ void main() {
           styioBinaryPath: styioBinaryPath,
         );
         expect(missingInstall.succeeded, isTrue, reason: scenario.label);
-        final missingToolchains = missingShell.workspaceController.activeProject
-                .toolchainEnvironment?.managedToolchains.installed ??
+        final missingToolchains =
+            missingShell
+                .workspaceController
+                .activeProject
+                .toolchainEnvironment
+                ?.managedToolchains
+                .installed ??
             const <ManagedToolchainInstallSnapshot>[];
         expect(missingToolchains, isNotEmpty, reason: scenario.label);
         final missingCompiler = missingToolchains.firstWhere(
@@ -897,11 +930,7 @@ void main() {
           reason:
               '${scenario.label} should fail hosted fetch when the registry requests a missing package version.',
         );
-        expect(
-          missingFetch.statusMessage,
-          isNotEmpty,
-          reason: scenario.label,
-        );
+        expect(missingFetch.statusMessage, isNotEmpty, reason: scenario.label);
         expect(
           missingFetch.errorPayload,
           isNotNull,
@@ -937,8 +966,8 @@ void main() {
     skip: !productGateEnabled
         ? 'Set STYIO_VIEW_PRODUCT_GATE=1 to run the live hosted product workflow test.'
         : registryMissingEnv.isNotEmpty
-            ? 'Missing required hosted registry-path env: ${registryMissingEnv.join(', ')}'
-            : false,
+        ? 'Missing required hosted registry-path env: ${registryMissingEnv.join(', ')}'
+        : false,
   );
 }
 
@@ -1004,7 +1033,8 @@ Future<ShellModel> _createHostedShell({
     seededDocuments: seededDocuments,
   );
   final editorController = EditorSessionController(
-    initialDocument: seededDocuments[workspaceController.activeFilePath] ??
+    initialDocument:
+        seededDocuments[workspaceController.activeFilePath] ??
         EditorSessionController.seedDocumentForPath(
           workspaceController.activeFilePath,
         ),
@@ -1013,14 +1043,15 @@ Future<ShellModel> _createHostedShell({
 
   return ShellModel(
     platformTarget: platformTarget,
-    supplementalAdapterCapabilities:
-        normalizeCapabilitySnapshots(<AdapterCapabilitySnapshot>[
-      buildCloudAdapterCapability(
-        supportsCloudExecution: true,
-        supportsHostedProjectGraph: true,
-        detail: 'Hosted product workflow route is live for the gate fixture.',
-      ),
-    ]),
+    supplementalAdapterCapabilities: normalizeCapabilitySnapshots(
+      <AdapterCapabilitySnapshot>[
+        buildCloudAdapterCapability(
+          supportsCloudExecution: true,
+          supportsHostedProjectGraph: true,
+          detail: 'Hosted product workflow route is live for the gate fixture.',
+        ),
+      ],
+    ),
     projectGraphAdapter: projectGraphAdapter,
     workspaceController: workspaceController,
     workspaceDocumentStore: workspaceDocumentStore,
@@ -1028,9 +1059,7 @@ Future<ShellModel> _createHostedShell({
       platformTarget: platformTarget,
       definitions: const [],
     ),
-    nativeModuleLoader: NoopNativeModuleLoader(
-      platformTarget: platformTarget,
-    ),
+    nativeModuleLoader: NoopNativeModuleLoader(platformTarget: platformTarget),
     editorController: editorController,
     executionAdapter: executionAdapter,
     executionAdapterFactory: (ProjectGraphSnapshot refreshedProjectGraph) {
@@ -1046,20 +1075,14 @@ Future<ShellModel> _createHostedShell({
   );
 }
 
-Future<void> _openTarget(
-  ShellModel shell,
-  ProjectTargetKind targetKind,
-) async {
+Future<void> _openTarget(ShellModel shell, ProjectTargetKind targetKind) async {
   final target = shell.workspaceController.targets.firstWhere(
     (candidate) => candidate.kind == targetKind,
   );
   await _openResolvedTarget(shell, target);
 }
 
-Future<void> _loadActiveDocumentText(
-  ShellModel shell,
-  String text,
-) async {
+Future<void> _loadActiveDocumentText(ShellModel shell, String text) async {
   final activePath = shell.workspaceController.activeFilePath;
   shell.editorController.loadDocument(
     DocumentState(
@@ -1094,11 +1117,7 @@ Future<void> _openResolvedTarget(
       ? await file.readAsString()
       : EditorSessionController.seedDocumentForPath(target.filePath).text;
   shell.editorController.loadDocument(
-    DocumentState(
-      documentId: target.filePath,
-      text: text,
-      revision: 0,
-    ),
+    DocumentState(documentId: target.filePath, text: text, revision: 0),
   );
   await _settleAsync();
 }
@@ -1197,7 +1216,10 @@ void _emitHostedScenarioReport({
 }
 
 void _emitScenarioReport(Map<String, Object?> report) {
-  print('STYIO_VIEW_PRODUCT_REPORT ${jsonEncode(report)}');
+  developer.log(
+    'STYIO_VIEW_PRODUCT_REPORT ${jsonEncode(report)}',
+    name: 'styio.view.product_gate',
+  );
 }
 
 Map<String, Object?> _artifactPresence({

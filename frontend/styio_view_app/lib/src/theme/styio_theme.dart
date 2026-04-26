@@ -1,21 +1,61 @@
 import 'package:flutter/material.dart';
 
-class StyioTheme {
-  static ThemeData light() {
-    const canvas = Color(0xFFF4F1EA);
-    const panel = Color(0xFFF9F6EF);
-    const ink = Color(0xFF2B2624);
-    const accent = Color(0xFF5668A6);
-    const muted = Color(0xFF8B847B);
+class StyioThemeOverride {
+  const StyioThemeOverride({
+    this.canvas,
+    this.panel,
+    this.ink,
+    this.accent,
+    this.muted,
+  });
 
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: accent,
-      brightness: Brightness.light,
-    ).copyWith(
-      surface: panel,
-      onSurface: ink,
-      secondary: const Color(0xFFD4CDC1),
+  final Color? canvas;
+  final Color? panel;
+  final Color? ink;
+  final Color? accent;
+  final Color? muted;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      if (canvas != null) 'canvas': canvas!.toARGB32(),
+      if (panel != null) 'panel': panel!.toARGB32(),
+      if (ink != null) 'ink': ink!.toARGB32(),
+      if (accent != null) 'accent': accent!.toARGB32(),
+      if (muted != null) 'muted': muted!.toARGB32(),
+    };
+  }
+
+  factory StyioThemeOverride.fromJson(Map<String, Object?> json) {
+    return StyioThemeOverride(
+      canvas: _colorFromJson(json['canvas']),
+      panel: _colorFromJson(json['panel']),
+      ink: _colorFromJson(json['ink']),
+      accent: _colorFromJson(json['accent']),
+      muted: _colorFromJson(json['muted']),
     );
+  }
+}
+
+class StyioTheme {
+  static ThemeData light({
+    StyioThemeOverride overrides = const StyioThemeOverride(),
+  }) {
+    final canvas = overrides.canvas ?? const Color(0xFFF4F1EA);
+    final panel = overrides.panel ?? const Color(0xFFF9F6EF);
+    final ink = overrides.ink ?? const Color(0xFF2B2624);
+    final accent = overrides.accent ?? const Color(0xFF5668A6);
+    final muted = overrides.muted ?? const Color(0xFF8B847B);
+
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: accent,
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: accent,
+          surface: panel,
+          onSurface: ink,
+          secondary: const Color(0xFFD4CDC1),
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -23,7 +63,7 @@ class StyioTheme {
       scaffoldBackgroundColor: canvas,
       cardColor: panel,
       dividerColor: const Color(0xFFE1D9CA),
-      textTheme: const TextTheme(
+      textTheme: TextTheme(
         headlineMedium: TextStyle(
           fontSize: 24,
           fontWeight: FontWeight.w700,
@@ -34,25 +74,15 @@ class StyioTheme {
           fontWeight: FontWeight.w600,
           color: ink,
         ),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          height: 1.45,
-          color: ink,
-        ),
-        bodySmall: TextStyle(
-          fontSize: 12,
-          height: 1.4,
-          color: muted,
-        ),
+        bodyMedium: TextStyle(fontSize: 14, height: 1.45, color: ink),
+        bodySmall: TextStyle(fontSize: 12, height: 1.4, color: muted),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         side: BorderSide.none,
         selectedColor: const Color(0xFFE6E1D7),
         backgroundColor: const Color(0xFFF1ECE3),
-        labelStyle: const TextStyle(
+        labelStyle: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: ink,
@@ -68,4 +98,19 @@ class StyioTheme {
       ),
     );
   }
+}
+
+Color? _colorFromJson(Object? raw) {
+  if (raw is int) {
+    return Color(raw);
+  }
+  if (raw is String) {
+    final normalized = raw.startsWith('#') ? raw.substring(1) : raw;
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed == null) {
+      return null;
+    }
+    return Color(normalized.length <= 6 ? (0xFF000000 | parsed) : parsed);
+  }
+  return null;
 }

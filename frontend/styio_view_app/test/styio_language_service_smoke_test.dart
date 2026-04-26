@@ -13,10 +13,7 @@ void main() {
 
     final analysis = service.analyzeDocument(document);
 
-    expect(
-      analysis.tokenSpans.any((span) => span.lexeme == 'fn'),
-      isTrue,
-    );
+    expect(analysis.tokenSpans.any((span) => span.lexeme == 'fn'), isTrue);
     expect(analysis.semanticSpans.isNotEmpty, isTrue);
     expect(analysis.diagnostics.isNotEmpty, isTrue);
     expect(analysis.formattingEdits, isEmpty);
@@ -42,10 +39,7 @@ void main() {
       document,
       missingAssignment,
     );
-    final blockFixes = service.quickFixesForDiagnostic(
-      document,
-      unclosedBlock,
-    );
+    final blockFixes = service.quickFixesForDiagnostic(document, unclosedBlock);
 
     expect(assignmentFixes.single.label, 'Insert assignment');
     expect(assignmentFixes.single.edits.single.newText, ' = value');

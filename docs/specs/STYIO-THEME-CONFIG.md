@@ -2,7 +2,7 @@
 
 **Purpose:** 定义 `styio-view` 原型当前支持的主题 / 编辑器调色盘配置文件格式，结构参考 VS Code 的 `settings.json`、`workbench.colorCustomizations` 和 `editor.tokenColorCustomizations`。
 
-**Last updated:** 2026-04-14
+**Last updated:** 2026-04-21
 
 ## 1. 结构
 
@@ -149,4 +149,4 @@
 
 可直接参考：
 
-1. [theme-config.example.jsonc]($HOME/DevSpace/styio-view/prototype/theme-config.example.jsonc)
+1. [theme-config.example.jsonc](../../prototype/theme-config.example.jsonc)

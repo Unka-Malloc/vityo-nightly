@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FLUTTER_HOME="${STYIO_VIEW_FLUTTER_HOME:-$HOME/develop/flutter}"
+FLUTTER_BIN="${STYIO_VIEW_FLUTTER_BIN:-$FLUTTER_HOME/bin/flutter}"
+PLATFORMS="${STYIO_VIEW_FLUTTER_PLATFORMS:-}"
+SKIP_PLATFORM_BOOTSTRAP=0
+SKIP_NPM=0
+SKIP_FLUTTER_PUB=0
+
+usage() {
+  cat <<'EOF'
+Usage: bootstrap-workspace.sh [options]
+
+Restore repo-local dependencies and generate Flutter runners for the selected
+desktop/mobile platform combination.
+
+Options:
+  --platforms <csv>         Explicit Flutter platform list
+  --with-android            Add Android runner support
+  --with-ios                Add iOS runner support (macOS only)
+  --skip-platform-bootstrap Skip flutter create --platforms
+  --skip-npm                Skip prototype npm ci
+  --skip-flutter-pub        Skip flutter pub get
+  -h, --help                Show this help
+EOF
+}
+
+log() {
+  printf '[styio-view workspace] %s\n' "$*"
+}
+
+fail() {
+  printf '[styio-view workspace] %s\n' "$*" >&2
+  exit 1
+}
+
+host_desktop_platform() {
+  case "$(uname -s)" in
+    Linux)
+      echo "linux"
+      ;;
+    Darwin)
+      echo "macos"
+      ;;
+    *)
+      fail "unsupported host for bootstrap-workspace.sh: $(uname -s)"
+      ;;
+  esac
+}
+
+ensure_platform() {
+  local name="$1"
+  if [[ ",$PLATFORMS," != *",$name,"* ]]; then
+    if [[ -n "$PLATFORMS" ]]; then
+      PLATFORMS="$PLATFORMS,$name"
+    else
+      PLATFORMS="$name"
+    fi
+  fi
+}
+
+ensure_defaults() {
+  if [[ -z "$PLATFORMS" ]]; then
+    PLATFORMS="web,$(host_desktop_platform)"
+  fi
+}
+
+verify_platforms() {
+  case "$(uname -s)" in
+    Linux)
+      [[ ",$PLATFORMS," != *",ios,"* ]] || fail "iOS runners require macOS"
+      ;;
+    Darwin)
+      ;;
+    *)
+      fail "unsupported host for platform validation: $(uname -s)"
+      ;;
+  esac
+}
+
+main() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --platforms)
+        PLATFORMS="$2"
+        shift 2
+        ;;
+      --with-android)
+        ensure_platform "android"
+        shift
+        ;;
+      --with-ios)
+        ensure_platform "ios"
+        shift
+        ;;
+      --skip-platform-bootstrap)
+        SKIP_PLATFORM_BOOTSTRAP=1
+        shift
+        ;;
+      --skip-npm)
+        SKIP_NPM=1
+        shift
+        ;;
+      --skip-flutter-pub)
+        SKIP_FLUTTER_PUB=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "unknown option: $1"
+        ;;
+    esac
+  done
+
+  ensure_defaults
+  verify_platforms
+
+  if [[ ! -x "$FLUTTER_BIN" ]] && ! command -v flutter >/dev/null 2>&1; then
+    fail "flutter is not installed. Set STYIO_VIEW_FLUTTER_HOME or STYIO_VIEW_FLUTTER_BIN."
+  fi
+
+  if [[ ! -x "$FLUTTER_BIN" ]]; then
+    FLUTTER_BIN="$(command -v flutter)"
+  fi
+
+  if [[ $SKIP_PLATFORM_BOOTSTRAP -eq 0 ]]; then
+    log "generating Flutter runners for platforms: $PLATFORMS"
+    (
+      cd "$ROOT/frontend/styio_view_app"
+      "$FLUTTER_BIN" create \
+        --platforms="$PLATFORMS" \
+        --project-name=styio_view_app \
+        --org=io.styio.view \
+        .
+    )
+  fi
+
+  if [[ $SKIP_NPM -eq 0 ]]; then
+    log "installing prototype npm dependencies"
+    (cd "$ROOT/prototype" && npm ci)
+  fi
+
+  if [[ $SKIP_FLUTTER_PUB -eq 0 ]]; then
+    log "installing Flutter package dependencies"
+    (
+      cd "$ROOT/frontend/styio_view_app"
+      "$FLUTTER_BIN" pub get
+    )
+  fi
+
+  log "workspace bootstrap complete"
+}
+
+main "$@"

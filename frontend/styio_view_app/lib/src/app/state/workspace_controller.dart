@@ -1,17 +1,17 @@
 import 'package:flutter/foundation.dart';
 
-import '../../integration/project_graph_contract.dart';
+import '../../backend_toolchain/project_graph_contract.dart';
 
 class WorkspaceController extends ChangeNotifier {
   WorkspaceController({
     required ProjectGraphSnapshot projectSnapshot,
     String? activeFilePath,
-  })  : _projectSnapshot = projectSnapshot,
-        _activeFilePath =
-            activeFilePath ??
-            (projectSnapshot.editorFiles.isNotEmpty
-                ? projectSnapshot.editorFiles.first
-                : '');
+  }) : _projectSnapshot = projectSnapshot,
+       _activeFilePath =
+           activeFilePath ??
+           (projectSnapshot.editorFiles.isNotEmpty
+               ? projectSnapshot.editorFiles.first
+               : '');
 
   ProjectGraphSnapshot _projectSnapshot;
   String _activeFilePath;
@@ -34,8 +34,8 @@ class WorkspaceController extends ChangeNotifier {
         (projectSnapshot.editorFiles.contains(_activeFilePath)
             ? _activeFilePath
             : projectSnapshot.editorFiles.isNotEmpty
-                ? projectSnapshot.editorFiles.first
-                : '');
+            ? projectSnapshot.editorFiles.first
+            : '');
     notifyListeners();
   }
 

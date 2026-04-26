@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 `styio-view` 文档树、里程碑、history、repo hygiene 与交付文档的日常维护入口。
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-24
 
 ## Mission
 
@@ -14,12 +14,32 @@ Primary paths:
 
 1. `README.md`
 2. `docs/`
-3. `scripts/check_repo_hygiene.py`
-4. `scripts/docs-index.py`
-5. `scripts/docs-lifecycle.py`
-6. `scripts/docs-audit.py`
-7. `prototype/README.md`
-8. `frontend/styio_view_app/README.md`
+3. `docs/external/`
+4. `scripts/repo-hygiene-gate.py`
+5. `scripts/docs-index.py`
+6. `scripts/docs-lifecycle.py`
+7. `scripts/docs-audit.py`
+8. `scripts/team-docs-gate.py`
+9. `scripts/docs-gate.sh`
+10. `scripts/delivery-gate.sh`
+11. `scripts/bootstrap-dev-env.sh`
+12. `scripts/bootstrap-dev-container.sh`
+13. `scripts/bootstrap-dev-env-macos.sh`
+14. `scripts/bootstrap-dev-env-windows.ps1`
+15. `scripts/bootstrap-workspace.sh`
+16. `scripts/bootstrap-workspace.ps1`
+17. `scripts/android-sdk-profile.sh`
+18. `scripts/android-sdk-profile.ps1`
+19. `scripts/apple-platform-profile.sh`
+20. `scripts/verify-android-device.sh`
+21. `scripts/verify-android-device.ps1`
+22. `scripts/verify-apple-device.sh`
+23. `docker/`
+24. `.devcontainer/`
+25. `toolchain/android-sdk-profiles.csv`
+26. `toolchain/apple-platform-profiles.csv`
+27. `prototype/README.md`
+28. `frontend/styio_view_app/README.md`
 
 Key SSOTs:
 
@@ -28,6 +48,8 @@ Key SSOTs:
 3. `测试目录 -> ../assets/workflow/TEST-CATALOG.md`
 4. `文件治理镜像 -> ../plans/Styio-Ecosystem-File-Governance-Alignment-Plan.md`
 5. `当前状态摘要 -> ../rollups/CURRENT-STATE.md`
+6. `外部审计入口 -> ../audit/README.md`
+7. `后端工具链 handoff -> ../plans/Styio-View-Toolchain-Backend-Handoff-Plan.md`
 
 ## Daily Workflow
 
@@ -36,12 +58,24 @@ Key SSOTs:
 3. 若一次变更改变了团队边界、review 路由或 handoff 路径，同批更新 `docs/teams/`。
 4. 中断时把恢复信息写入 `docs/history/YYYY-MM-DD.md`，不要只留在聊天或注释里。
 5. docs tree 变化时，同批运行 `docs-lifecycle.py`、`docs-index.py`、`docs-audit.py`，而不是只靠 `README/INDEX` 手工刷新。
-6. 根 `.gitignore` 若新增 temp/build/log/cache 类忽略规则，同批补 `docs/**` 与 `frontend/styio_view_app/test/**` 的显式 negate 规则，并让 `scripts/check_repo_hygiene.py` 通过。
+6. 根 `.gitignore` 若新增 temp/build/log/cache 类忽略规则，同批补 `docs/**` 与 `frontend/styio_view_app/test/**` 的显式 negate 规则，并让 `scripts/repo-hygiene-gate.py` 通过。
+7. 仓库级 build/dev-env 文档必须保持固定版本基线显式一致：Debian 13、Python 3.13.5、Node.js v24.15.0 LTS、Flutter 3.41.7 / Dart 3.11.5、Chromium 147.0.7727.116；不得把这类版本描述回退成浮动 `stable`。
+8. 容器和宿主机开发环境入口必须一起维护：`Dockerfile`、`.devcontainer/`、Linux/macOS/Windows 一键安装脚本，以及可选 `+android` / `+ios` 组合矩阵，都要在仓库级 build/dev-env 入口里保持同一套说明。
+9. Linux Android 工具链是 profile 驱动：`toolchain/android-sdk-profiles.csv`、`scripts/android-sdk-profile.sh`、Linux bootstrap、容器镜像和仓库级 build/dev-env 文档必须同步更新；不得只改单一脚本里的 `android-36` 字面量。
+10. Windows Android profile 入口和 macOS Apple profile 入口必须与 Linux 规则同步：`scripts/android-sdk-profile.ps1`、`scripts/apple-platform-profile.sh`、`toolchain/apple-platform-profiles.csv`、macOS/Windows bootstrap 与仓库级 build/dev-env 文档要一起维护，不能只更新单一平台脚本。
+11. 真实设备验证入口也属于交付表面：Android bash/PowerShell 验证脚本和 Apple 设备验证脚本必须与 profile CSV、bootstrap、仓库级 build/dev-env 文档同步更新，不能单独漂移。
+12. 根 `README.md` 只保留仓库级一跳入口；多平台 bootstrap、profile 切换和真实设备验证的细节统一收在 `docs/BUILD-AND-DEV-ENV.md`，不要在 README、runbook 和子系统文档里各自维护平行说明。
+13. 新增 external audit、agent findings、contract package 或 toolchain handoff 时，同批刷新 collection `README.md` / `INDEX.md`，并确保缺口被路由到 owner runbook，而不是停留在审计摘要里。
+14. 本轮最小闭环只要求 `repo-hygiene --mode tracked`、`docs-audit`、Flutter analyze/test 和三仓合同测试；product gate 项保持 `STYIO_VIEW_PRODUCT_GATE=1` 的显式扩展验证，不写成默认必过项。
+15. Keep [../specs/POST-COMMIT-CI-CHECKS.md](../specs/POST-COMMIT-CI-CHECKS.md) aligned with actual GitHub Actions monitoring practice whenever commit, push, or CI handoff rules change.
+16. 外部上游 handoff 统一收在 `docs/external/for-*`，不要在 docs 根目录重新创建 `for-*` collection。
+17. Keep [../specs/TECHNOLOGY-COMPONENT-INVENTORY.md](../specs/TECHNOLOGY-COMPONENT-INVENTORY.md) aligned with `audit` whenever the technology stack, internal components, open-source components, dependency manifests, Apache-2.0 evidence, commercial-risk boundaries, or UI asset-source evidence changes.
+18. Maintain GitHub merge gates through Rulesets rather than legacy classic branch protection; audit effective branch rules when required status-check governance changes.
 
 ## Change Classes
 
-1. Small: 链接修复、索引补全、history 补记或局部文案整理。运行 repo hygiene。
-2. Medium: docs 树结构、里程碑映射、测试目录映射、archive/rollup lifecycle 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
+1. Small: 链接修复、索引补全、history 补记或局部文案整理。运行 repo hygiene 和 docs gate。
+2. Medium: docs 树结构、`docs/external/` handoff 路径、里程碑映射、测试目录映射、audit/agent findings、archive/rollup lifecycle、contract package、post-push CI checking rules、technology/component inventory 或 handoff 路径变化。同步相关入口文档和 docs 自动化脚本。
 3. High: owner 文档迁移、文档策略重构、团队边界调整或交付纪律变化。走协调 review。
 
 ## Required Gates
@@ -49,15 +83,12 @@ Key SSOTs:
 Minimum:
 
 ```bash
-python3 scripts/docs-audit.py
-python3 scripts/check_repo_hygiene.py
+./scripts/docs-gate.sh
+python3 scripts/repo-hygiene-gate.py --mode tracked
+./scripts/delivery-gate.sh --mode checkpoint --skip-health
 ```
 
-`scripts/check_repo_hygiene.py` 现在同时负责：
-
-1. 构建/依赖产物与意外二进制拦截；
-2. shared `.gitignore` baseline 与 fixture negate 规则检查；
-3. docs/file governance 关键脚本接线检查。
+`scripts/delivery-gate.sh` 会在交付时统一组合 repo hygiene、docs gate、external audit 和 checkpoint health。
 
 ## Cross-Team Dependencies
 

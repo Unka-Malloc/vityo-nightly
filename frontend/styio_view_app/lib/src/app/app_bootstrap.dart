@@ -1,11 +1,11 @@
-import '../integration/adapter_contracts.dart';
-import '../integration/dependency_source_adapter.dart';
-import '../integration/deployment_adapter.dart';
-import '../integration/execution_adapter.dart';
-import '../integration/project_graph_adapter.dart';
-import '../integration/project_graph_contract.dart';
-import '../integration/runtime_event_adapter.dart';
-import '../integration/toolchain_management_adapter.dart';
+import '../backend_toolchain/adapter_contracts.dart';
+import '../backend_toolchain/dependency_source_adapter.dart';
+import '../backend_toolchain/deployment_adapter.dart';
+import '../backend_toolchain/execution_adapter.dart';
+import '../backend_toolchain/project_graph_adapter.dart';
+import '../backend_toolchain/project_graph_contract.dart';
+import '../backend_toolchain/runtime_event_adapter.dart';
+import '../backend_toolchain/toolchain_management_adapter.dart';
 import '../editor/editor_controller.dart';
 import '../language/simple_styio_language_service.dart';
 import '../module_host/module_registry.dart';
@@ -72,11 +72,15 @@ class AppBootstrap {
     final workspaceController = WorkspaceController(
       projectSnapshot: projectSnapshot,
     );
-    final executionAdapterFactory =
-        (ProjectGraphSnapshot refreshedProjectGraph) => createExecutionAdapter(
-              platformTarget: platformTarget,
-              projectGraph: refreshedProjectGraph,
-            );
+    Future<ExecutionAdapter> executionAdapterFactory(
+      ProjectGraphSnapshot refreshedProjectGraph,
+    ) {
+      return createExecutionAdapter(
+        platformTarget: platformTarget,
+        projectGraph: refreshedProjectGraph,
+      );
+    }
+
     final executionAdapter = await executionAdapterFactory(projectSnapshot);
     final runtimeEventAdapter = createRuntimeEventAdapter(
       platformTarget: platformTarget,
@@ -90,8 +94,9 @@ class AppBootstrap {
     final toolchainManagementAdapter = await createToolchainManagementAdapter(
       platformTarget: platformTarget,
     );
-    final ffiBridge =
-        await nativeModuleLoader.describe('local.runtime.desktop');
+    final ffiBridge = await nativeModuleLoader.describe(
+      'local.runtime.desktop',
+    );
     final supplementalAdapterCapabilities = normalizeCapabilitySnapshots([
       buildFfiAdapterCapability(
         visible: ffiBridge.state != NativeBridgeState.unavailable,
@@ -99,16 +104,18 @@ class AppBootstrap {
         detail: ffiBridge.detail,
       ),
       buildCloudAdapterCapability(
-        supportsCloudExecution: platformTarget == PlatformTarget.ios ||
+        supportsCloudExecution:
+            platformTarget == PlatformTarget.ios ||
             platformTarget == PlatformTarget.web ||
             platformTarget == PlatformTarget.android,
-        supportsHostedProjectGraph: platformTarget == PlatformTarget.ios ||
+        supportsHostedProjectGraph:
+            platformTarget == PlatformTarget.ios ||
             platformTarget == PlatformTarget.web,
         detail: platformTarget == PlatformTarget.web
             ? 'Hosted/cloud adapters back Web workspaces while local binaries stay unavailable.'
             : platformTarget == PlatformTarget.ios
-                ? 'iOS keeps cloud execution as the compliance floor.'
-                : 'Cloud adapters remain a supplement for mobile fallback and hosted workspaces.',
+            ? 'iOS keeps cloud execution as the compliance floor.'
+            : 'Cloud adapters remain a supplement for mobile fallback and hosted workspaces.',
       ),
     ]);
     final initialDocument = await workspaceDocumentStore.loadDocument(

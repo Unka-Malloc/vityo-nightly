@@ -4,14 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../../editor/editor_controller.dart';
 import '../../editor/document_state.dart';
-import '../../integration/adapter_contracts.dart';
-import '../../integration/dependency_source_adapter.dart';
-import '../../integration/deployment_adapter.dart';
-import '../../integration/execution_adapter.dart';
-import '../../integration/project_graph_adapter.dart';
-import '../../integration/project_graph_contract.dart';
-import '../../integration/runtime_event_adapter.dart';
-import '../../integration/toolchain_management_adapter.dart';
+import '../../backend_toolchain/adapter_contracts.dart';
+import '../../backend_toolchain/dependency_source_adapter.dart';
+import '../../backend_toolchain/deployment_adapter.dart';
+import '../../backend_toolchain/execution_adapter.dart';
+import '../../backend_toolchain/project_graph_adapter.dart';
+import '../../backend_toolchain/project_graph_contract.dart';
+import '../../backend_toolchain/runtime_event_adapter.dart';
+import '../../backend_toolchain/toolchain_management_adapter.dart';
 import '../../module_host/module_definition.dart';
 import '../../module_host/module_registry.dart';
 import '../../platform/native_module_loader.dart';
@@ -20,11 +20,7 @@ import '../commands/app_commands.dart';
 import 'workspace_document_store.dart';
 import 'workspace_controller.dart';
 
-enum BottomSurfaceTab {
-  runtime,
-  agent,
-  debug,
-}
+enum BottomSurfaceTab { runtime, agent, debug }
 
 class ShellModel extends ChangeNotifier {
   ShellModel({
@@ -42,23 +38,23 @@ class ShellModel extends ChangeNotifier {
     required DependencySourceAdapter dependencySourceAdapter,
     required DeploymentAdapter deploymentAdapter,
     required ToolchainManagementAdapter toolchainManagementAdapter,
-  })  : _activeBottomTab = BottomSurfaceTab.runtime,
-        _activeDocumentPath = workspaceController.activeFilePath,
-        _supplementalAdapterCapabilities =
-            List<AdapterCapabilitySnapshot>.unmodifiable(
-          supplementalAdapterCapabilities,
-        ),
-        _projectGraphAdapter = projectGraphAdapter,
-        _executionAdapterFactory = executionAdapterFactory,
-        _dependencySourceAdapter = dependencySourceAdapter,
-        _deploymentAdapter = deploymentAdapter,
-        _toolchainManagementAdapter = toolchainManagementAdapter,
-        _adapterCapabilities = normalizeCapabilitySnapshots([
-          projectGraphAdapter.capabilitySnapshot,
-          executionAdapter.capabilitySnapshot,
-          runtimeEventAdapter.capabilitySnapshot,
-          ...supplementalAdapterCapabilities,
-        ]) {
+  }) : _activeBottomTab = BottomSurfaceTab.runtime,
+       _activeDocumentPath = workspaceController.activeFilePath,
+       _supplementalAdapterCapabilities =
+           List<AdapterCapabilitySnapshot>.unmodifiable(
+             supplementalAdapterCapabilities,
+           ),
+       _projectGraphAdapter = projectGraphAdapter,
+       _executionAdapterFactory = executionAdapterFactory,
+       _dependencySourceAdapter = dependencySourceAdapter,
+       _deploymentAdapter = deploymentAdapter,
+       _toolchainManagementAdapter = toolchainManagementAdapter,
+       _adapterCapabilities = normalizeCapabilitySnapshots([
+         projectGraphAdapter.capabilitySnapshot,
+         executionAdapter.capabilitySnapshot,
+         runtimeEventAdapter.capabilitySnapshot,
+         ...supplementalAdapterCapabilities,
+       ]) {
     workspaceController.addListener(_handleWorkspaceChanged);
     editorController.addListener(_handleDocumentChanged);
     _documentCache[_activeDocumentPath] = editorController.document;
@@ -145,8 +141,9 @@ class ShellModel extends ChangeNotifier {
           activeFilePath: workspaceController.activeFilePath,
         );
         _lastExecutionSession = session;
-        _lastRuntimeEvents =
-            await runtimeEventAdapter.sessionEvents(session.sessionId).toList();
+        _lastRuntimeEvents = await runtimeEventAdapter
+            .sessionEvents(session.sessionId)
+            .toList();
         appendLog('Run ${session.status.name}: ${session.statusMessage}');
         for (final event in session.stdoutEvents.take(3)) {
           appendLog('stdout: ${event.message}');
@@ -209,9 +206,7 @@ class ShellModel extends ChangeNotifier {
         selectBottomTab(BottomSurfaceTab.debug);
         return;
       case AppCommandId.refreshModules:
-        appendLog(
-          'Module host refresh requested on ${platformTarget.label}.',
-        );
+        appendLog('Module host refresh requested on ${platformTarget.label}.');
         await refreshProjectGraph(
           reason: 'manual refresh requested from the shell command registry',
         );
@@ -262,9 +257,7 @@ class ShellModel extends ChangeNotifier {
           requiresPin: true,
         );
       case AppCommandId.packProject:
-        return _blockedDeploymentCommandReason(
-          projectGraph: projectGraph,
-        );
+        return _blockedDeploymentCommandReason(projectGraph: projectGraph);
       case AppCommandId.preparePublish:
         return _blockedDeploymentCommandReason(
           projectGraph: projectGraph,
@@ -340,14 +333,17 @@ class ShellModel extends ChangeNotifier {
       }
       final headline =
           'No publish-ready package is available: ${blockedPackages.map((package) => package.packageName).join(', ')}.';
-      final details = blockedPackages.take(2).expand((package) {
-        if (package.blockingReasons.isEmpty) {
-          return <String>[];
-        }
-        return <String>[
-          '${package.packageName}: ${package.blockingReasons.join(' | ')}',
-        ];
-      }).join(' ');
+      final details = blockedPackages
+          .take(2)
+          .expand((package) {
+            if (package.blockingReasons.isEmpty) {
+              return <String>[];
+            }
+            return <String>[
+              '${package.packageName}: ${package.blockingReasons.join(' | ')}',
+            ];
+          })
+          .join(' ');
       return details.isEmpty ? headline : '$headline $details';
     }
     return 'Multiple publish-ready packages are available. Select a package before publish: ${publishablePackages.map((package) => package.packageName).join(', ')}.';
@@ -587,7 +583,8 @@ class ShellModel extends ChangeNotifier {
     _documentCache[_activeDocumentPath] = editorController.document;
     final nextPath = workspaceController.activeFilePath;
     _activeDocumentPath = nextPath;
-    final nextDocument = _documentCache[nextPath] ??
+    final nextDocument =
+        _documentCache[nextPath] ??
         await workspaceDocumentStore.loadDocument(nextPath);
     if (_activeDocumentPath != nextPath) {
       return;

@@ -1,0 +1,28 @@
+{
+  "name": "styio-view",
+  "build": {
+    "dockerfile": "../docker/dev-env.Dockerfile",
+    "context": "..",
+    "args": {
+      "INCLUDE_ANDROID": "1",
+      "ANDROID_PROFILES": "android-35,android-36",
+      "ANDROID_DEFAULT_PROFILE": "android-36"
+    }
+  },
+  "remoteUser": "styio",
+  "workspaceFolder": "/workspace/styio-view",
+  "forwardPorts": [
+    4180
+  ],
+  "containerEnv": {
+    "STYIO_EDITOR_URL": "http://127.0.0.1:4180/editor.html"
+  },
+  "postCreateCommand": "./scripts/bootstrap-workspace.sh --platforms web,linux,android",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
