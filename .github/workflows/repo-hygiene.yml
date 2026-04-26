@@ -22,18 +22,38 @@ jobs:
           fetch-depth: 0
           path: styio-view
 
+      - name: Resolve sibling checkout ref
+        id: sibling-ref
+        shell: bash
+        run: |
+          requested="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            requested="${{ github.base_ref }}"
+          fi
+
+          for ref in "$requested" nightly; do
+            if git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-nightly.git "$ref" >/dev/null 2>&1 \
+              && git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-spio.git "$ref" >/dev/null 2>&1; then
+              echo "ref=$ref" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo "No common sibling checkout ref found for '$requested' or fallback 'nightly'." >&2
+          exit 1
+
       - name: Check out styio-nightly sibling repository
         uses: actions/checkout@v5
         with:
           repository: Unka-Malloc/styio-nightly
-          ref: ${{ github.ref_name }}
+          ref: ${{ steps.sibling-ref.outputs.ref }}
           path: styio-nightly
 
       - name: Check out styio-spio sibling repository
         uses: actions/checkout@v5
         with:
           repository: Unka-Malloc/styio-spio
-          ref: ${{ github.ref_name }}
+          ref: ${{ steps.sibling-ref.outputs.ref }}
           path: styio-spio
 
       - name: Set up standardized Python
