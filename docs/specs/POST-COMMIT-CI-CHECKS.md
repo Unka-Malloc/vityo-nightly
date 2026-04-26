@@ -2,7 +2,7 @@
 
 **Purpose:** Define the required workflow for checking GitHub Actions after a local commit is pushed, including what must be verified before committing and what must be watched after pushing.
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-25
 
 ## Scope
 
@@ -65,6 +65,18 @@ If `gh` is unavailable or unauthenticated, the agent must state that GitHub Acti
 When one delivery touches `styio-nightly`, `styio-spio`, and `styio-view`, post-push verification applies to every pushed repository. The agent should check each repository's GitHub Actions status, not only the repository that received the last commit.
 
 Cross-repository gates must use the same workspace checkout set that will be visible to CI. If a gate consumes another repository's branch, push that repository first or report that remote CI may still be using an older sibling checkout.
+
+## Delivery Ruleset Governance
+
+Required GitHub merge gates are maintained through GitHub Rulesets, not legacy classic branch protection. `ai-dev` and protected release/default branches must have an active Ruleset requiring the `audit` status check from the `audit` workflow, with strict required status checks enabled.
+
+Gate audits must inspect effective branch rules, for example:
+
+```bash
+gh api repos/Unka-Malloc/styio-view/rules/branches/ai-dev
+```
+
+Do not use `branches/ai-dev/protection/required_status_checks` as the authority for this repository. That legacy classic endpoint can return 404 even when the Ruleset gate is active.
 
 ## Completion Criteria
 
