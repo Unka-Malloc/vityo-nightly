@@ -16,7 +16,7 @@ jobs:
       STYIO_PYTHON_VERSION: "3.13.5"
       STYIO_NODE_VERSION: "24.15.0"
       STYIO_FLUTTER_VERSION: "3.41.7"
-      STYIO_CHROMIUM_VERSION: "147.0.7727.101"
+      STYIO_CHROMIUM_VERSION: "147.0.7727.116"
 
     steps:
       - name: Checkout styio-view

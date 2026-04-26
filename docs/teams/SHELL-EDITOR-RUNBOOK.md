@@ -36,7 +36,7 @@ Key SSOTs:
 3. 若 Flutter 壳层和手写原型都受影响，先明确哪条是主验证线，再同步另一条的约束或 handoff。
 4. 变更编辑语义、光标、selection 或 inspector 流程时，同时检查测试目录映射是否要补。
 5. 手写原型入口或自测说明变化时，同批更新 `prototype/README.md`，不要把 focused editor 运行方式留在仓库级入口里漂移。
-6. Flutter 主壳与手写原型的工具链说明必须保持显式版本钉住：Flutter `3.41.7` / Dart `3.11.5`、Node.js `v24.15.0` LTS、Chromium `147.0.7727.101`。
+6. Flutter 主壳与手写原型的工具链说明必须保持显式版本钉住：Flutter `3.41.7` / Dart `3.11.5`、Node.js `v24.15.0` LTS、Chromium `147.0.7727.116`。
 7. `prototype/package.json` 与 `package-lock.json` 的 Node 依赖必须用锁文件可复现的精确版本，并优先用 `npm ci` 而不是 `npm install`。
 8. Flutter shell 的 app bootstrap、workspace controller、document store 和 command registry 只能消费 `backend_toolchain` 的正式 adapter surface；legacy `integration/` export 只用于兼容测试。
 9. product gate 测试若需要 `STYIO_VIEW_PRODUCT_GATE=1`，在本轮最小闭环中保持显式跳过策略，不把 gated workflow 写成默认 shell 验证要求。

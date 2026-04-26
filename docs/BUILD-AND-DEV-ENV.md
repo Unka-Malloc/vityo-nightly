@@ -56,7 +56,7 @@ Device verification stays host-driven:
 3. Validation Python standard: `3.13.5`.
 4. Node.js standard for prototype tooling: `v24.15.0` LTS.
 5. Flutter / Dart standard: `3.41.7` / `3.11.5`.
-6. Chromium standard for web verification: `147.0.7727.101`.
+6. Chromium standard for web verification: `147.0.7727.116`.
 7. Android combo add-on standard is profile-driven on Linux, macOS, and Windows: command-line tools `14742923`, shared `platform-tools`, and the standardized profile set `android-35`, `android-36`, each with its own pinned platform/build-tools/NDK tuple from [../toolchain/android-sdk-profiles.csv](../toolchain/android-sdk-profiles.csv).
 8. Apple build profiles on macOS are standardized in [../toolchain/apple-platform-profiles.csv](../toolchain/apple-platform-profiles.csv). These profiles pin iOS/macOS deployment targets and optionally select a specific `DEVELOPER_DIR` / Xcode installation.
 9. CI mirror: GitHub Actions on `ubuntu-24.04`, plus exact Python, Node.js, Flutter, and Chromium version pins before validation steps.
@@ -65,7 +65,7 @@ Device verification stays host-driven:
 
 1. Flutter `3.41.7` with Dart `3.11.5` and the Linux, Web, and Android targets enabled.
 2. Android SDK command-line tools, platform tools, build tools, and NDK.
-3. Chromium `147.0.7727.101` for local web verification.
+3. Chromium `147.0.7727.116` for local web verification.
 4. Node.js `v24.15.0` LTS and npm for the handwritten prototype.
 5. Python `3.13.5` for docs and repository hygiene scripts.
 6. On macOS, full iOS add-on support also requires Xcode. The script can validate and wire it, but Apple-controlled Xcode installation may still require App Store or Apple developer authentication.

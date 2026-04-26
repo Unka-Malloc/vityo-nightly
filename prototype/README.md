@@ -7,7 +7,7 @@
 
 仓库级 bootstrap、共享工具链和常用验证命令见 [../docs/BUILD-AND-DEV-ENV.md](../docs/BUILD-AND-DEV-ENV.md)；本页只描述手写原型本身。
 
-当前标准原型工具链固定为 `Node.js v24.15.0 LTS` 与 `Chromium 147.0.7727.101`。
+当前标准原型工具链固定为 `Node.js v24.15.0 LTS` 与 `Chromium 147.0.7727.116`。
 
 ## Files
 
