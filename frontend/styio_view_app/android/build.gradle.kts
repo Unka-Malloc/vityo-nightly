@@ -1,3 +1,9 @@
+import org.gradle.api.provider.Provider
+
+fun providerString(propertyName: String, envName: String): Provider<String> =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(envName))
+
 allprojects {
     repositories {
         google()
@@ -5,9 +11,13 @@ allprojects {
     }
 }
 
+val styioAndroidBuildRoot =
+    providerString("styioAndroidBuildRoot", "STYIO_ANDROID_BUILD_ROOT")
+        .orElse("../../build")
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
-        .dir("../../build")
+        .dir(styioAndroidBuildRoot)
         .get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 

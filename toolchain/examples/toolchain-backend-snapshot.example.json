@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "surface": "styio-view.toolchain-backend",
+  "note": "Non-normative example for local mocks. Product-contract truth lives in docs/contracts/ and upstream repo contracts.",
+  "workspace": {
+    "workspace_id": null,
+    "project_root": "/workspace/demo"
+  },
+  "route": {
+    "kind": "local-cli",
+    "hosted_control_plane": false
+  },
+  "upstream_sources": {
+    "styio_nightly": {
+      "authority": "compiler and managed toolchain SSOT",
+      "channel": "nightly"
+    },
+    "styio_spio": {
+      "authority": "project graph, toolchain state, hosted control plane",
+      "workspace_id": null
+    }
+  },
+  "profiles": {
+    "android": {
+      "default": "android-36",
+      "selected": "android-36"
+    },
+    "apple": {
+      "ios_default": "ios-13",
+      "macos_default": "macos-10.15"
+    }
+  },
+  "toolchain_state": {
+    "status": "partial",
+    "compiler_version": "0.0.0-nightly.20260421",
+    "channel": "nightly",
+    "install_root": "/workspace/.cache/styio/toolchains/nightly",
+    "install_binary_path": "/workspace/.cache/styio/toolchains/nightly/bin/styio"
+  },
+  "capabilities": {
+    "install": true,
+    "use": true,
+    "pin": true,
+    "clear_pin": true,
+    "hosted_workspace": false
+  },
+  "blocked_reasons": [
+    {
+      "code": "hosted-workspace-unavailable",
+      "message": "Hosted workspace identity is missing, so hosted toolchain routes remain blocked."
+    }
+  ]
+}

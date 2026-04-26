@@ -50,14 +50,8 @@ class StyioCommandRegistry {
       shortcutHint: 'Cmd/Ctrl+S',
       description: 'Persist the current workspace target.',
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.keyS,
-          control: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.keyS,
-          meta: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.keyS, control: true),
+        SingleActivator(LogicalKeyboardKey.keyS, meta: true),
       ],
     ),
     AppCommandDescriptor(
@@ -67,14 +61,8 @@ class StyioCommandRegistry {
       description: 'Run the active minimal compilable unit.',
       primary: true,
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.enter,
-          control: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.enter,
-          meta: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.enter, control: true),
+        SingleActivator(LogicalKeyboardKey.enter, meta: true),
       ],
     ),
     AppCommandDescriptor(
@@ -84,16 +72,8 @@ class StyioCommandRegistry {
       description: 'Materialize dependency sources into the local spio cache.',
       primary: true,
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.keyF,
-          control: true,
-          shift: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.keyF,
-          meta: true,
-          shift: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true),
       ],
     ),
     AppCommandDescriptor(
@@ -103,16 +83,8 @@ class StyioCommandRegistry {
       description: 'Materialize project-local vendored dependency snapshots.',
       primary: true,
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.keyV,
-          control: true,
-          shift: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.keyV,
-          meta: true,
-          shift: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.keyV, control: true, shift: true),
+        SingleActivator(LogicalKeyboardKey.keyV, meta: true, shift: true),
       ],
     ),
     AppCommandDescriptor(
@@ -153,10 +125,7 @@ class StyioCommandRegistry {
       shortcutHint: 'Shift+1',
       description: 'Focus the runtime surface.',
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.digit1,
-          shift: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.digit1, shift: true),
       ],
     ),
     AppCommandDescriptor(
@@ -165,10 +134,7 @@ class StyioCommandRegistry {
       shortcutHint: 'Shift+2',
       description: 'Focus the agent surface.',
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.digit2,
-          shift: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.digit2, shift: true),
       ],
     ),
     AppCommandDescriptor(
@@ -177,10 +143,7 @@ class StyioCommandRegistry {
       shortcutHint: 'Shift+3',
       description: 'Focus the debug console.',
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.digit3,
-          shift: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.digit3, shift: true),
       ],
     ),
     AppCommandDescriptor(
@@ -191,14 +154,8 @@ class StyioCommandRegistry {
           'Refresh module host state, project graph, and toolchain contracts.',
       primary: true,
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.keyR,
-          control: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.keyR,
-          meta: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.keyR, control: true),
+        SingleActivator(LogicalKeyboardKey.keyR, meta: true),
       ],
     ),
     AppCommandDescriptor(
@@ -207,14 +164,8 @@ class StyioCommandRegistry {
       shortcutHint: 'Cmd/Ctrl+,',
       description: 'Open settings and profile routes.',
       shortcuts: <ShortcutActivator>[
-        SingleActivator(
-          LogicalKeyboardKey.comma,
-          control: true,
-        ),
-        SingleActivator(
-          LogicalKeyboardKey.comma,
-          meta: true,
-        ),
+        SingleActivator(LogicalKeyboardKey.comma, control: true),
+        SingleActivator(LogicalKeyboardKey.comma, meta: true),
       ],
     ),
   ];
@@ -223,46 +174,43 @@ class StyioCommandRegistry {
       commands.where((command) => command.primary);
 
   static Iterable<AppCommandDescriptor> get executionCommands => commands.where(
-        (command) => switch (command.id) {
-          AppCommandId.run => true,
-          _ => false,
-        },
-      );
+    (command) => switch (command.id) {
+      AppCommandId.run => true,
+      _ => false,
+    },
+  );
 
   static Iterable<AppCommandDescriptor> get dependencyCommands =>
       commands.where(
         (command) => switch (command.id) {
           AppCommandId.fetchDependencies ||
-          AppCommandId.vendorDependencies =>
-            true,
+          AppCommandId.vendorDependencies => true,
           _ => false,
         },
       );
 
   static Iterable<AppCommandDescriptor> get toolchainCommands => commands.where(
-        (command) => switch (command.id) {
-          AppCommandId.useActiveCompiler ||
-          AppCommandId.pinActiveCompiler ||
-          AppCommandId.clearPinnedCompiler =>
-            true,
-          _ => false,
-        },
-      );
+    (command) => switch (command.id) {
+      AppCommandId.useActiveCompiler ||
+      AppCommandId.pinActiveCompiler ||
+      AppCommandId.clearPinnedCompiler => true,
+      _ => false,
+    },
+  );
 
   static Iterable<AppCommandDescriptor> get workflowCommands => commands.where(
-        (command) => switch (command.id) {
-          AppCommandId.run ||
-          AppCommandId.fetchDependencies ||
-          AppCommandId.vendorDependencies ||
-          AppCommandId.useActiveCompiler ||
-          AppCommandId.pinActiveCompiler ||
-          AppCommandId.clearPinnedCompiler ||
-          AppCommandId.packProject ||
-          AppCommandId.preparePublish =>
-            true,
-          _ => false,
-        },
-      );
+    (command) => switch (command.id) {
+      AppCommandId.run ||
+      AppCommandId.fetchDependencies ||
+      AppCommandId.vendorDependencies ||
+      AppCommandId.useActiveCompiler ||
+      AppCommandId.pinActiveCompiler ||
+      AppCommandId.clearPinnedCompiler ||
+      AppCommandId.packProject ||
+      AppCommandId.preparePublish => true,
+      _ => false,
+    },
+  );
 
   static Iterable<AppCommandDescriptor> get deploymentCommands =>
       commands.where(

@@ -2,16 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_adapter_io.dart'
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_adapter_io.dart'
     show debugOverrideProjectGraphEnvironment;
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
-  test('project graph adapter discovers canonical spio package files',
-      () async {
+  test('project graph adapter discovers canonical spio package files', () async {
     final tempRoot = await Directory.systemTemp.createTemp(
       'styio_view_project_graph_test_',
     );
@@ -76,8 +75,8 @@ path = "tests/render_flow.styio"
       '${tempRoot.path}${Platform.pathSeparator}tests',
     ).createSync(recursive: true);
     File(
-      '${tempRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}render-kit${Platform.pathSeparator}spio.toml',
-    )
+        '${tempRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}render-kit${Platform.pathSeparator}spio.toml',
+      )
       ..createSync(recursive: true)
       ..writeAsStringSync('''
 [package]

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../integration/execution_adapter.dart';
+import '../backend_toolchain/execution_adapter.dart';
 import '../platform/viewport_profile.dart';
 import 'runtime_replay_summary.dart';
 
@@ -19,8 +19,9 @@ class DebugConsoleSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final latestRuntimeEvent =
-        runtimeEvents.isEmpty ? null : runtimeEvents.last;
+    final latestRuntimeEvent = runtimeEvents.isEmpty
+        ? null
+        : runtimeEvents.last;
     final latestEntry = latestRuntimeEvent == null
         ? null
         : formatRuntimeEvent(latestRuntimeEvent);
@@ -32,7 +33,8 @@ class DebugConsoleSurface extends StatelessWidget {
     final replayWindow = runtimeEvents.isEmpty
         ? 'No runtime replay window yet.'
         : 'window ${formatRuntimeClock(runtimeEvents.first.timestamp)} -> ${formatRuntimeClock(runtimeEvents.last.timestamp)}';
-    final latestLine = latestEntry ??
+    final latestLine =
+        latestEntry ??
         (entries.isEmpty ? 'No host events yet.' : entries.first);
     final combinedEntries = <String>[
       ...runtimeEvents.reversed.map(formatRuntimeEvent),
@@ -122,10 +124,7 @@ class DebugConsoleSurface extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        replayWindow,
-                        style: theme.textTheme.bodySmall,
-                      ),
+                      Text(replayWindow, style: theme.textTheme.bodySmall),
                       if (replayFamilies.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
@@ -146,7 +145,9 @@ class DebugConsoleSurface extends StatelessWidget {
                             style: theme.textTheme.bodySmall,
                           ),
                         ],
-                        ...graph.nodeDetails.take(3).map(
+                        ...graph.nodeDetails
+                            .take(3)
+                            .map(
                               (detail) => Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Column(
@@ -170,7 +171,9 @@ class DebugConsoleSurface extends StatelessWidget {
                                 ),
                               ),
                             ),
-                        ...graph.edgeDetails.take(2).map(
+                        ...graph.edgeDetails
+                            .take(2)
+                            .map(
                               (detail) => Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Column(

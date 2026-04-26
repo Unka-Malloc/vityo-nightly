@@ -5,12 +5,16 @@
 这里同时也是当前仓库里“给人维护的 Web Editor 入口”。
 `frontend/styio_view_app/build/web` 之类的 Flutter 生成物只用于构建验证，不作为人工维护页面。
 
+仓库级 bootstrap、共享工具链和常用验证命令见 [../docs/BUILD-AND-DEV-ENV.md](../docs/BUILD-AND-DEV-ENV.md)；本页只描述手写原型本身。
+
+当前标准原型工具链固定为 `Node.js v24.15.0 LTS` 与 `Chromium 147.0.7727.116`。
+
 ## Files
 
 1. `index.html`: 页面结构
 2. `styles.css`: 视觉系统与布局
 3. `app.js`: 编辑器、模块、runtime 与保存交互
-4. `dev_server.py`: 本地开发服务，提供静态资源和工作区保存 API
+4. `dev_server.py`: 本地开发服务，提供静态资源和受保护的工作区 API
 5. `workspace/*.styio`: 原型编辑器真实加载和保存的本地文件
 6. `CHANGELOG.md`: 每轮页面可见变化记录
 7. `editor.html` / `editor.css` / `editor.js`: 当前人工维护的 focused Web Editor 页面
@@ -51,7 +55,7 @@
 13. 点击 `Staged: 1` 后会出现 restart banner，表达热更新在下次重启时切换新模块
 14. 在左侧 `Raw Source Buffer` 里直接输入源码，右侧 `Render Projection` 会实时重绘符号和函数块表面
 15. 当前 `Ctrl+Enter` 会先检查最小可编译单元；未闭合的函数块会直接给出 compile blocked
-16. 点击 `Save` 或按 `Command/Ctrl+S` 会把当前文件写回 `prototype/workspace/<file>.styio`
+16. 启动服务时显式设置 `STYIO_DEV_SERVER_ENABLE_MUTATION=1` 后，点击 `Save` 或按 `Command/Ctrl+S` 会把当前文件写回 `prototype/workspace/<file>.styio`
 17. 访问 `http://127.0.0.1:4173/editor.html` 可以打开只保留单一编辑面的 focused editor 版本
 18. focused editor 右上角按钮会呼出右侧抽屉，里面分成 `目录树` 和 `设置` 两个 Tab
 19. focused editor 当前固定只维护 `main.styio`，不再混入其它非主线示例文件
@@ -86,14 +90,23 @@
 ## Self-Test
 
 1. 在 `prototype/` 下运行 `npm run selftest:editor`
-2. 这条脚本会自动检查 `editor.html` 是否可打开，并在需要时自动启动 `dev_server.py`
-3. 自测会覆盖：
+2. 若使用仓库内的 `dev_server.py`，请显式设置 `STYIO_EDITOR_URL=http://127.0.0.1:4180/editor.html`
+3. 这条脚本会自动检查 `editor.html` 是否可打开，并在需要时自动启动 `dev_server.py`
+4. 自测会覆盖：
    - 页面基础资源加载
    - 侧边栏展开
    - 设置页切换
    - `Theme` 的 `Palette` 和 `Light / Dark`
    - `Symbol Highlight` 展开
-4. 若失败，会在 `prototype/.artifacts/editor-load-failure.png` 写出失败截图
+5. 若失败，会在 `prototype/.artifacts/editor-load-failure.png` 写出失败截图
+
+## Local Dev Server Security
+
+1. `dev_server.py` 只绑定 `127.0.0.1:4180`，并拒绝非 `localhost` / `127.0.0.1` / `::1` 的 `Host`。
+2. 静态页面响应会设置 `HttpOnly; SameSite=Strict` 的本进程 session cookie；所有 `/api/` 路由都必须携带这个 cookie，或携带 `X-Styio-Dev-Server-Token` / `Authorization: Bearer` 中的当前 session token。
+3. 所有 `POST /api/` 写入路由还必须带同源 `Origin`，并且只有设置 `STYIO_DEV_SERVER_ENABLE_MUTATION=1` 后才会执行本地文件写入。
+4. 若需要固定 token 供本地自动化调用，可在启动服务前设置 `STYIO_DEV_SERVER_TOKEN=<token>`。
+5. 边界回归验证：在仓库根目录运行 `python3 -m unittest prototype/test_dev_server_security.py`。
 
 ## Maintenance Rule
 

@@ -47,16 +47,13 @@ class FileSystemWorkspaceDocumentStore implements WorkspaceDocumentStore {
     if (await metadataFile.exists()) {
       final metadata = jsonDecode(await metadataFile.readAsString());
       if (metadata is Map<String, dynamic>) {
-        revision =
-            metadata['revision'] is int ? metadata['revision'] as int : 0;
+        revision = metadata['revision'] is int
+            ? metadata['revision'] as int
+            : 0;
       }
     }
 
-    return DocumentState(
-      documentId: path,
-      text: text,
-      revision: revision,
-    );
+    return DocumentState(documentId: path, text: text, revision: revision);
   }
 
   @override
@@ -74,9 +71,7 @@ class FileSystemWorkspaceDocumentStore implements WorkspaceDocumentStore {
     await sourceFile.parent.create(recursive: true);
     await sourceFile.writeAsString(document.text);
     await metadataFile.writeAsString(
-      jsonEncode(<String, Object>{
-        'revision': document.revision,
-      }),
+      jsonEncode(<String, Object>{'revision': document.revision}),
     );
   }
 
@@ -93,10 +88,7 @@ class FileSystemWorkspaceDocumentStore implements WorkspaceDocumentStore {
         .split('/')
         .where((segment) => segment.isNotEmpty)
         .map(Uri.encodeComponent);
-    return [
-      rootDirectory.path,
-      ...segments,
-    ].join(Platform.pathSeparator);
+    return [rootDirectory.path, ...segments].join(Platform.pathSeparator);
   }
 
   bool _isAbsolutePath(String path) {

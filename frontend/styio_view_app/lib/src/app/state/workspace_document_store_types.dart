@@ -28,11 +28,7 @@ class SharedPreferencesWorkspaceDocumentStore
       return EditorSessionController.seedDocumentForPath(path);
     }
 
-    return DocumentState(
-      documentId: path,
-      text: text,
-      revision: revision ?? 0,
-    );
+    return DocumentState(documentId: path, text: text, revision: revision ?? 0);
   }
 
   @override
@@ -50,10 +46,8 @@ class SharedPreferencesWorkspaceDocumentStore
 }
 
 class InMemoryWorkspaceDocumentStore implements WorkspaceDocumentStore {
-  InMemoryWorkspaceDocumentStore({
-    Map<String, DocumentState>? seededDocuments,
-  }) : _documents =
-            Map<String, DocumentState>.from(seededDocuments ?? const {});
+  InMemoryWorkspaceDocumentStore({Map<String, DocumentState>? seededDocuments})
+    : _documents = Map<String, DocumentState>.from(seededDocuments ?? const {});
 
   final Map<String, DocumentState> _documents;
 

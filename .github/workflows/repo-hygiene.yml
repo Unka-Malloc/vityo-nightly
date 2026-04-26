@@ -1,0 +1,83 @@
+name: repo-hygiene
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      STYIO_PYTHON_VERSION: "3.13.5"
+
+    steps:
+      - name: Checkout styio-view
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          path: styio-view
+
+      - name: Resolve sibling checkout ref
+        id: sibling-ref
+        shell: bash
+        run: |
+          requested="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
+            requested="${{ github.base_ref }}"
+          fi
+
+          for ref in "$requested" nightly; do
+            if git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-nightly.git "$ref" >/dev/null 2>&1 \
+              && git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-spio.git "$ref" >/dev/null 2>&1; then
+              echo "ref=$ref" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo "No common sibling checkout ref found for '$requested' or fallback 'nightly'." >&2
+          exit 1
+
+      - name: Check out styio-nightly sibling repository
+        uses: actions/checkout@v5
+        with:
+          repository: Unka-Malloc/styio-nightly
+          ref: ${{ steps.sibling-ref.outputs.ref }}
+          path: styio-nightly
+
+      - name: Check out styio-spio sibling repository
+        uses: actions/checkout@v5
+        with:
+          repository: Unka-Malloc/styio-spio
+          ref: ${{ steps.sibling-ref.outputs.ref }}
+          path: styio-spio
+
+      - name: Set up standardized Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.STYIO_PYTHON_VERSION }}
+
+      - name: Check tracked tree
+        working-directory: styio-view
+        run: python3 scripts/repo-hygiene-gate.py --mode tracked
+
+      - name: Check ecosystem CLI doc consistency
+        working-directory: styio-view
+        run: python3 scripts/ecosystem-cli-doc-gate.py --require-workspace --json
+
+      - name: Check incoming history range
+        shell: bash
+        working-directory: styio-view
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            RANGE="HEAD"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          python3 scripts/repo-hygiene-gate.py --mode push --range "$RANGE"

@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/adapter_contracts.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/adapter_contracts.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 import 'package:styio_view_app/src/platform/viewport_profile.dart';
 import 'package:styio_view_app/src/runtime/debug_console_surface.dart';
 import 'package:styio_view_app/src/runtime/runtime_surface.dart';
 
 void main() {
-  testWidgets('runtime surface renders published runtime event replay',
-      (tester) async {
+  testWidgets('runtime surface renders published runtime event replay', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: RuntimeSurface(
@@ -105,9 +106,7 @@ void main() {
               timestamp: DateTime.utc(2026, 4, 17, 0, 0, 1),
               eventKind: 'state.changed',
               origin: 'styio.session',
-              payload: const <String, Object?>{
-                'phase': 'executed',
-              },
+              payload: const <String, Object?>{'phase': 'executed'},
             ),
             RuntimeEventEnvelope(
               schemaVersion: 1,
@@ -116,9 +115,7 @@ void main() {
               timestamp: DateTime.utc(2026, 4, 17, 0, 0, 1),
               eventKind: 'thread.spawned',
               origin: 'styio.runtime',
-              payload: const <String, Object?>{
-                'thread_id': 'main',
-              },
+              payload: const <String, Object?>{'thread_id': 'main'},
             ),
             RuntimeEventEnvelope(
               schemaVersion: 1,
@@ -175,7 +172,8 @@ void main() {
     expect(find.text('Execution Graph'), findsOneWidget);
     expect(
       find.text(
-          '10 event(s) across 8 family/families. Window 00:00:00 -> 00:00:01.'),
+        '10 event(s) across 8 family/families. Window 00:00:00 -> 00:00:01.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Runtime Lanes'), findsOneWidget);
@@ -202,7 +200,8 @@ void main() {
     );
     expect(
       find.textContaining(
-          '00:00:00 compile.started · compile.started · intent=run'),
+        '00:00:00 compile.started · compile.started · intent=run',
+      ),
       findsOneWidget,
     );
     expect(find.text('empty -> tokenized'), findsWidgets);
@@ -220,7 +219,8 @@ void main() {
     expect(find.text('detail=intent=run'), findsWidgets);
     expect(
       find.text(
-          'filter node=compile.started · event=compile.started · detail=intent=run'),
+        'filter node=compile.started · event=compile.started · detail=intent=run',
+      ),
       findsOneWidget,
     );
     expect(find.text('00:00:00 -> 00:00:00'), findsWidgets);
@@ -248,11 +248,15 @@ void main() {
     expect(find.text('stream=stdout'), findsWidgets);
     expect(find.text('filter family=thread · thread_id=main'), findsOneWidget);
     expect(
-        find.text('filter family=unit.test · test_name=smoke'), findsOneWidget);
+      find.text('filter family=unit.test · test_name=smoke'),
+      findsOneWidget,
+    );
     expect(find.text('filter family=log · stream=stdout'), findsOneWidget);
     expect(find.text('trace thread.spawned'), findsOneWidget);
-    expect(find.text('trace unit.test.started -> unit.test.finished'),
-        findsOneWidget);
+    expect(
+      find.text('trace unit.test.started -> unit.test.finished'),
+      findsOneWidget,
+    );
     expect(find.text('trace log.emitted'), findsOneWidget);
     expect(find.text('main'), findsOneWidget);
     expect(find.text('smoke'), findsWidgets);
@@ -265,20 +269,24 @@ void main() {
     expect(find.text('active lane'), findsNWidgets(2));
     expect(find.text('observed lane'), findsNWidgets(3));
     expect(
-        find.textContaining('#1 00:00:00 compile.started · styio.compile-plan'),
-        findsOneWidget);
+      find.textContaining('#1 00:00:00 compile.started · styio.compile-plan'),
+      findsOneWidget,
+    );
     expect(find.text('unit_id=demo/app::test:smoke'), findsWidgets);
     expect(find.text('test_name=smoke'), findsWidgets);
     expect(
-        find.text('Latest run.finished from styio.runtime.'), findsOneWidget);
+      find.text('Latest run.finished from styio.runtime.'),
+      findsOneWidget,
+    );
     expect(
-        find.textContaining(
-            'session runtime-session-test · 10 runtime event(s)'),
-        findsOneWidget);
+      find.textContaining('session runtime-session-test · 10 runtime event(s)'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('debug console includes runtime event replay lines',
-      (tester) async {
+  testWidgets('debug console includes runtime event replay lines', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -288,9 +296,7 @@ void main() {
               width: 1440,
               height: 900,
             ),
-            entries: const <String>[
-              '12:00:00  host log line',
-            ],
+            entries: const <String>['12:00:00  host log line'],
             runtimeEvents: <RuntimeEventEnvelope>[
               RuntimeEventEnvelope(
                 schemaVersion: 1,
@@ -343,9 +349,7 @@ void main() {
                 timestamp: DateTime.utc(2026, 4, 17, 0, 0, 1),
                 eventKind: 'state.changed',
                 origin: 'styio.session',
-                payload: const <String, Object?>{
-                  'phase': 'executed',
-                },
+                payload: const <String, Object?>{'phase': 'executed'},
               ),
               RuntimeEventEnvelope(
                 schemaVersion: 1,
@@ -354,9 +358,7 @@ void main() {
                 timestamp: DateTime.utc(2026, 4, 17, 0, 0, 1),
                 eventKind: 'thread.spawned',
                 origin: 'styio.runtime',
-                payload: const <String, Object?>{
-                  'thread_id': 'main',
-                },
+                payload: const <String, Object?>{'thread_id': 'main'},
               ),
               RuntimeEventEnvelope(
                 schemaVersion: 1,
@@ -413,13 +415,17 @@ void main() {
     expect(find.text('Debug Console'), findsOneWidget);
     expect(find.text('runtime 10'), findsOneWidget);
     expect(find.text('8 family'), findsOneWidget);
-    expect(find.textContaining('[runtime #10] 00:00:01 run.finished'),
-        findsWidgets);
+    expect(
+      find.textContaining('[runtime #10] 00:00:01 run.finished'),
+      findsWidgets,
+    );
     expect(find.text('window 00:00:00 -> 00:00:01'), findsOneWidget);
     expect(
-        find.text(
-            'families compile, unit, unit.test, transition, state, thread, log, run'),
-        findsOneWidget);
+      find.text(
+        'families compile, unit, unit.test, transition, state, thread, log, run',
+      ),
+      findsOneWidget,
+    );
     expect(
       find.text(
         '8 node(s) / 1 explicit edge(s) derived from 10 runtime event(s). Terminal node run.finished.',
@@ -439,17 +445,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text(
-        'node empty: node=empty · event=transition.fired',
-      ),
+      find.text('node empty: node=empty · event=transition.fired'),
       findsOneWidget,
     );
-    expect(
-      find.text(
-        'relations out empty -> tokenized',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('relations out empty -> tokenized'), findsOneWidget);
     expect(
       find.text(
         'edge empty -> tokenized: edge=empty -> tokenized · event=transition.fired',
@@ -471,38 +470,32 @@ void main() {
       find.text('Log Lane: log.emitted · stdout · compile-plan-run'),
       findsOneWidget,
     );
-    expect(
-      find.text('filter family=thread · thread_id=main'),
-      findsOneWidget,
-    );
+    expect(find.text('filter family=thread · thread_id=main'), findsOneWidget);
     expect(
       find.text('filter family=unit.test · test_name=smoke'),
       findsOneWidget,
     );
-    expect(
-      find.text('filter family=log · stream=stdout'),
-      findsOneWidget,
-    );
+    expect(find.text('filter family=log · stream=stdout'), findsOneWidget);
   });
 }
 
 ProjectGraphSnapshot _projectGraph() {
-  return ProjectGraphSnapshot(
+  return const ProjectGraphSnapshot(
     id: '/workspace/demo/spio.toml',
     title: 'demo/app',
     kind: ProjectKind.package,
     workspaceRoot: '/workspace/demo',
-    workspaceMembers: const <String>[],
+    workspaceMembers: <String>[],
     manifestPath: '/workspace/demo/spio.toml',
     lockfilePath: '/workspace/demo/spio.lock',
     toolchainPinPath: '/workspace/demo/spio-toolchain.toml',
     vendorRoot: '/workspace/demo/.spio/vendor',
     buildRoot: '/workspace/demo/.spio/build',
-    packages: const <ProjectPackageSnapshot>[],
-    dependencies: const <ProjectDependencySnapshot>[],
-    targets: const <ProjectTargetDescriptor>[],
-    editorFiles: const <String>['/workspace/demo/src/main.styio'],
-    toolchain: const ToolchainStatusSnapshot(
+    packages: <ProjectPackageSnapshot>[],
+    dependencies: <ProjectDependencySnapshot>[],
+    targets: <ProjectTargetDescriptor>[],
+    editorFiles: <String>['/workspace/demo/src/main.styio'],
+    toolchain: ToolchainStatusSnapshot(
       source: ToolchainResolutionSource.projectPin,
       detail: 'test fixture toolchain',
       channel: 'stable',
@@ -510,7 +503,7 @@ ProjectGraphSnapshot _projectGraph() {
     ),
     lockState: ProjectLockState.unknown,
     vendorState: ProjectVendorState.present,
-    activeCompiler: const CompilerHandshakeSnapshot(
+    activeCompiler: CompilerHandshakeSnapshot(
       binaryPath: '/toolchains/styio/bin/styio',
       tool: 'styio',
       compilerVersion: '0.0.1',
@@ -532,6 +525,6 @@ ProjectGraphSnapshot _projectGraph() {
         'runtime_event_stream': true,
       },
     ),
-    notes: const <String>[],
+    notes: <String>[],
   );
 }

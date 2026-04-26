@@ -2,7 +2,7 @@
 
 **Purpose:** 定义 `styio-view` 的文档目录、单一事实来源、联动更新规则与最小维护要求；产品行为与系统边界分别以 `docs/design/` 中的权威文档为准。
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-21
 
 ## 0. 文档维护准则
 
@@ -30,7 +30,7 @@
 | 三仓文件治理对齐 | `../plans/Styio-Ecosystem-File-Governance-Alignment-Plan.md` | 链接，不重写治理里程碑定义 |
 | 第三方依赖清单 | `THIRD-PARTY.md` | 与实现同步更新 |
 | 跨工作流实施计划 | `../plans/Styio-View-Implementation-Plan.md` | 链接 |
-| `styio` 对接边界与接口合同 | `../for-styio/` | 链接 |
+| `styio` 对接边界与接口合同 | `../external/for-styio/` | 链接 |
 | 冻结里程碑与任务清单 | `../milestones/<YYYY-MM-DD>/00-Milestone-Index.md` | 链接 |
 | 测试与验收映射 | `../assets/workflow/TEST-CATALOG.md` | 链接 |
 | 架构裁决 | `../adr/` | 只保留决策摘要 |
@@ -60,7 +60,7 @@
 | `docs/rollups/` | 当前状态摘要与活跃 gap ledger |
 | `docs/history/` | 按日记录与恢复信息 |
 | `docs/archive/` | 已归档 provenance 与 lifecycle 元数据 |
-| `docs/for-styio/` | 与上游 `styio` 的接口、责任边界与对接清单 |
+| `docs/external/for-styio/` | 与上游 `styio` 的接口、责任边界与对接清单 |
 | `docs/teams/` | 团队 runbook、ownership 路由与 handoff 入口 |
 
 ## 2. 联动更新规则
@@ -78,7 +78,7 @@
 6. 若一次变更改动了三仓共同里程碑、repo exit、checkpoint ID 或跨仓 cutover 条件，必须先更新 `../plans/Styio-Ecosystem-Delivery-Master-Plan.md` 镜像，再更新 `../plans/Styio-View-Implementation-Plan.md` 与对应 handoff 文档。
 7. 若一次变更改动了 docs tree、索引生成规则、archive/rollup lifecycle、ignore-policy 或 fixture 反忽略规则，必须先更新 `../plans/Styio-Ecosystem-File-Governance-Alignment-Plan.md` 镜像，再更新本文件、`../teams/COORDINATION-RUNBOOK.md` 和受影响目录入口。
 8. docs tree 变化后，必须运行 `python3 scripts/docs-lifecycle.py refresh`、`python3 scripts/docs-index.py --write`、`python3 scripts/docs-audit.py`。
-9. 根 `.gitignore` 若扩展 temp/build/log/cache 忽略规则，必须同批补 `docs/**` 与 `frontend/styio_view_app/test/**` 的显式 negate 规则，并让 `python3 scripts/check_repo_hygiene.py` 通过。
+9. 根 `.gitignore` 若扩展 temp/build/log/cache 忽略规则，必须同批补 `docs/**` 与 `frontend/styio_view_app/test/**` 的显式 negate 规则，并让 `python3 scripts/repo-hygiene-gate.py --mode tracked` 通过。
 
 ## 3. 文件命名规则
 
@@ -97,4 +97,4 @@
 4. 任何实现如果违反已接受 ADR，必须先新增替代 ADR 或回滚计划。
 5. 维护边界变化必须能在 `docs/teams/` 中找到对应更新。
 6. `archive/rollups` 和 docs 自动化脚本必须保持可执行，不能退回人工维护模式。
-7. `scripts/check_repo_hygiene.py` 必须持续校验 shared `.gitignore` baseline、fixture negate 规则和关键治理文档接线，不能退回“只查构建垃圾”的弱模式。
+7. `scripts/repo-hygiene-gate.py` 必须持续校验 shared `.gitignore` baseline、fixture negate 规则和关键治理文档接线，不能退回“只查构建垃圾”的弱模式。
