@@ -2,7 +2,7 @@
 
 **Purpose:** 给 `styio-view` 一个统一的 adapter 能力视图，让 UI 在 `CLI / FFI / Cloud` 三类 route 之间保持同一套降级语义。
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-21
 
 ## 1. Contract
 
@@ -13,12 +13,12 @@
 3. `projectGraph`
 4. `execution`
 5. `runtimeEvents`
-6. `supportedContractVersions`
 
 ### `AdapterEndpointCapability`
 
 1. `level = unavailable | partial | available`
 2. `detail`
+3. `supportedContractVersions[]`
 
 ## 2. UI Rules
 

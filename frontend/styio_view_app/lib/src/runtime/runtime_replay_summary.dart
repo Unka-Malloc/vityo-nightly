@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../integration/execution_adapter.dart';
+import '../backend_toolchain/execution_adapter.dart';
 
 class RuntimeReplaySummary {
   const RuntimeReplaySummary({
@@ -232,26 +232,27 @@ RuntimeLaneSummary summarizeRuntimeLane(
   List<RuntimeEventEnvelope> events,
 ) {
   final latest = events.last;
-  final statuses =
-      events.map((event) => runtimeEventStatus(event.eventKind)).toSet();
+  final statuses = events
+      .map((event) => runtimeEventStatus(event.eventKind))
+      .toSet();
   final statusLabel = statuses.contains('failed')
       ? 'failed lane'
       : statuses.contains('finished') || statuses.contains('exited')
-          ? 'completed lane'
-          : statuses.contains('started') ||
-                  statuses.contains('entered') ||
-                  statuses.contains('spawned')
-              ? 'active lane'
-              : 'observed lane';
+      ? 'completed lane'
+      : statuses.contains('started') ||
+            statuses.contains('entered') ||
+            statuses.contains('spawned')
+      ? 'active lane'
+      : 'observed lane';
   final accent = statuses.contains('failed')
       ? const Color(0xFFF3D8D6)
       : statuses.contains('finished') || statuses.contains('exited')
-          ? const Color(0xFFDFF0DE)
-          : statuses.contains('started') ||
-                  statuses.contains('entered') ||
-                  statuses.contains('spawned')
-              ? const Color(0xFFECE4CF)
-              : const Color(0xFFE5E8EE);
+      ? const Color(0xFFDFF0DE)
+      : statuses.contains('started') ||
+            statuses.contains('entered') ||
+            statuses.contains('spawned')
+      ? const Color(0xFFECE4CF)
+      : const Color(0xFFE5E8EE);
   return RuntimeLaneSummary(
     family: family,
     eventCount: events.length,
@@ -437,11 +438,13 @@ RuntimeGraphSummary summarizeRuntimeGraph(
       )
       .whereType<RuntimeGraphEdgeDetail>()
       .toList(growable: false);
-  final terminalNode =
-      routeNodes.isNotEmpty ? routeNodes.last : runtimeEvents.last.eventKind;
+  final terminalNode = routeNodes.isNotEmpty
+      ? routeNodes.last
+      : runtimeEvents.last.eventKind;
   final routeTraceLabel = routeNodes.isEmpty ? null : routeNodes.join(' -> ');
-  final observedDigestLabel =
-      observedNodes.isEmpty ? null : observedNodes.join(' · ');
+  final observedDigestLabel = observedNodes.isEmpty
+      ? null
+      : observedNodes.join(' · ');
   return RuntimeGraphSummary(
     routeCheckpoints: routeCheckpoints,
     routeNodes: routeNodes,
@@ -468,8 +471,9 @@ RuntimeGraphNodeDetail? summarizeRuntimeGraphNodeDetail(
   final sourceEventKinds = checkpoints
       .map((checkpoint) => checkpoint.sourceEventKind)
       .toList(growable: false);
-  final uniqueSourceEventKinds =
-      sourceEventKinds.toSet().toList(growable: false);
+  final uniqueSourceEventKinds = sourceEventKinds.toSet().toList(
+    growable: false,
+  );
   final detailLabels = checkpoints
       .map((checkpoint) => checkpoint.detailLabel)
       .whereType<String>()
@@ -628,8 +632,8 @@ RuntimeDebugLaneSummary? summarizeRuntimeDebugLane(
       final statusLabel = latestStatus == 'finished'
           ? 'completed test lane'
           : latestStatus == 'started'
-              ? 'active test lane'
-              : 'observed test lane';
+          ? 'active test lane'
+          : 'observed test lane';
       final filterTokens = <String>[
         'family=unit.test',
         ...testNames.map((testName) => 'test_name=$testName'),
@@ -690,9 +694,7 @@ RuntimeDebugLaneSummary? summarizeRuntimeDebugLane(
   }
 }
 
-String? summarizeRuntimeDebugDigest(
-  List<RuntimeDebugLaneSummary> debugLanes,
-) {
+String? summarizeRuntimeDebugDigest(List<RuntimeDebugLaneSummary> debugLanes) {
   if (debugLanes.isEmpty) {
     return null;
   }

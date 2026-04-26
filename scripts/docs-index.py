@@ -18,18 +18,21 @@ COLLECTION_DIRS = [
     Path("docs/adr"),
     Path("docs/archive"),
     Path("docs/archive/history"),
+    Path("docs/audit"),
     Path("docs/assets"),
     Path("docs/assets/workflow"),
     Path("docs/contracts"),
     Path("docs/design"),
-    Path("docs/for-spio"),
-    Path("docs/for-styio"),
+    Path("docs/external"),
+    Path("docs/external/for-spio"),
+    Path("docs/external/for-styio"),
     Path("docs/history"),
     Path("docs/milestones"),
     Path("docs/plans"),
     Path("docs/review"),
     Path("docs/rollups"),
     Path("docs/specs"),
+    Path("docs/specs/audit"),
     Path("docs/teams"),
 ]
 INDEX_META = {
@@ -37,18 +40,21 @@ INDEX_META = {
     "docs/adr": ("ADR Index", "Provide the generated inventory for `docs/adr/`; decision-record conventions live in [README.md](./README.md)."),
     "docs/archive": ("Archive Index", "Provide the generated inventory for `docs/archive/`; archive boundaries and lifecycle rules live in [README.md](./README.md)."),
     "docs/archive/history": ("Archive History Index", "Provide the generated inventory for `docs/archive/history/`; archived daily provenance snapshots live in [README.md](./README.md)."),
+    "docs/audit": ("Audit Index", "Provide the generated inventory for `docs/audit/`; transient defect records live in ignored `docs/audit/defects/` and are enforced by external `audit` runs."),
     "docs/assets": ("Assets Index", "Provide the generated inventory for `docs/assets/`; reusable workflow assets and templates live in [README.md](./README.md)."),
     "docs/assets/workflow": ("Workflow Assets Index", "Provide the generated inventory for `docs/assets/workflow/`; test and workflow assets live in [README.md](./README.md)."),
     "docs/contracts": ("Contracts Index", "Provide the generated inventory for `docs/contracts/`; adapter-contract boundaries live in [README.md](./README.md)."),
     "docs/design": ("Design Index", "Provide the generated inventory for `docs/design/`; product and system SSOT boundaries live in [README.md](./README.md)."),
-    "docs/for-spio": ("For Spio Index", "Provide the generated inventory for `docs/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md)."),
-    "docs/for-styio": ("For Styio Index", "Provide the generated inventory for `docs/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md)."),
+    "docs/external": ("External Docs Index", "Provide the generated inventory for `docs/external/`; upstream handoff boundaries live in [README.md](./README.md)."),
+    "docs/external/for-spio": ("For Spio Index", "Provide the generated inventory for `docs/external/for-spio/`; upstream `spio` handoff boundaries live in [README.md](./README.md)."),
+    "docs/external/for-styio": ("For Styio Index", "Provide the generated inventory for `docs/external/for-styio/`; upstream `styio` handoff boundaries live in [README.md](./README.md)."),
     "docs/history": ("History Index", "Provide the generated inventory for `docs/history/`; recovery-note rules live in [README.md](./README.md)."),
     "docs/milestones": ("Milestones Index", "Provide the generated inventory for `docs/milestones/`; freeze-batch rules live in [README.md](./README.md)."),
     "docs/plans": ("Plans Index", "Provide the generated inventory for `docs/plans/`; plan boundaries and sequencing rules live in [README.md](./README.md)."),
     "docs/review": ("Review Index", "Provide the generated inventory for `docs/review/`; open-conflict and unresolved-risk boundaries live in [README.md](./README.md)."),
     "docs/rollups": ("Rollups Index", "Provide the generated inventory for `docs/rollups/`; compressed active summaries live in [README.md](./README.md)."),
     "docs/specs": ("Specs Index", "Provide the generated inventory for `docs/specs/`; collaboration, repository, and documentation-rule boundaries live in [README.md](./README.md)."),
+    "docs/specs/audit": ("Audit Specs Index", "Provide the generated inventory for `docs/specs/audit/`; audit checklist ownership lives in [README.md](./README.md)."),
     "docs/teams": ("Teams Index", "Provide the generated inventory for `docs/teams/`; team ownership and runbook boundaries live in [README.md](./README.md)."),
 }
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
@@ -194,7 +200,7 @@ def render_index(base: Path) -> str:
 
 def sync_indexes(check: bool) -> int:
     failures: list[str] = []
-    for rel_dir in COLLECTION_DIRS:
+    for rel_dir in sorted(COLLECTION_DIRS, key=lambda path: len(path.parts), reverse=True):
         base = ROOT / rel_dir
         index_path = base / "INDEX.md"
         expected = render_index(base)

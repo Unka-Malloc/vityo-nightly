@@ -5,10 +5,25 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun gradleIntOverride(propertyName: String, envName: String): Int? =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(envName))
+        .orNull
+        ?.toInt()
+
+fun gradleStringOverride(propertyName: String, envName: String): String? =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(envName))
+        .orNull
+
 android {
     namespace = "io.styio.view.styio_view_app"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = gradleIntOverride("styioAndroidCompileSdk", "STYIO_VIEW_ANDROID_COMPILE_SDK")
+        ?: flutter.compileSdkVersion
+    ndkVersion = gradleStringOverride("styioAndroidNdkVersion", "STYIO_VIEW_ANDROID_NDK_VERSION")
+        ?: flutter.ndkVersion
+    gradleStringOverride("styioAndroidBuildToolsVersion", "STYIO_VIEW_ANDROID_BUILD_TOOLS")
+        ?.let { buildToolsVersion = it }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -24,8 +39,10 @@ android {
         applicationId = "io.styio.view.styio_view_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = gradleIntOverride("styioAndroidMinSdk", "STYIO_VIEW_ANDROID_MIN_SDK")
+            ?: flutter.minSdkVersion
+        targetSdk = gradleIntOverride("styioAndroidTargetSdk", "STYIO_VIEW_ANDROID_TARGET_SDK")
+            ?: flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

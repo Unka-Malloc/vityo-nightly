@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import hmac
+import os
+import secrets
 import shutil
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 
 ROOT = Path(__file__).resolve().parent
@@ -14,6 +17,13 @@ DEFAULT_WORKSPACE = ROOT / "workspace"
 WORKSPACE_CONFIG = ROOT / ".workspace-root"
 HOST = "127.0.0.1"
 PORT = 4180
+SESSION_COOKIE_NAME = "styio_dev_server_session"
+SESSION_TOKEN_HEADER = "X-Styio-Dev-Server-Token"
+SESSION_TOKEN_ENV = "STYIO_DEV_SERVER_TOKEN"
+ENABLE_MUTATION_ENV = "STYIO_DEV_SERVER_ENABLE_MUTATION"
+SESSION_TOKEN = os.environ.get(SESSION_TOKEN_ENV) or secrets.token_urlsafe(32)
+LOCAL_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "y", "on"}
 IGNORED_NAMES = {
     ".DS_Store",
     ".git",
@@ -24,6 +34,66 @@ IGNORED_NAMES = {
     "dist",
     "node_modules",
 }
+
+
+def mutation_enabled() -> bool:
+    return os.environ.get(ENABLE_MUTATION_ENV, "").strip().casefold() in TRUTHY_ENV_VALUES
+
+
+def split_host_port(raw_host: str | None) -> tuple[str, int | None] | None:
+    if raw_host is None or not raw_host.strip():
+        return None
+
+    try:
+        parsed = urlsplit(f"//{raw_host.strip()}")
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+
+    if hostname is None:
+        return None
+
+    return hostname.rstrip(".").casefold(), port
+
+
+def is_allowed_local_netloc(raw_host: str | None, *, expected_port: int) -> bool:
+    parsed = split_host_port(raw_host)
+    if parsed is None:
+        return False
+
+    hostname, port = parsed
+    if hostname not in LOCAL_HOSTNAMES:
+        return False
+
+    return port == expected_port
+
+
+def parse_cookie_header(raw_cookie: str | None) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    if not raw_cookie:
+        return cookies
+
+    for segment in raw_cookie.split(";"):
+        if "=" not in segment:
+            continue
+        name, value = segment.split("=", 1)
+        cookies[name.strip()] = value.strip()
+
+    return cookies
+
+
+def token_matches(candidate: str | None) -> bool:
+    if candidate is None:
+        return False
+
+    try:
+        candidate_bytes = candidate.encode("utf-8")
+        session_bytes = SESSION_TOKEN.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+
+    return hmac.compare_digest(candidate_bytes, session_bytes)
 
 
 def load_workspace_root() -> Path:
@@ -257,6 +327,12 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if getattr(self, "_issue_session_cookie", False):
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE_NAME}={SESSION_TOKEN}; Path=/; HttpOnly; SameSite=Strict",
+            )
         super().end_headers()
 
     def end_json(self, payload: dict, status: int = HTTPStatus.OK) -> None:
@@ -285,8 +361,95 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
 
         return payload
 
+    def is_api_request(self) -> bool:
+        return urlparse(self.path).path.startswith("/api/")
+
+    def api_forbidden(self, message: str, status: int = HTTPStatus.FORBIDDEN) -> None:
+        self.end_json({"error": message}, status)
+
+    def reject_request(self, message: str, status: int = HTTPStatus.FORBIDDEN) -> None:
+        if self.is_api_request():
+            self.api_forbidden(message, status)
+            return
+
+        self.send_error(status, message)
+
+    def host_is_allowed(self) -> bool:
+        return is_allowed_local_netloc(self.headers.get("Host"), expected_port=self.server.server_port)
+
+    def origin_is_allowed(self) -> bool:
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return False
+
+        parsed = urlparse(origin)
+        if parsed.scheme != "http":
+            return False
+
+        return is_allowed_local_netloc(parsed.netloc, expected_port=self.server.server_port)
+
+    def has_valid_session_credential(self) -> bool:
+        if token_matches(self.headers.get(SESSION_TOKEN_HEADER)):
+            return True
+
+        authorization = self.headers.get("Authorization", "")
+        bearer_prefix = "Bearer "
+        if authorization.startswith(bearer_prefix):
+            bearer_token = authorization[len(bearer_prefix) :].strip()
+            if token_matches(bearer_token):
+                return True
+
+        cookies = parse_cookie_header(self.headers.get("Cookie"))
+        return token_matches(cookies.get(SESSION_COOKIE_NAME))
+
+    def enforce_host_boundary(self) -> bool:
+        if self.host_is_allowed():
+            return True
+
+        self.reject_request("host must be localhost, 127.0.0.1, or ::1 on the dev server port")
+        return False
+
+    def enforce_api_boundary(self, *, require_origin: bool = False, require_mutation: bool = False) -> bool:
+        fetch_site = self.headers.get("Sec-Fetch-Site", "").strip().casefold()
+        if fetch_site == "cross-site":
+            self.api_forbidden("cross-site requests are not allowed")
+            return False
+
+        origin = self.headers.get("Origin")
+        if origin is not None and not self.origin_is_allowed():
+            self.api_forbidden("origin is not allowed")
+            return False
+
+        if require_origin and not self.origin_is_allowed():
+            self.api_forbidden("same-origin request origin is required")
+            return False
+
+        if not self.has_valid_session_credential():
+            self.api_forbidden("missing or invalid dev server session credential")
+            return False
+
+        if require_mutation and not mutation_enabled():
+            self.api_forbidden(f"mutation APIs are disabled; set {ENABLE_MUTATION_ENV}=1 to enable local writes")
+            return False
+
+        return True
+
+    def do_HEAD(self) -> None:
+        if not self.enforce_host_boundary():
+            return
+
+        self._issue_session_cookie = not self.is_api_request()
+        super().do_HEAD()
+
     def do_GET(self) -> None:
+        if not self.enforce_host_boundary():
+            return
+
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/") and not self.enforce_api_boundary():
+            return
+
+        self._issue_session_cookie = not parsed.path.startswith("/api/")
 
         if parsed.path == "/api/workspace":
             self.end_json(workspace_snapshot())
@@ -355,7 +518,15 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        if not self.enforce_host_boundary():
+            return
+
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/") and not self.enforce_api_boundary(
+            require_origin=True,
+            require_mutation=True,
+        ):
+            return
 
         try:
             payload = self.read_json_body()
@@ -583,6 +754,10 @@ def main() -> None:
     current_workspace().mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((HOST, PORT), PrototypeHandler)
     print(f"styio-view dev server listening on http://{HOST}:{PORT}", flush=True)
+    if mutation_enabled():
+        print("workspace mutation APIs enabled for this local dev session", flush=True)
+    else:
+        print(f"workspace mutation APIs disabled; set {ENABLE_MUTATION_ENV}=1 to enable local writes", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

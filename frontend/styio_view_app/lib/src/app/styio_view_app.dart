@@ -7,10 +7,7 @@ import 'state/shell_model.dart';
 import 'state/shell_scope.dart';
 
 class StyioViewApp extends StatefulWidget {
-  const StyioViewApp({
-    super.key,
-    required this.bootstrap,
-  });
+  const StyioViewApp({super.key, required this.bootstrap});
 
   final AppBootstrap bootstrap;
 

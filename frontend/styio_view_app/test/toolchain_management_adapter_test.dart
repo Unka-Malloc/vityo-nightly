@@ -1,13 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
-import 'package:styio_view_app/src/integration/toolchain_management_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/toolchain_management_adapter.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
-  test('toolchain management adapter executes published spio tool use',
-      () async {
+  test('toolchain management adapter executes published spio tool use', () async {
     final tempRoot = await Directory.systemTemp.createTemp(
       'styio_view_toolchain_manager_test_',
     );
@@ -48,10 +47,7 @@ raise SystemExit(64)
     expect(result.succeeded, isTrue);
     expect(result.command, 'tool use');
     expect(result.payload?['compiler_version'], '0.0.5');
-    expect(
-      result.statusMessage,
-      contains('activated managed styio compiler'),
-    );
+    expect(result.statusMessage, contains('activated managed styio compiler'));
   });
 
   test('toolchain pin blocks when no manifest is resolved', () async {

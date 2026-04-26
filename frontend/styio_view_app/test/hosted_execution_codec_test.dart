@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/hosted_execution_codec.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/hosted_execution_codec.dart';
 
 void main() {
   test(
@@ -57,37 +57,40 @@ void main() {
     },
   );
 
-  test('hosted execution codec keeps non-active-file diagnostics as log lines',
-      () {
-    const activeFilePath =
-        '/tmp/styio-hosted/workspaces/demo-workspace/src/main.styio';
-    final result = executionSessionFromHostedResponse(
-      response: <String, dynamic>{
-        'returncode': 1,
-        'error_payload': <String, dynamic>{
-          'session_id': 'hosted-session-2',
-          'diagnostics': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'category': 'parse',
-              'severity': 'error',
-              'file': '/tmp/styio-hosted-overlay/run/workspace/src/other.styio',
-              'message': 'unexpected token in sibling file',
-              'range': <String, dynamic>{'start': 0, 'end': 4},
-            },
-          ],
+  test(
+    'hosted execution codec keeps non-active-file diagnostics as log lines',
+    () {
+      const activeFilePath =
+          '/tmp/styio-hosted/workspaces/demo-workspace/src/main.styio';
+      final result = executionSessionFromHostedResponse(
+        response: <String, dynamic>{
+          'returncode': 1,
+          'error_payload': <String, dynamic>{
+            'session_id': 'hosted-session-2',
+            'diagnostics': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'category': 'parse',
+                'severity': 'error',
+                'file':
+                    '/tmp/styio-hosted-overlay/run/workspace/src/other.styio',
+                'message': 'unexpected token in sibling file',
+                'range': <String, dynamic>{'start': 0, 'end': 4},
+              },
+            ],
+          },
         },
-      },
-      workflowKind: 'run',
-      successMessage: 'run completed through hosted control plane',
-      documentText: '>_("demo")\n',
-      activeFilePath: activeFilePath,
-    );
+        workflowKind: 'run',
+        successMessage: 'run completed through hosted control plane',
+        documentText: '>_("demo")\n',
+        activeFilePath: activeFilePath,
+      );
 
-    expect(result.session.diagnostics, isEmpty);
-    expect(result.session.stderrEvents, hasLength(1));
-    expect(
-      result.session.stderrEvents.single.message,
-      contains('other.styio: unexpected token in sibling file'),
-    );
-  });
+      expect(result.session.diagnostics, isEmpty);
+      expect(result.session.stderrEvents, hasLength(1));
+      expect(
+        result.session.stderrEvents.single.message,
+        contains('other.styio: unexpected token in sibling file'),
+      );
+    },
+  );
 }

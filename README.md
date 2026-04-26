@@ -9,16 +9,65 @@ Styio View 是面向 `styio` 生态的专属编辑器与运行视窗项目。
 3. 上游 `styio` / `spio` 按 `styio-view` 的合同补齐机器接口
 4. 面向人维护的网页入口只保留手写的 `editor.html` 线；`frontend/styio_view_app/build/web` 这类 Flutter 生成物只用于构建验证，不作为人工维护页面
 
-文档入口见 [docs/README.md]($HOME/DevSpace/styio-view/docs/README.md)。
+文档入口见 [docs/README.md](docs/README.md)。
 
-可直接查看的高保真原型入口见 [prototype/index.html]($HOME/DevSpace/styio-view/prototype/index.html)。
+仓库级构建与新环境入口见 [docs/BUILD-AND-DEV-ENV.md](docs/BUILD-AND-DEV-ENV.md)。
 
-人工维护的 Web Editor 入口见 [prototype/editor.html]($HOME/DevSpace/styio-view/prototype/editor.html)。
+可直接查看的高保真原型入口见 [prototype/index.html](prototype/index.html)。
 
-实际实现入口见 [frontend/styio_view_app/README.md]($HOME/DevSpace/styio-view/frontend/styio_view_app/README.md)。
+人工维护的 Web Editor 入口见 [prototype/editor.html](prototype/editor.html)。
+
+实际实现入口见 [frontend/styio_view_app/README.md](frontend/styio_view_app/README.md)。
+
+## Frontend / Backend Split
+
+- 前端是面向用户的编辑器、运行视窗和产品交互界面，入口在 `frontend/styio_view_app/` 与 `prototype/`。
+- 后端不是单一服务，而是 `styio-view` 背后的整条工具链面：adapter layer、local CLI/FFI、hosted control plane，以及上游 `spio` / `styio` 合同。
+- 前端只编排和展示 machine contract；工具链解析、依赖/发布/执行语义、仓库与云平台行为都留在后端。
+
+系统级边界定义见 [docs/design/Styio-View-System-Architecture.md](docs/design/Styio-View-System-Architecture.md)。
+
+## Fresh Dev Environment
+
+容器 / 虚拟机：
+
+```bash
+./scripts/bootstrap-dev-container.sh
+```
+
+Linux 本机：
+
+```bash
+./scripts/bootstrap-dev-env.sh
+./scripts/bootstrap-dev-env.sh --with-android
+```
+
+macOS 本机：
+
+```bash
+./scripts/bootstrap-dev-env-macos.sh
+./scripts/bootstrap-dev-env-macos.sh --with-ios
+./scripts/bootstrap-dev-env-macos.sh --with-android
+```
+
+Windows 本机：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-dev-env-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-dev-env-windows.ps1 -WithAndroid
+```
+
+这套脚本会把 `styio-view` 的桌面 / Web 主线环境拉起，并按需附加 `linux+android`、`macos+ios`、`macos+android`、`windows+android` 组合开发工具链。共享 workspace 初始化入口是：
+
+```bash
+./scripts/bootstrap-workspace.sh --platforms web,linux
+```
+
+更完整的构建、测试、profile 切换和真实设备验证入口见 [docs/BUILD-AND-DEV-ENV.md](docs/BUILD-AND-DEV-ENV.md)。
 
 ## Repository Hygiene Gate
 
-1. GitHub Actions workflow `Repository Hygiene Gate` 会在每次 `push` 和 `pull_request` 时执行 `python3 scripts/check_repo_hygiene.py`
-2. 这道门禁会阻断生成目录、依赖目录、打包产物后缀，以及未被明确允许的二进制文件进入仓库
-3. 合法的图片类资产需要放在当前允许的前端资源路径下；若确实需要新增二进制资产，应在脚本里补一条窄范围 allowlist，而不是放宽通用规则
+1. GitHub Actions workflow `Repository Hygiene Gate` 会在每次 `push` 和 `pull_request` 时执行 `python3 scripts/repo-hygiene-gate.py`
+2. `python3 scripts/repo-hygiene-gate.py` 是仓库级权威入口
+3. 这道门禁会阻断生成目录、依赖目录、打包产物后缀，以及未被明确允许的二进制文件进入仓库
+4. 合法的图片类资产需要放在当前允许的前端资源路径下；若确实需要新增二进制资产，应在脚本里补一条窄范围 allowlist，而不是放宽通用规则

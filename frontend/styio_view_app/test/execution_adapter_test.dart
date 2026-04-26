@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:styio_view_app/src/editor/document_state.dart';
-import 'package:styio_view_app/src/integration/execution_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
-import 'package:styio_view_app/src/integration/runtime_event_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/execution_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/runtime_event_adapter.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
@@ -15,11 +15,12 @@ void main() {
       final tempRoot = await _createTempRoot(
         'styio_view_execution_payload_test_',
       );
-      final sourceFile = File(
-        '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
-      )
-        ..createSync(recursive: true)
-        ..writeAsStringSync('>_("demo")\n');
+      final sourceFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('>_("demo")\n');
 
       File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
         ..createSync(recursive: true)
@@ -195,12 +196,13 @@ raise SystemExit(64)
       final runtimeAdapter = createRuntimeEventAdapter(
         platformTarget: PlatformTarget.macos,
       );
-      final runtimeEvents =
-          await runtimeAdapter.sessionEvents(session.sessionId).toList();
-      expect(
-        runtimeEvents.map((event) => event.eventKind),
-        <String>['compile.started', 'run.finished'],
-      );
+      final runtimeEvents = await runtimeAdapter
+          .sessionEvents(session.sessionId)
+          .toList();
+      expect(runtimeEvents.map((event) => event.eventKind), <String>[
+        'compile.started',
+        'run.finished',
+      ]);
       expect(runtimeEvents.last.payload['file'], sourceFile.path);
     },
   );
@@ -211,21 +213,24 @@ raise SystemExit(64)
       final tempRoot = await _createTempRoot(
         'styio_view_execution_non_entry_test_',
       );
-      final helperFile = File(
-        '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}helper.styio',
-      )
-        ..createSync(recursive: true)
-        ..writeAsStringSync('// helper fixture\n');
-      final mainFile = File(
-        '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
-      )
-        ..createSync(recursive: true)
-        ..writeAsStringSync('>_("demo")\n');
-      final libFile = File(
-        '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
-      )
-        ..createSync(recursive: true)
-        ..writeAsStringSync('// lib fixture\n');
+      final helperFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}helper.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('// helper fixture\n');
+      final mainFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('>_("demo")\n');
+      final libFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}lib.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('// lib fixture\n');
 
       File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
         ..createSync(recursive: true)
@@ -363,11 +368,12 @@ raise SystemExit(64)
     final tempRoot = await _createTempRoot(
       'styio_view_execution_failure_payload_test_',
     );
-    final sourceFile = File(
-      '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
-    )
-      ..createSync(recursive: true)
-      ..writeAsStringSync('>_("demo")\n');
+    final sourceFile =
+        File(
+            '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
+          )
+          ..createSync(recursive: true)
+          ..writeAsStringSync('>_("demo")\n');
 
     File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
       ..createSync(recursive: true)
@@ -493,7 +499,9 @@ raise SystemExit(64)
     expect(session.status, ExecutionSessionStatus.failed);
     expect(session.sessionId, 'runtime-session-failure');
     expect(
-        session.statusMessage, contains('compile-plan failed through payload'));
+      session.statusMessage,
+      contains('compile-plan failed through payload'),
+    );
     expect(session.diagnostics, isNotEmpty);
     expect(session.diagnostics.first.code, 'STYIO_SYN:missing-token');
     expect(session.diagnostics.first.message, 'missing token');
@@ -502,25 +510,33 @@ raise SystemExit(64)
     final runtimeAdapter = createRuntimeEventAdapter(
       platformTarget: PlatformTarget.macos,
     );
-    final runtimeEvents =
-        await runtimeAdapter.sessionEvents(session.sessionId).toList();
-    expect(
-      runtimeEvents.map((event) => event.eventKind),
-      <String>['compile.started', 'compile.failed'],
-    );
+    final runtimeEvents = await runtimeAdapter
+        .sessionEvents(session.sessionId)
+        .toList();
+    expect(runtimeEvents.map((event) => event.eventKind), <String>[
+      'compile.started',
+      'compile.failed',
+    ]);
   });
 
   test(
-    'single-file execution uses an overlay path and leaves the real file untouched',
+    'single-file execution uses an overlay snapshot and leaves real files untouched',
     () async {
       final tempRoot = await _createTempRoot(
         'styio_view_execution_scratch_path_test_',
       );
-      final sourceFile = File(
-        '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}main.styio',
-      )
-        ..createSync(recursive: true)
-        ..writeAsStringSync('>_("before")\n');
+      final sourceFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}main.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('>_("before")\n');
+      final siblingFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}sibling.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('// sibling before\n');
       File('${tempRoot.path}${Platform.pathSeparator}styio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync('dict_impl = "rbmap"\n');
@@ -531,6 +547,7 @@ raise SystemExit(64)
 import json, os, sys
 
 real_path = ${jsonEncode(sourceFile.path)}
+sibling_path = ${jsonEncode(siblingFile.path)}
 
 def has_expected_config(path: str) -> bool:
     current = os.path.dirname(path)
@@ -546,9 +563,14 @@ def has_expected_config(path: str) -> bool:
 
 if len(sys.argv) >= 4 and sys.argv[1] == '--file' and sys.argv[3] == '--error-format=jsonl':
     run_path = sys.argv[2]
+    overlay_sibling_path = os.path.join(os.path.dirname(run_path), 'sibling.styio')
+    with open(overlay_sibling_path, 'w', encoding='utf-8') as overlay_sibling:
+        overlay_sibling.write('// sibling after\\n')
     if (run_path != real_path and
         open(real_path, 'r', encoding='utf-8').read() == '>_("before")\\n' and
         open(run_path, 'r', encoding='utf-8').read() == '>_("after")\\n' and
+        open(sibling_path, 'r', encoding='utf-8').read() == '// sibling before\\n' and
+        open(overlay_sibling_path, 'r', encoding='utf-8').read() == '// sibling after\\n' and
         has_expected_config(run_path)):
         print(json.dumps({'executed_path': run_path}))
         raise SystemExit(0)
@@ -594,9 +616,227 @@ raise SystemExit(65)
       expect(
         session.stdoutEvents.map((event) => event.message),
         contains(
-            predicate((String message) => message.contains('executed_path'))),
+          predicate((String message) => message.contains('executed_path')),
+        ),
       );
       expect(sourceFile.readAsStringSync(), '>_("before")\n');
+      expect(siblingFile.readAsStringSync(), '// sibling before\n');
+    },
+  );
+
+  test(
+    'execution overlay omits symlink entries that escape the workspace',
+    () async {
+      final tempRoot = await _createTempRoot(
+        'styio_view_execution_symlink_escape_test_',
+      );
+      final outsideRoot = await Directory.systemTemp.createTemp(
+        'styio_view_execution_outside_',
+      );
+      addTearDown(() => outsideRoot.delete(recursive: true));
+
+      final sourceFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}main.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('>_("before")\n');
+      final outsideFile = File(
+        '${outsideRoot.path}${Platform.pathSeparator}outside.txt',
+      )..writeAsStringSync('outside before\n');
+      final escapeLink = Link(
+        '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}escape.txt',
+      );
+      try {
+        await escapeLink.create(outsideFile.path);
+      } on FileSystemException {
+        return;
+      }
+
+      File('${tempRoot.path}${Platform.pathSeparator}styio.toml')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('dict_impl = "rbmap"\n');
+
+      final fakeStyio = await _writeExecutable(
+        File('${tempRoot.path}${Platform.pathSeparator}fake-styio'),
+        '''#!/usr/bin/env python3
+import json, os, sys
+
+real_path = ${jsonEncode(sourceFile.path)}
+outside_path = ${jsonEncode(outsideFile.path)}
+
+if len(sys.argv) >= 4 and sys.argv[1] == '--file' and sys.argv[3] == '--error-format=jsonl':
+    run_path = sys.argv[2]
+    overlay_escape_path = os.path.join(os.path.dirname(run_path), 'escape.txt')
+    if os.path.lexists(overlay_escape_path):
+        with open(overlay_escape_path, 'w', encoding='utf-8') as escape_file:
+            escape_file.write('outside after\\n')
+    if (run_path != real_path and
+        not os.path.lexists(overlay_escape_path) and
+        open(outside_path, 'r', encoding='utf-8').read() == 'outside before\\n'):
+        print(json.dumps({'escape_link_omitted': True}))
+        raise SystemExit(0)
+
+sys.stderr.write(json.dumps({
+    'category': 'SyntaxError',
+    'code': 'ESCAPE_LINK_PRESENT',
+    'message': 'overlay symlink escape was present',
+}) + '\\n')
+raise SystemExit(65)
+''',
+      );
+
+      final projectGraph = ProjectGraphSnapshot.scratch(
+        workspaceRoot: tempRoot.path,
+        activeFilePath: sourceFile.path,
+        title: 'Scratch Project',
+        notes: const <String>[],
+        activeCompiler: _compilerSnapshot(
+          fakeStyio.path,
+          contracts: const <String, List<int>>{
+            'machine_info': <int>[1],
+          },
+        ),
+      );
+      final adapter = await createExecutionAdapter(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+      );
+
+      final session = await adapter.runActiveDocument(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+        document: const DocumentState(
+          documentId: 'scratch',
+          text: '>_("after")\n',
+          revision: 2,
+        ),
+        activeFilePath: sourceFile.path,
+      );
+
+      expect(session.status, ExecutionSessionStatus.succeeded);
+      expect(outsideFile.readAsStringSync(), 'outside before\n');
+      expect(escapeLink.targetSync(), outsideFile.path);
+    },
+  );
+
+  test(
+    'project execution blocks changed active files that resolve outside the workspace',
+    () async {
+      final tempRoot = await _createTempRoot(
+        'styio_view_execution_project_symlink_escape_test_',
+      );
+      final outsideRoot = await Directory.systemTemp.createTemp(
+        'styio_view_execution_project_outside_',
+      );
+      addTearDown(() => outsideRoot.delete(recursive: true));
+
+      final mainFile =
+          File(
+              '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}main.styio',
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('>_("main")\n');
+      final outsideFile = File(
+        '${outsideRoot.path}${Platform.pathSeparator}outside.styio',
+      )..writeAsStringSync('>_("outside before")\n');
+      final escapeLink = Link(
+        '${tempRoot.path}${Platform.pathSeparator}src${Platform.pathSeparator}escape.styio',
+      );
+      try {
+        await escapeLink.create(outsideFile.path);
+      } on FileSystemException {
+        return;
+      }
+
+      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('''
+[package]
+name = "demo/app"
+version = "0.1.0"
+
+[toolchain]
+channel = "stable"
+implicit-std = true
+
+[[bin]]
+name = "demo"
+path = "src/main.styio"
+''');
+
+      await _writeExecutable(
+        File(
+          '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+        ),
+        '''#!/usr/bin/env python3
+import json, sys
+
+if sys.argv[1:] == ['machine-info', '--json']:
+    print(json.dumps({
+        'tool': 'spio',
+        'feature_flags': {'workflow_success_payloads': True},
+        'supported_contract_versions': {'workflow_success_payloads': [1]},
+    }))
+    raise SystemExit(0)
+
+raise SystemExit(66)
+''',
+      );
+
+      final projectGraph = _projectGraph(
+        workspaceRoot: tempRoot.path,
+        manifestPath: '${tempRoot.path}${Platform.pathSeparator}spio.toml',
+        targets: <ProjectTargetDescriptor>[
+          ProjectTargetDescriptor(
+            id: 'demo/app:bin:demo',
+            packageName: 'demo/app',
+            kind: ProjectTargetKind.bin,
+            name: 'demo',
+            filePath: mainFile.path,
+          ),
+        ],
+        packages: <ProjectPackageSnapshot>[
+          _packageSnapshot(
+            packageName: 'demo/app',
+            rootPath: tempRoot.path,
+            manifestPath: '${tempRoot.path}${Platform.pathSeparator}spio.toml',
+            targets: <ProjectTargetDescriptor>[
+              ProjectTargetDescriptor(
+                id: 'demo/app:bin:demo',
+                packageName: 'demo/app',
+                kind: ProjectTargetKind.bin,
+                name: 'demo',
+                filePath: mainFile.path,
+              ),
+            ],
+          ),
+        ],
+        activeCompiler: _compilerSnapshot('/toolchains/styio/bin/styio'),
+      );
+      final adapter = await createExecutionAdapter(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+      );
+
+      final session = await adapter.runActiveDocument(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+        document: const DocumentState(
+          documentId: 'escape',
+          text: '>_("outside after")\n',
+          revision: 2,
+        ),
+        activeFilePath: escapeLink.path,
+      );
+
+      expect(session.status, ExecutionSessionStatus.blocked);
+      expect(session.sessionId, 'execution-overlay-blocked');
+      expect(
+        session.statusMessage,
+        contains('resolves outside workspace root'),
+      );
+      expect(outsideFile.readAsStringSync(), '>_("outside before")\n');
     },
   );
 
@@ -604,16 +844,18 @@ raise SystemExit(65)
     final tempRoot = await _createTempRoot(
       'styio_view_execution_cross_file_diag_test_',
     );
-    final sourceFile = File(
-      '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}main.styio',
-    )
-      ..createSync(recursive: true)
-      ..writeAsStringSync('>_("main")\n');
-    final helperFile = File(
-      '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}helper.styio',
-    )
-      ..createSync(recursive: true)
-      ..writeAsStringSync('// helper fixture\n');
+    final sourceFile =
+        File(
+            '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}main.styio',
+          )
+          ..createSync(recursive: true)
+          ..writeAsStringSync('>_("main")\n');
+    final helperFile =
+        File(
+            '${tempRoot.path}${Platform.pathSeparator}scratch${Platform.pathSeparator}helper.styio',
+          )
+          ..createSync(recursive: true)
+          ..writeAsStringSync('// helper fixture\n');
 
     final fakeStyio = await _writeExecutable(
       File('${tempRoot.path}${Platform.pathSeparator}fake-styio'),
@@ -753,8 +995,9 @@ ProjectGraphSnapshot _projectGraph({
     packages: packages,
     dependencies: const <ProjectDependencySnapshot>[],
     targets: targets,
-    editorFiles:
-        targets.map((target) => target.filePath).toList(growable: false),
+    editorFiles: targets
+        .map((target) => target.filePath)
+        .toList(growable: false),
     toolchain: const ToolchainStatusSnapshot(
       source: ToolchainResolutionSource.projectPin,
       detail: 'project pin',

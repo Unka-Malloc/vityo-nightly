@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:styio_view_app/src/integration/deployment_adapter.dart';
-import 'package:styio_view_app/src/integration/project_graph_contract.dart';
+import 'package:styio_view_app/src/backend_toolchain/deployment_adapter.dart';
+import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart';
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
@@ -44,36 +44,38 @@ void main() {
     expect(result.statusMessage, contains('prepared publish candidate'));
   });
 
-  test('deployment adapter auto-selects the only publish-ready package',
-      () async {
-    final tempRoot = await _createWorkspaceFixture();
-    addTearDown(() => tempRoot.delete(recursive: true));
+  test(
+    'deployment adapter auto-selects the only publish-ready package',
+    () async {
+      final tempRoot = await _createWorkspaceFixture();
+      addTearDown(() => tempRoot.delete(recursive: true));
 
-    final adapter = await createDeploymentAdapter(
-      platformTarget: PlatformTarget.macos,
-    );
-    final result = await adapter.preparePublish(
-      projectGraph: _projectGraphFor(
-        tempRoot.path,
-        packageDistribution: const PackageDistributionSnapshot(
-          schemaVersion: 1,
-          packages: <PackageDistributionPackageSnapshot>[
-            PackageDistributionPackageSnapshot(
-              packageName: 'demo/app',
-              manifestPath: '/workspace/demo/spio.toml',
-              publishEnabled: true,
-              publishReady: true,
-            ),
-          ],
-          publishablePackages: 1,
-          blockedPackages: 0,
+      final adapter = await createDeploymentAdapter(
+        platformTarget: PlatformTarget.macos,
+      );
+      final result = await adapter.preparePublish(
+        projectGraph: _projectGraphFor(
+          tempRoot.path,
+          packageDistribution: const PackageDistributionSnapshot(
+            schemaVersion: 1,
+            packages: <PackageDistributionPackageSnapshot>[
+              PackageDistributionPackageSnapshot(
+                packageName: 'demo/app',
+                manifestPath: '/workspace/demo/spio.toml',
+                publishEnabled: true,
+                publishReady: true,
+              ),
+            ],
+            publishablePackages: 1,
+            blockedPackages: 0,
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(result.succeeded, isTrue);
-    expect(result.payload?['package'], 'demo/app');
-  });
+      expect(result.succeeded, isTrue);
+      expect(result.payload?['package'], 'demo/app');
+    },
+  );
 
   test('deployment adapter executes registry publish through spio', () async {
     final tempRoot = await _createWorkspaceFixture();
@@ -114,44 +116,47 @@ void main() {
   });
 
   test(
-      'deployment adapter blocks publish when project graph has no publish-ready package',
-      () async {
-    final tempRoot = await Directory.systemTemp.createTemp(
-      'styio_view_deployment_adapter_blocked_publish_',
-    );
-    addTearDown(() => tempRoot.delete(recursive: true));
+    'deployment adapter blocks publish when project graph has no publish-ready package',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'styio_view_deployment_adapter_blocked_publish_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
 
-    File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
-      ..createSync(recursive: true)
-      ..writeAsStringSync('[package]\nname = "demo/app"\nversion = "0.1.0"\n');
+      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '[package]\nname = "demo/app"\nversion = "0.1.0"\n',
+        );
 
-    final adapter = await createDeploymentAdapter(
-      platformTarget: PlatformTarget.macos,
-    );
-    final result = await adapter.preparePublish(
-      projectGraph: _projectGraphFor(
-        tempRoot.path,
-        packageDistribution: const PackageDistributionSnapshot(
-          schemaVersion: 1,
-          packages: <PackageDistributionPackageSnapshot>[
-            PackageDistributionPackageSnapshot(
-              packageName: 'demo/app',
-              manifestPath: '/workspace/demo/spio.toml',
-              publishEnabled: false,
-              publishReady: false,
-              blockingReasons: <String>['package publish = false'],
-            ),
-          ],
-          publishablePackages: 0,
-          blockedPackages: 1,
+      final adapter = await createDeploymentAdapter(
+        platformTarget: PlatformTarget.macos,
+      );
+      final result = await adapter.preparePublish(
+        projectGraph: _projectGraphFor(
+          tempRoot.path,
+          packageDistribution: const PackageDistributionSnapshot(
+            schemaVersion: 1,
+            packages: <PackageDistributionPackageSnapshot>[
+              PackageDistributionPackageSnapshot(
+                packageName: 'demo/app',
+                manifestPath: '/workspace/demo/spio.toml',
+                publishEnabled: false,
+                publishReady: false,
+                blockingReasons: <String>['package publish = false'],
+              ),
+            ],
+            publishablePackages: 0,
+            blockedPackages: 1,
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(result.status, DeploymentCommandStatus.blocked);
-    expect(result.statusMessage, contains('No publish-ready package'));
-    expect(result.statusMessage, contains('package publish = false'));
-  });
+      expect(result.status, DeploymentCommandStatus.blocked);
+      expect(result.statusMessage, contains('No publish-ready package'));
+      expect(result.statusMessage, contains('package publish = false'));
+    },
+  );
 }
 
 Future<Directory> _createWorkspaceFixture() async {

@@ -1,6 +1,7 @@
 import 'workspace_document_store_types.dart';
 import 'workspace_document_store_web.dart'
-    if (dart.library.io) 'workspace_document_store_io.dart' as platform_store;
+    if (dart.library.io) 'workspace_document_store_io.dart'
+    as platform_store;
 
 export 'workspace_document_store_types.dart';
 
