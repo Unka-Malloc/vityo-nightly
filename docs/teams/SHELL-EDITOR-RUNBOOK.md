@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-26
 
 ## Mission
 
@@ -40,6 +40,7 @@ Key SSOTs:
 7. `prototype/package.json` 与 `package-lock.json` 的 Node 依赖必须用锁文件可复现的精确版本，并优先用 `npm ci` 而不是 `npm install`。
 8. Flutter shell 的 app bootstrap、workspace controller、document store 和 command registry 只能消费 `backend_toolchain` 的正式 adapter surface；legacy `integration/` export 只用于兼容测试。
 9. product gate 测试若需要 `STYIO_VIEW_PRODUCT_GATE=1`，在本轮最小闭环中保持显式跳过策略，不把 gated workflow 写成默认 shell 验证要求。
+10. 手写 prototype selftest 的布局几何断言必须等待 grid/sidebar CSS transition 收敛后再采样；容差只能覆盖 headless Chromium 子像素取整，不得掩盖实际 drawer 宽度或 inset 漂移。
 
 ## Change Classes
 

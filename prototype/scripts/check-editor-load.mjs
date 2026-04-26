@@ -248,6 +248,24 @@ async function runSelfTest() {
     });
   }
 
+  async function waitForGridDrawerState(open) {
+    await page.waitForFunction(
+      (expectedOpen) => {
+        const drawer = document.getElementById("gridSideDrawer");
+        if (!drawer) {
+          return false;
+        }
+        const style = getComputedStyle(document.body);
+        const expectedVar = expectedOpen ? "--grid-sidebar-width-open" : "--grid-sidebar-width-closed";
+        const expectedWidth = Number.parseFloat(style.getPropertyValue(expectedVar)) || 0;
+        const actualWidth = drawer.getBoundingClientRect().width;
+        return Math.abs(actualWidth - expectedWidth) <= 1;
+      },
+      open,
+      { timeout: 10000 },
+    );
+  }
+
   page.on("console", (message) => {
     const type = message.type();
     const text = message.text();
@@ -345,6 +363,7 @@ async function runSelfTest() {
       if (await page.evaluate(() => document.body.classList.contains("sidebar-open"))) {
         await page.click("#gridCloseSidebar");
         await page.waitForFunction(() => !document.body.classList.contains("sidebar-open"), null, { timeout: 10000 });
+        await waitForGridDrawerState(false);
       }
 
       const collapsed = await captureGridShellGeometry();
@@ -354,13 +373,14 @@ async function runSelfTest() {
 
       await page.click("#gridToggleSidebar");
       await page.waitForFunction(() => document.body.classList.contains("sidebar-open"), null, { timeout: 10000 });
+      await waitForGridDrawerState(true);
 
       const expanded = await captureGridShellGeometry();
       if (!expanded) {
         throw new Error("failed to capture expanded grid shell geometry");
       }
 
-      const tolerance = 0.6;
+      const tolerance = 1.1;
       const checks = [
         ["toolbar/file-tabs height", collapsed.toolbarHeight, collapsed.fileTabsHeight],
         ["toolbar top inset", collapsed.toolbarTopInset, collapsed.expectedBlockStartInset],
@@ -414,6 +434,7 @@ async function runSelfTest() {
       if (await page.evaluate(() => document.body.classList.contains("sidebar-open"))) {
         await page.click("#gridCloseSidebar");
         await page.waitForFunction(() => !document.body.classList.contains("sidebar-open"), null, { timeout: 10000 });
+        await waitForGridDrawerState(false);
       }
 
       const baseline = await captureGridShellGeometry();
@@ -536,6 +557,7 @@ async function runSelfTest() {
 
       await page.click("#gridToggleSidebar");
       await page.waitForFunction(() => document.body.classList.contains("sidebar-open"), null, { timeout: 10000 });
+      await waitForGridDrawerState(true);
       await page.click('[data-drawer-tab="settings"]');
       await page.waitForFunction(() => document.getElementById("drawerPanelSettings")?.classList.contains("is-active"), null, {
         timeout: 10000,
