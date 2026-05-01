@@ -117,6 +117,8 @@ if [[ "$RUN_AUDIT" -eq 1 ]]; then
   if [[ -z "$AUDIT_BIN" ]]; then
     if [[ -x "$ROOT/../audit/bin/audit" ]]; then
       AUDIT_BIN="$ROOT/../audit/bin/audit"
+    elif [[ -x "$ROOT/../../SymPolicy/audit/bin/audit" ]]; then
+      AUDIT_BIN="$ROOT/../../SymPolicy/audit/bin/audit"
     elif [[ -x "$HOME/audit/bin/audit" ]]; then
       AUDIT_BIN="$HOME/audit/bin/audit"
     elif command -v audit >/dev/null 2>&1; then
