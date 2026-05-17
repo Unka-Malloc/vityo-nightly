@@ -1,6 +1,6 @@
 # Delivery Gate
 
-**Purpose:** Define the common delivery-floor entrypoint for `styio-view` so contributors can run repository hygiene, the unified docs gate, external `audit`, and checkpoint health through one command before checkpoint merge or branch delivery.
+**Purpose:** Define the common delivery-floor entrypoint for `Vityo` so contributors can run repository hygiene, the unified docs gate, external `audit`, and checkpoint health through one command before checkpoint merge or branch delivery.
 
 **Last updated:** 2026-04-19
 
@@ -30,5 +30,5 @@ Use `--audit-bin ../audit/bin/audit` to force a specific audit checkout. Use `--
 
 1. `python3 scripts/repo-hygiene-gate.py`
 2. `./scripts/docs-gate.sh`
-3. external `audit gate --project styio-view`
+3. external `audit gate --project Vityo`
 4. `./scripts/checkpoint-health.sh`
