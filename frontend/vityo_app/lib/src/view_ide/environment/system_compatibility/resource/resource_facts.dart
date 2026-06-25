@@ -29,7 +29,7 @@ class ResourceFacts {
     String targetId = 'local',
     String architecture = 'aarch64',
     String systemTempPath = '/tmp',
-    String? homePath = '$HOME',
+    String? homePath,
     int processorCount = 1,
     DateTime? detectedAt,
   }) => ResourceFacts(
