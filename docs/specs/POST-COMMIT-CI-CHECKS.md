@@ -30,10 +30,10 @@ STYIO_VIEW_PRODUCT_GATE=1 flutter test
 Cross-repository contract or product changes must also run the matching ecosystem gate from `styio-nightly`, for example:
 
 ```bash
-cd $HOME/styio-nightly
-python3 scripts/ecosystem-cli-doc-gate.py --workspace-root $HOME
-python3 scripts/ecosystem-product-gate.py --workspace-root $HOME
-python3 scripts/ecosystem-sample-workflow-gate.py --workspace-root $HOME
+cd <styio-workspace>
+python3 scripts/ecosystem-cli-doc-gate.py --workspace-root <workspace-root>
+python3 scripts/ecosystem-product-gate.py --workspace-root <workspace-root>
+python3 scripts/ecosystem-sample-workflow-gate.py --workspace-root <workspace-root>
 ```
 
 The commit message body should record the checks that were actually run.

@@ -155,8 +155,8 @@ The product workflow tests remain environment-gated, so they should continue to 
 
 - `python3 -m styio_audit.cli list-modules`
 - `python3 -m styio_audit.cli validate-modules`
-- `python3 -m styio_audit.cli gate --repo $HOME/styio-view --project styio-view --framework-only`
-- `python3 -m styio_audit.cli gate --repo $HOME/styio-view --project styio-view`
+- `python3 -m styio_audit.cli gate --repo <vityo-workspace> --project styio-view --framework-only`
+- `python3 -m styio_audit.cli gate --repo <vityo-workspace> --project styio-view`
 - `flutter test test/module_lifecycle_test.dart test/runtime_surfaces_test.dart test/hosted_control_plane_client_test.dart test/shell_model_test.dart test/execution_adapter_test.dart test/workspace_document_store_test.dart`
 - `python3 -m unittest prototype/test_dev_server_security.py`
 - `flutter test test/hosted_control_plane_io_hardening_test.dart`
