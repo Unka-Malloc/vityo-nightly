@@ -6,7 +6,7 @@ import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
-  test('deployment adapter executes published spio pack', () async {
+  test('deployment adapter executes published pafio pack', () async {
     final tempRoot = await _createWorkspaceFixture();
     addTearDown(() => tempRoot.delete(recursive: true));
 
@@ -25,7 +25,7 @@ void main() {
     expect(result.statusMessage, contains('wrote source package'));
   });
 
-  test('deployment adapter executes publish preflight through spio', () async {
+  test('deployment adapter executes publish preflight through pafio', () async {
     final tempRoot = await _createWorkspaceFixture();
     addTearDown(() => tempRoot.delete(recursive: true));
 
@@ -61,7 +61,7 @@ void main() {
             packages: <PackageDistributionPackageSnapshot>[
               PackageDistributionPackageSnapshot(
                 packageName: 'demo/app',
-                manifestPath: '/workspace/demo/spio.toml',
+                manifestPath: '/workspace/demo/pafio.toml',
                 publishEnabled: true,
                 publishReady: true,
               ),
@@ -77,7 +77,7 @@ void main() {
     },
   );
 
-  test('deployment adapter executes registry publish through spio', () async {
+  test('deployment adapter executes registry publish through pafio', () async {
     final tempRoot = await _createWorkspaceFixture();
     addTearDown(() => tempRoot.delete(recursive: true));
 
@@ -112,7 +112,7 @@ void main() {
     );
 
     expect(result.status, DeploymentCommandStatus.blocked);
-    expect(result.statusMessage, contains('resolved spio manifest path'));
+    expect(result.statusMessage, contains('resolved pafio manifest path'));
   });
 
   test(
@@ -123,7 +123,7 @@ void main() {
       );
       addTearDown(() => tempRoot.delete(recursive: true));
 
-      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+      File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync(
           '[package]\nname = "demo/app"\nversion = "0.1.0"\n',
@@ -140,7 +140,7 @@ void main() {
             packages: <PackageDistributionPackageSnapshot>[
               PackageDistributionPackageSnapshot(
                 packageName: 'demo/app',
-                manifestPath: '/workspace/demo/spio.toml',
+                manifestPath: '/workspace/demo/pafio.toml',
                 publishEnabled: false,
                 publishReady: false,
                 blockingReasons: <String>['package publish = false'],
@@ -163,16 +163,16 @@ Future<Directory> _createWorkspaceFixture() async {
   final tempRoot = await Directory.systemTemp.createTemp(
     'styio_view_deployment_adapter_test_',
   );
-  final manifestPath = '${tempRoot.path}${Platform.pathSeparator}spio.toml';
+  final manifestPath = '${tempRoot.path}${Platform.pathSeparator}pafio.toml';
   File(manifestPath)
     ..createSync(recursive: true)
     ..writeAsStringSync('[package]\nname = "demo/app"\nversion = "0.1.0"\n');
 
-  final spioBinary = File(
-    '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+  final pafioBinary = File(
+    '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
   );
-  spioBinary.createSync(recursive: true);
-  spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+  pafioBinary.createSync(recursive: true);
+  pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
 args = sys.argv[1:]
@@ -213,7 +213,7 @@ print(json.dumps({
 }), file=sys.stderr)
 raise SystemExit(64)
 ''');
-  Process.runSync('chmod', <String>['+x', spioBinary.path]);
+  Process.runSync('chmod', <String>['+x', pafioBinary.path]);
   return tempRoot;
 }
 
@@ -221,7 +221,7 @@ ProjectGraphSnapshot _projectGraphFor(
   String workspaceRoot, {
   PackageDistributionSnapshot? packageDistribution,
 }) {
-  final manifestPath = '$workspaceRoot${Platform.pathSeparator}spio.toml';
+  final manifestPath = '$workspaceRoot${Platform.pathSeparator}pafio.toml';
   return ProjectGraphSnapshot(
     id: manifestPath,
     title: 'demo/app',

@@ -63,7 +63,7 @@ TEAM_RULES: tuple[TeamRule, ...] = (
             "frontend/styio_view_app/lib/src/backend_toolchain/",
             "frontend/styio_view_app/lib/src/integration/",
             "docs/contracts/",
-            "docs/external/for-spio/",
+            "docs/external/for-pafio/",
             "docs/external/for-styio/",
         ),
     ),

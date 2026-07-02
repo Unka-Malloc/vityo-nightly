@@ -1,6 +1,6 @@
 # Styio View Independent Work Breakdown
 
-**Purpose:** 把 `styio-view` 在不依赖上游新接口的前提下可独立推进的工作拆开，同时明确哪些能力必须转到 `../external/for-styio/` 或 `../external/for-spio/`。
+**Purpose:** 把 `styio-view` 在不依赖上游新接口的前提下可独立推进的工作拆开，同时明确哪些能力必须转到 `../external/for-styio/` 或 `../external/for-pafio/`。
 
 **Last updated:** 2026-04-21
 
@@ -94,9 +94,9 @@
 5. compile-plan consumer
 6. machine-info 扩展
 
-## 4. 必须等待 `spio` 的对接面
+## 4. 必须等待 `pafio` 的对接面
 
-统一放到 `../external/for-spio/`：
+统一放到 `../external/for-pafio/`：
 
 1. project graph payload
 2. workflow success payload

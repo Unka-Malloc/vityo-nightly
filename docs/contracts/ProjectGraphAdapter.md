@@ -60,20 +60,20 @@
 
 `styio-view` 允许直接围绕这些 canonical files 和目录做 UI：
 
-1. `spio.toml`
-2. `spio.lock`
-3. `spio-toolchain.toml`
-4. `.spio/vendor/`
-5. `.spio/build/`
+1. `pafio.toml`
+2. `pafio.lock`
+3. `pafio-toolchain.toml`
+4. `.pafio/vendor/`
+5. `.pafio/build/`
 6. `styio.toml`
 7. `.styio.toml`
 
 ## 3. Non-Negotiable Rules
 
-1. `styio-view` 不通过读 `SPIO_HOME` 私有结构来猜测项目状态。
+1. `styio-view` 不通过读 `PAFIO_HOME` 私有结构来猜测项目状态。
 2. workspace members、targets、toolchain、vendor、lock freshness 最终都必须来自 machine payload 或正式命令。
 3. 缺少正式 payload 时，前端可以用 canonical files 做临时推断，但该模式必须清楚标记为 partial。
-4. 如果 shell 设置了 `STYIO_VIEW_STYIO_BIN`，manifest-mode 的 `spio project-graph` / `spio tool status` 读取必须消费同一个 override；前端不能展示一个 `styio` 来源而让 `spio` 实际使用另一个。
+4. 如果 shell 设置了 `STYIO_VIEW_STYIO_BIN`，manifest-mode 的 `pafio project-graph` / `pafio tool status` 读取必须消费同一个 override；前端不能展示一个 `styio` 来源而让 `pafio` 实际使用另一个。
 5. hosted 模式下，workspace 生命周期与导出状态必须来自 `hostedWorkspace` 记录，不能靠 URL、缓存目录或本地时间推断。
 
 ## 4. Adapter Modes

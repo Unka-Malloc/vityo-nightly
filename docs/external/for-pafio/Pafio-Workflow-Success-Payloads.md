@@ -1,6 +1,6 @@
-# Spio Workflow Success Payloads
+# Pafio Workflow Success Payloads
 
-**Purpose:** 冻结 `styio-view` 对 `spio` workflow success payload 的 handoff 要求。
+**Purpose:** 冻结 `styio-view` 对 `pafio` workflow success payload 的 handoff 要求。
 
 **Last updated:** 2026-04-17
 
@@ -9,9 +9,9 @@
 当前项目执行主线使用这些 canonical CLI forms：
 
 ```text
-spio --json build --manifest-path <path> ...
-spio --json run --manifest-path <path> ...
-spio --json test --manifest-path <path> ...
+pafio --json build --manifest-path <path> ...
+pafio --json run --manifest-path <path> ...
+pafio --json test --manifest-path <path> ...
 ```
 
 当前 published payload family：
@@ -50,14 +50,14 @@ spio --json test --manifest-path <path> ...
 除 `workflow_success_payloads v1` 外，`styio-view` 当前还依赖这些 canonical CLI forms 的成功 JSON：
 
 ```text
-spio --json fetch --manifest-path <path> ...
-spio --json vendor --manifest-path <path> ...
-spio --json pack --manifest-path <path> ...
-spio --json publish --manifest-path <path> --dry-run
-spio --json publish --manifest-path <path> --registry <path-or-url>
-spio --json tool install --styio-bin <path>
-spio --json tool use --version <compiler-version> [--channel <channel>]
-spio --json tool pin (--version <compiler-version> [--channel <channel>] | --clear) [--manifest-path <path>]
+pafio --json fetch --manifest-path <path> ...
+pafio --json vendor --manifest-path <path> ...
+pafio --json pack --manifest-path <path> ...
+pafio --json publish --manifest-path <path> --dry-run
+pafio --json publish --manifest-path <path> --registry <path-or-url>
+pafio --json tool install --styio-bin <path>
+pafio --json tool use --version <compiler-version> [--channel <channel>]
+pafio --json tool pin (--version <compiler-version> [--channel <channel>] | --clear) [--manifest-path <path>]
 ```
 
 这些 supporting commands 当前可以不是共享 versioned family，但成功时仍必须：

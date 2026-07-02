@@ -1,12 +1,12 @@
-# Spio Hosted Control-Plane Contract
+# Pafio Hosted Control-Plane Contract
 
-**Purpose:** Record the frontend-facing hosted workspace API that `styio-view` consumes from `spio` so UI and backend teams can ship independently against a fixed contract package.
+**Purpose:** Record the frontend-facing hosted workspace API that `styio-view` consumes from `pafio` so UI and backend teams can ship independently against a fixed contract package.
 
 **Last updated:** 2026-04-21
 
 ## Source Of Truth
 
-The backend-owned machine contract lives in `styio-spio`:
+The backend-owned machine contract lives in `styio-pafio`:
 
 - `contracts/hosted-control-plane/v1/openapi.json`
 - `contracts/hosted-control-plane/v1/workflows.arazzo.json`

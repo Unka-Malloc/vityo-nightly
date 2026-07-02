@@ -49,4 +49,4 @@
 3. project-backed preview-only route
 4. `ExecutionSession` 状态模型与 runtime/debug 回流
 5. workspace 侧栏里的 `Project Workflow` 和 `Compiler Handshake` 卡片
-6. workspace 侧栏里的 `Required Handoffs` 卡片，用产品语言明确 `styio` / `spio` 尚未交付的 machine contract
+6. workspace 侧栏里的 `Required Handoffs` 卡片，用产品语言明确 `styio` / `pafio` 尚未交付的 machine contract

@@ -30,10 +30,10 @@ STYIO_VIEW_PRODUCT_GATE=1 flutter test
 Cross-repository contract or product changes must also run the matching ecosystem gate from `styio-nightly`, for example:
 
 ```bash
-cd $HOME/styio-nightly
-python3 scripts/ecosystem-cli-doc-gate.py --workspace-root $HOME
-python3 scripts/ecosystem-product-gate.py --workspace-root $HOME
-python3 scripts/ecosystem-sample-workflow-gate.py --workspace-root $HOME
+cd <styio-workspace>
+python3 scripts/ecosystem-cli-doc-gate.py --workspace-root <workspace-root>
+python3 scripts/ecosystem-product-gate.py --workspace-root <workspace-root>
+python3 scripts/ecosystem-sample-workflow-gate.py --workspace-root <workspace-root>
 ```
 
 The commit message body should record the checks that were actually run.
@@ -62,21 +62,21 @@ If `gh` is unavailable or unauthenticated, the agent must state that GitHub Acti
 
 ## Cross-Repository Work
 
-When one delivery touches `styio-nightly`, `styio-spio`, and `styio-view`, post-push verification applies to every pushed repository. The agent should check each repository's GitHub Actions status, not only the repository that received the last commit.
+When one delivery touches `styio-nightly`, `styio-pafio`, and `styio-view`, post-push verification applies to every pushed repository. The agent should check each repository's GitHub Actions status, not only the repository that received the last commit.
 
 Cross-repository gates must use the same workspace checkout set that will be visible to CI. If a gate consumes another repository's branch, push that repository first or report that remote CI may still be using an older sibling checkout.
 
 ## Delivery Ruleset Governance
 
-Required GitHub merge gates are maintained through GitHub Rulesets, not legacy classic branch protection. `ai-dev` and protected release/default branches must have an active Ruleset requiring the `audit` status check from the `audit` workflow, with strict required status checks enabled.
+Required GitHub merge gates are maintained through GitHub Rulesets, not legacy classic branch protection. `release`, `stable`, and `nightly` must have an active Ruleset requiring the `audit` status check from the `audit` workflow, with strict required status checks enabled. Every other branch name is temporary and must not receive branch-name-specific rules.
 
 Gate audits must inspect effective branch rules, for example:
 
 ```bash
-gh api repos/Unka-Malloc/styio-view/rules/branches/ai-dev
+gh api repos/SymPolicy/Vityo/rules/branches/release
 ```
 
-Do not use `branches/ai-dev/protection/required_status_checks` as the authority for this repository. That legacy classic endpoint can return 404 even when the Ruleset gate is active.
+Do not use `branches/<branch>/protection/required_status_checks` as the authority for this repository. That legacy classic endpoint can return 404 even when the Ruleset gate is active.
 
 ## Completion Criteria
 

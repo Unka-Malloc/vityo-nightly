@@ -6,26 +6,26 @@ import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
-  test('dependency source adapter executes published spio fetch', () async {
+  test('dependency source adapter executes published pafio fetch', () async {
     final tempRoot = await Directory.systemTemp.createTemp(
       'styio_view_dependency_source_test_',
     );
     addTearDown(() => tempRoot.delete(recursive: true));
 
-    File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+    File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
       ..createSync(recursive: true)
       ..writeAsStringSync('[package]\nname = "demo/app"\nversion = "0.1.0"\n');
-    final spioBinary = File(
-      '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+    final pafioBinary = File(
+      '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
     );
-    spioBinary.createSync(recursive: true);
-    spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+    pafioBinary.createSync(recursive: true);
+    pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
-if sys.argv[1:] == ['--json', 'fetch', '--manifest-path', '${tempRoot.path}${Platform.pathSeparator}spio.toml', '--locked', '--offline']:
+if sys.argv[1:] == ['--json', 'fetch', '--manifest-path', '${tempRoot.path}${Platform.pathSeparator}pafio.toml', '--locked', '--offline']:
     print(json.dumps({
         'command': 'fetch',
-        'message': 'materialized dependency sources under local spio cache',
+        'message': 'materialized dependency sources under local pafio cache',
         'packages': 3,
         'git_packages': 1,
         'registry_packages': 1,
@@ -36,7 +36,7 @@ if sys.argv[1:] == ['--json', 'fetch', '--manifest-path', '${tempRoot.path}${Pla
 
 raise SystemExit(64)
 ''');
-    Process.runSync('chmod', <String>['+x', spioBinary.path]);
+    Process.runSync('chmod', <String>['+x', pafioBinary.path]);
 
     final adapter = await createDependencySourceAdapter(
       platformTarget: PlatformTarget.macos,
@@ -67,12 +67,12 @@ raise SystemExit(64)
     );
 
     expect(result.status, DependencySourceCommandStatus.blocked);
-    expect(result.statusMessage, contains('requires a resolved spio manifest'));
+    expect(result.statusMessage, contains('requires a resolved pafio manifest'));
   });
 }
 
 ProjectGraphSnapshot _projectGraphFor(String workspaceRoot) {
-  final manifestPath = '$workspaceRoot${Platform.pathSeparator}spio.toml';
+  final manifestPath = '$workspaceRoot${Platform.pathSeparator}pafio.toml';
   return ProjectGraphSnapshot(
     id: manifestPath,
     title: 'demo/app',

@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 runtime surface、debug/agent 面板、prompt/profile 入口与执行态 UI 的日常维护入口。
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-07-02
 
 ## Mission
 
@@ -31,6 +31,7 @@ Key SSOTs:
 4. 变更 profile/prompt 流程时，同步检查本地持久化和 sync adapter 语义。
 5. `agent_profile.dart` 只冻结 provider route、默认 endpoint、profile JSON 和 local-bridge eligibility；本轮不新增真实 AI provider 调用、账号策略或云端 secret 管理。
 6. runtime replay、debug lane 和 hosted execution 摘要必须消费 `backend_toolchain` adapter payload，不得回读 legacy integration façade 或上游 human stderr。
+7. Pafio / Styio-Cloud 重命名或 hosted route 变更时，同步检查 `runtime_surface.dart` 的 visible surface id、label、fallback 文案和 backend handoff 摘要，避免 runtime/debug 入口继续暴露旧包管理器命名或平台所有权。
 
 ## Change Classes
 
