@@ -17,25 +17,25 @@ String joinPath(String left, String right) {
   return '$normalizedLeft$separator$normalizedRight';
 }
 
-Future<String?> resolveSpioBinary({required String workspaceRoot}) async {
+Future<String?> resolvePafioBinary({required String workspaceRoot}) async {
   final candidates = <String>[];
   final seen = <String>{};
-  final explicit = Platform.environment['STYIO_VIEW_SPIO_BIN'];
+  final explicit = Platform.environment['STYIO_VIEW_PAFIO_BIN'];
   if (explicit != null && explicit.isNotEmpty) {
     candidates.add(explicit);
   }
-  final fromEnv = Platform.environment['SPIO_BIN'];
+  final fromEnv = Platform.environment['PAFIO_BIN'];
   if (fromEnv != null && fromEnv.isNotEmpty) {
     candidates.add(fromEnv);
   }
 
   var current = Directory(workspaceRoot).absolute;
   while (true) {
-    candidates.add(joinPath(current.path, '.spio/bin/spio'));
-    candidates.add(joinPath(current.path, 'scripts/spio'));
-    candidates.add(joinPath(current.path, '../styio-spio/scripts/spio'));
+    candidates.add(joinPath(current.path, '.pafio/bin/pafio'));
+    candidates.add(joinPath(current.path, 'scripts/pafio'));
+    candidates.add(joinPath(current.path, '../styio-pafio/scripts/pafio'));
     candidates.add(
-      joinPath(current.path, '../../Unka-Malloc/styio-spio/scripts/spio'),
+      joinPath(current.path, '../../Unka-Malloc/styio-pafio/scripts/pafio'),
     );
     final parent = current.parent;
     if (parent.path == current.path) {
@@ -55,9 +55,9 @@ Future<String?> resolveSpioBinary({required String workspaceRoot}) async {
   }
 
   try {
-    final result = await Process.run('spio', const <String>['--version']);
+    final result = await Process.run('pafio', const <String>['--version']);
     if (result.exitCode == 0) {
-      return 'spio';
+      return 'pafio';
     }
   } on ProcessException {
     // Fall through to null when the binary is unavailable.

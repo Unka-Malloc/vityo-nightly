@@ -269,7 +269,7 @@ Map<String, String> _hostedEnvironmentForServer(
         'http://${server.address.address}:${server.port}$basePath',
     'STYIO_VIEW_HOSTED_TOKEN': 'test-hosted-token',
     'STYIO_VIEW_HOSTED_WORKSPACE_ROOT': '/workspace/demo',
-    'STYIO_VIEW_HOSTED_MANIFEST_PATH': '/workspace/demo/spio.toml',
+    'STYIO_VIEW_HOSTED_MANIFEST_PATH': '/workspace/demo/pafio.toml',
     ...overrides,
   };
 }

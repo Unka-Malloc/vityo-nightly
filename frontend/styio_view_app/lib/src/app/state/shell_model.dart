@@ -283,14 +283,14 @@ class ShellModel extends ChangeNotifier {
     if (platformTarget == PlatformTarget.ios ||
         platformTarget == PlatformTarget.web) {
       if (!projectGraph.hasHostedWorkspace) {
-        return '${platformTarget.label} does not expose local spio toolchain management.';
+        return '${platformTarget.label} does not expose local pafio toolchain management.';
       }
     }
     if (requiresResolvedCompiler && projectGraph.activeCompiler == null) {
       return 'No active compiler handshake is currently resolved for this project.';
     }
     if (requiresManifest && !projectGraph.hasManifest) {
-      return 'Project toolchain commands require a resolved spio manifest path.';
+      return 'Project toolchain commands require a resolved pafio manifest path.';
     }
     if (requiresPin && projectGraph.toolchainPinPath == null) {
       return 'No project toolchain pin is currently resolved.';
@@ -305,11 +305,11 @@ class ShellModel extends ChangeNotifier {
     if (platformTarget == PlatformTarget.ios ||
         platformTarget == PlatformTarget.web) {
       if (!projectGraph.hasHostedWorkspace) {
-        return '${platformTarget.label} does not expose local spio deployment commands.';
+        return '${platformTarget.label} does not expose local pafio deployment commands.';
       }
     }
     if (!projectGraph.hasManifest) {
-      return 'Deployment commands require a resolved spio manifest path.';
+      return 'Deployment commands require a resolved pafio manifest path.';
     }
     if (!requireResolvedPublishTarget) {
       return null;

@@ -221,8 +221,8 @@ void main() {
             sourceState: const ProjectSourceStateSnapshot(
               schemaVersion: 1,
               vendor: VendorSourceStateSnapshot(
-                vendorRoot: '/workspace/demo/.spio/vendor',
-                metadataPath: '/workspace/demo/.spio/vendor/spio-vendor.json',
+                vendorRoot: '/workspace/demo/.pafio/vendor',
+                metadataPath: '/workspace/demo/.pafio/vendor/pafio-vendor.json',
                 vendorPresent: true,
                 metadataPresent: true,
                 gitSnapshots: 1,
@@ -383,12 +383,12 @@ ProjectGraphSnapshot _projectGraph({
   required bool compilePlanReady,
 }) {
   return ProjectGraphSnapshot(
-    id: '/workspace/demo/spio.toml',
+    id: '/workspace/demo/pafio.toml',
     title: 'demo/app',
     kind: ProjectKind.package,
     workspaceRoot: '/workspace/demo',
     workspaceMembers: const <String>[],
-    manifestPath: '/workspace/demo/spio.toml',
+    manifestPath: '/workspace/demo/pafio.toml',
     packages: const <ProjectPackageSnapshot>[],
     dependencies: const <ProjectDependencySnapshot>[],
     targets: const <ProjectTargetDescriptor>[
@@ -404,7 +404,7 @@ ProjectGraphSnapshot _projectGraph({
     toolchain: const ToolchainStatusSnapshot(
       source: ToolchainResolutionSource.projectPin,
       detail: 'Project toolchain pin discovered for shell-model testing.',
-      pinPath: '/workspace/demo/spio-toolchain.toml',
+      pinPath: '/workspace/demo/pafio-toolchain.toml',
       channel: 'stable',
     ),
     lockState: ProjectLockState.unknown,
@@ -645,8 +645,8 @@ class _SuccessfulDependencySourceAdapter implements DependencySourceAdapter {
       stderr: '',
       payload: <String, dynamic>{
         'packages': 2,
-        'vendor_root': '/workspace/demo/.spio/vendor',
-        'metadata_path': '/workspace/demo/.spio/vendor/spio-vendor.json',
+        'vendor_root': '/workspace/demo/.pafio/vendor',
+        'metadata_path': '/workspace/demo/.pafio/vendor/pafio-vendor.json',
       },
     );
   }

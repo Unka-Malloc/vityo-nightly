@@ -12,7 +12,7 @@
 
 1. frontend teams do not know which fields should come from normalized backend state versus raw files
 2. backend work has no repo-local place to document route selection and blocked-state behavior
-3. upstream asks to `styio-nightly` and `styio-spio` risk getting mixed with UI-specific assumptions
+3. upstream asks to `styio-nightly` and `styio-pafio` risk getting mixed with UI-specific assumptions
 
 This plan makes `toolchain/` the local ownership area for profile assets, backend notes, and mockable handoff examples while preserving upstream SSOT boundaries.
 
@@ -22,7 +22,7 @@ This plan makes `toolchain/` the local ownership area for profile assets, backen
 |------|-------|--------------|
 | `toolchain/` | `styio-view` toolchain backend | repo-local profile assets, normalization notes, frontend handoff examples |
 | `docs/contracts/` | `styio-view` product-contract owners | adapter SSOT consumed by frontend and backend |
-| `styio-spio` | package/workflow/backend-service owners | hosted control plane, project graph, toolchain state, dependency and deployment backend services |
+| `styio-pafio` | package/workflow/backend-service owners | hosted control plane, project graph, toolchain state, dependency and deployment backend services |
 | `styio-nightly` | compiler/toolchain owners | compiler binary truth, managed toolchain install/use/pin semantics, machine-info capability SSOT |
 
 ## 3. Backend-Owned Surface Inside This Repo
@@ -48,9 +48,9 @@ The backend consumes published compiler and managed-toolchain truth from `styio-
 2. install/use/pin lifecycle semantics
 3. machine-info and capability publication
 
-### `styio-spio`
+### `styio-pafio`
 
-The backend consumes package/workflow/backend-service truth from `styio-spio`, including:
+The backend consumes package/workflow/backend-service truth from `styio-pafio`, including:
 
 1. project graph payloads
 2. toolchain state payloads
@@ -65,9 +65,9 @@ Frontend teams interface with this backend lane through product contracts and ho
 
 Fixed rule set:
 
-1. frontend binds to `ToolchainManagementAdapter`, `ProjectGraphAdapter`, `DependencySourceAdapter`, `AdapterCapabilitySnapshot`, and the hosted toolchain routes published by `styio-spio`
+1. frontend binds to `ToolchainManagementAdapter`, `ProjectGraphAdapter`, `DependencySourceAdapter`, `AdapterCapabilitySnapshot`, and the hosted toolchain routes published by `styio-pafio`
 2. frontend may use `toolchain/examples/*.example.json` for mocks and tests, but those files are not SSOT
-3. frontend must not parse `.spio`, compiler-install symlinks, cache layout, or raw profile CSVs on the main runtime path
+3. frontend must not parse `.pafio`, compiler-install symlinks, cache layout, or raw profile CSVs on the main runtime path
 4. missing hosted identity or unpublished capability must render as `blocked` or `partial`, never as silent fallback logic
 
 ## 6. Parallel Development Handoff
@@ -92,7 +92,7 @@ Fixed rule set:
 If a new field, operation, or route is required:
 
 1. promote it into `docs/contracts/` when it is a `styio-view` product contract
-2. promote it into `styio-spio` or `styio-nightly` when it belongs to upstream machine truth
+2. promote it into `styio-pafio` or `styio-nightly` when it belongs to upstream machine truth
 3. only then update `toolchain/examples/` and downstream UI/backend code
 
 ## 7. Exit Criteria

@@ -25,7 +25,7 @@
 
 1. `lib/src/backend_toolchain/` 作为工具链后端与 adapter 实现的显式入口边界
 2. local CLI / FFI / hosted control plane 的能力提供
-3. `spio` / `styio` 的 project graph、toolchain、dependency、execution、deployment、runtime-event 合同
+3. `pafio` / `styio` 的 project graph、toolchain、dependency、execution、deployment、runtime-event 合同
 
 兼容层：
 
@@ -58,11 +58,11 @@
 14. inline language feedback 与 language inspector 都已支持直接应用 completion / formatting action，不再只是只读预览
 15. diagnostics 已接入最小 quick-fix 回路，当前可直接修复 `missing assignment / stray brace / unclosed block`
 16. 光标所在 token 现在会在正文中高亮，inline feedback 与 language inspector 也会显示该 token 的 lexeme / kind / semantic 上下文
-17. 工作区已从 seed workspace 切到 canonical project graph 模型，围绕 `spio.toml / spio.lock / spio-toolchain.toml / .spio / styio.toml` 组织 UI
+17. 工作区已从 seed workspace 切到 canonical project graph 模型，围绕 `pafio.toml / pafio.lock / pafio-toolchain.toml / .pafio / styio.toml` 组织 UI
 18. 主线已消费 `ProjectGraphAdapter` 与 `ExecutionAdapter`，并把 `CLI / FFI / Cloud` route 统一折叠为 `AdapterCapabilitySnapshot`
 19. 工作区侧栏现在会显式展示 `Project Workflow` 与 `Compiler Handshake`，把 project preview 限制、toolchain 来源、compiler contracts 和当前主路由直接做成卡片
 20. `Runtime Surface` 已复用同一份 execution route summary，并能显示最近一次执行的 `unit range / stdout / stderr / diagnostics` 统计
-21. 工作区侧栏新增 `Required Handoffs` 卡，只表达 `styio-view` 还需要 `styio` / `spio` 提供哪些 machine contract，不替上游做内部实现规划
+21. 工作区侧栏新增 `Required Handoffs` 卡，只表达 `styio-view` 还需要 `styio` / `pafio` 提供哪些 machine contract，不替上游做内部实现规划
 22. `Project Graph` 现在已细化到 `workspace members / packages / dependencies / targets` 四层展示，并继续保持 canonical file inference 与正式 machine payload 解耦
 23. `lib/src/backend_toolchain/` 已成为工具链后端实现根目录，`lib/src/integration/` 收窄为兼容导出层，`lib/src/frontend_shell/` 作为用户壳层入口边界
 

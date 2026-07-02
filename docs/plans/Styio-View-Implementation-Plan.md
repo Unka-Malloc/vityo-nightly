@@ -18,7 +18,7 @@
 |---------------------|--------------------------|----------|
 | `M0` | `W1` | 产品合同、文档策略、adapter 边界、团队协作入口锁定 |
 | `M1` | `W3` + `W5` compiler side consumption | 正式消费 `styio-nightly` 发布的 language/execution contract |
-| `M2` | `W3` + `W4` + `W5` package/environment consumption | 正式消费 `spio` 的 project graph/toolchain/source/registry state |
+| `M2` | `W3` + `W4` + `W5` package/environment consumption | 正式消费 `pafio` 的 project graph/toolchain/source/registry state |
 | `M3` | `W2` + `W4` + `W5` | IDE core、project UI、execution shell、environment shell 闭合 |
 | `M4` | `W6` + `W7` + `W8` + `W10` | runtime surface、AI、theme、module runtime 闭合 |
 | `M5` | `W9` | Android、本地/云 iOS、Web hosted workspace 路线闭合 |
@@ -47,7 +47,7 @@
 | W1 Product Foundation | 文档、目录、合同、ADR、平台边界 | `docs/contracts/` 与 handoff 目录冻结 |
 | W2 Editor Engine | 文档模型、布局、选择、输入、装饰层 | 可编辑的自研文本引擎 |
 | W3 Adapter Layer | 语言、项目图、执行、runtime 事件的产品合同与实现槽位 | Flutter 只依赖 adapter |
-| W4 Project Model | `spio.toml / spio.lock / spio-toolchain.toml / .spio / styio.toml` UI 与状态模型 | 正式项目图主线 |
+| W4 Project Model | `pafio.toml / pafio.lock / pafio-toolchain.toml / .pafio / styio.toml` UI 与状态模型 | 正式项目图主线 |
 | W5 Execution Routing | scratch single-file、project preview、cloud route | 执行路径与 capability gap 可视化 |
 | W6 Runtime Surface | 底部运行图、线程轨与状态视图 | runtime 面板最小闭环 |
 | W7 AI Surface | Agent 面板、provider adapter、prompt/profile 接入 | IDE 内建 AI 壳闭环 |
@@ -80,7 +80,7 @@ flowchart LR
 2. 主线先支持 `CLI Adapter`。
 3. `FFI Adapter` 是统一本地原生接入标识。
 4. `Cloud Adapter` 作为移动端和 hosted workspace 的补充。
-5. 上游缺能力时，写入 `../external/for-styio/` 或 `../external/for-spio/`，不牺牲产品语义。
+5. 上游缺能力时，写入 `../external/for-styio/` 或 `../external/for-pafio/`，不牺牲产品语义。
 6. 三仓共同里程碑变化必须先回写镜像总纲，再调整本文件中的 workstream 顺序和出入口。
 
 ## 5. 当前项目级任务清单
@@ -89,7 +89,7 @@ flowchart LR
 
 以下条目已在当前代码和测试中闭环，可从本计划的“当前下一步”里移出。未列出的条目仍按原计划推进，不因存在壳代码或占位结构而视为完成。
 
-1. `W1 Product Foundation` 已闭合：`docs/contracts/`、`docs/external/for-styio/`、`docs/external/for-spio/`、Flutter 主前端、平台执行矩阵、capability gap 规则均已落到文档或 adapter surface；验证入口为 `docs/contracts/`、`docs/external/for-spio/`、`frontend/styio_view_app/lib/src/backend_toolchain/adapter_contracts.dart`、`frontend/styio_view_app/test/required_handoff_summary_test.dart`。
+1. `W1 Product Foundation` 已闭合：`docs/contracts/`、`docs/external/for-styio/`、`docs/external/for-pafio/`、Flutter 主前端、平台执行矩阵、capability gap 规则均已落到文档或 adapter surface；验证入口为 `docs/contracts/`、`docs/external/for-pafio/`、`frontend/styio_view_app/lib/src/backend_toolchain/adapter_contracts.dart`、`frontend/styio_view_app/test/required_handoff_summary_test.dart`。
 2. `W2 Editor Engine` 的文档模型、选择模型、撤销栈、键盘编辑、glyph substitution 光标映射、completion / formatting / quick-fix 交互链已闭合；验证入口为 `frontend/styio_view_app/lib/src/editor/`、`frontend/styio_view_app/test/editor_controller_editing_test.dart`、`frontend/styio_view_app/test/styio_language_service_smoke_test.dart`。
 3. `W3 Adapter Layer` 的 project graph、execution、runtime event、dependency source、deployment、toolchain management 与 capability snapshot 已闭合到产品 adapter surface，旧 `integration/` 入口保留为兼容导出；验证入口为 `frontend/styio_view_app/lib/src/backend_toolchain/`、`frontend/styio_view_app/test/integration_compatibility_exports_test.dart`、`frontend/styio_view_app/test/hosted_control_plane_client_test.dart`。
 4. `W4 Project Model` 的 canonical project graph、workspace members、dependencies、targets、toolchain、lock/vendor/build 状态，以及 `project_graph / toolchain_state / source_state / package_distribution` payload 消费已闭合；验证入口为 `frontend/styio_view_app/test/project_graph_adapter_test.dart`、`frontend/styio_view_app/test/toolchain_management_adapter_test.dart`、`frontend/styio_view_app/test/hosted_control_plane_client_test.dart`。
@@ -116,7 +116,7 @@ flowchart LR
 ### 5.1 W1 Product Foundation
 
 1. 冻结 `docs/contracts/`
-2. 建立 `docs/external/for-styio/` 与 `docs/external/for-spio/` handoff
+2. 建立 `docs/external/for-styio/` 与 `docs/external/for-pafio/` handoff
 3. 固定 Flutter 作为主前端
 4. 固定平台执行矩阵
 5. 建立 capability gap 验收规则
@@ -140,7 +140,7 @@ flowchart LR
 
 ### 5.4 W4 Project Model
 
-1. 围绕 `spio.toml / spio.lock / spio-toolchain.toml / .spio / styio.toml` 建立项目 UI
+1. 围绕 `pafio.toml / pafio.lock / pafio-toolchain.toml / .pafio / styio.toml` 建立项目 UI
 2. 项目树、workspace members、dependencies、targets、toolchain、lock/vendor/build 状态
 3. 正式消费 `project_graph / toolchain_state / source_state / package_distribution`，不再停留在 compile-plan preview 占位
 

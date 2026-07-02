@@ -120,9 +120,9 @@ ExecutionRouteSummary summarizeExecutionRoute({
 
   if (projectGraph.compilePlanConsumerAdvertised) {
     return ExecutionRouteSummary(
-      title: 'Project route live through spio',
+      title: 'Project route live through pafio',
       body:
-          'The active compiler advertises compile-plan support, so project build/run/test can execute through spio with live compile-plan v1 handoff.',
+          'The active compiler advertises compile-plan support, so project build/run/test can execute through pafio with live compile-plan v1 handoff.',
       primaryAdapterKind: AdapterKind.cli,
       previewOnly: false,
       jitRoute: jitRoute,
@@ -147,7 +147,7 @@ ExecutionRouteSummary summarizeExecutionRoute({
   return ExecutionRouteSummary(
     title: 'Project route preview-only',
     body:
-        'The shell can inspect spio projects today, but build/run/test stays blocked until the active compiler advertises compile-plan support.',
+        'The shell can inspect pafio projects today, but build/run/test stays blocked until the active compiler advertises compile-plan support.',
     primaryAdapterKind: AdapterKind.cli,
     previewOnly: true,
     jitRoute: jitRoute,

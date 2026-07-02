@@ -106,7 +106,7 @@ RuntimeEventAdapter createRuntimeEventAdapter({
         execution: AdapterEndpointCapability(
           level: AdapterCapabilityLevel.partial,
           detail:
-              'CLI execution is live for single-file and spio-routed project workflows.',
+              'CLI execution is live for single-file and pafio-routed project workflows.',
         ),
         runtimeEvents: AdapterEndpointCapability(
           level: AdapterCapabilityLevel.partial,

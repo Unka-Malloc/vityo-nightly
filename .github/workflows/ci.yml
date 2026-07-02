@@ -1,15 +1,16 @@
-name: styio-ci
+name: platform-adaptation
 
 on:
   pull_request:
   push:
     branches:
-      - main
-      - master
-      - agent-dev
+      - release
+      - stable
+      - nightly
 
 jobs:
-  build-and-test:
+  linux:
+    name: platform-adaptation / linux-ci-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -33,15 +34,15 @@ jobs:
             requested="${{ github.base_ref }}"
           fi
 
-          for ref in "$requested" nightly; do
+          for ref in "$requested" stable nightly; do
             if git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-nightly.git "$ref" >/dev/null 2>&1 \
-              && git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-spio.git "$ref" >/dev/null 2>&1; then
+              && git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-pafio.git "$ref" >/dev/null 2>&1; then
               echo "ref=$ref" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
 
-          echo "No common sibling checkout ref found for '$requested' or fallback 'nightly'." >&2
+          echo "No common sibling checkout ref found for '$requested' or fallbacks 'stable'/'nightly'." >&2
           exit 1
 
       - name: Checkout styio-nightly sibling repository
@@ -51,12 +52,12 @@ jobs:
           ref: ${{ steps.sibling-ref.outputs.ref }}
           path: styio-nightly
 
-      - name: Checkout styio-spio sibling repository
+      - name: Checkout styio-pafio sibling repository
         uses: actions/checkout@v5
         with:
-          repository: Unka-Malloc/styio-spio
+          repository: Unka-Malloc/styio-pafio
           ref: ${{ steps.sibling-ref.outputs.ref }}
-          path: styio-spio
+          path: styio-pafio
 
       - name: Set up standardized Python
         uses: actions/setup-python@v6
@@ -110,6 +111,157 @@ jobs:
 
       - name: Checkpoint health
         working-directory: styio-view
+        env:
+          STYIO_CHROME_PATH: /usr/bin/chromium
+        run: ./scripts/checkpoint-health.sh
+
+  macos:
+    name: platform-adaptation / macos-ci-gate
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      STYIO_FLUTTER_VERSION: "3.41.7"
+
+    steps:
+      - name: Checkout styio-view
+        uses: actions/checkout@v5
+        with:
+          path: styio-view
+
+      - name: Set up standardized Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.STYIO_FLUTTER_VERSION }}
+
+      - name: Restore Flutter dependencies
+        working-directory: styio-view/frontend/styio_view_app
+        run: flutter pub get
+
+      - name: Run macOS platform tests
+        working-directory: styio-view/frontend/styio_view_app
+        run: >
+          flutter test
+          test/module_lifecycle_test.dart
+          test/runtime_surfaces_test.dart
+          test/shell_model_test.dart
+
+      - name: Build macOS desktop runner
+        working-directory: styio-view/frontend/styio_view_app
+        run: |
+          flutter config --enable-macos-desktop
+          flutter build macos --debug
+
+  windows:
+    name: platform-adaptation / windows-ci-gate
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      STYIO_FLUTTER_VERSION: "3.41.7"
+
+    steps:
+      - name: Checkout styio-view
+        uses: actions/checkout@v5
+        with:
+          path: styio-view
+
+      - name: Set up standardized Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.STYIO_FLUTTER_VERSION }}
+
+      - name: Restore Flutter dependencies
+        working-directory: styio-view/frontend/styio_view_app
+        run: flutter pub get
+
+      - name: Run Windows platform tests
+        working-directory: styio-view/frontend/styio_view_app
+        run: >
+          flutter test
+          test/module_lifecycle_test.dart
+          test/runtime_surfaces_test.dart
+          test/shell_model_test.dart
+
+      - name: Build Windows desktop runner
+        working-directory: styio-view/frontend/styio_view_app
+        run: |
+          flutter config --enable-windows-desktop
+          flutter build windows --debug
+
+  test-smoke:
+    name: test / smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      STYIO_FLUTTER_VERSION: "3.41.7"
+
+    steps:
+      - name: Checkout styio-view
+        uses: actions/checkout@v5
+        with:
+          path: styio-view
+
+      - name: Set up standardized Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.STYIO_FLUTTER_VERSION }}
+
+      - name: Restore Flutter dependencies
+        working-directory: styio-view/frontend/styio_view_app
+        run: flutter pub get
+
+      - name: Run smoke tests
+        working-directory: styio-view/frontend/styio_view_app
+        run: >
+          flutter test
+          test/styio_view_app_smoke_test.dart
+          test/styio_language_service_smoke_test.dart
+
+  test-golden-standard:
+    name: test / golden-standard
+    needs: [linux, macos, windows, test-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      STYIO_NODE_VERSION: "24.15.0"
+      STYIO_FLUTTER_VERSION: "3.41.7"
+      STYIO_CHROMIUM_VERSION: "147.0.7727.116"
+
+    steps:
+      - name: Checkout styio-view
+        uses: actions/checkout@v5
+
+      - name: Set up standardized Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.STYIO_NODE_VERSION }}
+
+      - name: Set up standardized Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.STYIO_FLUTTER_VERSION }}
+
+      - name: Install standardized Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium
+          test "$(chromium --product-version)" = "${STYIO_CHROMIUM_VERSION}"
+
+      - name: Restore Flutter dependencies
+        working-directory: frontend/styio_view_app
+        run: flutter pub get
+
+      - name: Restore prototype dependencies
+        working-directory: prototype
+        run: npm ci
+
+      - name: Run Flutter golden tests
+        working-directory: frontend/styio_view_app
+        run: flutter test
+
+      - name: Run docs gate
+        run: ./scripts/docs-gate.sh
+
+      - name: Run checkpoint health
         env:
           STYIO_CHROME_PATH: /usr/bin/chromium
         run: ./scripts/checkpoint-health.sh

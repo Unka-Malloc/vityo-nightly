@@ -1,14 +1,14 @@
-# Spio Integration Overview
+# Pafio Integration Overview
 
-**Purpose:** 说明 `styio-view` 与上游 `spio` 的总体责任边界，避免把前端项目模型和包管理器内部实现绑死。
+**Purpose:** 说明 `styio-view` 与上游 `pafio` 的总体责任边界，避免把前端项目模型和包管理器内部实现绑死。
 
 **Last updated:** 2026-04-17
 
 ## 1. 总体判断
 
-`spio` 是项目、workspace、toolchain、lock/vendor、registry/package orchestration 的 canonical owner。
+`pafio` 是项目、workspace、toolchain、lock/vendor、registry/package orchestration 的 canonical owner。
 
-`styio-view` 不应该通过读取 `spio` 私有缓存目录或内部源码结构来推断这些状态。
+`styio-view` 不应该通过读取 `pafio` 私有缓存目录或内部源码结构来推断这些状态。
 
 ## 2. `styio-view` 负责
 
@@ -17,13 +17,13 @@
 3. `build/run/test` 项目执行路由与结果展示
 4. package tree、publish preflight、registry 状态的前端表达
 
-## 3. `spio` 负责
+## 3. `pafio` 负责
 
 1. workspace members 与 package graph
 2. `lib / bin / test` targets
 3. toolchain pin 解析
 4. lock/vendor/build 状态
-5. `spio --json fetch / vendor / pack / publish / tool install / tool use / tool pin / build / run / test` 的 machine-readable success payload
+5. `pafio --json fetch / vendor / pack / publish / tool install / tool use / tool pin / build / run / test` 的 machine-readable success payload
 
 ## 4. 当前最关键的三项 handoff
 

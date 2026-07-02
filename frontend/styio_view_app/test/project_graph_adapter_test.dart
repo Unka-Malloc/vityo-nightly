@@ -10,7 +10,7 @@ import 'package:styio_view_app/src/backend_toolchain/project_graph_contract.dart
 import 'package:styio_view_app/src/platform/platform_target.dart';
 
 void main() {
-  test('project graph adapter discovers canonical spio package files', () async {
+  test('project graph adapter discovers canonical pafio package files', () async {
     final tempRoot = await Directory.systemTemp.createTemp(
       'styio_view_project_graph_test_',
     );
@@ -19,7 +19,7 @@ void main() {
     final previousCurrentDirectory = Directory.current;
     addTearDown(() => Directory.current = previousCurrentDirectory);
 
-    File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+    File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
       ..createSync(recursive: true)
       ..writeAsStringSync('''
 [package]
@@ -50,20 +50,20 @@ path = "src/main.styio"
 name = "render-flow"
 path = "tests/render_flow.styio"
 ''');
-    File('${tempRoot.path}${Platform.pathSeparator}spio.lock')
+    File('${tempRoot.path}${Platform.pathSeparator}pafio.lock')
       ..createSync(recursive: true)
       ..writeAsStringSync('# lock');
-    File('${tempRoot.path}${Platform.pathSeparator}spio-toolchain.toml')
+    File('${tempRoot.path}${Platform.pathSeparator}pafio-toolchain.toml')
       ..createSync(recursive: true)
       ..writeAsStringSync('channel = "stable"\nversion = "0.0.1"\n');
     File('${tempRoot.path}${Platform.pathSeparator}styio.toml')
       ..createSync(recursive: true)
       ..writeAsStringSync('target = "preview"\n');
     Directory(
-      '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}vendor',
+      '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}vendor',
     ).createSync(recursive: true);
     Directory(
-      '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}build',
+      '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}build',
     ).createSync(recursive: true);
     Directory(
       '${tempRoot.path}${Platform.pathSeparator}src',
@@ -75,7 +75,7 @@ path = "tests/render_flow.styio"
       '${tempRoot.path}${Platform.pathSeparator}tests',
     ).createSync(recursive: true);
     File(
-        '${tempRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}render-kit${Platform.pathSeparator}spio.toml',
+        '${tempRoot.path}${Platform.pathSeparator}packages${Platform.pathSeparator}render-kit${Platform.pathSeparator}pafio.toml',
       )
       ..createSync(recursive: true)
       ..writeAsStringSync('''
@@ -95,7 +95,7 @@ path = "src/lib.styio"
     final graph = await adapter.loadProjectGraph();
 
     expect(graph.kind, ProjectKind.combinedRoot);
-    expect(graph.manifestPath, endsWith('${Platform.pathSeparator}spio.toml'));
+    expect(graph.manifestPath, endsWith('${Platform.pathSeparator}pafio.toml'));
     expect(graph.lockState, ProjectLockState.unknown);
     expect(graph.vendorState, ProjectVendorState.present);
     expect(graph.toolchain.source, ToolchainResolutionSource.projectPin);
@@ -103,7 +103,7 @@ path = "src/lib.styio"
     expect(graph.toolchain.version, '0.0.1');
     expect(
       graph.toolchainPinPath,
-      endsWith('${Platform.pathSeparator}spio-toolchain.toml'),
+      endsWith('${Platform.pathSeparator}pafio-toolchain.toml'),
     );
     expect(
       graph.styioConfigPath,
@@ -151,7 +151,7 @@ path = "src/lib.styio"
   });
 
   test(
-    'project graph adapter falls back to scratch mode without spio.toml',
+    'project graph adapter falls back to scratch mode without pafio.toml',
     () async {
       final tempRoot = await Directory.systemTemp.createTemp(
         'styio_view_project_graph_scratch_test_',
@@ -181,7 +181,7 @@ path = "src/lib.styio"
   );
 
   test(
-    'project graph adapter prefers published spio payload when available',
+    'project graph adapter prefers published pafio payload when available',
     () async {
       final tempRoot = await Directory.systemTemp.createTemp(
         'styio_view_project_graph_payload_test_',
@@ -191,7 +191,7 @@ path = "src/lib.styio"
       final previousCurrentDirectory = Directory.current;
       addTearDown(() => Directory.current = previousCurrentDirectory);
 
-      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+      File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync('''
 [package]
@@ -206,16 +206,16 @@ implicit-std = true
 name = "demo"
 path = "src/main.styio"
 ''');
-      final spioBinary = File(
-        '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+      final pafioBinary = File(
+        '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
       );
-      spioBinary.createSync(recursive: true);
-      spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+      pafioBinary.createSync(recursive: true);
+      pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
 if sys.argv[1:] == ['machine-info', '--json']:
     print(json.dumps({
-        'tool': 'spio',
+        'tool': 'pafio',
         'supported_contract_versions': {
             'project_graph': [1],
             'toolchain_state': [1],
@@ -227,22 +227,22 @@ if len(sys.argv) >= 4 and sys.argv[1] == 'project-graph' and sys.argv[2] == '--j
     print(json.dumps({
         'command': 'project-graph',
         'schema_version': 1,
-        'id': '/workspace/demo/spio.toml',
+        'id': '/workspace/demo/pafio.toml',
         'title': 'demo/app',
         'kind': 'package',
         'workspace_root': '/workspace/demo',
         'workspace_members': [],
-        'manifest_path': '/workspace/demo/spio.toml',
-        'lockfile_path': '/workspace/demo/spio.lock',
-        'toolchain_pin_path': '/workspace/demo/spio-toolchain.toml',
+        'manifest_path': '/workspace/demo/pafio.toml',
+        'lockfile_path': '/workspace/demo/pafio.lock',
+        'toolchain_pin_path': '/workspace/demo/pafio-toolchain.toml',
         'styio_config_path': None,
-        'vendor_root': '/workspace/demo/.spio/vendor',
-        'build_root': '/workspace/demo/.spio/build',
+        'vendor_root': '/workspace/demo/.pafio/vendor',
+        'build_root': '/workspace/demo/.pafio/build',
         'packages': [{
             'package_name': 'demo/app',
             'version': '0.1.0',
             'root_path': '/workspace/demo',
-            'manifest_path': '/workspace/demo/spio.toml',
+            'manifest_path': '/workspace/demo/pafio.toml',
             'publish_enabled': True,
             'targets': [{
                 'id': 'demo/app:bin:demo',
@@ -294,7 +294,7 @@ if len(sys.argv) >= 4 and sys.argv[1] == 'project-graph' and sys.argv[2] == '--j
         'toolchain': {
             'source': 'project-pin',
             'detail': 'Project toolchain pin resolved to managed styio stable/0.0.1.',
-            'pin_path': '/workspace/demo/spio-toolchain.toml',
+            'pin_path': '/workspace/demo/pafio-toolchain.toml',
             'channel': 'stable',
             'version': '0.0.1',
         },
@@ -304,7 +304,7 @@ if len(sys.argv) >= 4 and sys.argv[1] == 'project-graph' and sys.argv[2] == '--j
             'schema_version': 1,
             'packages': [{
                 'package_name': 'demo/app',
-                'manifest_path': '/workspace/demo/spio.toml',
+                'manifest_path': '/workspace/demo/pafio.toml',
                 'publish_enabled': True,
                 'publish_ready': True,
                 'blocking_reasons': [],
@@ -326,27 +326,27 @@ if len(sys.argv) >= 4 and sys.argv[1] == 'project-graph' and sys.argv[2] == '--j
         },
         'source_state': {
             'schema_version': 1,
-            'spio_home': '/workspace/.spio',
+            'pafio_home': '/workspace/.pafio',
             'declared_git_dependencies': 0,
             'declared_registry_dependencies': 1,
             'git_cache': {
-                'repos_root': '/workspace/.spio/git/repos',
-                'checkouts_root': '/workspace/.spio/git/checkouts',
+                'repos_root': '/workspace/.pafio/git/repos',
+                'checkouts_root': '/workspace/.pafio/git/checkouts',
                 'repos_present': False,
                 'checkouts_present': False,
             },
             'registry_cache': {
-                'cache_root': '/workspace/.spio/registry',
-                'index_root': '/workspace/.spio/registry/index',
-                'blob_root': '/workspace/.spio/registry/blobs/sha256',
-                'checkout_root': '/workspace/.spio/registry/checkouts',
+                'cache_root': '/workspace/.pafio/registry',
+                'index_root': '/workspace/.pafio/registry/index',
+                'blob_root': '/workspace/.pafio/registry/blobs/sha256',
+                'checkout_root': '/workspace/.pafio/registry/checkouts',
                 'index_present': True,
                 'blobs_present': True,
                 'checkouts_present': True,
             },
             'vendor': {
-                'vendor_root': '/workspace/demo/.spio/vendor',
-                'metadata_path': '/workspace/demo/.spio/vendor/spio-vendor.json',
+                'vendor_root': '/workspace/demo/.pafio/vendor',
+                'metadata_path': '/workspace/demo/.pafio/vendor/pafio-vendor.json',
                 'vendor_present': True,
                 'metadata_present': True,
                 'git_snapshots': 0,
@@ -364,7 +364,7 @@ if len(sys.argv) >= 4 and sys.argv[1] == 'project-graph' and sys.argv[2] == '--j
             'supported_adapter_modes': ['cli'],
             'feature_flags': {'compile_plan_consumer': True},
         },
-        'notes': ['Project graph loaded through published spio machine payload.'],
+        'notes': ['Project graph loaded through published pafio machine payload.'],
     }))
     raise SystemExit(0)
 
@@ -375,17 +375,17 @@ if len(sys.argv) >= 3 and sys.argv[1] == 'tool' and sys.argv[2] == 'status':
         'toolchain': {
             'source': 'project-pin',
             'detail': 'Project pin resolves to managed styio stable/0.0.1.',
-            'pin_path': '/workspace/demo/spio-toolchain.toml',
+            'pin_path': '/workspace/demo/pafio-toolchain.toml',
             'channel': 'stable',
             'version': '0.0.1',
-            'candidate_binary_path': '/workspace/.spio/tools/styio/stable/0.0.1/bin/styio',
+            'candidate_binary_path': '/workspace/.pafio/tools/styio/stable/0.0.1/bin/styio',
         },
         'project_pin': {
-            'path': '/workspace/demo/spio-toolchain.toml',
+            'path': '/workspace/demo/pafio-toolchain.toml',
             'channel': 'stable',
             'version': '0.0.1',
-            'install_root': '/workspace/.spio/tools/styio/stable/0.0.1',
-            'install_binary_path': '/workspace/.spio/tools/styio/stable/0.0.1/bin/styio',
+            'install_root': '/workspace/.pafio/tools/styio/stable/0.0.1',
+            'install_binary_path': '/workspace/.pafio/tools/styio/stable/0.0.1/bin/styio',
             'install_present': True,
         },
         'active_compiler': {
@@ -415,24 +415,24 @@ if len(sys.argv) >= 3 and sys.argv[1] == 'tool' and sys.argv[2] == 'status':
         },
         'current_compiler_error': None,
         'managed_toolchains': {
-            'spio_home': '/workspace/.spio',
-            'current_binary': '/workspace/.spio/tools/styio/current/bin/styio',
-            'current_metadata_path': '/workspace/.spio/tools/styio/current/install.json',
+            'pafio_home': '/workspace/.pafio',
+            'current_binary': '/workspace/.pafio/tools/styio/current/bin/styio',
+            'current_metadata_path': '/workspace/.pafio/tools/styio/current/install.json',
             'installed': [{
                 'channel': 'stable',
                 'compiler_version': '0.0.1',
-                'install_root': '/workspace/.spio/tools/styio/stable/0.0.1',
-                'install_binary_path': '/workspace/.spio/tools/styio/stable/0.0.1/bin/styio',
-                'install_metadata_path': '/workspace/.spio/tools/styio/stable/0.0.1/install.json',
+                'install_root': '/workspace/.pafio/tools/styio/stable/0.0.1',
+                'install_binary_path': '/workspace/.pafio/tools/styio/stable/0.0.1/bin/styio',
+                'install_metadata_path': '/workspace/.pafio/tools/styio/stable/0.0.1/install.json',
             }],
         },
-        'notes': ['Toolchain state loaded through published spio machine payload.'],
+        'notes': ['Toolchain state loaded through published pafio machine payload.'],
     }))
     raise SystemExit(0)
 
 raise SystemExit(64)
 ''');
-      Process.runSync('chmod', <String>['+x', spioBinary.path]);
+      Process.runSync('chmod', <String>['+x', pafioBinary.path]);
 
       Directory.current = tempRoot;
 
@@ -454,7 +454,7 @@ raise SystemExit(64)
       expect(graph.activeCompiler?.supportsContract('compile_plan'), isTrue);
       expect(
         graph.notes.any(
-          (note) => note.contains('published spio machine payload'),
+          (note) => note.contains('published pafio machine payload'),
         ),
         isTrue,
       );
@@ -472,7 +472,7 @@ raise SystemExit(64)
         'https://packages.example.test',
       );
       expect(graph.sourceState, isNotNull);
-      expect(graph.sourceState?.spioHome, '/workspace/.spio');
+      expect(graph.sourceState?.pafioHome, '/workspace/.pafio');
       expect(graph.sourceState?.declaredRegistryDependencies, 1);
       expect(graph.sourceState?.registryCache.indexPresent, isTrue);
       expect(graph.sourceState?.vendor.metadataPresent, isTrue);
@@ -495,7 +495,7 @@ raise SystemExit(64)
       final previousCurrentDirectory = Directory.current;
       addTearDown(() => Directory.current = previousCurrentDirectory);
 
-      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+      File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync('''
 [package]
@@ -512,16 +512,16 @@ path = "src/main.styio"
       Directory(
         '${tempRoot.path}${Platform.pathSeparator}src',
       ).createSync(recursive: true);
-      final spioBinary = File(
-        '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+      final pafioBinary = File(
+        '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
       );
-      spioBinary.createSync(recursive: true);
-      spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+      pafioBinary.createSync(recursive: true);
+      pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
 if sys.argv[1:] == ['machine-info', '--json']:
     print(json.dumps({
-        'tool': 'spio',
+        'tool': 'pafio',
         'supported_contract_versions': {
             'project_graph': [1],
             'toolchain_state': [1],
@@ -545,16 +545,16 @@ if len(args) >= 3 and args[0] == 'tool' and args[1] == 'status':
             'version': '0.0.1',
         },
         'managed_toolchains': {
-            'spio_home': '/workspace/.spio',
+            'pafio_home': '/workspace/.pafio',
             'installed': [],
         },
-        'notes': ['Toolchain state loaded through published spio machine payload.'],
+        'notes': ['Toolchain state loaded through published pafio machine payload.'],
     }))
     raise SystemExit(0)
 
 raise SystemExit(64)
 ''');
-      Process.runSync('chmod', <String>['+x', spioBinary.path]);
+      Process.runSync('chmod', <String>['+x', pafioBinary.path]);
 
       Directory.current = tempRoot;
 
@@ -576,7 +576,7 @@ raise SystemExit(64)
       expect(graph.hasProjectGraphPayloadFailure, isTrue);
       expect(
         graph.projectGraphPayloadFailure?.command,
-        'spio project-graph --json',
+        'pafio project-graph --json',
       );
       expect(
         graph.projectGraphPayloadFailure?.detail,
@@ -601,7 +601,7 @@ raise SystemExit(64)
       final previousCurrentDirectory = Directory.current;
       addTearDown(() => Directory.current = previousCurrentDirectory);
 
-      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+      File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync('''
 [package]
@@ -615,16 +615,16 @@ channel = "stable"
 name = "demo"
 path = "src/main.styio"
 ''');
-      final spioBinary = File(
-        '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+      final pafioBinary = File(
+        '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
       );
-      spioBinary.createSync(recursive: true);
-      spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+      pafioBinary.createSync(recursive: true);
+      pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
 if sys.argv[1:] == ['machine-info', '--json']:
     print(json.dumps({
-        'tool': 'spio',
+        'tool': 'pafio',
         'supported_contract_versions': {
             'project_graph': [1],
             'toolchain_state': [1],
@@ -637,21 +637,21 @@ if len(args) >= 2 and args[0] == 'project-graph' and args[1] == '--json':
     print(json.dumps({
         'command': 'project-graph',
         'schema_version': 1,
-        'id': '/workspace/demo/spio.toml',
+        'id': '/workspace/demo/pafio.toml',
         'title': 'demo/app',
         'kind': 'package',
         'workspace_root': '/workspace/demo',
         'workspace_members': [],
-        'manifest_path': '/workspace/demo/spio.toml',
-        'lockfile_path': '/workspace/demo/spio.lock',
-        'toolchain_pin_path': '/workspace/demo/spio-toolchain.toml',
-        'vendor_root': '/workspace/demo/.spio/vendor',
-        'build_root': '/workspace/demo/.spio/build',
+        'manifest_path': '/workspace/demo/pafio.toml',
+        'lockfile_path': '/workspace/demo/pafio.lock',
+        'toolchain_pin_path': '/workspace/demo/pafio-toolchain.toml',
+        'vendor_root': '/workspace/demo/.pafio/vendor',
+        'build_root': '/workspace/demo/.pafio/build',
         'packages': [{
             'package_name': 'demo/app',
             'version': '0.1.0',
             'root_path': '/workspace/demo',
-            'manifest_path': '/workspace/demo/spio.toml',
+            'manifest_path': '/workspace/demo/pafio.toml',
             'publish_enabled': True,
             'targets': [{
                 'id': 'demo/app:bin:demo',
@@ -675,14 +675,14 @@ if len(args) >= 2 and args[0] == 'project-graph' and args[1] == '--json':
         'toolchain': {
             'source': 'project-pin',
             'detail': 'Project graph still carries redundant toolchain metadata.',
-            'pin_path': '/workspace/demo/spio-toolchain.toml',
+            'pin_path': '/workspace/demo/pafio-toolchain.toml',
             'channel': 'stable',
             'version': '0.0.1',
         },
         'lock_state': 'fresh',
         'vendor_state': 'present',
         'managed_toolchains': {
-            'spio_home': '/workspace/.spio',
+            'pafio_home': '/workspace/.pafio',
             'installed': [],
         },
     }))
@@ -694,7 +694,7 @@ if len(args) >= 3 and args[0] == 'tool' and args[1] == 'status':
 
 raise SystemExit(64)
 ''');
-      Process.runSync('chmod', <String>['+x', spioBinary.path]);
+      Process.runSync('chmod', <String>['+x', pafioBinary.path]);
 
       Directory.current = tempRoot;
 
@@ -716,7 +716,7 @@ raise SystemExit(64)
       expect(graph.hasToolchainStatePayloadFailure, isTrue);
       expect(
         graph.toolchainStatePayloadFailure?.command,
-        'spio tool status --json',
+        'pafio tool status --json',
       );
       expect(
         graph.toolchainStatePayloadFailure?.detail,
@@ -746,7 +746,7 @@ raise SystemExit(64)
       addTearDown(() => Directory.current = previousCurrentDirectory);
       addTearDown(() => debugOverrideProjectGraphEnvironment(null));
 
-      File('${tempRoot.path}${Platform.pathSeparator}spio.toml')
+      File('${tempRoot.path}${Platform.pathSeparator}pafio.toml')
         ..createSync(recursive: true)
         ..writeAsStringSync('''
 [package]
@@ -786,11 +786,11 @@ raise SystemExit(64)
 ''');
       Process.runSync('chmod', <String>['+x', styioBinary.path]);
 
-      final spioBinary = File(
-        '${tempRoot.path}${Platform.pathSeparator}.spio${Platform.pathSeparator}bin${Platform.pathSeparator}spio',
+      final pafioBinary = File(
+        '${tempRoot.path}${Platform.pathSeparator}.pafio${Platform.pathSeparator}bin${Platform.pathSeparator}pafio',
       );
-      spioBinary.createSync(recursive: true);
-      spioBinary.writeAsStringSync('''#!/usr/bin/env python3
+      pafioBinary.createSync(recursive: true);
+      pafioBinary.writeAsStringSync('''#!/usr/bin/env python3
 import json, sys
 
 override = ${jsonEncode(styioBinary.path)}
@@ -803,7 +803,7 @@ def override_applied(args):
 
 if sys.argv[1:] == ['machine-info', '--json']:
     print(json.dumps({
-        'tool': 'spio',
+        'tool': 'pafio',
         'supported_contract_versions': {
             'project_graph': [1],
             'toolchain_state': [1],
@@ -818,20 +818,20 @@ if len(args) >= 4 and args[0] == 'project-graph' and args[1] == '--json':
     print(json.dumps({
         'command': 'project-graph',
         'schema_version': 1,
-        'id': '/workspace/demo/spio.toml',
+        'id': '/workspace/demo/pafio.toml',
         'title': 'demo/app',
         'kind': 'package',
         'workspace_root': '/workspace/demo',
         'workspace_members': [],
-        'manifest_path': '/workspace/demo/spio.toml',
-        'lockfile_path': '/workspace/demo/spio.lock',
-        'vendor_root': '/workspace/demo/.spio/vendor',
-        'build_root': '/workspace/demo/.spio/build',
+        'manifest_path': '/workspace/demo/pafio.toml',
+        'lockfile_path': '/workspace/demo/pafio.lock',
+        'vendor_root': '/workspace/demo/.pafio/vendor',
+        'build_root': '/workspace/demo/.pafio/build',
         'packages': [{
             'package_name': 'demo/app',
             'version': '0.1.0',
             'root_path': '/workspace/demo',
-            'manifest_path': '/workspace/demo/spio.toml',
+            'manifest_path': '/workspace/demo/pafio.toml',
             'publish_enabled': True,
             'targets': [{
                 'id': 'demo/app:bin:demo',
@@ -872,7 +872,7 @@ if len(args) >= 4 and args[0] == 'project-graph' and args[1] == '--json':
             'supported_adapter_modes': ['cli'],
             'feature_flags': {'compile_plan_consumer': True},
         },
-        'notes': ['Project graph loaded through published spio machine payload with override.'],
+        'notes': ['Project graph loaded through published pafio machine payload with override.'],
     }))
     raise SystemExit(0)
 
@@ -902,16 +902,16 @@ if len(args) >= 3 and args[0] == 'tool' and args[1] == 'status':
             'feature_flags': {'compile_plan_consumer': True},
         },
         'managed_toolchains': {
-            'spio_home': '/workspace/.spio',
+            'pafio_home': '/workspace/.pafio',
             'installed': [],
         },
-        'notes': ['Toolchain state loaded through published spio machine payload with override.'],
+        'notes': ['Toolchain state loaded through published pafio machine payload with override.'],
     }))
     raise SystemExit(0)
 
 raise SystemExit(64)
 ''');
-      Process.runSync('chmod', <String>['+x', spioBinary.path]);
+      Process.runSync('chmod', <String>['+x', pafioBinary.path]);
 
       debugOverrideProjectGraphEnvironment(
         Map<String, String>.from(Platform.environment)

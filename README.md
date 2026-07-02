@@ -1,48 +1,55 @@
 # Styio View
 
-Styio View 是面向 `styio` 生态的专属编辑器与运行视窗项目。
+**Styio View is the dedicated editor and runtime viewport for the Styio
+ecosystem.**
+Part of the [Styio](https://styio.io) ecosystem.
 
-当前仓库阶段为 `product-led integration bootstrap`：
+[![License](https://img.shields.io/github/license/SymPolicy/Vityo?style=flat-square)](LICENSE)
 
-1. `styio-view` 先冻结产品合同与 adapter 边界
-2. Flutter 主壳与编辑器核心继续独立推进
-3. 上游 `styio` / `spio` 按 `styio-view` 的合同补齐机器接口
-4. 面向人维护的网页入口只保留手写的 `editor.html` 线；`frontend/styio_view_app/build/web` 这类 Flutter 生成物只用于构建验证，不作为人工维护页面
+[Simplified Chinese](README_zh.md) | [Documentation](docs/README.md) | [Build guide](docs/BUILD-AND-DEV-ENV.md) | [Prototype](prototype/index.html) | [Web Editor](prototype/editor.html)
 
-文档入口见 [docs/README.md](docs/README.md)。
+---
 
-仓库级构建与新环境入口见 [docs/BUILD-AND-DEV-ENV.md](docs/BUILD-AND-DEV-ENV.md)。
+The current repository stage is `product-led integration bootstrap`:
 
-可直接查看的高保真原型入口见 [prototype/index.html](prototype/index.html)。
-
-人工维护的 Web Editor 入口见 [prototype/editor.html](prototype/editor.html)。
-
-实际实现入口见 [frontend/styio_view_app/README.md](frontend/styio_view_app/README.md)。
+1. Styio View freezes its product contracts and adapter boundaries first.
+2. The Flutter main shell and editor core continue advancing independently.
+3. Upstream `styio` / `pafio` implement the machine interfaces required by
+   Styio View contracts.
+4. The human-maintained web entry point is the hand-written `editor.html` line
+   only; Flutter build artifacts under `frontend/styio_view_app/build/web` are
+   for build verification, not human-maintained pages.
 
 ## Frontend / Backend Split
 
-- 前端是面向用户的编辑器、运行视窗和产品交互界面，入口在 `frontend/styio_view_app/` 与 `prototype/`。
-- 后端不是单一服务，而是 `styio-view` 背后的整条工具链面：adapter layer、local CLI/FFI、hosted control plane，以及上游 `spio` / `styio` 合同。
-- 前端只编排和展示 machine contract；工具链解析、依赖/发布/执行语义、仓库与云平台行为都留在后端。
+- **Frontend** — the user-facing editor, runtime viewport, and product
+  interaction layer. Entry points: `frontend/styio_view_app/` and `prototype/`.
+- **Backend** — not a single service, but the full toolchain surface behind
+  Styio View: adapter layer, local CLI/FFI, hosted control plane, and upstream
+  `pafio` / `styio` contracts.
+- The frontend orchestrates and displays machine contracts only. Toolchain
+  parsing, dependency/publish/execution semantics, and repository/cloud
+  behaviors stay in the backend.
 
-系统级边界定义见 [docs/design/Styio-View-System-Architecture.md](docs/design/Styio-View-System-Architecture.md)。
+System-level boundary definition:
+[Styio-View-System-Architecture.md](docs/design/Styio-View-System-Architecture.md).
 
-## Fresh Dev Environment
+## Development Environment
 
-容器 / 虚拟机：
+Container / VM:
 
 ```bash
 ./scripts/bootstrap-dev-container.sh
 ```
 
-Linux 本机：
+Linux:
 
 ```bash
 ./scripts/bootstrap-dev-env.sh
 ./scripts/bootstrap-dev-env.sh --with-android
 ```
 
-macOS 本机：
+macOS:
 
 ```bash
 ./scripts/bootstrap-dev-env-macos.sh
@@ -50,24 +57,34 @@ macOS 本机：
 ./scripts/bootstrap-dev-env-macos.sh --with-android
 ```
 
-Windows 本机：
+Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-dev-env-windows.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-dev-env-windows.ps1 -WithAndroid
 ```
 
-这套脚本会把 `styio-view` 的桌面 / Web 主线环境拉起，并按需附加 `linux+android`、`macos+ios`、`macos+android`、`windows+android` 组合开发工具链。共享 workspace 初始化入口是：
+Shared workspace initialization:
 
 ```bash
 ./scripts/bootstrap-workspace.sh --platforms web,linux
 ```
 
-更完整的构建、测试、profile 切换和真实设备验证入口见 [docs/BUILD-AND-DEV-ENV.md](docs/BUILD-AND-DEV-ENV.md)。
+For the full build, test, profile switching, and device verification guide, see
+[docs/BUILD-AND-DEV-ENV.md](docs/BUILD-AND-DEV-ENV.md).
+
+## Implementation
+
+The actual application entry point is
+[frontend/styio_view_app/README.md](frontend/styio_view_app/README.md).
 
 ## Repository Hygiene Gate
 
-1. GitHub Actions workflow `Repository Hygiene Gate` 会在每次 `push` 和 `pull_request` 时执行 `python3 scripts/repo-hygiene-gate.py`
-2. `python3 scripts/repo-hygiene-gate.py` 是仓库级权威入口
-3. 这道门禁会阻断生成目录、依赖目录、打包产物后缀，以及未被明确允许的二进制文件进入仓库
-4. 合法的图片类资产需要放在当前允许的前端资源路径下；若确实需要新增二进制资产，应在脚本里补一条窄范围 allowlist，而不是放宽通用规则
+The GitHub Actions workflow `Repository Hygiene Gate` runs
+`python3 scripts/repo-hygiene-gate.py` on every push and pull request. It
+blocks generated directories, dependency directories, packaging artifact
+suffixes, and any binary files not explicitly allowlisted.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

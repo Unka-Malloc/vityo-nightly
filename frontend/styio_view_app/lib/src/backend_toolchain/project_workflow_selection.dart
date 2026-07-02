@@ -54,8 +54,8 @@ ProjectWorkflowSelection selectProjectWorkflow({
         kind: 'build',
         args: packageName == null ? const <String>[] : packageArgs(packageName),
         successMessage: packageName == null
-            ? 'Project build completed through spio.'
-            : 'Project package build completed through spio.',
+            ? 'Project build completed through pafio.'
+            : 'Project package build completed through pafio.',
         packageName: packageName,
       );
     }
@@ -71,7 +71,7 @@ ProjectWorkflowSelection selectProjectWorkflow({
           '--test',
           target.name,
         ],
-        successMessage: 'Project test target completed through spio.',
+        successMessage: 'Project test target completed through pafio.',
         packageName: target.packageName,
         targetName: target.name,
         targetKind: target.kind.label,
@@ -81,7 +81,7 @@ ProjectWorkflowSelection selectProjectWorkflow({
         command: 'build',
         kind: 'build',
         args: <String>[...packageArgs(target.packageName), '--lib'],
-        successMessage: 'Project library build completed through spio.',
+        successMessage: 'Project library build completed through pafio.',
         packageName: target.packageName,
         targetKind: target.kind.label,
       );
@@ -94,7 +94,7 @@ ProjectWorkflowSelection selectProjectWorkflow({
           '--bin',
           target.name,
         ],
-        successMessage: 'Project binary run completed through spio.',
+        successMessage: 'Project binary run completed through pafio.',
         packageName: target.packageName,
         targetName: target.name,
         targetKind: target.kind.label,
