@@ -269,3 +269,11 @@ jobs:
         env:
           STYIO_CHROME_PATH: /usr/bin/chromium
         run: ./scripts/checkpoint-health.sh
+
+  local-ci-gate:
+    name: local-ci-gate
+    needs: [linux, macos, windows, test-smoke, test-golden-standard]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm required CI gate
+        run: echo "local-ci-gate passed"
