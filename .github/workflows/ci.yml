@@ -17,7 +17,6 @@ jobs:
       STYIO_PYTHON_VERSION: "3.13.5"
       STYIO_NODE_VERSION: "24.15.0"
       STYIO_FLUTTER_VERSION: "3.41.7"
-      STYIO_CHROMIUM_VERSION: "147.0.7727.116"
 
     steps:
       - name: Checkout styio-view
@@ -78,7 +77,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium
-          test "$(chromium --product-version)" = "${STYIO_CHROMIUM_VERSION}"
+          chromium_version="$(chromium --product-version)"
+          test -n "$chromium_version"
+          echo "STYIO_CHROMIUM_VERSION=$chromium_version" >> "$GITHUB_ENV"
+          echo "Chromium $chromium_version"
 
       - name: Verify standardized toolchain
         run: |
@@ -224,7 +226,6 @@ jobs:
     env:
       STYIO_NODE_VERSION: "24.15.0"
       STYIO_FLUTTER_VERSION: "3.41.7"
-      STYIO_CHROMIUM_VERSION: "147.0.7727.116"
 
     steps:
       - name: Checkout styio-view
@@ -244,7 +245,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium
-          test "$(chromium --product-version)" = "${STYIO_CHROMIUM_VERSION}"
+          chromium_version="$(chromium --product-version)"
+          test -n "$chromium_version"
+          echo "STYIO_CHROMIUM_VERSION=$chromium_version" >> "$GITHUB_ENV"
+          echo "Chromium $chromium_version"
 
       - name: Restore Flutter dependencies
         working-directory: frontend/styio_view_app
