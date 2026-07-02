@@ -32,8 +32,8 @@ jobs:
           fi
 
           for ref in "$requested" stable nightly; do
-            if git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-nightly.git "$ref" >/dev/null 2>&1 \
-              && git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-pafio.git "$ref" >/dev/null 2>&1; then
+            if git ls-remote --exit-code --heads https://github.com/SymPolicy/Styio.git "$ref" >/dev/null 2>&1 \
+              && git ls-remote --exit-code --heads https://github.com/SymPolicy/Pafio.git "$ref" >/dev/null 2>&1; then
               echo "ref=$ref" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -42,17 +42,17 @@ jobs:
           echo "No common sibling checkout ref found for '$requested' or fallbacks 'stable'/'nightly'." >&2
           exit 1
 
-      - name: Check out styio-nightly sibling repository
+      - name: Check out Styio sibling repository
         uses: actions/checkout@v5
         with:
-          repository: Unka-Malloc/styio-nightly
+          repository: SymPolicy/Styio
           ref: ${{ steps.sibling-ref.outputs.ref }}
           path: styio-nightly
 
-      - name: Check out styio-pafio sibling repository
+      - name: Check out Pafio sibling repository
         uses: actions/checkout@v5
         with:
-          repository: Unka-Malloc/styio-pafio
+          repository: SymPolicy/Pafio
           ref: ${{ steps.sibling-ref.outputs.ref }}
           path: styio-pafio
 
