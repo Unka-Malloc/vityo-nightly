@@ -43,6 +43,7 @@ RUN_HEALTH=1
 RUN_AUDIT=1
 SKIP_ECOSYSTEM=0
 AUDIT_BIN="${STYIO_AUDIT_BIN:-}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -86,9 +87,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-REPO_CMD=(python3 scripts/repo-hygiene-gate.py)
-DOCS_GATE_CMD=(./scripts/docs-gate.sh)
-HEALTH_CMD=(./scripts/checkpoint-health.sh)
+REPO_CMD=("$PYTHON_BIN" scripts/repo-hygiene-gate.py)
+DOCS_GATE_CMD=(bash scripts/docs-gate.sh)
+HEALTH_CMD=(bash scripts/checkpoint-health.sh)
 
 case "$MODE" in
   checkpoint)
@@ -129,19 +130,17 @@ if [[ "$RUN_AUDIT" -eq 1 ]]; then
       AUDIT_BIN="$ROOT/../audit/bin/audit"
     elif [[ -x "$ROOT/../../SymPolicy/audit/bin/audit" ]]; then
       AUDIT_BIN="$ROOT/../../SymPolicy/audit/bin/audit"
-    elif [[ -x "$HOME/audit/bin/audit" ]]; then
-      AUDIT_BIN="$HOME/audit/bin/audit"
     elif command -v audit >/dev/null 2>&1; then
       AUDIT_BIN="$(command -v audit)"
     fi
   fi
   if [[ -z "$AUDIT_BIN" || ! -x "$AUDIT_BIN" ]]; then
     log "audit executable not found; running local security audit fallback"
-    run_cmd python3 scripts/check_security_baseline.py
-    run_cmd python3 scripts/check_license_policy.py
-    run_cmd python3 scripts/check_architecture_boundaries.py
-    run_cmd python3 scripts/check_compat_facades.py
-    run_cmd python3 scripts/import-boundary-gate.py
+    run_cmd "$PYTHON_BIN" scripts/check_security_baseline.py
+    run_cmd "$PYTHON_BIN" scripts/check_license_policy.py
+    run_cmd "$PYTHON_BIN" scripts/check_architecture_boundaries.py
+    run_cmd "$PYTHON_BIN" scripts/check_compat_facades.py
+    run_cmd "$PYTHON_BIN" scripts/import-boundary-gate.py
   else
     AUDIT_ROOT="$(cd "$(dirname "$AUDIT_BIN")/.." && pwd)"
     if git -C "$AUDIT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
