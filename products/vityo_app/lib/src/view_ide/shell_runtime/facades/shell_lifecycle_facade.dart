@@ -15,6 +15,7 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleWorkspaceQuickFixChanged() => _notifyShellListeners();
   void _handleWorkspaceNavigationChanged() => _notifyShellListeners();
   void _handleWorkspaceSearchChanged() => _notifyShellListeners();
+  void _handleWorkspaceFileExplorerChanged() => _notifyShellListeners();
   void _handleProjectLanguageContextChanged() => _notifyShellListeners();
   void _handleWorkspaceRenameChanged() => _notifyShellListeners();
   void _handleModuleChanged() => _notifyShellListeners();
@@ -100,6 +101,10 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _workspaceNavigationController.dispose();
     _workspaceSearchController.removeListener(_handleWorkspaceSearchChanged);
     _workspaceSearchController.dispose();
+    _workspaceFileExplorerController.removeListener(
+      _handleWorkspaceFileExplorerChanged,
+    );
+    _workspaceFileExplorerController.dispose();
     _projectLanguageContextController.removeListener(
       _handleProjectLanguageContextChanged,
     );

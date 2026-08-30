@@ -66,6 +66,8 @@ class _VityoAppState extends State<VityoApp> {
       themeOverrideStore: widget.bootstrap.themeOverrideStore,
       commandPalettePreferencesStore:
           widget.bootstrap.commandPalettePreferencesStore,
+      workspaceFileExplorerStateStore:
+          widget.bootstrap.workspaceFileExplorerStateStore,
       workspaceDiagnosticsController:
           widget.bootstrap.workspaceDiagnosticsController,
       testingSessionController: widget.bootstrap.testingSessionController,

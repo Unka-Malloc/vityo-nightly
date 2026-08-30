@@ -31,7 +31,7 @@ final class WorkspaceDocumentController {
   final void Function() notify;
 
   String _activeDocumentPath;
-  bool _suppressWorkspaceChangedLoad = false;
+  int _workspaceLoadSuppressionDepth = 0;
   bool _suppressSelectionTracking = false;
   int _loadGeneration = 0;
   WorkspaceFileCloseRequestResult? _lastCloseRequest;
@@ -40,7 +40,7 @@ final class WorkspaceDocumentController {
   WorkspaceFileCloseRequestResult? get lastCloseRequest => _lastCloseRequest;
 
   void handleWorkspaceChanged() {
-    if (_suppressWorkspaceChangedLoad) {
+    if (_workspaceLoadSuppressionDepth > 0) {
       return;
     }
     unawaited(loadActiveDocument());
@@ -120,6 +120,15 @@ final class WorkspaceDocumentController {
     await loadActiveDocument();
     return workspaceController.activeFilePath == filePath &&
         editorController.document.documentId == filePath;
+  }
+
+  Future<T> runWithoutWorkspaceLoad<T>(Future<T> Function() action) async {
+    _workspaceLoadSuppressionDepth += 1;
+    try {
+      return await action();
+    } finally {
+      _workspaceLoadSuppressionDepth -= 1;
+    }
   }
 
   bool get activeFileHasUnsavedChanges {
@@ -495,12 +504,11 @@ final class WorkspaceDocumentController {
   }
 
   void _runWithoutWorkspaceLoad(void Function() action) {
-    final previous = _suppressWorkspaceChangedLoad;
-    _suppressWorkspaceChangedLoad = true;
+    _workspaceLoadSuppressionDepth += 1;
     try {
       action();
     } finally {
-      _suppressWorkspaceChangedLoad = previous;
+      _workspaceLoadSuppressionDepth -= 1;
     }
   }
 }

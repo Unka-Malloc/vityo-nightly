@@ -33,6 +33,8 @@ import 'shell_model.dart';
 import 'shell_scope.dart';
 import 'workbench_regions/workbench_regions.dart';
 
+part 'explorer_sidebar.dart';
+
 class VityoShellScaffold extends StatelessWidget {
   const VityoShellScaffold({super.key});
 
@@ -830,274 +832,6 @@ class _MobileShellBody extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _ExplorerTreeNode {
-  _ExplorerTreeNode({
-    required this.name,
-    required this.path,
-    required this.isDirectory,
-  });
-
-  final String name;
-  final String path;
-  final bool isDirectory;
-  final List<_ExplorerTreeNode> children = <_ExplorerTreeNode>[];
-
-  static _ExplorerTreeNode buildTree(List<String> files) {
-    final root = _ExplorerTreeNode(name: '', path: '', isDirectory: true);
-    final prefix = _commonDirectoryPrefix(files);
-    for (final file in files) {
-      var relative = file;
-      if (prefix.isNotEmpty && file.startsWith('$prefix/')) {
-        relative = file.substring(prefix.length + 1);
-      }
-      final segments = relative
-          .split('/')
-          .where((segment) => segment.isNotEmpty)
-          .toList(growable: false);
-      var current = root;
-      var currentPath = prefix;
-      for (var i = 0; i < segments.length; i++) {
-        final isDirectory = i < segments.length - 1;
-        currentPath = currentPath.isEmpty
-            ? segments[i]
-            : '$currentPath/${segments[i]}';
-        _ExplorerTreeNode? next;
-        for (final child in current.children) {
-          if (child.name == segments[i] && child.isDirectory == isDirectory) {
-            next = child;
-            break;
-          }
-        }
-        next ??= _ExplorerTreeNode(
-          name: segments[i],
-          path: isDirectory ? currentPath : file,
-          isDirectory: isDirectory,
-        );
-        if (!current.children.contains(next)) {
-          current.children.add(next);
-        }
-        current = next;
-      }
-    }
-    root.sortRecursively();
-    return root;
-  }
-
-  static String _commonDirectoryPrefix(List<String> files) {
-    if (files.isEmpty) {
-      return '';
-    }
-    final segments = files
-        .map((file) => file.split('/'))
-        .toList(growable: false);
-    final first = segments.first;
-    final prefix = <String>[];
-    for (var i = 0; i < first.length - 1; i++) {
-      final segment = first[i];
-      final sharedByAll = segments.every(
-        (parts) => parts.length > i + 1 && parts[i] == segment,
-      );
-      if (!sharedByAll) {
-        break;
-      }
-      prefix.add(segment);
-    }
-    return prefix.join('/');
-  }
-
-  void sortRecursively() {
-    children.sort((a, b) {
-      if (a.isDirectory != b.isDirectory) {
-        return a.isDirectory ? -1 : 1;
-      }
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    for (final child in children) {
-      child.sortRecursively();
-    }
-  }
-}
-
-class _ExplorerSidebar extends StatefulWidget {
-  const _ExplorerSidebar({required this.shell});
-
-  final ShellModel shell;
-
-  @override
-  State<_ExplorerSidebar> createState() => _ExplorerSidebarState();
-}
-
-class _ExplorerSidebarState extends State<_ExplorerSidebar> {
-  final Set<String> _collapsedDirectories = <String>{};
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final shell = widget.shell;
-    final project = shell.workspaceController.activeProject;
-    final tree = _ExplorerTreeNode.buildTree(shell.workspaceController.files);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              project.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            const SizedBox(height: 6),
-            Expanded(
-              child: ListView(
-                key: const ValueKey('explorer-tree-scroll'),
-                children: [
-                  for (final node in tree.children) _buildNode(node, 0),
-                  if (shell.pendingWorkspaceFileCommandConfirmation !=
-                      null) ...[
-                    const SizedBox(height: 12),
-                    _WorkspaceFileCommandConfirmationCard(
-                      pending: shell.pendingWorkspaceFileCommandConfirmation!,
-                      onConfirm: () {
-                        shell.confirmPendingWorkspaceFileCommand();
-                      },
-                      onCancel: shell.cancelPendingWorkspaceFileCommand,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNode(_ExplorerTreeNode node, int depth) {
-    if (node.isDirectory) {
-      final collapsed = _collapsedDirectories.contains(node.path);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ExplorerRow(
-            depth: depth,
-            active: false,
-            onTap: () {
-              setState(() {
-                if (collapsed) {
-                  _collapsedDirectories.remove(node.path);
-                } else {
-                  _collapsedDirectories.add(node.path);
-                }
-              });
-            },
-            leading: Icon(
-              collapsed
-                  ? Icons.chevron_right_rounded
-                  : Icons.expand_more_rounded,
-              size: 18,
-            ),
-            icon: Icon(
-              collapsed ? Icons.folder_outlined : Icons.folder_open_rounded,
-              size: 18,
-            ),
-            label: node.name,
-          ),
-          if (!collapsed)
-            for (final child in node.children) _buildNode(child, depth + 1),
-        ],
-      );
-    }
-
-    final shell = widget.shell;
-    final active = node.path == shell.workspaceController.activeFilePath;
-    final dirty = shell.dirtyDocumentPaths.contains(node.path);
-    return _ExplorerRow(
-      depth: depth,
-      active: active,
-      onTap: () => shell.workspaceController.openFile(node.path),
-      leading: const SizedBox(width: 18),
-      icon: Icon(
-        active ? Icons.article_rounded : Icons.article_outlined,
-        size: 18,
-      ),
-      label: node.name,
-      trailing: dirty
-          ? Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.tertiary,
-                shape: BoxShape.circle,
-              ),
-            )
-          : null,
-    );
-  }
-}
-
-class _ExplorerRow extends StatelessWidget {
-  const _ExplorerRow({
-    required this.depth,
-    required this.active,
-    required this.onTap,
-    required this.leading,
-    required this.icon,
-    required this.label,
-    this.trailing,
-  });
-
-  final int depth;
-  final bool active;
-  final VoidCallback onTap;
-  final Widget leading;
-  final Widget icon;
-  final String label;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Ink(
-        padding: EdgeInsets.only(
-          left: 6 + depth * 14,
-          right: 8,
-          top: 6,
-          bottom: 6,
-        ),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFF1ECE3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            leading,
-            const SizedBox(width: 4),
-            icon,
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-            if (trailing != null) ...[const SizedBox(width: 6), trailing!],
-          ],
-        ),
       ),
     );
   }
@@ -2730,10 +2464,15 @@ String _workspaceDisplayPath({
       .replaceFirst(RegExp(r'/$'), '');
   final normalizedPath = filePath.replaceAll('\\', '/');
   final rootPrefix = '$normalizedRoot/';
-  if (normalizedRoot.isNotEmpty && normalizedPath.startsWith(rootPrefix)) {
+  final windowsPath = RegExp(r'^[A-Za-z]:/').hasMatch(normalizedRoot);
+  final withinRoot = windowsPath
+      ? normalizedPath.toLowerCase().startsWith(rootPrefix.toLowerCase())
+      : normalizedPath.startsWith(rootPrefix);
+  if (normalizedRoot.isNotEmpty && withinRoot) {
     return normalizedPath.substring(rootPrefix.length);
   }
-  if (!normalizedPath.startsWith('/')) {
+  if (!normalizedPath.startsWith('/') &&
+      !RegExp(r'^[A-Za-z]:/').hasMatch(normalizedPath)) {
     return normalizedPath;
   }
   return _fileName(normalizedPath);

@@ -113,6 +113,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     this.toolchainManager,
     EditorSessionDataStore? editorSessionDataStore,
     String editorSessionWorkspaceId = 'default',
+    WorkspaceFileExplorerStateStore? workspaceFileExplorerStateStore,
     int documentCacheLimit = 32,
     VityoThemeOverrideStore? themeOverrideStore,
     CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore,
@@ -178,12 +179,32 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       log: appendLog,
       notify: notifyListeners,
     );
-    _workspaceFileCommandController = WorkspaceFileCommandController(
+    _workspaceFileExplorerController = WorkspaceFileExplorerController(
       workspaceController: workspaceController,
-      documentStore: workspaceDocumentStore,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspaceController,
+        documentStore: workspaceDocumentStore,
+      ),
+      stateStore: workspaceFileExplorerStateStore,
+      fileSystemManager: platformManagers?.fileSystem,
+      stateWorkspaceId: workspaceController.activeProject.id,
+    )..addListener(_handleWorkspaceFileExplorerChanged);
+    _workspaceFileCommandController = WorkspaceFileCommandController(
+      explorerController: _workspaceFileExplorerController,
       openWorkspaceFile: openWorkspaceFile,
       reloadActiveDocument: _workspaceDocumentController.loadActiveDocument,
+      runWithoutWorkspaceReload:
+          _workspaceDocumentController.runWithoutWorkspaceLoad,
+      isWorkspaceFileDirty: _editorWorkspaceStateController.isDirty,
     );
+    if (workspaceFileExplorerStateStore != null ||
+        platformManagers?.fileSystem != null) {
+      unawaited(
+        _workspaceFileExplorerController.startFileSystemSync(
+          rootPath: workspaceController.activeProject.workspaceRoot,
+        ),
+      );
+    }
     _workspaceDiagnosticsRuntimeController =
         WorkspaceDiagnosticsRuntimeController(
           controller: workspaceDiagnosticsController,
@@ -590,6 +611,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final WorkspaceDocumentController _workspaceDocumentController;
   late final WorkspacePersistenceController _workspacePersistenceController;
   late final WorkspaceFileCommandController _workspaceFileCommandController;
+  late final WorkspaceFileExplorerController _workspaceFileExplorerController;
   late final WorkspaceFileConfirmationController
   _workspaceFileConfirmationController;
   late final WorkspaceDiagnosticsRuntimeController

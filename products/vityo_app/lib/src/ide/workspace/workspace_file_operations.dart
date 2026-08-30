@@ -50,18 +50,30 @@ class WorkspaceFileOperationService {
   final WorkspaceController workspaceController;
   final WorkspaceDocumentStore documentStore;
 
+  String resolvePath(String path) {
+    return _resolveWorkspaceFilePath(workspaceController, path);
+  }
+
+  bool containsPath(String path) {
+    final resolvedPath = resolvePath(path);
+    return _workspaceContainsPath(workspaceController, resolvedPath);
+  }
+
   Future<WorkspaceFileOperationResult> createFile({
     required String path,
     String text = '',
     bool open = false,
   }) async {
-    final normalizedPath = _normalizeWorkspaceFilePath(path);
-    final pathFailure = _validateWorkspaceFilePath(normalizedPath);
+    final normalizedPath = _resolveWorkspaceFilePath(workspaceController, path);
+    final pathFailure = _validateWorkspaceFilePath(
+      normalizedPath,
+      workspaceRoot: workspaceController.activeProject.workspaceRoot,
+    );
     if (pathFailure != null) {
       return _blocked(WorkspaceFileOperationKind.create, path, pathFailure);
     }
     if (await documentStore.documentExists(normalizedPath) ||
-        workspaceController.files.contains(normalizedPath)) {
+        _workspaceContainsPath(workspaceController, normalizedPath)) {
       return _blocked(
         WorkspaceFileOperationKind.create,
         normalizedPath,
@@ -85,11 +97,20 @@ class WorkspaceFileOperationService {
     required String nextPath,
     bool open = false,
   }) async {
-    final normalizedPath = _normalizeWorkspaceFilePath(path);
-    final normalizedNextPath = _normalizeWorkspaceFilePath(nextPath);
+    final normalizedPath = _resolveWorkspaceFilePath(workspaceController, path);
+    final normalizedNextPath = _resolveWorkspaceFilePath(
+      workspaceController,
+      nextPath,
+    );
     final pathFailure =
-        _validateWorkspaceFilePath(normalizedPath) ??
-        _validateWorkspaceFilePath(normalizedNextPath);
+        _validateWorkspaceFilePath(
+          normalizedPath,
+          workspaceRoot: workspaceController.activeProject.workspaceRoot,
+        ) ??
+        _validateWorkspaceFilePath(
+          normalizedNextPath,
+          workspaceRoot: workspaceController.activeProject.workspaceRoot,
+        );
     if (pathFailure != null) {
       return _blocked(WorkspaceFileOperationKind.rename, path, pathFailure);
     }
@@ -110,7 +131,7 @@ class WorkspaceFileOperationService {
       );
     }
     if (await documentStore.documentExists(normalizedNextPath) ||
-        workspaceController.files.contains(normalizedNextPath)) {
+        _workspaceContainsPath(workspaceController, normalizedNextPath)) {
       return _blocked(
         WorkspaceFileOperationKind.rename,
         normalizedPath,
@@ -142,13 +163,16 @@ class WorkspaceFileOperationService {
   }
 
   Future<WorkspaceFileOperationResult> deleteFile(String path) async {
-    final normalizedPath = _normalizeWorkspaceFilePath(path);
-    final pathFailure = _validateWorkspaceFilePath(normalizedPath);
+    final normalizedPath = _resolveWorkspaceFilePath(workspaceController, path);
+    final pathFailure = _validateWorkspaceFilePath(
+      normalizedPath,
+      workspaceRoot: workspaceController.activeProject.workspaceRoot,
+    );
     if (pathFailure != null) {
       return _blocked(WorkspaceFileOperationKind.delete, path, pathFailure);
     }
     if (!await documentStore.documentExists(normalizedPath) &&
-        !workspaceController.files.contains(normalizedPath)) {
+        !_workspaceContainsPath(workspaceController, normalizedPath)) {
       return _blocked(
         WorkspaceFileOperationKind.delete,
         normalizedPath,
@@ -166,12 +190,15 @@ class WorkspaceFileOperationService {
   }
 
   WorkspaceFileOperationResult revealFile(String path) {
-    final normalizedPath = _normalizeWorkspaceFilePath(path);
-    final pathFailure = _validateWorkspaceFilePath(normalizedPath);
+    final normalizedPath = _resolveWorkspaceFilePath(workspaceController, path);
+    final pathFailure = _validateWorkspaceFilePath(
+      normalizedPath,
+      workspaceRoot: workspaceController.activeProject.workspaceRoot,
+    );
     if (pathFailure != null) {
       return _blocked(WorkspaceFileOperationKind.reveal, path, pathFailure);
     }
-    if (!workspaceController.files.contains(normalizedPath)) {
+    if (!_workspaceContainsPath(workspaceController, normalizedPath)) {
       return _blocked(
         WorkspaceFileOperationKind.reveal,
         normalizedPath,
@@ -207,12 +234,134 @@ String _normalizeWorkspaceFilePath(String path) {
   return path.trim().replaceAll('\\', '/');
 }
 
-String? _validateWorkspaceFilePath(String path) {
-  if (path.isEmpty) {
+String _resolveWorkspaceFilePath(
+  WorkspaceController workspaceController,
+  String path,
+) {
+  final normalizedPath = _normalizeWorkspaceFilePath(path);
+  final workspaceUsesAbsolutePaths = workspaceController.files.any(
+    (filePath) =>
+        _isAbsoluteWorkspaceFilePath(_normalizeWorkspaceFilePath(filePath)),
+  );
+  final rawWorkspaceRoot = workspaceController.activeProject.workspaceRoot;
+  final workspaceRoot = _normalizeWorkspaceFilePath(
+    rawWorkspaceRoot,
+  ).replaceFirst(RegExp(r'/+$'), '');
+  late final String resolvedPath;
+  if (_isAbsoluteWorkspaceFilePath(normalizedPath)) {
+    if (workspaceUsesAbsolutePaths || workspaceRoot.isEmpty) {
+      resolvedPath = normalizedPath;
+    } else if (_workspacePathStartsWithRoot(normalizedPath, workspaceRoot)) {
+      resolvedPath = normalizedPath.substring(workspaceRoot.length + 1);
+    } else {
+      resolvedPath = normalizedPath;
+    }
+  } else if (!workspaceUsesAbsolutePaths || workspaceRoot.isEmpty) {
+    resolvedPath = normalizedPath;
+  } else {
+    resolvedPath = '$workspaceRoot/$normalizedPath';
+  }
+  for (final existingPath in workspaceController.files) {
+    if (_workspacePathsEqual(
+      existingPath,
+      resolvedPath,
+      workspaceRoot: rawWorkspaceRoot,
+    )) {
+      return existingPath;
+    }
+  }
+  return _applyWorkspacePathStyle(
+    resolvedPath,
+    workspaceRoot: rawWorkspaceRoot,
+    existingPaths: workspaceController.files,
+  );
+}
+
+String? _validateWorkspaceFilePath(
+  String path, {
+  required String workspaceRoot,
+}) {
+  final normalizedPath = _normalizeWorkspaceFilePath(path);
+  final normalizedRoot = _normalizeWorkspaceFilePath(
+    workspaceRoot,
+  ).replaceFirst(RegExp(r'/+$'), '');
+  if (normalizedPath.isEmpty) {
     return 'Workspace file path is empty.';
   }
-  if (path.startsWith('/') || path.contains('..')) {
+  if (normalizedPath.split('/').contains('..')) {
     return 'Workspace file path must stay inside the workspace.';
   }
+  if (_isAbsoluteWorkspaceFilePath(normalizedPath)) {
+    if (normalizedRoot.isEmpty ||
+        _workspacePathsEqual(
+          normalizedPath,
+          normalizedRoot,
+          workspaceRoot: normalizedRoot,
+        ) ||
+        !_workspacePathStartsWithRoot(normalizedPath, normalizedRoot)) {
+      return 'Workspace file path must stay inside the workspace.';
+    }
+  }
   return null;
+}
+
+bool _isAbsoluteWorkspaceFilePath(String path) {
+  final normalizedPath = _normalizeWorkspaceFilePath(path);
+  return normalizedPath.startsWith('/') ||
+      RegExp(r'^[A-Za-z]:/').hasMatch(normalizedPath);
+}
+
+bool _workspaceContainsPath(
+  WorkspaceController workspaceController,
+  String path,
+) {
+  return workspaceController.files.any(
+    (candidate) => _workspacePathsEqual(
+      candidate,
+      path,
+      workspaceRoot: workspaceController.activeProject.workspaceRoot,
+    ),
+  );
+}
+
+bool _workspacePathsEqual(
+  String left,
+  String right, {
+  required String workspaceRoot,
+}) {
+  final normalizedLeft = _normalizeWorkspaceFilePath(left);
+  final normalizedRight = _normalizeWorkspaceFilePath(right);
+  if (_usesCaseInsensitiveWorkspacePaths(workspaceRoot)) {
+    return normalizedLeft.toLowerCase() == normalizedRight.toLowerCase();
+  }
+  return normalizedLeft == normalizedRight;
+}
+
+bool _workspacePathStartsWithRoot(String path, String root) {
+  final normalizedPath = _normalizeWorkspaceFilePath(path);
+  final normalizedRoot = _normalizeWorkspaceFilePath(
+    root,
+  ).replaceFirst(RegExp(r'/+$'), '');
+  final prefix = '$normalizedRoot/';
+  if (_usesCaseInsensitiveWorkspacePaths(root)) {
+    return normalizedPath.toLowerCase().startsWith(prefix.toLowerCase());
+  }
+  return normalizedPath.startsWith(prefix);
+}
+
+bool _usesCaseInsensitiveWorkspacePaths(String root) {
+  final normalizedRoot = _normalizeWorkspaceFilePath(root);
+  return RegExp(r'^[A-Za-z]:').hasMatch(normalizedRoot) ||
+      normalizedRoot.startsWith('//');
+}
+
+String _applyWorkspacePathStyle(
+  String path, {
+  required String workspaceRoot,
+  required Iterable<String> existingPaths,
+}) {
+  final prefersBackslash =
+      workspaceRoot.contains('\\') ||
+      existingPaths.any((existingPath) => existingPath.contains('\\'));
+  return prefersBackslash ? path.replaceAll('/', '\\') : path;
 }

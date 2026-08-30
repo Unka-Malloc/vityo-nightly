@@ -135,6 +135,109 @@ void _registerShellSmokeTests() {
     expect(find.byKey(const ValueKey('debug-surface-desktop')), findsOneWidget);
   });
 
+  testWidgets('runs explorer create rename filter and confirmed batch delete', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final bootstrap = await createBootstrap(PlatformTarget.macos);
+    await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await tester.pumpAndSettle();
+    final shell = ShellScope.of(
+      tester.element(find.byType(VityoShellScaffold)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('explorer-create-file')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('workspace-path-dialog')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('workspace-path-input')),
+      'src/generated.styio',
+    );
+    await tester.tap(find.byKey(const ValueKey('workspace-path-apply')));
+    await tester.pumpAndSettle();
+
+    const generatedPath = '/workspace/demo/src/generated.styio';
+    expect(shell.workspaceController.files, contains(generatedPath));
+    expect(
+      find.byKey(const ValueKey('explorer-file-$generatedPath')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('explorer-menu-$generatedPath')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('workspace-path-input')),
+      'src/renamed.styio',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('workspace-path-apply')));
+    await tester.pumpAndSettle();
+
+    const renamedPath = '/workspace/demo/src/renamed.styio';
+    expect(
+      shell.workspaceController.files,
+      isNot(contains(generatedPath)),
+      reason: shell.debugLog.join('\n'),
+    );
+    expect(shell.workspaceController.files, contains(renamedPath));
+    await tester.enterText(
+      find.byKey(const ValueKey('explorer-filter')),
+      'renamed',
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('explorer-file-$renamedPath')),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byKey(const ValueKey('explorer-filter')), '');
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('explorer-sort')));
+    await tester.pumpAndSettle();
+    expect(
+      shell.workspaceFileExplorerSnapshot.state?.sortMode.name,
+      'alphabetical',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('explorer-multi-select')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('explorer-checkbox-$renamedPath')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('explorer-delete-selected')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('workspace-file-batch-dialog')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('workspace-file-batch-cancel')));
+    await tester.pumpAndSettle();
+    expect(shell.workspaceController.files, contains(renamedPath));
+    expect(shell.pendingWorkspaceFileBatchActionPlan, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('explorer-delete-selected')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('workspace-file-batch-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(shell.workspaceController.files, isNot(contains(renamedPath)));
+    expect(
+      find.byKey(const ValueKey('explorer-file-$renamedPath')),
+      findsNothing,
+    );
+  });
+
   testWidgets('renders scratch shell fallback project cards', (tester) async {
     tester.view.physicalSize = const Size(430, 2400);
     tester.view.devicePixelRatio = 1.0;

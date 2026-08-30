@@ -4,16 +4,24 @@ import '../../../ide/workspace/workspace.dart';
 /// Owns workspace-file command routing, destructive confirmation, and I/O.
 final class WorkspaceFileCommandController {
   WorkspaceFileCommandController({
-    required this.workspaceController,
-    required this.documentStore,
+    required this.explorerController,
     required this.openWorkspaceFile,
     required this.reloadActiveDocument,
+    required this.runWithoutWorkspaceReload,
+    required this.isWorkspaceFileDirty,
   });
 
-  final WorkspaceController workspaceController;
-  final WorkspaceDocumentStore documentStore;
+  final WorkspaceFileExplorerController explorerController;
   final Future<bool> Function(String filePath) openWorkspaceFile;
   final Future<void> Function() reloadActiveDocument;
+  final Future<WorkspaceFileOperationResult> Function(
+    Future<WorkspaceFileOperationResult> Function() action,
+  )
+  runWithoutWorkspaceReload;
+  final bool Function(String filePath) isWorkspaceFileDirty;
+
+  WorkspaceController get workspaceController =>
+      explorerController.workspaceController;
 
   WorkspaceFileCommandRouteResult? _pendingConfirmation;
 
@@ -81,43 +89,76 @@ final class WorkspaceFileCommandController {
     );
   }
 
+  Future<WorkspaceFileOperationResult> runExplorerAction(
+    WorkspaceFileExplorerActionRequest request,
+  ) {
+    return _run(request);
+  }
+
   Future<WorkspaceFileOperationResult> _run(
     WorkspaceFileExplorerActionRequest request,
   ) async {
     if (request.kind == WorkspaceFileOperationKind.reveal) {
-      final opened = await openWorkspaceFile(request.path);
+      final resolvedPath = explorerController.resolveWorkspacePath(
+        request.path,
+      );
+      var registered = explorerController.containsWorkspacePath(resolvedPath);
+      if (!registered &&
+          explorerController.observesWorkspacePath(request.path)) {
+        final registration = await runWithoutWorkspaceReload(() async {
+          final registeredPath = explorerController
+              .registerObservedWorkspacePath(request.path);
+          return WorkspaceFileOperationResult(
+            kind: WorkspaceFileOperationKind.reveal,
+            applied: registeredPath != null,
+            path: registeredPath ?? resolvedPath,
+          );
+        });
+        registered = registration.applied;
+      }
+      if (!registered) {
+        return WorkspaceFileOperationResult(
+          kind: WorkspaceFileOperationKind.reveal,
+          applied: false,
+          path: resolvedPath,
+          message: 'Workspace file is not part of the project file list.',
+        );
+      }
+      final opened = await openWorkspaceFile(resolvedPath);
+      if (opened) {
+        await explorerController.revealPath(resolvedPath);
+      }
       return WorkspaceFileOperationResult(
         kind: WorkspaceFileOperationKind.reveal,
         applied: opened,
-        path: request.path,
+        path: resolvedPath,
         message: opened
             ? 'Workspace file revealed.'
             : 'Workspace file reveal failed.',
       );
     }
-    final service = WorkspaceFileOperationService(
-      workspaceController: workspaceController,
-      documentStore: documentStore,
-    );
-    final result = switch (request.kind) {
-      WorkspaceFileOperationKind.create => await service.createFile(
-        path: request.path,
-        text: request.text,
-        open: request.open,
-      ),
-      WorkspaceFileOperationKind.rename => await service.renameFile(
-        path: request.path,
+    final resolvedPath = explorerController.resolveWorkspacePath(request.path);
+    if ((request.kind == WorkspaceFileOperationKind.rename ||
+            request.kind == WorkspaceFileOperationKind.delete) &&
+        isWorkspaceFileDirty(resolvedPath)) {
+      return WorkspaceFileOperationResult(
+        kind: request.kind,
+        applied: false,
+        path: resolvedPath,
         nextPath: request.nextPath,
-        open: request.open,
-      ),
-      WorkspaceFileOperationKind.delete => await service.deleteFile(
-        request.path,
-      ),
-      WorkspaceFileOperationKind.reveal => service.revealFile(request.path),
-    };
+        message:
+            'Save or discard unsaved changes before ${request.kind.wireValue}.',
+      );
+    }
+    final activePathBefore = workspaceController.activeFilePath;
+    final result = await runWithoutWorkspaceReload(
+      () => explorerController.run(request),
+    );
     if (result.applied &&
-        (workspaceController.activeFilePath == result.nextPath ||
-            workspaceController.activeFilePath == result.path)) {
+        (activePathBefore == result.path ||
+            workspaceController.activeFilePath == result.nextPath ||
+            (request.open &&
+                workspaceController.activeFilePath == result.path))) {
       await reloadActiveDocument();
     }
     return result;

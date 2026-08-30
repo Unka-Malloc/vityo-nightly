@@ -336,11 +336,24 @@ void main() {
     );
     expect(
       entriesById['workspace.file-explorer']?.summary,
-      contains('shell sidebar renders confirmation apply/cancel controls'),
+      contains('single file-tree authority'),
     );
     expect(
-      entriesById['workspace.file-explorer']?.todo,
-      contains('watcher overflow/backpressure telemetry'),
+      entriesById['workspace.file-explorer']?.summary,
+      contains('WorkspaceFileExplorerWatchTelemetry'),
+    );
+    expect(
+      entriesById['workspace.file-explorer']?.summary,
+      contains('non-bypassable WorkspaceFileExplorerBatchActionPlan'),
+    );
+    expect(
+      entriesById['workspace.file-explorer']?.summary,
+      contains('hermetic Linux and Windows'),
+    );
+    expect(entriesById['workspace.file-explorer']?.todo, isEmpty);
+    expect(
+      entriesById['workspace.file-explorer']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['workspace.file-explorer']?.runtimeMaturityBlocking,

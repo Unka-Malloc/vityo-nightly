@@ -24,6 +24,38 @@ void main() {
     expect(restored.toggleExpanded('src').expandedPaths, <String>['test']);
   });
 
+  test('revealing a nested file expands every parent directory', () {
+    final state = const WorkspaceFileExplorerState(
+      workspaceId: 'demo',
+    ).revealPath('src/features/editor/main.styio');
+
+    expect(state.expandedPaths, <String>[
+      'src',
+      'src/features',
+      'src/features/editor',
+    ]);
+    expect(state.selectedPath, 'src/features/editor/main.styio');
+    expect(state.revealedPath, 'src/features/editor/main.styio');
+
+    final absolute = const WorkspaceFileExplorerState(
+      workspaceId: 'absolute',
+    ).revealPath('/workspace/demo/src/main.styio');
+    expect(absolute.expandedPaths, <String>[
+      '/workspace',
+      '/workspace/demo',
+      '/workspace/demo/src',
+    ]);
+
+    final unc = const WorkspaceFileExplorerState(
+      workspaceId: 'unc',
+    ).revealPath(r'\\server\share\src\main.styio');
+    expect(unc.expandedPaths, <String>[
+      '//server',
+      '//server/share',
+      '//server/share/src',
+    ]);
+  });
+
   test(
     'workspace file explorer state persists through Foundation DataStore',
     () async {

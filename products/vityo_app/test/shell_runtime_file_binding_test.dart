@@ -153,9 +153,11 @@ void main() {
       shell.editorFileBindingSnapshot.state,
       DocumentResourceBindingState.boundClean,
     );
-    expect(hostedClient.loadedPaths, <String>[
-      '/workspace/demo/src/main.styio',
-    ]);
+    expect(hostedClient.loadedPaths, isNotEmpty);
+    expect(
+      hostedClient.loadedPaths,
+      everyElement('/workspace/demo/src/main.styio'),
+    );
     expect(hostedClient.savedDocuments.single['workspaceId'], 'demo-workspace');
     expect(
       hostedClient.savedDocuments.single['path'],

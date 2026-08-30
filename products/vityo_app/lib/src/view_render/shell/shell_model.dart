@@ -63,6 +63,7 @@ class ShellModel extends ShellRuntimeModel {
     super.toolchainManager,
     super.editorSessionDataStore,
     super.editorSessionWorkspaceId,
+    super.workspaceFileExplorerStateStore,
     super.documentCacheLimit,
     super.themeOverrideStore,
     super.commandPalettePreferencesStore,

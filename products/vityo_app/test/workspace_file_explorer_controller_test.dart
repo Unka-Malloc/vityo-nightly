@@ -25,6 +25,31 @@ void main() {
     expect(tree.first.toJson()['fileCount'], 2);
   });
 
+  test(
+    'workspace file explorer preserves canonical paths while hiding root',
+    () {
+      final tree = buildWorkspaceFileExplorerTree(const <String>[
+        '/workspace/fixture/README.md',
+        '/workspace/fixture/src/main.styio',
+      ]);
+      final alphabetical = buildWorkspaceFileExplorerTree(const <String>[
+        '/workspace/fixture/README.md',
+        '/workspace/fixture/src/main.styio',
+      ], sortMode: WorkspaceFileExplorerSortMode.alphabetical);
+
+      expect(tree.map((node) => node.name), <String>['src', 'README.md']);
+      expect(tree.first.path, '/workspace/fixture/src');
+      expect(
+        tree.first.children.single.path,
+        '/workspace/fixture/src/main.styio',
+      );
+      expect(alphabetical.map((node) => node.name), <String>[
+        'README.md',
+        'src',
+      ]);
+    },
+  );
+
   test('workspace file explorer discovery normalizes file system paths', () {
     final discovery = WorkspaceFileExplorerDiscoveryResult.fromPaths(
       seedPaths: const <String>['README.md'],
@@ -32,8 +57,10 @@ void main() {
         'src\\main.styio',
         'src/main.styio',
         'src/lib/math.styio',
+        'src/version..styio',
         '../secret.styio',
         '/tmp/outside.styio',
+        r'C:\outside\secret.styio',
         '',
       ],
       source: 'fixture-fs',
@@ -57,16 +84,149 @@ void main() {
       'README.md',
       'src/lib/math.styio',
       'src/main.styio',
+      'src/version..styio',
     ]);
-    expect(discovery.ignoredPathCount, 3);
+    expect(discovery.ignoredPathCount, 4);
     expect(discovery.truncated, isFalse);
-    expect(snapshot.fileCount, 3);
+    expect(snapshot.fileCount, 4);
     expect(snapshot.discovery, same(discovery));
     expect(snapshot.roots.map((node) => node.name), <String>[
       'src',
       'README.md',
     ]);
     expect(snapshot.toJson()['discovery'], isA<Map<String, Object?>>());
+  });
+
+  test('discovery truncation counts only unique valid paths', () {
+    final exact = WorkspaceFileExplorerDiscoveryResult.fromPaths(
+      discoveredPaths: const <String>['src/main.styio', 'src/main.styio'],
+      maxFiles: 1,
+    );
+    final overflow = WorkspaceFileExplorerDiscoveryResult.fromPaths(
+      discoveredPaths: const <String>[
+        'src/main.styio',
+        '../outside.styio',
+        'src/worker.styio',
+      ],
+      maxFiles: 1,
+    );
+
+    expect(exact.filePaths, <String>['src/main.styio']);
+    expect(exact.truncated, isFalse);
+    expect(overflow.filePaths, <String>['src/main.styio']);
+    expect(overflow.ignoredPaths, <String>['../outside.styio']);
+    expect(overflow.truncated, isTrue);
+  });
+
+  test(
+    'file system discovery lists recursively and filters generated roots',
+    () async {
+      final manager = _FakeWorkspaceFileExplorerFileSystemManager(
+        const Stream<FileSystemManagerEvent>.empty(),
+        entries: const <FileSystemEntitySnapshot>[
+          FileSystemEntitySnapshot(
+            path: '/workspace/fixture/src/main.styio',
+            normalizedPath: '/workspace/fixture/src/main.styio',
+            type: VityoFileSystemEntityType.file,
+          ),
+          FileSystemEntitySnapshot(
+            path: '/workspace/fixture/.git/config',
+            normalizedPath: '/workspace/fixture/.git/config',
+            type: VityoFileSystemEntityType.file,
+          ),
+          FileSystemEntitySnapshot(
+            path: '/workspace/fixture/build/cache.bin',
+            normalizedPath: '/workspace/fixture/build/cache.bin',
+            type: VityoFileSystemEntityType.file,
+          ),
+          FileSystemEntitySnapshot(
+            path: '/workspace/fixture/src',
+            normalizedPath: '/workspace/fixture/src',
+            type: VityoFileSystemEntityType.directory,
+          ),
+        ],
+      );
+
+      final discovery = await WorkspaceFileExplorerFileSystemDiscoveryBinding(
+        fileSystemManager: manager,
+        rootPath: '/workspace/fixture',
+        seedPaths: const <String>['/workspace/fixture/README.md'],
+      ).discover();
+
+      expect(manager.listedPath, '/workspace/fixture');
+      expect(manager.listedRecursive, isTrue);
+      expect(discovery.filePaths, <String>['README.md', 'src/main.styio']);
+      expect(discovery.ignoredPaths, <String>[
+        '.git/config',
+        'build/cache.bin',
+      ]);
+    },
+  );
+
+  test('controller refresh keeps absolute project paths canonical', () async {
+    const mainPath = '/workspace/fixture/src/main.styio';
+    final events = StreamController<FileSystemManagerEvent>();
+    final manager = _FakeWorkspaceFileExplorerFileSystemManager(
+      events.stream,
+      entries: const <FileSystemEntitySnapshot>[
+        FileSystemEntitySnapshot(
+          path: mainPath,
+          normalizedPath: mainPath,
+          type: VityoFileSystemEntityType.file,
+        ),
+        FileSystemEntitySnapshot(
+          path: '/workspace/fixture/src/worker.styio',
+          normalizedPath: '/workspace/fixture/src/worker.styio',
+          type: VityoFileSystemEntityType.file,
+        ),
+      ],
+    );
+    final workspaceController = WorkspaceController(
+      projectSnapshot: _projectGraph(editorFiles: const <String>[mainPath]),
+    );
+    final controller = WorkspaceFileExplorerController(
+      workspaceController: workspaceController,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspaceController,
+        documentStore: InMemoryWorkspaceDocumentStore(),
+      ),
+      fileSystemManager: manager,
+    );
+    addTearDown(controller.dispose);
+    addTearDown(events.close);
+
+    final discovery = await controller.refreshFileSystem(
+      rootPath: '/workspace/fixture',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(discovery?.filePaths, <String>[
+      mainPath,
+      '/workspace/fixture/src/worker.styio',
+    ]);
+    expect(workspaceController.files, <String>[mainPath]);
+    expect(controller.snapshot.roots.map((node) => node.name), <String>[
+      'main.styio',
+      'worker.styio',
+    ]);
+    expect(
+      workspaceController.files.where((path) => path == 'src/worker.styio'),
+      isEmpty,
+    );
+
+    final registeredPath = controller.registerObservedWorkspacePath(
+      '/workspace/fixture/src/worker.styio',
+    );
+
+    expect(registeredPath, '/workspace/fixture/src/worker.styio');
+    expect(workspaceController.files, <String>[
+      mainPath,
+      '/workspace/fixture/src/worker.styio',
+    ]);
+    expect(
+      controller.registerObservedWorkspacePath('/tmp/outside.styio'),
+      isNull,
+    );
   });
 
   test('workspace file explorer watch snapshot applies file system events', () {
@@ -264,12 +424,64 @@ void main() {
       expect(snapshots.first.plan.active, isTrue);
       expect(snapshots.last.filePaths, <String>['src/new.styio']);
       expect(snapshots.last.eventCount, 2);
+      expect(snapshots.last.telemetry.totalEventCount, 2);
+      expect(snapshots.last.telemetry.batchCount, 1);
+      expect(snapshots.last.telemetry.maxBatchEventCount, 2);
+      expect(
+        snapshots.last.telemetry.toJson()['historyMode'],
+        'checkpointed-latest-batch',
+      );
       expect(snapshots.last.events.map((event) => event.source).toSet(), {
         'file-system-manager.watch',
       });
       expect(snapshots.last.toDiscoveryResult().filePaths, <String>[
         'src/new.styio',
       ]);
+    },
+  );
+
+  test('watch stream propagates consumer backpressure', () async {
+    final events = StreamController<WorkspaceFileExplorerWatchEvent>();
+    final backpressure = <bool>[];
+    final batches = WorkspaceFileExplorerWatchStreamBatcher(
+      onBackpressureChanged: backpressure.add,
+    ).bind(events.stream);
+    final subscription = batches.listen((_) {});
+    addTearDown(subscription.cancel);
+    addTearDown(events.close);
+
+    subscription.pause();
+    await Future<void>.delayed(Duration.zero);
+    subscription.resume();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backpressure, <bool>[true, false]);
+  });
+
+  test(
+    'watch overflow blocks incrementally and records dropped events',
+    () async {
+      final binding = WorkspaceFileExplorerFileSystemWatcherBinding(
+        fileSystemManager: _OverflowWorkspaceFileExplorerFileSystemManager(),
+        plan: const WorkspaceFileExplorerWatchPlan(
+          rootPath: '/workspace/fixture',
+        ),
+        baseFilePaths: const <String>['README.md'],
+      );
+
+      final snapshots = await binding.watch().toList();
+
+      expect(snapshots, hasLength(2));
+      expect(snapshots.first.plan.active, isTrue);
+      expect(
+        snapshots.last.plan.status,
+        WorkspaceFileExplorerWatchStatus.blocked,
+      );
+      expect(snapshots.last.plan.message, contains('refresh the explorer'));
+      expect(snapshots.last.telemetry.overflowCount, 1);
+      expect(snapshots.last.telemetry.droppedEventCount, 9);
+      expect(snapshots.last.telemetry.overflowed, isTrue);
+      expect(snapshots.last.filePaths, <String>['README.md']);
     },
   );
 
@@ -475,14 +687,77 @@ void main() {
       expect(await store.documentExists('main.styio'), isFalse);
     },
   );
+
+  test('workspace file explorer contains provider failures', () async {
+    final workspaceController = WorkspaceController(
+      projectSnapshot: _projectGraph(editorFiles: const <String>[]),
+    );
+    final controller = WorkspaceFileExplorerController(
+      workspaceController: workspaceController,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspaceController,
+        documentStore: _FailingWorkspaceFileExplorerDocumentStore(),
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    final result = await controller.run(
+      const WorkspaceFileExplorerActionRequest(
+        kind: WorkspaceFileOperationKind.create,
+        path: 'src/new.styio',
+      ),
+    );
+
+    expect(result.applied, isFalse);
+    expect(result.message, contains('provider'));
+    expect(workspaceController.files, isEmpty);
+  });
+
+  test(
+    'workspace file explorer resets state when project identity changes',
+    () {
+      final workspaceController = WorkspaceController(
+        projectSnapshot: _projectGraph(
+          editorFiles: const <String>['/workspace/fixture/main.styio'],
+        ),
+      );
+      final controller = WorkspaceFileExplorerController(
+        workspaceController: workspaceController,
+        operationService: WorkspaceFileOperationService(
+          workspaceController: workspaceController,
+          documentStore: InMemoryWorkspaceDocumentStore(),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      workspaceController.replaceProject(
+        _projectGraph(
+          id: 'fixture://second-project',
+          rootPath: '/workspace/second',
+          editorFiles: const <String>['/workspace/second/src/main.styio'],
+        ),
+      );
+
+      expect(controller.state.workspaceId, 'fixture://second-project');
+      expect(controller.snapshot.fileCount, 1);
+      expect(
+        controller.snapshot.roots.single.path,
+        '/workspace/second/src/main.styio',
+      );
+    },
+  );
 }
 
-ProjectGraphSnapshot _projectGraph({required List<String> editorFiles}) {
+ProjectGraphSnapshot _projectGraph({
+  required List<String> editorFiles,
+  String id = 'fixture://project',
+  String rootPath = '/workspace/fixture',
+}) {
   return ProjectGraphSnapshot(
-    id: 'fixture://project',
+    id: id,
     title: 'fixture',
     kind: ProjectKind.package,
-    workspaceRoot: '/workspace/fixture',
+    workspaceRoot: rootPath,
     workspaceMembers: const <String>[],
     packages: const <ProjectPackageSnapshot>[],
     dependencies: const <ProjectDependencySnapshot>[],
@@ -500,12 +775,27 @@ ProjectGraphSnapshot _projectGraph({required List<String> editorFiles}) {
 
 class _FakeWorkspaceFileExplorerFileSystemManager
     extends UnsupportedFileSystemManager {
-  _FakeWorkspaceFileExplorerFileSystemManager(this.events)
-    : super(facts: FileSystemFacts.linuxDebianArm());
+  _FakeWorkspaceFileExplorerFileSystemManager(
+    this.events, {
+    this.entries = const <FileSystemEntitySnapshot>[],
+  }) : super(facts: FileSystemFacts.linuxDebianArm());
 
   final Stream<FileSystemManagerEvent> events;
+  final List<FileSystemEntitySnapshot> entries;
   String watchedPath = '';
   bool watchedRecursive = false;
+  String listedPath = '';
+  bool listedRecursive = false;
+
+  @override
+  Future<List<FileSystemEntitySnapshot>> list(
+    String path, {
+    bool recursive = false,
+  }) async {
+    listedPath = path;
+    listedRecursive = recursive;
+    return entries;
+  }
 
   @override
   Stream<FileSystemManagerEvent> watch(String path, {bool recursive = false}) {
@@ -513,4 +803,41 @@ class _FakeWorkspaceFileExplorerFileSystemManager
     watchedRecursive = recursive;
     return events;
   }
+}
+
+class _OverflowWorkspaceFileExplorerFileSystemManager
+    extends UnsupportedFileSystemManager {
+  _OverflowWorkspaceFileExplorerFileSystemManager()
+    : super(facts: FileSystemFacts.linuxDebianArm());
+
+  @override
+  Stream<FileSystemManagerEvent> watch(
+    String path, {
+    bool recursive = false,
+  }) async* {
+    throw const FileSystemWatchOverflowException(
+      operation: 'workspace.file-explorer.watch',
+      droppedEventCount: 9,
+    );
+  }
+}
+
+class _FailingWorkspaceFileExplorerDocumentStore
+    implements WorkspaceDocumentStore {
+  @override
+  Future<bool> deleteDocument(String path) => throw StateError('unavailable');
+
+  @override
+  Future<bool> documentExists(String path) => throw StateError('unavailable');
+
+  @override
+  String? filePathForDocumentId(String documentId) => null;
+
+  @override
+  Future<DocumentState> loadDocument(String path) =>
+      throw StateError('unavailable');
+
+  @override
+  Future<void> saveDocument(DocumentState document) =>
+      throw StateError('unavailable');
 }

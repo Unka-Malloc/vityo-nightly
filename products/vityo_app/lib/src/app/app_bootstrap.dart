@@ -51,6 +51,7 @@ import '../ide/workspace/source_control_status_controller.dart';
 import '../view_ide/platform/native_module_loader.dart';
 import '../view_ide/platform/platform_target.dart';
 import '../ide/workspace/workspace_document_store.dart';
+import '../ide/workspace/workspace_file_explorer_state_store.dart';
 import '../ide/workspace/workspace_search_service.dart';
 import '../ide/workspace/workspace_controller.dart';
 
@@ -223,6 +224,7 @@ class AppBootstrap {
     RuntimeOutputLiveBuffer? runtimeOutputBuffer,
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
+    this.workspaceFileExplorerStateStore,
     this.refreshActiveLanguageService,
     this.styioServiceSubscriptionController,
     this.languageServiceStatusController,
@@ -271,6 +273,7 @@ class AppBootstrap {
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
+  final WorkspaceFileExplorerStateStore? workspaceFileExplorerStateStore;
   final ToolchainManager? toolchainManager;
   final ClangCppVersionPreference? clangCppVersionPreference;
   final Future<void> Function()? refreshActiveLanguageService;
@@ -691,6 +694,10 @@ class AppBootstrap {
         CommandPaletteDisplayPreferencesStore.fromDataStore(
           dataStore: foundationDataStore,
         );
+    final workspaceFileExplorerStateStore =
+        WorkspaceFileExplorerStateStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
     final toolchainStore = ToolchainConfigurationStore(
       configurationStore: configurationStore,
     );
@@ -924,6 +931,7 @@ class AppBootstrap {
       runtimeOutputBuffer: runtimeOutputBuffer,
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,
+      workspaceFileExplorerStateStore: workspaceFileExplorerStateStore,
       refreshActiveLanguageService: refreshActiveLanguageService,
       styioServiceSubscriptionController: styioServiceSubscriptionController,
       languageServiceStatusController: languageServiceStatusController,

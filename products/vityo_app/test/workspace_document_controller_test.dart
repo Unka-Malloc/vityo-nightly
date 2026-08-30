@@ -64,6 +64,68 @@ void main() {
     },
   );
 
+  test(
+    'workspace load suppression remains active across overlapping work',
+    () async {
+      const firstPath = '/workspace/demo/first.styio';
+      const secondPath = '/workspace/demo/second.styio';
+      final workspace = WorkspaceController(
+        projectSnapshot: _projectGraph(<String>[firstPath, secondPath]),
+      );
+      addTearDown(workspace.dispose);
+      final firstDocument = _document(firstPath);
+      final editor = EditorSessionController(
+        initialDocument: firstDocument,
+        languageService: const SimpleStyioLanguageService(),
+      );
+      addTearDown(editor.dispose);
+      final store = _CountingWorkspaceDocumentStore(
+        seededDocuments: <String, DocumentState>{
+          firstPath: firstDocument,
+          secondPath: _document(secondPath),
+        },
+      );
+      final binding = EditorDocumentResourceBinding(documentStore: store)
+        ..bindLoadedDocument(firstDocument);
+      addTearDown(binding.dispose);
+      final controller = WorkspaceDocumentController(
+        workspaceController: workspace,
+        editorController: editor,
+        fileBinding: binding,
+        documentStore: store,
+        state: EditorWorkspaceStateController(documentCacheLimit: 4),
+        sessionStore: null,
+        sessionWorkspaceId: 'demo',
+        log: (_) {},
+        notify: () {},
+      );
+      final releaseFirst = Completer<void>();
+      final releaseSecond = Completer<void>();
+      final first = controller.runWithoutWorkspaceLoad(
+        () => releaseFirst.future,
+      );
+      final second = controller.runWithoutWorkspaceLoad(
+        () => releaseSecond.future,
+      );
+
+      releaseFirst.complete();
+      await first;
+      workspace.openFile(secondPath);
+      controller.handleWorkspaceChanged();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(store.loadCount, 0);
+
+      releaseSecond.complete();
+      await second;
+      controller.handleWorkspaceChanged();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(store.loadCount, 1);
+      expect(editor.document.documentId, secondPath);
+    },
+  );
+
   test('dirty active document blocks close with explicit recovery', () {
     const path = '/workspace/demo/main.styio';
     final document = _document(path);
@@ -296,4 +358,17 @@ final class _DelayedWorkspaceDocumentStore implements WorkspaceDocumentStore {
 
   @override
   String? filePathForDocumentId(String documentId) => documentId;
+}
+
+final class _CountingWorkspaceDocumentStore
+    extends InMemoryWorkspaceDocumentStore {
+  _CountingWorkspaceDocumentStore({super.seededDocuments});
+
+  int loadCount = 0;
+
+  @override
+  Future<DocumentState> loadDocument(String path) {
+    loadCount += 1;
+    return super.loadDocument(path);
+  }
 }

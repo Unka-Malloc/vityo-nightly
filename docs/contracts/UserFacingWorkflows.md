@@ -3,7 +3,7 @@
 **Purpose:** Define the product workflow contract for first launch, workspace lifecycle, editing, command routing, run/debug, diagnostics, agent review, settings, modules, hosted export, and recovery UX.
 
 **Owner:** `products/vityo_app/lib/src/` (app bootstrap, shell/runtime, workspace, editor, commands, runtime, agent, diagnostics, settings, module host, hosted lifecycle)
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-31
 **Plan traceability:** [Vityo requirements](../plan/vityo/Requirements.md)
 `REQ-IDE-002`, `REQ-IDE-003`, `REQ-IDE-004`, and `REQ-IDE-008`
 
@@ -27,7 +27,8 @@
 | `HostedWorkspaceLifecycle` | `products/vityo_app/lib/src/ide/workspace/hosted_workspace_lifecycle.dart` | Close-plan, pending-deletion, connector-parity. |
 | `WorkspaceFileOperationService` | `products/vityo_app/lib/src/ide/workspace/workspace_file_operations.dart` | File CRUD operations with path validation. |
 | `WorkspaceFileCommandRouter` | `products/vityo_app/lib/src/ide/workspace/workspace_file_command_router.dart` | Routes file commands. |
-| `WorkspaceFileExplorerController` | `products/vityo_app/lib/src/ide/workspace/workspace_file_explorer_controller.dart` | File tree state: expanded nodes, selection, filtering. |
+| `WorkspaceFileExplorerController` | `products/vityo_app/lib/src/ide/workspace/workspace_file_explorer_controller.dart` | Single file-tree authority: recursive discovery, canonical paths, persisted expansion/selection/sort, bounded watcher batches, overflow/backpressure telemetry, and batch action plans. |
+| Explorer sidebar | `products/vityo_app/lib/src/view_render/shell/explorer_sidebar.dart` | Compact IDE tree with filtering, sorting, dirty/open state, create/rename dialogs, multi-select, and destructive batch confirmation. |
 | `VFS` | `products/vityo_app/lib/src/ide/workspace/vfs.dart` | Virtual filesystem abstraction for path resolution. |
 
 ### 1.4 Command Palette
