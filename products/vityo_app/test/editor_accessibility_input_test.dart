@@ -89,6 +89,50 @@ void main() {
       );
       semantics.dispose();
     });
+
+    testWidgets('semantics replace the whole value and update selection', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final controller = _controller('before');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_harness(controller));
+      await tester.focusEditorSource();
+
+      var node = tester.getSemantics(
+        find.byKey(const ValueKey('source-buffer-semantics')),
+      );
+      tester.semantics.setText(
+        find.semantics.byFlag(SemanticsFlag.isTextField),
+        '日本é🙂',
+      );
+      await tester.pump();
+
+      expect(controller.document.text, '日本é🙂');
+      expect(controller.historyController.undoDepth, 1);
+
+      final sourceSemantics = find.byKey(
+        const ValueKey('source-buffer-semantics'),
+      );
+      node = tester.getSemantics(sourceSemantics);
+      expect(
+        node.getSemanticsData().hasAction(SemanticsAction.setSelection),
+        isTrue,
+      );
+      tester.semantics.setSelection(
+        find.semantics.byFlag(SemanticsFlag.isTextField),
+        base: 0,
+        extent: 2,
+      );
+      await tester.pump();
+
+      expect(
+        controller.selectionSet.primarySelection,
+        const SelectionState(baseOffset: 0, extentOffset: 2),
+      );
+      expect(controller.selectionSet.selections, hasLength(1));
+      semantics.dispose();
+    });
   });
 }
 

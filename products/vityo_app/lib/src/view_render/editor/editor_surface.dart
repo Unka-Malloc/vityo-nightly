@@ -3036,19 +3036,8 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                 hint:
                     '${_textInputClient.isComposing ? 'composition active' : 'composition idle'}, '
                     '${_textInputClient.status}',
-                onSetText: (text) {
-                  _textInputClient.updateEditingValue(
-                    TextEditingValue(
-                      text: text,
-                      selection: TextSelection.collapsed(offset: text.length),
-                    ),
-                  );
-                },
-                onSetSelection: (selection) {
-                  _textInputClient.updateEditingValue(
-                    semanticsValue.copyWith(selection: selection),
-                  );
-                },
+                onSetText: _textInputClient.replaceAllText,
+                onSetSelection: _textInputClient.selectFromSemantics,
                 onMoveCursorForwardByCharacter: (extend) {
                   widget.controller.moveCaretHorizontally(
                     1,

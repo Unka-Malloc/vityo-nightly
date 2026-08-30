@@ -206,6 +206,63 @@ final class EditorTextInputClient with TextInputClient {
     );
   }
 
+  /// Replaces the complete document for the accessibility `setText` action.
+  ///
+  /// Platform editing updates are relative to the current selection window,
+  /// whereas editable semantics define `setText` as a whole-field replacement.
+  /// Keep those contracts separate so assistive technology cannot accidentally
+  /// append a replacement value at the primary caret.
+  bool replaceAllText(String text) {
+    if (_disposed) return false;
+    if (isComposing) cancelComposition();
+    final document = _controller.document;
+    if (document.text == text) {
+      _controller.selectionController.selectSelectionSet(
+        EditorSelectionSet.single(
+          SelectionState.collapsed(text.length),
+          documentLength: text.length,
+        ),
+      );
+      synchronizeCommittedState();
+      return true;
+    }
+    final replacement = EditorSelectionSet.single(
+      SelectionState(baseOffset: 0, extentOffset: document.length),
+      documentLength: document.length,
+    );
+    _controller.selectionController.selectSelectionSet(replacement);
+    return _commitStructuralText(
+      text: text,
+      selectionSet: replacement,
+      expectedRevision: document.revision,
+      documentId: document.documentId,
+    );
+  }
+
+  /// Applies an accessibility selection expressed in the published text
+  /// window back to the complete document selection model.
+  bool selectFromSemantics(TextSelection selection) {
+    if (_disposed || !selection.isValid) return false;
+    if (isComposing) cancelComposition();
+    final document = _controller.document;
+    final base = selection.baseOffset.clamp(0, _window.text.length);
+    final extent = selection.extentOffset.clamp(0, _window.text.length);
+    _controller.selectionController.selectSelectionSet(
+      EditorSelectionSet.single(
+        SelectionState(
+          baseOffset: _window.documentStart + base,
+          extentOffset: _window.documentStart + extent,
+          baseAffinity: _editorAffinity(selection.affinity),
+          extentAffinity: _editorAffinity(selection.affinity),
+        ),
+        documentLength: document.length,
+      ),
+    );
+    synchronizeCommittedState();
+    _notifyChanged();
+    return true;
+  }
+
   bool _commitStructuralDeletion({required bool forward}) {
     if (_disposed || isComposing) return false;
     final document = _controller.document;
@@ -531,6 +588,11 @@ final class EditorTextInputClient with TextInputClient {
       affinity.toString().endsWith('upstream')
       ? TextAffinity.upstream
       : TextAffinity.downstream;
+
+  static EditorCaretAffinity _editorAffinity(TextAffinity affinity) =>
+      affinity == TextAffinity.upstream
+      ? EditorCaretAffinity.upstream
+      : EditorCaretAffinity.downstream;
 
   static EditorInputRange _relativeRange(
     TextRange range,
