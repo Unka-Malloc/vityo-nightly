@@ -138,6 +138,7 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     final workspaceId = projectGraph.hostedWorkspace?.workspaceId;
     if (workspaceId == null || workspaceId.isEmpty) {
@@ -210,7 +211,8 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
   }
 }
 
-class _LocalCliExecutionAdapter implements ExecutionAdapter {
+class _LocalCliExecutionAdapter
+    implements ExecutionAdapter, CancellableExecutionAdapter {
   const _LocalCliExecutionAdapter({
     required this.platformTarget,
     required this.projectGraph,
@@ -238,6 +240,7 @@ class _LocalCliExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     switch (platformTarget) {
       case PlatformTarget.ios:
@@ -274,6 +277,7 @@ class _LocalCliExecutionAdapter implements ExecutionAdapter {
         document: document,
         activeFilePath: activeFilePath,
         platformManagers: managers,
+        onProcessStarted: onProcessStarted,
       );
     }
 
@@ -301,6 +305,7 @@ class _LocalCliExecutionAdapter implements ExecutionAdapter {
           ],
           workingDirectory: projectGraph.workspaceRoot,
           serviceKind: ProcessServiceKind.styio,
+          onStarted: onProcessStarted,
         ),
       );
 
@@ -334,6 +339,7 @@ class _LocalCliExecutionAdapter implements ExecutionAdapter {
         stdoutEvents: stdoutChannel.logEvents,
         stderrEvents: stderrChannel.logEvents,
         unitRange: SourceRange(start: 0, end: document.length),
+        metadata: result.metadata,
       );
     } finally {
       await _cleanupPreparedExecutionInput(
@@ -341,6 +347,22 @@ class _LocalCliExecutionAdapter implements ExecutionAdapter {
         fileSystem: managers.fileSystem,
       );
     }
+  }
+
+  @override
+  Future<ExecutionCancellationResult> cancelExecution(String processHandleId) {
+    final processManager = platformManagers?.process;
+    if (processManager is! CancellableProcessManager) {
+      return Future<ExecutionCancellationResult>.value(
+        const ExecutionCancellationResult.unsupported(
+          message:
+              'The active execution route does not expose process cancellation.',
+        ),
+      );
+    }
+    return (processManager as CancellableProcessManager).cancelProcess(
+      processHandleId,
+    );
   }
 }
 
@@ -550,6 +572,7 @@ Future<ExecutionSession> _runProjectWorkflow({
   required DocumentState document,
   required String activeFilePath,
   required PlatformManagerBundle platformManagers,
+  ExecutionProcessStartedCallback? onProcessStarted,
 }) async {
   final manifestPath = projectGraph.manifestPath;
   if (manifestPath == null) {
@@ -602,6 +625,7 @@ Future<ExecutionSession> _runProjectWorkflow({
         ],
         workingDirectory: preparedInput.workspaceRoot,
         serviceKind: ProcessServiceKind.pafio,
+        onStarted: onProcessStarted,
       ),
     );
 
@@ -617,6 +641,7 @@ Future<ExecutionSession> _runProjectWorkflow({
         workspaceRoot: preparedInput.workspaceRoot,
         normalizePath: normalizedPath,
         fileSystem: platformManagers.fileSystem,
+        processMetadata: result.metadata,
       );
       if (session != null) {
         return session;
@@ -683,6 +708,7 @@ Future<ExecutionSession> _runProjectWorkflow({
         ...stderrChannel.logEvents,
       ],
       unitRange: SourceRange(start: 0, end: document.length),
+      metadata: result.metadata,
     );
   } on Object catch (error) {
     return ExecutionSession(
@@ -711,6 +737,7 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
   required String activeFilePath,
   required String workspaceRoot,
   required FileSystemManager fileSystem,
+  required Map<String, Object?> processMetadata,
   String Function(String path)? normalizePath,
 }) async {
   final trimmed = stdout.trim();
@@ -746,6 +773,7 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
         stdoutEvents: const <ExecutionLogEvent>[],
         stderrEvents: const <ExecutionLogEvent>[],
         unitRange: SourceRange(start: 0, end: document.length),
+        metadata: processMetadata,
       );
     }
     final runtimeEvents = await _readWorkflowRuntimeEvents(
@@ -810,6 +838,7 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
       ],
       receipt: receipt,
       unitRange: SourceRange(start: 0, end: document.length),
+      metadata: processMetadata,
     );
   } on FormatException {
     return null;

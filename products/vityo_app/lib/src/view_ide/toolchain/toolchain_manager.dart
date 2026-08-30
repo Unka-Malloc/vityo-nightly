@@ -743,6 +743,7 @@ class ToolchainManagerRuntimeExecutionAdapter {
         const <EnvironmentVariableOverlay>[],
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     if (binding.managerId != 'toolchain-manager') {
       return _controlResult(
@@ -771,6 +772,7 @@ class ToolchainManagerRuntimeExecutionAdapter {
       workingDirectory: binding.handoff.workingDirectory,
       timeout: timeout,
       standardInput: standardInput,
+      onProcessStarted: onProcessStarted,
     );
     final outputEvents = _eventsForResult(
       binding: binding,
@@ -1084,6 +1086,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final result =
         await ToolchainInstallExecutor(
@@ -1095,6 +1098,7 @@ class ToolchainManager {
           environmentOverlays: environmentOverlays,
           workingDirectory: workingDirectory,
           timeout: timeout,
+          onProcessStarted: onProcessStarted,
         );
     final recordedAt = DateTime.now().toUtc();
     await _configurationStore.appendInstallHistory(
@@ -1126,6 +1130,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final execution = await executeInstallPlan(
       plan,
@@ -1133,6 +1138,7 @@ class ToolchainManager {
       environmentOverlays: environmentOverlays,
       workingDirectory: workingDirectory,
       timeout: timeout,
+      onProcessStarted: onProcessStarted,
     );
     if (execution.status == ToolchainInstallExecutionStatus.failed ||
         execution.status == ToolchainInstallExecutionStatus.blocked ||
@@ -1255,6 +1261,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final execution = await executeInstallPlan(
       plan,
@@ -1262,6 +1269,7 @@ class ToolchainManager {
       environmentOverlays: environmentOverlays,
       workingDirectory: workingDirectory,
       timeout: timeout,
+      onProcessStarted: onProcessStarted,
     );
     if (execution.status == ToolchainInstallExecutionStatus.failed ||
         execution.status == ToolchainInstallExecutionStatus.blocked ||

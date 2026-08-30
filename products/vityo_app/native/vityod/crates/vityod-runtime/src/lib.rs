@@ -494,7 +494,7 @@ impl ManagedTaskRegistry {
         }
     }
 
-    pub fn start(&mut self, launch: TaskLaunch) -> Result<(), TaskRuntimeError> {
+    pub fn start(&mut self, launch: TaskLaunch) -> Result<u32, TaskRuntimeError> {
         if launch.id.is_empty()
             || launch.id.len() > 256
             || launch.arguments.len() > 256
@@ -543,8 +543,9 @@ impl ManagedTaskRegistry {
         let mut child = command.spawn().map_err(|_| TaskRuntimeError::StartFailed)?;
         #[cfg(windows)]
         let job = WindowsJob::assign(&child).map_err(|_| TaskRuntimeError::StartFailed)?;
+        let process_id = child.id();
         #[cfg(unix)]
-        let process_group_id = Some(child.id());
+        let process_group_id = Some(process_id);
         #[cfg(all(not(unix), not(windows)))]
         let process_group_id = None;
         if let Some(input) = launch.standard_input {
@@ -624,7 +625,7 @@ impl ManagedTaskRegistry {
                 timed_out: false,
             },
         );
-        Ok(())
+        Ok(process_id)
     }
 
     pub fn snapshot(&mut self, id: &str) -> Result<TaskSnapshot, TaskRuntimeError> {

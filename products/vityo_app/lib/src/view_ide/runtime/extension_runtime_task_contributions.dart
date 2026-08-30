@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../environment/system_compatibility/process/process_manager.dart';
+import '../environment/system_compatibility/shell/shell_manager.dart';
 import '../foundation/foundation.dart';
 import '../module_host/module_host.dart';
 import 'runtime_execution_plan.dart';
@@ -939,11 +941,9 @@ class ExtensionRuntimeTaskCancellationAdapter {
   }) : _cancel = cancel;
 
   factory ExtensionRuntimeTaskCancellationAdapter.processManager({
-    required ExtensionRuntimeTaskTerminator terminate,
+    required CancellableProcessManager manager,
     String managerId = 'toolchain-manager',
     List<String> routeKinds = const <String>['toolchain-task'],
-    ExtensionRuntimeTaskTerminationSignal signal =
-        ExtensionRuntimeTaskTerminationSignal.terminate,
   }) {
     return ExtensionRuntimeTaskCancellationAdapter(
       managerId: managerId,
@@ -955,26 +955,38 @@ class ExtensionRuntimeTaskCancellationAdapter {
             required timestamp,
             required reason,
           }) async {
-            final result = await terminate(
-              ExtensionRuntimeTaskTerminationRequest(
-                plan: plan,
-                handle: handle,
-                timestamp: timestamp,
-                reason: reason,
-                managerId: managerId,
-                backendKind: 'process-manager',
-                signal: signal,
-              ),
-            );
-            return result.toAdapterResult();
+            final result = await manager.cancelProcess(handle.processHandleId);
+            return _cancellationAdapterResultFromProcess(result);
           },
     );
   }
 
   factory ExtensionRuntimeTaskCancellationAdapter.shellManager({
-    required ExtensionRuntimeTaskTerminator terminate,
+    required CancellableShellManager manager,
     String managerId = 'shell-manager',
-    List<String> routeKinds = const <String>['shell-command'],
+    List<String> routeKinds = const <String>['local-shell'],
+  }) {
+    return ExtensionRuntimeTaskCancellationAdapter(
+      managerId: managerId,
+      routeKinds: routeKinds,
+      cancel:
+          ({
+            required plan,
+            required handle,
+            required timestamp,
+            required reason,
+          }) async {
+            final result = await manager.cancelProcess(handle.processHandleId);
+            return _cancellationAdapterResultFromProcess(result);
+          },
+    );
+  }
+
+  factory ExtensionRuntimeTaskCancellationAdapter.terminator({
+    required String managerId,
+    required String backendKind,
+    required ExtensionRuntimeTaskTerminator terminate,
+    List<String> routeKinds = const <String>[],
     ExtensionRuntimeTaskTerminationSignal signal =
         ExtensionRuntimeTaskTerminationSignal.terminate,
   }) {
@@ -995,7 +1007,7 @@ class ExtensionRuntimeTaskCancellationAdapter {
                 timestamp: timestamp,
                 reason: reason,
                 managerId: managerId,
-                backendKind: 'shell-manager',
+                backendKind: backendKind,
                 signal: signal,
               ),
             );
@@ -1026,6 +1038,19 @@ class ExtensionRuntimeTaskCancellationAdapter {
       reason: reason,
     );
   }
+}
+
+ExtensionRuntimeTaskCancellationAdapterResult
+_cancellationAdapterResultFromProcess(ProcessCommandCancellationResult result) {
+  return ExtensionRuntimeTaskCancellationAdapterResult(
+    accepted: result.accepted,
+    processTerminated: result.processTerminated,
+    message: result.message,
+    metadata: <String, Object?>{
+      if (result.exitCode != null) 'exitCode': result.exitCode,
+      ...result.metadata,
+    },
+  );
 }
 
 class ExtensionRuntimeTaskCancellationDispatchResult {

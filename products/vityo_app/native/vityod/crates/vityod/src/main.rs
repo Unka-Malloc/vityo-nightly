@@ -2104,7 +2104,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 standard_input,
                 timeout: std::time::Duration::from_secs(30),
             }) {
-                Ok(()) => json!({"state": "running", "taskId": task_id}),
+                Ok(pid) => json!({"state": "running", "taskId": task_id, "pid": pid}),
                 Err(error) => {
                     return error_response(
                         request,
@@ -2202,7 +2202,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 standard_input,
                 timeout: std::time::Duration::from_millis(timeout_millis),
             }) {
-                Ok(()) => json!({"state": "running"}),
+                Ok(pid) => json!({"state": "running", "pid": pid}),
                 Err(error) => {
                     return error_response(
                         request,
@@ -3936,7 +3936,7 @@ fn tool_process_response(
                 .and_then(Value::as_u64)
                 .unwrap_or(30_000)
                 .clamp(1, 30 * 60 * 1000);
-            tasks
+            let pid = tasks
                 .start(TaskLaunch {
                     id: internal_task_id,
                     executable: std::path::PathBuf::from(executable),
@@ -3947,7 +3947,7 @@ fn tool_process_response(
                     timeout: std::time::Duration::from_millis(timeout_millis),
                 })
                 .map_err(task_error_code)?;
-            Ok(json!({"state": "running", "taskId": task_id}))
+            Ok(json!({"state": "running", "taskId": task_id, "pid": pid}))
         }
         "output" => {
             let snapshot = tasks.snapshot(&internal_task_id).map_err(task_error_code)?;

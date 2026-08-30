@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'package:vityo_app/src/view_ide/backend_toolchain/hosted_control_plane.da
 import 'package:vityo_app/src/view_ide/backend_toolchain/pafio_cli_discovery.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/project_graph_contract.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/runtime_event_adapter.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
 import 'package:vityo_app/src/view_ide/language/language_contract.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 
@@ -149,6 +151,7 @@ raise SystemExit(64)
       );
 
       addTearDown(() => clearRuntimeEventsForSession('runtime-session-1'));
+      final started = Completer<ProcessCommandHandle>();
       final session = await adapter.runActiveDocument(
         platformTarget: PlatformTarget.macos,
         projectGraph: _projectGraph(
@@ -188,7 +191,9 @@ raise SystemExit(64)
           revision: 1,
         ),
         activeFilePath: sourceFile.path,
+        onProcessStarted: started.complete,
       );
+      final handle = await started.future.timeout(const Duration(seconds: 5));
 
       expect(session.status, ExecutionSessionStatus.succeeded);
       expect(session.receipt?.schemaVersion, 1);
@@ -209,6 +214,10 @@ raise SystemExit(64)
       );
       expect(session.stderrEvents, isEmpty);
       expect(session.diagnostics, isEmpty);
+      expect(handle.processHandleId, isNotEmpty);
+      expect(handle.pid, greaterThan(0));
+      expect(session.metadata['processHandleId'], handle.processHandleId);
+      expect(session.metadata['pid'], handle.pid);
       final runtimeAdapter = createRuntimeEventAdapter(
         platformTarget: PlatformTarget.macos,
       );

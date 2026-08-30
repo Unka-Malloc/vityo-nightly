@@ -1518,15 +1518,25 @@ REMOVE_ME=from-file
         requirement: ToolchainRequirement(kind: ToolchainKind.languageService),
         externalCommand: '/usr/bin/env',
       );
+      final started = Completer<ProcessCommandHandle>();
 
       final result = await executor.execute(
         plan,
         environment: const <String, String>{'VITYO_INSTALL_TEST': 'ok'},
+        onProcessStarted: started.complete,
       );
+      final handle = await started.future.timeout(const Duration(seconds: 5));
 
       expect(result.status, ToolchainInstallExecutionStatus.succeeded);
       expect(result.succeeded, isTrue);
       expect(result.processResult?.stdout, contains('VITYO_INSTALL_TEST=ok'));
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.pid, greaterThan(0));
+      expect(
+        result.processResult?.metadata['processHandleId'],
+        handle.processHandleId,
+      );
+      expect(result.processResult?.metadata['pid'], handle.pid);
       expect(result.toJson()['processResult'], isA<Map<String, Object?>>());
 
       final failed = await executor.execute(

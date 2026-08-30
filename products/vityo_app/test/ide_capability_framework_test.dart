@@ -598,9 +598,15 @@ void main() {
       contains('ShellManager/ProcessManager cancellation adapter factories'),
     );
     expect(
-      entriesById['runtime.execution']?.todo,
-      contains('processHandleId/pid metadata'),
+      entriesById['runtime.execution']?.summary,
+      contains('Production vityod task starts return a stable processHandleId'),
     );
+    expect(
+      entriesById['runtime.execution']?.summary,
+      contains('Native macOS Run/Stop clicks'),
+    );
+    expect(entriesById['runtime.execution']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['runtime.execution']?.todo, isEmpty);
     expect(entriesById['runtime.execution']?.runtimeMaturityBlocking, isFalse);
     expect(
       entriesById['interaction.language-service-status']?.summary,

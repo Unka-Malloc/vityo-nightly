@@ -210,10 +210,13 @@ void main() {
 
       expect(handle.processHandleId, startsWith('task-'));
       expect(handle.sourceManager, 'vityod');
+      expect(handle.pid, greaterThan(0));
       expect(cancellation.accepted, isTrue);
       expect(cancellation.processTerminated, isTrue);
       expect(result.succeeded, isFalse);
       expect(result.metadata['processHandleId'], handle.processHandleId);
+      expect(result.metadata['pid'], handle.pid);
+      expect(result.metadata['processHandleSource'], handle.sourceManager);
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );

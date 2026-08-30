@@ -414,6 +414,51 @@ void main() {
   );
 
   test(
+    'extension runtime task factories cancel through production managers',
+    () async {
+      final processPlan = _createRuntimeTaskPlan();
+      final shellPlan = _createShellRuntimeTaskPlan();
+      final processManager = _RecordingCancellationManager();
+      final shellManager = _RecordingCancellationManager();
+      final processAdapter =
+          ExtensionRuntimeTaskCancellationAdapter.processManager(
+            manager: processManager,
+          );
+      final shellAdapter = ExtensionRuntimeTaskCancellationAdapter.shellManager(
+        manager: shellManager,
+      );
+      final timestamp = DateTime.utc(2026, 5, 21, 3, 30);
+
+      final processResult = await processAdapter.cancel(
+        plan: processPlan,
+        handle: ExtensionRuntimeTaskCancellationHandle.fromPlan(
+          plan: processPlan,
+          processHandleId: 'process-build-2',
+        ),
+        timestamp: timestamp,
+        reason: 'stop build',
+      );
+      final shellResult = await shellAdapter.cancel(
+        plan: shellPlan,
+        handle: ExtensionRuntimeTaskCancellationHandle.fromPlan(
+          plan: shellPlan,
+          processHandleId: 'process-shell-2',
+        ),
+        timestamp: timestamp,
+        reason: 'stop shell',
+      );
+
+      expect(processAdapter.accepts(processPlan), isTrue);
+      expect(shellAdapter.accepts(shellPlan), isTrue);
+      expect(processManager.cancelledHandles, <String>['process-build-2']);
+      expect(shellManager.cancelledHandles, <String>['process-shell-2']);
+      expect(processResult.accepted, isTrue);
+      expect(shellResult.processTerminated, isTrue);
+      expect(processResult.metadata['manager'], 'production-manager');
+    },
+  );
+
+  test(
     'extension runtime task cancellation adapters expose termination requests',
     () async {
       final plan = _createRuntimeTaskPlan();
@@ -422,7 +467,10 @@ void main() {
       final bridge = ExtensionRuntimeTaskExecutionBridge(
         telemetrySink: telemetry,
         cancellationAdapters: <ExtensionRuntimeTaskCancellationAdapter>[
-          ExtensionRuntimeTaskCancellationAdapter.processManager(
+          ExtensionRuntimeTaskCancellationAdapter.terminator(
+            managerId: 'toolchain-manager',
+            backendKind: 'process-manager',
+            routeKinds: const <String>['toolchain-task'],
             terminate: (request) async {
               requests.add(request);
               return const ExtensionRuntimeTaskTerminationResult.accepted(
@@ -470,7 +518,10 @@ void main() {
       final requests = <ExtensionRuntimeTaskTerminationRequest>[];
       final bridge = ExtensionRuntimeTaskExecutionBridge(
         cancellationAdapters: <ExtensionRuntimeTaskCancellationAdapter>[
-          ExtensionRuntimeTaskCancellationAdapter.processManager(
+          ExtensionRuntimeTaskCancellationAdapter.terminator(
+            managerId: 'toolchain-manager',
+            backendKind: 'process-manager',
+            routeKinds: const <String>['toolchain-task'],
             terminate: (request) async {
               requests.add(request);
               return const ExtensionRuntimeTaskTerminationResult.accepted(
@@ -569,6 +620,42 @@ ExtensionRuntimeTaskExecutionPlan _createRuntimeTaskPlan() {
       ),
     ),
   );
+}
+
+ExtensionRuntimeTaskExecutionPlan _createShellRuntimeTaskPlan() {
+  return ExtensionRuntimeTaskExecutionPlan.fromContribution(
+    const ExtensionRuntimeTaskContribution(
+      extensionId: 'styio.tasks',
+      contributionId: 'shell',
+      target: 'runtime.tasks',
+      status: ExtensionRuntimeTaskContributionStatus.ready,
+      message: 'ready',
+      definition: RuntimeTaskDefinition(
+        id: 'shell',
+        label: 'Shell',
+        kind: RuntimeTaskKind.shell,
+        command: 'echo',
+      ),
+    ),
+  );
+}
+
+class _RecordingCancellationManager
+    implements CancellableProcessManager, CancellableShellManager {
+  final List<String> cancelledHandles = <String>[];
+
+  @override
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  ) async {
+    cancelledHandles.add(processHandleId);
+    return const ProcessCommandCancellationResult(
+      accepted: true,
+      processTerminated: true,
+      message: 'Process terminated.',
+      metadata: <String, Object?>{'manager': 'production-manager'},
+    );
+  }
 }
 
 FoundationDataStore _createDataStore(Directory tempRoot) {

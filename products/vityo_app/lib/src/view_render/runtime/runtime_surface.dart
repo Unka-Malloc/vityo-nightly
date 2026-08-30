@@ -30,6 +30,10 @@ class RuntimeSurface extends StatelessWidget {
     required this.mountedModules,
     required this.adapterCapabilities,
     required this.executionSession,
+    this.executionRunActive = false,
+    this.executionCanCancel = false,
+    this.onRunExecution,
+    this.onCancelExecution,
     required this.runtimeEvents,
     this.nativeToolResults = const <NativeToolResultRecord>[],
     this.outputSnapshot,
@@ -45,6 +49,10 @@ class RuntimeSurface extends StatelessWidget {
   final List<ModuleDefinition> mountedModules;
   final List<AdapterCapabilitySnapshot> adapterCapabilities;
   final ExecutionSession? executionSession;
+  final bool executionRunActive;
+  final bool executionCanCancel;
+  final Future<void> Function()? onRunExecution;
+  final Future<void> Function()? onCancelExecution;
   final List<RuntimeEventEnvelope> runtimeEvents;
   final List<NativeToolResultRecord> nativeToolResults;
   final RuntimeOutputPanelSnapshot? outputSnapshot;
@@ -113,6 +121,10 @@ class RuntimeSurface extends StatelessWidget {
                 _ExecutionSessionSection(
                   executionSession: executionSession,
                   runtimeEventCount: runtimeEvents.length,
+                  executionRunActive: executionRunActive,
+                  executionCanCancel: executionCanCancel,
+                  onRunExecution: onRunExecution,
+                  onCancelExecution: onCancelExecution,
                 ),
                 SizedBox(height: cardSpacing),
                 _NativeToolResultSection(
@@ -184,6 +196,10 @@ class RuntimeSurface extends StatelessWidget {
                 _ExecutionSessionSection(
                   executionSession: executionSession,
                   runtimeEventCount: runtimeEvents.length,
+                  executionRunActive: executionRunActive,
+                  executionCanCancel: executionCanCancel,
+                  onRunExecution: onRunExecution,
+                  onCancelExecution: onCancelExecution,
                 ),
                 SizedBox(height: cardSpacing),
                 _NativeToolResultSection(
@@ -259,7 +275,7 @@ class _ToolchainStatusSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = switch (status.severity) {
+    final accentTint = switch (status.severity) {
       ToolchainStatusSeverity.ready => const Color(0xFFDFF0DE),
       ToolchainStatusSeverity.unavailable => const Color(0xFFF0E8D6),
       ToolchainStatusSeverity.blocked => const Color(0xFFF4E8D8),
@@ -270,7 +286,7 @@ class _ToolchainStatusSection extends StatelessWidget {
       key: const ValueKey('toolchain-status-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: accent,
+        color: _runtimeSurfaceColor(context, accentTint),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -320,23 +336,28 @@ class _ToolchainStatusSection extends StatelessWidget {
   }
 }
 
-Color _runtimeAccentColor(RuntimeAccent accent) {
-  switch (accent) {
-    case RuntimeAccent.failed:
-      return const Color(0xFFF3D8D6);
-    case RuntimeAccent.completed:
-      return const Color(0xFFDFF0DE);
-    case RuntimeAccent.active:
-      return const Color(0xFFECE4CF);
-    case RuntimeAccent.observed:
-      return const Color(0xFFE5E8EE);
-    case RuntimeAccent.thread:
-      return const Color(0xFFE2EBF9);
-    case RuntimeAccent.test:
-      return const Color(0xFFE7F2DE);
-    case RuntimeAccent.log:
-      return const Color(0xFFF4E8D8);
+Color _runtimeSurfaceColor(BuildContext context, Color lightTint) {
+  final theme = Theme.of(context);
+  if (theme.brightness == Brightness.light) {
+    return lightTint;
   }
+  return Color.alphaBlend(
+    lightTint.withValues(alpha: 0.14),
+    theme.colorScheme.surfaceContainerHigh,
+  );
+}
+
+Color _runtimeAccentColor(BuildContext context, RuntimeAccent accent) {
+  final tint = switch (accent) {
+    RuntimeAccent.failed => const Color(0xFFF3D8D6),
+    RuntimeAccent.completed => const Color(0xFFDFF0DE),
+    RuntimeAccent.active => const Color(0xFFECE4CF),
+    RuntimeAccent.observed => const Color(0xFFE5E8EE),
+    RuntimeAccent.thread => const Color(0xFFE2EBF9),
+    RuntimeAccent.test => const Color(0xFFE7F2DE),
+    RuntimeAccent.log => const Color(0xFFF4E8D8),
+  };
+  return _runtimeSurfaceColor(context, tint);
 }
 
 class _SurfaceFrame extends StatelessWidget {
@@ -388,7 +409,7 @@ class _MetricSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: accent,
+        color: _runtimeSurfaceColor(context, accent),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -408,10 +429,18 @@ class _ExecutionSessionSection extends StatelessWidget {
   const _ExecutionSessionSection({
     required this.executionSession,
     required this.runtimeEventCount,
+    required this.executionRunActive,
+    required this.executionCanCancel,
+    required this.onRunExecution,
+    required this.onCancelExecution,
   });
 
   final ExecutionSession? executionSession;
   final int runtimeEventCount;
+  final bool executionRunActive;
+  final bool executionCanCancel;
+  final Future<void> Function()? onRunExecution;
+  final Future<void> Function()? onCancelExecution;
 
   @override
   Widget build(BuildContext context) {
@@ -420,14 +449,51 @@ class _ExecutionSessionSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E9),
+        color: _runtimeSurfaceColor(context, const Color(0xFFF7F2E9)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Execution Status', style: theme.textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Execution Status',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (executionRunActive)
+                FilledButton.icon(
+                  key: const ValueKey('runtime-stop-execution'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.errorContainer,
+                    foregroundColor: theme.colorScheme.onErrorContainer,
+                    disabledBackgroundColor:
+                        theme.colorScheme.surfaceContainerHighest,
+                    disabledForegroundColor: theme.colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.55),
+                  ),
+                  onPressed: executionCanCancel && onCancelExecution != null
+                      ? () {
+                          onCancelExecution!();
+                        }
+                      : null,
+                  icon: const Icon(Icons.stop_rounded, size: 16),
+                  label: const Text('Stop'),
+                )
+              else if (onRunExecution != null)
+                OutlinedButton.icon(
+                  key: const ValueKey('runtime-run-execution'),
+                  onPressed: () {
+                    onRunExecution!();
+                  },
+                  icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                  label: Text(session == null ? 'Run' : 'Run again'),
+                ),
+            ],
+          ),
           const SizedBox(height: 10),
           if (session == null)
             Text(
@@ -441,11 +507,32 @@ class _ExecutionSessionSection extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(session.statusMessage, style: theme.textTheme.bodySmall),
+            if (executionRunActive && !executionCanCancel) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Binding the managed process before Stop becomes available…',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               'session ${session.sessionId} · $runtimeEventCount runtime event(s)',
               style: theme.textTheme.bodySmall,
             ),
+            if (session.metadata['processHandleId'] != null ||
+                session.metadata['pid'] != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                [
+                  if (session.metadata['processHandleId'] != null)
+                    'handle ${session.metadata['processHandleId']}',
+                  if (session.metadata['pid'] != null)
+                    'pid ${session.metadata['pid']}',
+                ].join(' · '),
+                key: const ValueKey('runtime-process-identity'),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
             if (session.receipt != null) ...[
               const SizedBox(height: 6),
               Text(
@@ -502,7 +589,7 @@ class _NativeToolResultSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF1EA),
+        color: _runtimeSurfaceColor(context, const Color(0xFFEAF1EA)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -584,7 +671,7 @@ class _RuntimeEventSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8EFE6),
+        color: _runtimeSurfaceColor(context, const Color(0xFFE8EFE6)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -682,7 +769,7 @@ class _OutputChannelSection extends StatelessWidget {
       key: const ValueKey('runtime-output-channels'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8ECF6),
+        color: _runtimeSurfaceColor(context, const Color(0xFFE8ECF6)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -830,7 +917,7 @@ class _RuntimeLaneSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0E8F6),
+        color: _runtimeSurfaceColor(context, const Color(0xFFF0E8F6)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -854,7 +941,7 @@ class _RuntimeLaneSection extends StatelessWidget {
                       width: 220,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _runtimeAccentColor(lane.accent),
+                        color: _runtimeAccentColor(context, lane.accent),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
@@ -906,7 +993,7 @@ class _RuntimeGraphSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE5ECF6),
+        color: _runtimeSurfaceColor(context, const Color(0xFFE5ECF6)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -958,7 +1045,10 @@ class _RuntimeGraphSection extends StatelessWidget {
                         width: 220,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFDDE8F6),
+                          color: _runtimeSurfaceColor(
+                            context,
+                            const Color(0xFFDDE8F6),
+                          ),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Column(
@@ -1065,7 +1155,10 @@ class _RuntimeGraphSection extends StatelessWidget {
                           width: 220,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD7E6EC),
+                            color: _runtimeSurfaceColor(
+                              context,
+                              const Color(0xFFD7E6EC),
+                            ),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Column(
@@ -1166,7 +1259,7 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF2ECDF),
+        color: _runtimeSurfaceColor(context, const Color(0xFFF2ECDF)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -1190,7 +1283,7 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
                       width: 220,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _runtimeAccentColor(lane.accent),
+                        color: _runtimeAccentColor(context, lane.accent),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
@@ -1282,7 +1375,7 @@ class _ModuleChipSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E9),
+        color: _runtimeSurfaceColor(context, const Color(0xFFF7F2E9)),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),

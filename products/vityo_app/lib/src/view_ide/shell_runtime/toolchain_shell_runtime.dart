@@ -21,6 +21,7 @@ class ToolchainShellRuntime {
     Duration? timeout,
     ShellProfileConfiguration? profile,
     bool? loginShell,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) {
     return shellManager.run(
       ShellCommandRequest(
@@ -31,6 +32,7 @@ class ToolchainShellRuntime {
         timeout: timeout,
         profile: profile,
         loginShell: loginShell,
+        onStarted: onProcessStarted,
       ),
       configuration: configuration,
     );

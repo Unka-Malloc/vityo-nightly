@@ -47,14 +47,15 @@
 
 | Artifact | File | Role |
 |----------|------|------|
-| `ExecutionAdapter` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter.dart` | Abstract compile/run adapter. |
-| `ExecutionAdapterIO` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter_io.dart` | IO implementation via local CLI. |
+| `ExecutionAdapter` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter.dart` | Abstract compile/run adapter with live process-start and cancellation contracts. |
+| `ExecutionAdapterIO` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter_io.dart` | Local CLI implementation that preserves managed process handle and PID metadata. |
+| `ExecutionController` | `products/vityo_app/lib/src/view_ide/shell_runtime/controllers/execution_controller.dart` | Owns starting/running/final session state, process binding, cancellation, and lifecycle cleanup. |
 | `HostedControlPlaneClient` | `products/vityo_app/lib/src/view_ide/backend_toolchain/hosted_control_plane.dart` | Cloud execution client. |
 | `HostedExecutionCodec` | `products/vityo_app/lib/src/view_ide/backend_toolchain/hosted_execution_codec.dart` | Decodes backend responses into `ExecutionSession` + runtime events. |
 | `RuntimeTaskDefinition` | `products/vityo_app/lib/src/view_ide/runtime/runtime_task_lifecycle.dart` | Canonical task definition with kind (`shell`, `run`, `build`, `test`, `debug`, `agent`, `toolchain`). |
 | `RuntimeTaskLifecycleEvent` | `products/vityo_app/lib/src/view_ide/runtime/runtime_task_lifecycle.dart` | Unified lifecycle event: status transitions. |
 | `RuntimeExecutionPlanner` | `products/vityo_app/lib/src/view_ide/runtime/runtime_execution_plan.dart` | Execution planning: plan, handoff, binding. |
-| `RuntimeSurface` | `products/vityo_app/lib/src/view_render/runtime/runtime_surface.dart` | Runtime surface widget. |
+| `RuntimeSurface` | `products/vityo_app/lib/src/view_render/runtime/runtime_surface.dart` | Theme-aware Run/Stop surface with live process identity and final execution state. |
 | `RuntimeOutputChannelBuffer` | `products/vityo_app/lib/src/view_ide/runtime/runtime_output_channels.dart` | Output channel model: 7 channel kinds. |
 
 ### 1.6 Diagnostics
@@ -357,6 +358,8 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `command_palette_surface_test.dart` | Widget rendering, keyboard nav, keybinding editor |
 | `runtime_task_lifecycle_test.dart` | Status transitions, serialization |
 | `runtime_execution_plan_test.dart` | Planning, handoff, binding, dispatch |
+| `runtime_execution_desktop_matrix_test.dart` | Hermetic Linux and Windows process identity, shell routing, and cancellation |
+| `runtime_execution_native_ui_test.dart` | Native macOS Flutter Run/Stop clicks against a real vityod-managed process |
 | `runtime_output_channel_test.dart` | Event production, subscription, channel summary |
 | `debug_console_surface_test.dart` | Replay, graph digest, debug lanes |
 | `workspace_diagnostics_controller_test.dart` | Producer lifecycle, snapshot dispatch, retry |

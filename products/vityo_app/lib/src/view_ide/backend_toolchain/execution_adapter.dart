@@ -1,10 +1,14 @@
 import '../../ide/editor/document_state.dart';
 import '../language/language_contract.dart';
+import '../environment/system_compatibility/process/process_manager.dart';
 import '../platform/platform_target.dart';
 import 'adapter_contracts.dart';
 import 'project_graph_contract.dart';
 
-enum ExecutionSessionStatus { blocked, running, succeeded, failed }
+enum ExecutionSessionStatus { blocked, running, succeeded, failed, cancelled }
+
+typedef ExecutionProcessStartedCallback = ProcessCommandStartedCallback;
+typedef ExecutionCancellationResult = ProcessCommandCancellationResult;
 
 class ExecutionReceiptSnapshot {
   const ExecutionReceiptSnapshot({
@@ -91,6 +95,7 @@ class ExecutionSession {
     required this.stderrEvents,
     this.unitRange,
     this.receipt,
+    this.metadata = const <String, Object?>{},
   });
 
   final String sessionId;
@@ -102,6 +107,35 @@ class ExecutionSession {
   final List<ExecutionLogEvent> stdoutEvents;
   final List<ExecutionLogEvent> stderrEvents;
   final ExecutionReceiptSnapshot? receipt;
+  final Map<String, Object?> metadata;
+
+  ExecutionSession copyWith({
+    String? sessionId,
+    String? kind,
+    ExecutionSessionStatus? status,
+    String? statusMessage,
+    SourceRange? unitRange,
+    bool clearUnitRange = false,
+    List<Diagnostic>? diagnostics,
+    List<ExecutionLogEvent>? stdoutEvents,
+    List<ExecutionLogEvent>? stderrEvents,
+    ExecutionReceiptSnapshot? receipt,
+    bool clearReceipt = false,
+    Map<String, Object?>? metadata,
+  }) {
+    return ExecutionSession(
+      sessionId: sessionId ?? this.sessionId,
+      kind: kind ?? this.kind,
+      status: status ?? this.status,
+      statusMessage: statusMessage ?? this.statusMessage,
+      unitRange: clearUnitRange ? null : unitRange ?? this.unitRange,
+      diagnostics: diagnostics ?? this.diagnostics,
+      stdoutEvents: stdoutEvents ?? this.stdoutEvents,
+      stderrEvents: stderrEvents ?? this.stderrEvents,
+      receipt: clearReceipt ? null : receipt ?? this.receipt,
+      metadata: metadata ?? this.metadata,
+    );
+  }
 
   ExecutionResultContract toResultContract({
     String source = 'execution-session',
@@ -117,6 +151,7 @@ class ExecutionSession {
       stdoutCount: stdoutEvents.length,
       stderrCount: stderrEvents.length,
       metadata: <String, Object?>{
+        ...this.metadata,
         ...metadata,
         if (receipt != null) 'receipt': receipt!.toJson(),
       },
@@ -142,6 +177,7 @@ class ExecutionSession {
       if (stderrEvents.isNotEmpty)
         'stderr': stderrEvents.map((event) => event.toJson()).toList(),
       if (receipt != null) 'receipt': receipt!.toJson(),
+      if (metadata.isNotEmpty) 'metadata': metadata,
     };
   }
 }
@@ -204,6 +240,7 @@ class ExecutionResultContract {
   bool get succeeded => status == ExecutionSessionStatus.succeeded.name;
   bool get failed => status == ExecutionSessionStatus.failed.name;
   bool get blocked => status == ExecutionSessionStatus.blocked.name;
+  bool get cancelled => status == ExecutionSessionStatus.cancelled.name;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -215,6 +252,7 @@ class ExecutionResultContract {
       'succeeded': succeeded,
       'failed': failed,
       'blocked': blocked,
+      'cancelled': cancelled,
       'diagnosticCount': diagnosticCount,
       'stdoutCount': stdoutCount,
       'stderrCount': stderrCount,
@@ -231,7 +269,12 @@ abstract class ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   });
+}
+
+abstract interface class CancellableExecutionAdapter {
+  Future<ExecutionCancellationResult> cancelExecution(String processHandleId);
 }
 
 typedef ExecutionAdapterFactory =

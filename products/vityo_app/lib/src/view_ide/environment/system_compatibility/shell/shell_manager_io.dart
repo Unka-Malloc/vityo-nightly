@@ -26,7 +26,7 @@ Future<ShellManager> createPlatformShellManager({
   );
 }
 
-class LocalShellManager implements ShellManager {
+class LocalShellManager implements ShellManager, CancellableShellManager {
   LocalShellManager({
     required this.facts,
     ShellAdapter? adapter,
@@ -107,6 +107,7 @@ class LocalShellManager implements ShellManager {
           workingDirectory: plan.workingDirectory,
           environment: plan.environment,
           timeout: plan.timeout,
+          onStarted: request.onStarted,
         ),
       );
       stopwatch.stop();
@@ -125,6 +126,7 @@ class LocalShellManager implements ShellManager {
         stderr: result.stderr,
         duration: result.duration,
         message: result.message,
+        metadata: result.metadata,
       );
     } on Object catch (error) {
       stopwatch.stop();
@@ -140,5 +142,23 @@ class LocalShellManager implements ShellManager {
         message: 'Shell command failed before process completion.',
       );
     }
+  }
+
+  @override
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  ) {
+    final processManager = _processManager;
+    if (processManager is! CancellableProcessManager) {
+      return Future<ProcessCommandCancellationResult>.value(
+        const ProcessCommandCancellationResult.unsupported(
+          message:
+              'Shell process cancellation requires a cancellable process service.',
+        ),
+      );
+    }
+    return (processManager as CancellableProcessManager).cancelProcess(
+      processHandleId,
+    );
   }
 }

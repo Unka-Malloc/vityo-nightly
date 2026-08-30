@@ -154,9 +154,13 @@ mixin ShellRuntimeCommandDispatchFacade on ShellRuntimeFacadeHost {
   Future<void> executeCommandWithInput(AppCommandId commandId, String input) =>
       _shellInputCommandController.execute(commandId, input);
 
-  String? blockedReasonForCommand(AppCommandId commandId) =>
-      _backendCommandPolicyController.blockedReason(
-        commandId: commandId,
-        projectGraph: workspaceController.activeProject,
-      );
+  String? blockedReasonForCommand(AppCommandId commandId) {
+    if (commandId == AppCommandId.run && _executionController.runActive) {
+      return 'An execution is already running. Stop it before starting another.';
+    }
+    return _backendCommandPolicyController.blockedReason(
+      commandId: commandId,
+      projectGraph: workspaceController.activeProject,
+    );
+  }
 }

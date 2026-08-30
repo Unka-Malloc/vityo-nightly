@@ -1460,6 +1460,7 @@ class _RefreshAwareExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'shell-model-test',
@@ -1507,6 +1508,7 @@ class _SuccessfulExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return ExecutionSession(
       sessionId: sessionId,

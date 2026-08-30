@@ -251,6 +251,10 @@ final class ExecutionController extends ChangeNotifier {
 
   ExecutionAdapter _executionAdapter;
   ExecutionSession? _lastExecutionSession;
+  ProcessCommandHandle? _activeProcessHandle;
+  CancellableExecutionAdapter? _activeCancellationAdapter;
+  ProcessCommandCancellationResult? _lastExecutionCancellation;
+  bool _runActive = false;
   List<RuntimeEventEnvelope> _lastRuntimeEvents =
       const <RuntimeEventEnvelope>[];
   final List<NativeToolResultRecord> _nativeToolResults =
@@ -258,6 +262,14 @@ final class ExecutionController extends ChangeNotifier {
 
   ExecutionAdapter get executionAdapter => _executionAdapter;
   ExecutionSession? get lastExecutionSession => _lastExecutionSession;
+  ProcessCommandHandle? get activeProcessHandle => _activeProcessHandle;
+  ProcessCommandCancellationResult? get lastExecutionCancellation =>
+      _lastExecutionCancellation;
+  bool get runActive => _runActive;
+  bool get canCancelActiveExecution =>
+      _runActive &&
+      _activeProcessHandle?.processHandleId.trim().isNotEmpty == true &&
+      _activeCancellationAdapter != null;
   List<RuntimeEventEnvelope> get lastRuntimeEvents =>
       List<RuntimeEventEnvelope>.unmodifiable(_lastRuntimeEvents);
   List<NativeToolResultRecord> get nativeToolResults =>
@@ -912,6 +924,10 @@ final class ExecutionController extends ChangeNotifier {
     required SelectionState selection,
     required String activeFilePath,
   }) async {
+    if (_runActive) {
+      log('Run skipped: an execution is already active.');
+      return;
+    }
     final routeSelection = selectBackendExecutionRoute(
       platformTarget: platformTarget,
       projectGraph: projectGraph,
@@ -946,41 +962,164 @@ final class ExecutionController extends ChangeNotifier {
       document: document,
       selection: selection,
     );
-    final session = await _executionAdapter.runActiveDocument(
-      platformTarget: platformTarget,
-      projectGraph: projectGraph,
-      document: document,
-      activeFilePath: activeFilePath,
+    final adapter = _executionAdapter;
+    _runActive = true;
+    _activeProcessHandle = null;
+    _activeCancellationAdapter = adapter is CancellableExecutionAdapter
+        ? adapter as CancellableExecutionAdapter
+        : null;
+    _lastExecutionCancellation = null;
+    _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+    _lastExecutionSession = ExecutionSession(
+      sessionId: 'starting:${projectGraph.id}',
+      kind: 'run',
+      status: ExecutionSessionStatus.running,
+      statusMessage: 'Starting the active run target…',
+      diagnostics: const <Diagnostic>[],
+      stdoutEvents: const <ExecutionLogEvent>[],
+      stderrEvents: const <ExecutionLogEvent>[],
+      unitRange: runUnit.range,
+      metadata: <String, Object?>{
+        'routeKind': routeSelection.routeKind.wireValue,
+        'adapterKind': routeSelection.adapterKind.wireValue,
+      },
     );
-    final rangedSession = _sessionWithRunUnit(session, runUnit);
-    _lastExecutionSession = rangedSession;
-    _lastRuntimeEvents = await runtimeEventAdapter
-        .sessionEvents(rangedSession.sessionId)
-        .toList();
-    log(
-      'Run unit ${runUnit.kind.name}: '
-      '${runUnit.range.start}-${runUnit.range.end}.',
-    );
-    log('Run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
-    for (final event in rangedSession.stdoutEvents.take(3)) {
-      log('stdout: ${event.message}');
-    }
-    for (final event in rangedSession.stderrEvents.take(3)) {
-      log('stderr: ${event.message}');
-    }
-    if (rangedSession.diagnostics.isNotEmpty) {
-      applyDiagnostics(rangedSession.diagnostics);
-      log(
-        'diagnostics: ${rangedSession.diagnostics.length} issue(s) returned by the execution route.',
-      );
-    }
-    if (_lastRuntimeEvents.isNotEmpty) {
-      log(
-        'runtime events: ${_lastRuntimeEvents.length} event(s) for session ${rangedSession.sessionId}.',
-      );
-      for (final event in _lastRuntimeEvents.take(4)) {
-        log('runtime: ${event.eventKind}');
+    notifyListeners();
+    try {
+      late ExecutionSession session;
+      try {
+        session = await adapter.runActiveDocument(
+          platformTarget: platformTarget,
+          projectGraph: projectGraph,
+          document: document,
+          activeFilePath: activeFilePath,
+          onProcessStarted: _bindActiveProcess,
+        );
+      } on Object catch (error) {
+        session = ExecutionSession(
+          sessionId: _activeProcessHandle?.processHandleId ?? 'run-failed',
+          kind: 'run',
+          status: ExecutionSessionStatus.failed,
+          statusMessage: 'Execution route failed before completion: $error',
+          diagnostics: const <Diagnostic>[],
+          stdoutEvents: const <ExecutionLogEvent>[],
+          stderrEvents: const <ExecutionLogEvent>[],
+          metadata: _activeProcessHandle?.toMetadata() ?? const {},
+        );
       }
+      var rangedSession = _sessionWithRunUnit(session, runUnit);
+      final cancellation = _lastExecutionCancellation;
+      if (cancellation?.accepted == true) {
+        rangedSession = rangedSession.copyWith(
+          status: ExecutionSessionStatus.cancelled,
+          statusMessage: cancellation!.message,
+          metadata: <String, Object?>{
+            ...rangedSession.metadata,
+            ...?_activeProcessHandle?.toMetadata(),
+            'cancellation': cancellation.toJson(),
+          },
+        );
+      }
+      _lastExecutionSession = rangedSession;
+      try {
+        _lastRuntimeEvents = await runtimeEventAdapter
+            .sessionEvents(rangedSession.sessionId)
+            .toList();
+      } on Object catch (error) {
+        _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+        log('Runtime event collection failed: $error');
+      }
+      log(
+        'Run unit ${runUnit.kind.name}: '
+        '${runUnit.range.start}-${runUnit.range.end}.',
+      );
+      log('Run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
+      for (final event in rangedSession.stdoutEvents.take(3)) {
+        log('stdout: ${event.message}');
+      }
+      for (final event in rangedSession.stderrEvents.take(3)) {
+        log('stderr: ${event.message}');
+      }
+      if (rangedSession.diagnostics.isNotEmpty) {
+        applyDiagnostics(rangedSession.diagnostics);
+        log(
+          'diagnostics: ${rangedSession.diagnostics.length} issue(s) returned by the execution route.',
+        );
+      }
+      if (_lastRuntimeEvents.isNotEmpty) {
+        log(
+          'runtime events: ${_lastRuntimeEvents.length} event(s) for session ${rangedSession.sessionId}.',
+        );
+        for (final event in _lastRuntimeEvents.take(4)) {
+          log('runtime: ${event.eventKind}');
+        }
+      }
+    } finally {
+      _runActive = false;
+      _activeProcessHandle = null;
+      _activeCancellationAdapter = null;
+      notifyListeners();
+    }
+  }
+
+  Future<ProcessCommandCancellationResult> cancelActiveExecution() async {
+    if (!_runActive) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'No execution is currently running.',
+      );
+    }
+    final handle = _activeProcessHandle;
+    if (handle == null || handle.processHandleId.trim().isEmpty) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'The execution process is still starting.',
+      );
+    }
+    final adapter = _activeCancellationAdapter;
+    if (adapter == null) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'The active execution route cannot be cancelled.',
+      );
+    }
+    final result = await adapter.cancelExecution(handle.processHandleId);
+    _lastExecutionCancellation = result;
+    if (result.accepted) {
+      final current = _lastExecutionSession;
+      if (current != null) {
+        _lastExecutionSession = current.copyWith(
+          status: ExecutionSessionStatus.cancelled,
+          statusMessage: result.message,
+          metadata: <String, Object?>{
+            ...current.metadata,
+            ...handle.toMetadata(),
+            'cancellation': result.toJson(),
+          },
+        );
+      }
+      log('Run cancellation accepted for ${handle.processHandleId}.');
+      notifyListeners();
+    } else {
+      log('Run cancellation rejected: ${result.message}');
+    }
+    return result;
+  }
+
+  void _bindActiveProcess(ProcessCommandHandle handle) {
+    if (!_runActive || !handle.available) {
+      return;
+    }
+    _activeProcessHandle = handle;
+    final current = _lastExecutionSession;
+    if (current != null) {
+      _lastExecutionSession = current.copyWith(
+        sessionId: handle.processHandleId.trim().isEmpty
+            ? current.sessionId
+            : handle.processHandleId,
+        statusMessage: 'Run target is active.',
+        metadata: <String, Object?>{
+          ...current.metadata,
+          ...handle.toMetadata(),
+        },
+      );
     }
     notifyListeners();
   }
@@ -989,15 +1128,6 @@ final class ExecutionController extends ChangeNotifier {
     ExecutionSession session,
     RunUnitSelection runUnit,
   ) {
-    return ExecutionSession(
-      sessionId: session.sessionId,
-      kind: session.kind,
-      status: session.status,
-      statusMessage: session.statusMessage,
-      diagnostics: session.diagnostics,
-      stdoutEvents: session.stdoutEvents,
-      stderrEvents: session.stderrEvents,
-      unitRange: runUnit.range,
-    );
+    return session.copyWith(unitRange: runUnit.range);
   }
 }

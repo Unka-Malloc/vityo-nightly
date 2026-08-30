@@ -236,6 +236,12 @@ class VityoShellScaffold extends StatelessWidget {
           mountedModules: shell.mountedModules,
           adapterCapabilities: shell.adapterCapabilities,
           executionSession: shell.lastExecutionSession,
+          executionRunActive: shell.executionRunActive,
+          executionCanCancel: shell.executionCanCancel,
+          onRunExecution: () => shell.executeCommand(AppCommandId.run),
+          onCancelExecution: () async {
+            await shell.cancelActiveExecution();
+          },
           runtimeEvents: shell.lastRuntimeEvents,
           nativeToolResults: shell.nativeToolResults,
           outputSnapshot: shell.runtimeOutputBuffer.snapshot,
@@ -1264,6 +1270,7 @@ class _ProjectOperationsCard extends StatelessWidget {
       ExecutionSessionStatus.failed => 'failed',
       ExecutionSessionStatus.blocked => 'blocked',
       ExecutionSessionStatus.running => 'running',
+      ExecutionSessionStatus.cancelled => 'cancelled',
     };
   }
 

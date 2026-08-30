@@ -728,6 +728,7 @@ class _FakeExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'smoke-test',
@@ -858,6 +859,7 @@ class _LiveExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'live-workflow-run',

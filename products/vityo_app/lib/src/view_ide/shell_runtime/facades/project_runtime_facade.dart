@@ -24,8 +24,13 @@ mixin ShellRuntimeProjectRuntimeFacade on ShellRuntimeFacadeHost {
       _executionController.runtimeEventAdapter;
   ExecutionSession? get lastExecutionSession =>
       _executionController.lastExecutionSession;
+  bool get executionRunActive => _executionController.runActive;
+  bool get executionCanCancel => _executionController.canCancelActiveExecution;
   List<RuntimeEventEnvelope> get lastRuntimeEvents =>
       _executionController.lastRuntimeEvents;
+
+  Future<ProcessCommandCancellationResult> cancelActiveExecution() =>
+      _executionController.cancelActiveExecution();
 
   DependencySourceCommandResult? get lastDependencySourceCommand =>
       _dependencySourceController.lastCommand;

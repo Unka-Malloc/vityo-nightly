@@ -98,6 +98,8 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
     final taskId =
         '$servicePrefix-${_client.clientInstanceId}-${++_globalTaskSequence}';
     final stopwatch = Stopwatch()..start();
+    var taskStarted = false;
+    int? processId;
     try {
       final start = await _client.request(
         method: typedService ? '$servicePrefix.request' : 'task.start',
@@ -114,6 +116,8 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
         },
       );
       _throwIfError(start);
+      taskStarted = true;
+      processId = _positiveProcessId(start.params['pid']);
       final onStarted = request.onStarted;
       if (onStarted != null) {
         try {
@@ -121,6 +125,7 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
             ProcessCommandHandle(
               processHandleId: taskId,
               sourceManager: 'vityod',
+              pid: processId,
               metadata: <String, Object?>{
                 'serviceKind': request.serviceKind.name,
               },
@@ -183,6 +188,7 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
           metadata: <String, Object?>{
             'processHandleId': taskId,
             'processHandleSource': 'vityod',
+            if (processId != null) 'pid': processId,
             if (output.params['stdoutTruncated'] == true)
               'stdoutTruncated': true,
             if (output.params['stderrTruncated'] == true)
@@ -201,6 +207,11 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
         stderr: '',
         duration: stopwatch.elapsed,
         message: 'vityod process supervision failed: $error',
+        metadata: <String, Object?>{
+          if (taskStarted) 'processHandleId': taskId,
+          if (taskStarted) 'processHandleSource': 'vityod',
+          if (processId != null) 'pid': processId,
+        },
       );
     }
   }
@@ -254,6 +265,15 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
       );
     }
   }
+}
+
+int? _positiveProcessId(Object? value) {
+  final processId = switch (value) {
+    int value => value,
+    String value => int.tryParse(value.trim()),
+    _ => null,
+  };
+  return processId != null && processId > 0 ? processId : null;
 }
 
 void _throwIfError(dynamic response) {
