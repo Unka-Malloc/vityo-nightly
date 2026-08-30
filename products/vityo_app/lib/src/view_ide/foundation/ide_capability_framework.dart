@@ -317,12 +317,10 @@ class VityoIdeCapabilityFramework {
           id: 'service.remote-service',
           layer: IdeCapabilityLayer.service,
           title: 'Remote service connector',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/backend_toolchain',
           summary:
-              'Hosted backend connector parity action plans, HostedBackendRetryEndpointPlan retry/reopen/export/settings route contracts, HostedBackendRetryActionExecutor, HostedControlPlaneRetryTransport, and HostedBackendRetryRuntimeOutputBinding telemetry snapshots are wired. Agent model-provider credentials and provider routing are not IDE services.',
-          todo:
-              'TODO: bind hosted settings recovery handlers to concrete Settings UI.',
+              'HostedBackendController retains the active control-plane client, verifies connector reachability, applies refreshed project graphs, emits privacy-safe HostedBackendRetryRuntimeOutputBinding events, and binds retry/reopen/export/settings route contracts to the lifecycle banner and concrete Settings UI. Agent model-provider credentials and provider routing are not IDE services.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code remote authority and extension host services',

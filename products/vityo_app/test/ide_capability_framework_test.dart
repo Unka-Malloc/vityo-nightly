@@ -265,11 +265,11 @@ void main() {
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedBackendRetryActionExecutor'),
+      contains('HostedBackendController'),
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedBackendRetryEndpointPlan'),
+      contains('active control-plane client'),
     );
     expect(
       entriesById['service.remote-service']?.summary,
@@ -277,11 +277,12 @@ void main() {
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedControlPlaneRetryTransport'),
+      contains('concrete Settings UI'),
     );
+    expect(entriesById['service.remote-service']?.todo, isEmpty);
     expect(
-      entriesById['service.remote-service']?.todo,
-      contains('hosted settings recovery handlers'),
+      entriesById['service.remote-service']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['service.remote-service']?.runtimeMaturityBlocking,

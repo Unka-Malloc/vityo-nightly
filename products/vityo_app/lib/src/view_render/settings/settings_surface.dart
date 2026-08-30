@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../view_ide/commands/commands.dart';
@@ -6,6 +8,7 @@ import '../../view_ide/foundation/foundation.dart';
 import '../../view_ide/environment/environment.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
 import '../../view_ide/toolchain/toolchain_manager.dart';
+import '../../ide/workspace/workspace.dart';
 import '../platform/viewport_profile.dart';
 import '../theme/theme.dart';
 
@@ -27,6 +30,10 @@ class SettingsSurface extends StatelessWidget {
     this.onExecuteToolchainInstallPlan,
     this.platformManagerSettings,
     this.credentialStorageSettings,
+    this.hostedBackendConnector,
+    this.hostedBackendActionResult,
+    this.hostedBackendActionRunning = false,
+    this.onHostedBackendAction,
     this.platformManagerProbeRunning = false,
     this.onRefreshPlatformManagers,
     this.onPlatformRecoveryRoute,
@@ -58,6 +65,11 @@ class SettingsSurface extends StatelessWidget {
   final Future<void> Function()? onExecuteToolchainInstallPlan;
   final PlatformManagerSettingsSurface? platformManagerSettings;
   final CredentialStorageSettingsSurface? credentialStorageSettings;
+  final HostedBackendConnectorParityReport? hostedBackendConnector;
+  final HostedBackendRetryActionExecutionResult? hostedBackendActionResult;
+  final bool hostedBackendActionRunning;
+  final Future<void> Function(HostedBackendRetryAction action)?
+  onHostedBackendAction;
   final bool platformManagerProbeRunning;
   final Future<void> Function()? onRefreshPlatformManagers;
   final void Function(PlatformManagerRecoveryActionRoute route)?
@@ -109,6 +121,15 @@ class SettingsSurface extends StatelessWidget {
                 _CredentialStorageSettingsCard(settings: credentialSettings),
                 const SizedBox(height: 14),
               ],
+              if (hostedBackendConnector case final connector?) ...[
+                _HostedBackendSettingsCard(
+                  connector: connector,
+                  lastResult: hostedBackendActionResult,
+                  actionRunning: hostedBackendActionRunning,
+                  onAction: onHostedBackendAction,
+                ),
+                const SizedBox(height: 14),
+              ],
               _ToolchainSettingsCard(
                 settings: settings,
                 installPlan: toolchainInstallPlan,
@@ -140,6 +161,135 @@ class SettingsSurface extends StatelessWidget {
       ),
     );
   }
+}
+
+class _HostedBackendSettingsCard extends StatelessWidget {
+  const _HostedBackendSettingsCard({
+    required this.connector,
+    required this.lastResult,
+    required this.actionRunning,
+    required this.onAction,
+  });
+
+  final HostedBackendConnectorParityReport connector;
+  final HostedBackendRetryActionExecutionResult? lastResult;
+  final bool actionRunning;
+  final Future<void> Function(HostedBackendRetryAction action)? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ready = connector.status == HostedBackendConnectorStatus.ready;
+    final stateColor = ready
+        ? const Color(0xFF26734D)
+        : theme.colorScheme.error;
+    return Container(
+      key: const ValueKey('settings-hosted-backend-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7EBEF),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.cloud_outlined, size: 20, color: stateColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Hosted Backend',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (actionRunning)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: SizedBox.square(
+                    dimension: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: stateColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  connector.status.label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: stateColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(connector.message, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final check in connector.checks)
+                Chip(
+                  key: ValueKey('settings-hosted-check-${check.id}'),
+                  avatar: Icon(
+                    check.available
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    size: 16,
+                  ),
+                  label: Text(check.label),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final action in connector.actions)
+                OutlinedButton.icon(
+                  key: ValueKey('settings-hosted-action-${action.id}'),
+                  onPressed:
+                      !action.enabled || actionRunning || onAction == null
+                      ? null
+                      : () => unawaited(onAction!(action)),
+                  icon: Icon(_hostedActionIcon(action.kind), size: 17),
+                  label: Text(action.label),
+                ),
+            ],
+          ),
+          if (lastResult case final result?) ...[
+            const SizedBox(height: 10),
+            Text(
+              result.message,
+              key: const ValueKey('settings-hosted-last-result'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: result.successful ? const Color(0xFF26734D) : stateColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+IconData _hostedActionIcon(HostedBackendRetryActionKind kind) {
+  return switch (kind) {
+    HostedBackendRetryActionKind.retryConnect => Icons.cloud_sync_outlined,
+    HostedBackendRetryActionKind.refreshWorkspace => Icons.refresh_rounded,
+    HostedBackendRetryActionKind.reopenWorkspace => Icons.restore_rounded,
+    HostedBackendRetryActionKind.exportCoreFiles => Icons.download_outlined,
+    HostedBackendRetryActionKind.openSettings => Icons.settings_outlined,
+  };
 }
 
 class _CredentialStorageSettingsCard extends StatelessWidget {

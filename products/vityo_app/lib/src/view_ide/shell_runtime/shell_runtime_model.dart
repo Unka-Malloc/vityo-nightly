@@ -31,6 +31,7 @@ import '../../ide/workspace/workspace.dart';
 import '../../ide/agent_client/agent_client.dart';
 import '../../ide/workbench/agent_collaboration/agent_collaboration_service.dart';
 import 'controllers/backend_command_policy_controller.dart';
+import 'controllers/hosted_backend_controller.dart';
 import 'controllers/deployment_controller.dart';
 import 'controllers/dependency_source_controller.dart';
 import 'controllers/execution_controller.dart';
@@ -74,6 +75,7 @@ part 'facades/project_runtime_facade.dart';
 part 'facades/shell_lifecycle_facade.dart';
 part 'facades/toolchain_facade.dart';
 part 'facades/settings_facade.dart';
+part 'facades/hosted_backend_facade.dart';
 part 'facades/semantic_telemetry_facade.dart';
 part 'facades/workspace_document_facade.dart';
 part 'facades/workspace_intelligence_facade.dart';
@@ -87,6 +89,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
         ShellRuntimeProjectRuntimeFacade,
         ShellRuntimeToolchainFacade,
         ShellRuntimeSettingsFacade,
+        ShellRuntimeHostedBackendFacade,
         ShellRuntimeSemanticTelemetryFacade,
         ShellRuntimeWorkspaceDocumentFacade,
         ShellRuntimeWorkspaceIntelligenceFacade,
@@ -118,6 +121,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     PlatformManagerBundle? platformManagers,
     PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
     CredentialStorageSettingsSurface? credentialStorageSettings,
+    HostedControlPlaneClient? hostedControlPlaneClient,
     ClangCppVersionPreference? clangCppVersionPreference,
     this.agentClientRegistry,
     this.agentCollaboration,
@@ -275,6 +279,18 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     )..addListener(_handleSettingsChanged);
     if (platformManagers != null) {
       unawaited(_settingsController.refreshPlatformManagerHealth());
+    }
+    _hostedBackendController = HostedBackendController(
+      workspaceController: workspaceController,
+      platformTarget: platformTarget,
+      runtimeOutputBuffer: this.runtimeOutputBuffer,
+      documentStoreAvailable:
+          workspaceDocumentStore is HostedWorkspaceDocumentStore,
+      hostedClient: hostedControlPlaneClient,
+    )..addListener(_handleHostedBackendChanged);
+    if (_hostedBackendController.hasHostedWorkspace &&
+        hostedControlPlaneClient != null) {
+      unawaited(_hostedBackendController.verifyConnection());
     }
     _executionController = ExecutionController(
       executionAdapter: executionAdapter,
@@ -573,6 +589,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final WorkspaceQuickFixController _workspaceQuickFixController;
   late final WorkspaceSearchController _workspaceSearchController;
   late final SettingsController _settingsController;
+  late final HostedBackendController _hostedBackendController;
   late final ExecutionController _executionController;
   late final ProjectGraphController _projectGraphController;
   late final DeploymentController _deploymentController;

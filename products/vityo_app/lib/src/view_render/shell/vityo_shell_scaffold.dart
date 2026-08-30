@@ -101,7 +101,15 @@ class VityoShellScaffold extends StatelessWidget {
                         onRecover: shell.recoverServiceConnection,
                       ),
                     if (hostedClosePlan != null) ...[
-                      HostedWorkspaceLifecycleBanner(plan: hostedClosePlan),
+                      HostedWorkspaceLifecycleBanner(
+                        plan: hostedClosePlan,
+                        connectorReport: shell.hostedBackendConnectorReport,
+                        onRetryAction: shell.hostedBackendActionRunning
+                            ? null
+                            : (action) async {
+                                await shell.executeHostedBackendAction(action);
+                              },
+                      ),
                       const SizedBox(height: 16),
                     ],
                     Expanded(
@@ -462,6 +470,9 @@ class VityoShellScaffold extends StatelessWidget {
               shell.lastToolchainBootstrapActionDispatch,
           platformManagerSettings: shell.platformManagerSettingsSurface,
           credentialStorageSettings: shell.credentialStorageSettingsSurface,
+          hostedBackendConnector: shell.hostedBackendConnectorReport,
+          hostedBackendActionResult: shell.lastHostedBackendActionResult,
+          hostedBackendActionRunning: shell.hostedBackendActionRunning,
           platformManagerProbeRunning: shell.platformManagerProbeRunning,
           themeOverride: shell.themeOverride,
           commandPalettePreferences: shell.commandPalettePreferences,
@@ -479,6 +490,9 @@ class VityoShellScaffold extends StatelessWidget {
           onRefreshPlatformManagers: shell.refreshPlatformManagerHealth,
           onPlatformRecoveryRoute: shell.handlePlatformRecoveryRoute,
           onSelectPlatformSettingsSection: shell.selectPlatformSettingsSection,
+          onHostedBackendAction: (action) async {
+            await shell.executeHostedBackendAction(action);
+          },
           onSaveCommandPalettePreferences: shell.saveCommandPalettePreferences,
           onSaveThemeOverride: shell.saveThemeOverride,
         );

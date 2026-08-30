@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../view_ide/backend_toolchain/project_graph_contract.dart';
@@ -13,7 +15,7 @@ class HostedWorkspaceLifecycleBanner extends StatelessWidget {
 
   final HostedWorkspaceClosePlan plan;
   final HostedBackendConnectorParityReport? connectorReport;
-  final ValueChanged<HostedBackendRetryAction>? onRetryAction;
+  final Future<void> Function(HostedBackendRetryAction action)? onRetryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +144,7 @@ class HostedWorkspaceLifecycleBanner extends StatelessWidget {
                     OutlinedButton(
                       key: ValueKey('hosted-backend-action-${action.id}'),
                       onPressed: action.enabled && onRetryAction != null
-                          ? () => onRetryAction!(action)
+                          ? () => unawaited(onRetryAction!(action))
                           : null,
                       child: Text(action.label),
                     ),

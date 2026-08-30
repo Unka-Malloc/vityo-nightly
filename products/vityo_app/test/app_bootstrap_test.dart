@@ -305,6 +305,7 @@ void main() {
     expect(serviceIds, contains('agent.workspace-transactions'));
     expect(serviceIds, contains('agent.collaboration'));
     expect(serviceIds, contains('environment.credential-store'));
+    expect(serviceIds, contains('service.hosted-control-plane'));
     expect(manifest.missingRequiredEntries, isEmpty);
     expect(manifest.absentWithoutCapabilityGapEntries, isEmpty);
     expect(manifest.allServicesAccountedFor, isTrue);

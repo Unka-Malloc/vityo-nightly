@@ -53,6 +53,7 @@ class _VityoAppState extends State<VityoApp> {
           : CredentialStorageSettingsSurface.fromBootstrap(
               widget.bootstrap.credentialStorage!,
             ),
+      hostedControlPlaneClient: widget.bootstrap.hostedControlPlaneClient,
       runtimeOutputBuffer: widget.bootstrap.runtimeOutputBuffer,
       refreshActiveLanguageService:
           widget.bootstrap.refreshActiveLanguageService,

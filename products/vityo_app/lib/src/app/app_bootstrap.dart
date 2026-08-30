@@ -218,6 +218,7 @@ class AppBootstrap {
     this.extensionStartupPlan,
     this.platformManagers,
     this.credentialStorage,
+    this.hostedControlPlaneClient,
     RuntimeOutputLiveBuffer? runtimeOutputBuffer,
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
@@ -265,6 +266,7 @@ class AppBootstrap {
   final AppExtensionStartupPlan? extensionStartupPlan;
   final PlatformManagerBundle? platformManagers;
   final PlatformCredentialDataStoreBootstrap? credentialStorage;
+  final HostedControlPlaneClient? hostedControlPlaneClient;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
@@ -330,6 +332,13 @@ class AppBootstrap {
           ownerLayer: 'environment',
           requiredInjection: false,
           capabilityGapCode: 'environment.credential-store.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'service.hosted-control-plane',
+          ownerLayer: 'service',
+          requiredInjection: false,
+          capabilityGapCode: 'service.hosted-control-plane.unavailable',
           recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
@@ -554,6 +563,7 @@ class AppBootstrap {
       'platform.target': true,
       'platform.manager-bundle': platformManagers != null,
       'environment.credential-store': credentialStorage != null,
+      'service.hosted-control-plane': hostedControlPlaneClient != null,
       'module.registry': true,
       'module.native-loader': true,
       'project-graph.adapter': true,
@@ -657,6 +667,10 @@ class AppBootstrap {
       ),
       projectSnapshot: projectSnapshot,
     );
+    final hostedControlPlaneClient =
+        workspaceDocumentStore is HostedWorkspaceDocumentStore
+        ? workspaceDocumentStore.hostedClient
+        : null;
     final platformManagers = await createDetectedPlatformManagerBundle(
       vityodClient: vityodClient,
       workspaceRoot: projectSnapshot.workspaceRoot,
@@ -889,6 +903,7 @@ class AppBootstrap {
       extensionStartupPlan: extensionStartupPlan,
       platformManagers: platformManagers,
       credentialStorage: credentialStorage,
+      hostedControlPlaneClient: hostedControlPlaneClient,
       runtimeOutputBuffer: runtimeOutputBuffer,
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,

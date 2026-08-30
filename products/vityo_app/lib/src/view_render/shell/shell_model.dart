@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../ide/local_service/vityod_client.dart';
+import '../../ide/workspace/workspace.dart';
 import '../../view_ide/commands/commands.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/shell_runtime/shell_runtime.dart';
@@ -68,6 +69,7 @@ class ShellModel extends ShellRuntimeModel {
     super.platformManagers,
     super.platformProbeRegistry,
     super.credentialStorageSettings,
+    super.hostedControlPlaneClient,
     super.languageServiceStatus,
     super.toolchainStatusReport,
     super.clangCppVersionPreference,
@@ -120,6 +122,17 @@ class ShellModel extends ShellRuntimeModel {
       appendLog('Service recovery remains unavailable.');
       notifyListeners();
     }
+  }
+
+  @override
+  Future<HostedBackendRetryActionExecutionResult> executeHostedBackendAction(
+    HostedBackendRetryAction action,
+  ) async {
+    final result = await super.executeHostedBackendAction(action);
+    if (action.kind == HostedBackendRetryActionKind.openSettings) {
+      selectBottomTab(BottomSurfaceTab.settings);
+    }
+    return result;
   }
 
   @override

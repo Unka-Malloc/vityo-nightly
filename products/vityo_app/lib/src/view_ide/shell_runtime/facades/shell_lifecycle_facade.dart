@@ -3,6 +3,7 @@ part of '../shell_runtime_model.dart';
 /// Listener callbacks and deterministic owned-resource teardown.
 mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleSettingsChanged() => _notifyShellListeners();
+  void _handleHostedBackendChanged() => _notifyShellListeners();
   void _handleExecutionChanged() => _notifyShellListeners();
   void _handleDebugChanged() => _notifyShellListeners();
   void _handleDeploymentChanged() => _notifyShellListeners();
@@ -70,6 +71,8 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _editorFileBindingSubscription = null;
     _settingsController.removeListener(_handleSettingsChanged);
     _settingsController.dispose();
+    _hostedBackendController.removeListener(_handleHostedBackendChanged);
+    _hostedBackendController.dispose();
     _executionController.removeListener(_handleExecutionChanged);
     _executionController.dispose();
     _deploymentController.removeListener(_handleDeploymentChanged);

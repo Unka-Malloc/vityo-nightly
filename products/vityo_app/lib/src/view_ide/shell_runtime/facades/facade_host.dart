@@ -32,6 +32,7 @@ abstract class ShellRuntimeFacadeHost extends ChangeNotifier {
   dynamic get _workspaceQuickFixController;
   dynamic get _workspaceSearchController;
   dynamic get _settingsController;
+  HostedBackendController get _hostedBackendController;
   dynamic get _executionController;
   dynamic get _projectGraphController;
   dynamic get _deploymentController;
