@@ -342,7 +342,6 @@ CredentialAccessPurpose credentialAccessPurposeFromWireValue(String? value) {
 
 enum CredentialStorageProtection {
   volatileMemory,
-  foundationDataStore,
   platformSecureStorage,
   unknown,
 }
@@ -350,7 +349,6 @@ enum CredentialStorageProtection {
 extension CredentialStorageProtectionX on CredentialStorageProtection {
   String get wireValue => switch (this) {
     CredentialStorageProtection.volatileMemory => 'volatile-memory',
-    CredentialStorageProtection.foundationDataStore => 'foundation-data-store',
     CredentialStorageProtection.platformSecureStorage =>
       'platform-secure-storage',
     CredentialStorageProtection.unknown => 'unknown',
@@ -451,11 +449,11 @@ class CredentialStoragePolicyDecision {
 
 class CredentialStoragePolicy {
   const CredentialStoragePolicy({
-    this.allowUnsafePersistentLongLivedSecrets = false,
+    this.allowUnsafeLongLivedSecrets = false,
     this.longLivedSecretThreshold = const Duration(days: 30),
   });
 
-  final bool allowUnsafePersistentLongLivedSecrets;
+  final bool allowUnsafeLongLivedSecrets;
   final Duration longLivedSecretThreshold;
 
   CredentialStoragePolicyDecision evaluateWrite({
@@ -472,22 +470,21 @@ class CredentialStoragePolicy {
     }
 
     final longLived = _isLongLived(record, now: now);
-    if (health.persistent && longLived) {
-      if (allowUnsafePersistentLongLivedSecrets) {
+    if (longLived) {
+      if (allowUnsafeLongLivedSecrets) {
         return const CredentialStoragePolicyDecision(
           kind: CredentialStoragePolicyDecisionKind.warning,
           reason:
               'Long-lived credential is allowed by explicit unsafe policy override.',
-          todo:
-              'TODO: migrate this credential to a platform secure storage adapter.',
+          todo: 'Move this credential to a platform secure storage adapter.',
         );
       }
       return const CredentialStoragePolicyDecision(
         kind: CredentialStoragePolicyDecisionKind.blocked,
         reason:
-            'Long-lived credential cannot be stored in persistent non-secure storage.',
+            'Long-lived credential cannot use storage that is not approved for long-lived secrets.',
         todo:
-            'TODO: use platform secure storage before accepting long-lived provider tokens.',
+            'Use platform secure storage before accepting long-lived provider tokens.',
       );
     }
 
@@ -496,7 +493,7 @@ class CredentialStoragePolicy {
       reason:
           'Credential store ${health.protection.wireValue} is not safe for long-lived secrets; only short-lived or test credentials should use it.',
       todo:
-          'TODO: replace this storage route with a platform secure storage adapter for production secrets.',
+          'Replace this storage route with a platform secure storage adapter for production secrets.',
     );
   }
 
@@ -973,8 +970,6 @@ abstract class CredentialDataStore {
       persistent: false,
       safeForLongLivedSecrets: false,
       message: 'Credential DataStore health is unknown.',
-      todo:
-          'TODO: implement a concrete credential storage health contract for this store.',
     );
   }
 }
@@ -1023,8 +1018,6 @@ class InMemoryCredentialDataStore extends CredentialDataStore {
       safeForLongLivedSecrets: false,
       message:
           'Credentials are kept in memory only and are suitable for tests or short-lived sessions.',
-      todo:
-          'TODO: use a platform secure storage adapter for persisted production tokens.',
     );
   }
 }
@@ -1048,8 +1041,11 @@ abstract class PlatformSecureCredentialStorageAdapter {
 enum PlatformSecureCredentialBackendKind {
   vsCodeSecretStorage,
   macosKeychain,
+  iosKeychain,
+  androidEncryptedStorage,
   windowsCredentialManager,
   linuxLibsecret,
+  webCrypto,
   memoryFixture,
   custom,
 }
@@ -1061,9 +1057,13 @@ extension PlatformSecureCredentialBackendKindX
       PlatformSecureCredentialBackendKind.vsCodeSecretStorage =>
         'vscode-secret-storage',
       PlatformSecureCredentialBackendKind.macosKeychain => 'macos-keychain',
+      PlatformSecureCredentialBackendKind.iosKeychain => 'ios-keychain',
+      PlatformSecureCredentialBackendKind.androidEncryptedStorage =>
+        'android-encrypted-storage',
       PlatformSecureCredentialBackendKind.windowsCredentialManager =>
         'windows-credential-manager',
       PlatformSecureCredentialBackendKind.linuxLibsecret => 'linux-libsecret',
+      PlatformSecureCredentialBackendKind.webCrypto => 'web-crypto',
       PlatformSecureCredentialBackendKind.memoryFixture => 'memory-fixture',
       PlatformSecureCredentialBackendKind.custom => 'custom',
     };
@@ -1299,18 +1299,16 @@ class InMemoryPlatformSecureCredentialStorageAdapter
   Future<CredentialDataStoreHealth> health() async {
     return CredentialDataStoreHealth(
       protection: CredentialStorageProtection.platformSecureStorage,
-      persistent: true,
-      safeForLongLivedSecrets: true,
+      persistent: false,
+      safeForLongLivedSecrets: false,
       adapterId: adapterId,
       backendId: 'memory-secure-fixture',
       productionReady: false,
-      message: 'Secure credential adapter $adapterId is available.',
+      message: 'In-memory secure adapter fixture $adapterId is available.',
       auditRetentionPolicy: const CredentialAuditRetentionPolicy(
         retention: Duration(days: 7),
         maxEntries: 200,
       ),
-      todo:
-          'TODO: replace in-memory secure adapter with OS-backed SecretStorage, Keychain, Credential Manager, or libsecret.',
     );
   }
 }
@@ -1394,167 +1392,5 @@ class CredentialStoragePolicyEnforcingDataStore extends CredentialDataStore {
   @override
   Future<CredentialDataStoreHealth> health() {
     return delegate.health();
-  }
-}
-
-class FoundationCredentialDataStore extends CredentialDataStore {
-  FoundationCredentialDataStore({
-    required FoundationDataStore dataStore,
-    this.namespaceName = 'configuration.credentials',
-  }) : _dataStoreOwner = FoundationDataStoreOwner(
-         descriptor: FoundationDataStoreOwnerDescriptor(
-           ownerId: 'environment.configuration.credentials',
-           layer: 'environment',
-           stateFamily: 'credentials',
-           allowedNamespaces: <String>{namespaceName},
-         ),
-         dataStore: dataStore,
-       );
-
-  FoundationCredentialDataStore.withOwner({
-    required FoundationDataStoreOwner dataStoreOwner,
-    this.namespaceName = 'configuration.credentials',
-  }) : _dataStoreOwner = dataStoreOwner;
-
-  static const String _recordKey = 'credential-records';
-
-  final FoundationDataStoreOwner _dataStoreOwner;
-  final String namespaceName;
-
-  @override
-  Future<void> write(CredentialSecretRecord record) async {
-    await _dataStoreOwner.editJson(
-      namespaceName: namespaceName,
-      key: _recordKey,
-      schemaVersion: 1,
-      scope: FoundationResourceScope.user,
-      edit: (current) {
-        final records = _recordsFromValue(current);
-        records[record.key.stableId] = record;
-        return FoundationDataStoreEditDecision.write(_recordsToValue(records));
-      },
-    );
-  }
-
-  @override
-  Future<CredentialSecretRecord?> read(CredentialDataStoreKey key) async {
-    final record = (await _loadRecords())[key.stableId];
-    if (record == null || record.isExpired) {
-      return null;
-    }
-    return record;
-  }
-
-  @override
-  Future<bool> delete(CredentialDataStoreKey key) async {
-    var removed = false;
-    await _dataStoreOwner.editJson(
-      namespaceName: namespaceName,
-      key: _recordKey,
-      schemaVersion: 1,
-      scope: FoundationResourceScope.user,
-      edit: (current) {
-        final records = _recordsFromValue(current);
-        removed = records.remove(key.stableId) != null;
-        if (!removed) {
-          return FoundationDataStoreEditDecision.keep;
-        }
-        if (records.isEmpty) {
-          return FoundationDataStoreEditDecision.delete;
-        }
-        return FoundationDataStoreEditDecision.write(_recordsToValue(records));
-      },
-    );
-    return removed;
-  }
-
-  @override
-  Future<List<CredentialMetadata>> list({CredentialScope? scope}) async {
-    final records = (await _loadRecords()).values
-        .where((record) {
-          return scope == null || record.key.scope == scope;
-        })
-        .toList(growable: false);
-    records.sort(
-      (left, right) => left.key.stableId.compareTo(right.key.stableId),
-    );
-    return records.map((record) => record.toMetadata()).toList(growable: false);
-  }
-
-  @override
-  Future<CredentialDataStoreHealth> health() async {
-    return const CredentialDataStoreHealth(
-      protection: CredentialStorageProtection.foundationDataStore,
-      persistent: true,
-      safeForLongLivedSecrets: false,
-      message:
-          'Credentials are persisted through FoundationDataStore, not a platform secure secret store.',
-      todo:
-          'TODO: replace persisted secrets with OS-backed secure storage such as SecretStorage, Keychain, Credential Manager, or libsecret.',
-    );
-  }
-
-  Future<Map<String, CredentialSecretRecord>> _loadRecords() async {
-    final value = await _dataStoreOwner.readJson(
-      namespaceName: namespaceName,
-      key: _recordKey,
-      schemaVersion: 1,
-      scope: FoundationResourceScope.user,
-    );
-    final recordsJson = value?['records'];
-    if (recordsJson is! List) {
-      return <String, CredentialSecretRecord>{};
-    }
-    final records = <String, CredentialSecretRecord>{};
-    for (final recordJson in recordsJson) {
-      final json = _mapFromJson(recordJson);
-      if (json == null) {
-        continue;
-      }
-      final record = CredentialSecretRecord.fromJson(json);
-      records[record.key.stableId] = record;
-    }
-    return records;
-  }
-
-  Map<String, CredentialSecretRecord> _recordsFromValue(
-    Map<String, Object?>? value,
-  ) {
-    final recordsJson = value?['records'];
-    if (recordsJson is! List) {
-      return <String, CredentialSecretRecord>{};
-    }
-    final records = <String, CredentialSecretRecord>{};
-    for (final recordJson in recordsJson) {
-      final json = _mapFromJson(recordJson);
-      if (json == null) {
-        continue;
-      }
-      final record = CredentialSecretRecord.fromJson(json);
-      records[record.key.stableId] = record;
-    }
-    return records;
-  }
-
-  Map<String, Object?> _recordsToValue(
-    Map<String, CredentialSecretRecord> records,
-  ) {
-    return <String, Object?>{
-      'records': records.values
-          .map((record) => record.toJson())
-          .toList(growable: false),
-    };
-  }
-
-  Map<String, Object?>? _mapFromJson(Object? value) {
-    if (value is Map<String, Object?>) {
-      return value;
-    }
-    if (value is Map) {
-      return value.map(
-        (key, value) => MapEntry<String, Object?>(key.toString(), value),
-      );
-    }
-    return null;
   }
 }

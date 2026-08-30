@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../view_ide/commands/commands.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/foundation/foundation.dart';
-import '../../view_ide/environment/configuration/vityo_theme_override.dart';
-import '../../view_ide/environment/system_compatibility/system_compatibility.dart';
+import '../../view_ide/environment/environment.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
 import '../../view_ide/toolchain/toolchain_manager.dart';
 import '../platform/viewport_profile.dart';
@@ -27,6 +26,7 @@ class SettingsSurface extends StatelessWidget {
     this.onClearToolchain,
     this.onExecuteToolchainInstallPlan,
     this.platformManagerSettings,
+    this.credentialStorageSettings,
     this.platformManagerProbeRunning = false,
     this.onRefreshPlatformManagers,
     this.onPlatformRecoveryRoute,
@@ -57,6 +57,7 @@ class SettingsSurface extends StatelessWidget {
   final Future<void> Function(ToolchainKind kind)? onClearToolchain;
   final Future<void> Function()? onExecuteToolchainInstallPlan;
   final PlatformManagerSettingsSurface? platformManagerSettings;
+  final CredentialStorageSettingsSurface? credentialStorageSettings;
   final bool platformManagerProbeRunning;
   final Future<void> Function()? onRefreshPlatformManagers;
   final void Function(PlatformManagerRecoveryActionRoute route)?
@@ -104,6 +105,10 @@ class SettingsSurface extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
               ],
+              if (credentialStorageSettings case final credentialSettings?) ...[
+                _CredentialStorageSettingsCard(settings: credentialSettings),
+                const SizedBox(height: 14),
+              ],
               _ToolchainSettingsCard(
                 settings: settings,
                 installPlan: toolchainInstallPlan,
@@ -132,6 +137,113 @@ class SettingsSurface extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CredentialStorageSettingsCard extends StatelessWidget {
+  const _CredentialStorageSettingsCard({required this.settings});
+
+  final CredentialStorageSettingsSurface settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final stateColor = settings.productionReady
+        ? const Color(0xFF26734D)
+        : colorScheme.error;
+    return Container(
+      key: const ValueKey('settings-credential-storage-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7EBEF),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.key_rounded, size: 20, color: stateColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Credential Storage',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: stateColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  settings.productionReady ? 'Protected' : 'Session only',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: stateColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${settings.backendLabel} · ${settings.platformLabel}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(settings.message, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _CredentialStorageFact(
+                label: settings.persistent ? 'Persistent' : 'Volatile',
+                enabled: settings.persistent,
+              ),
+              _CredentialStorageFact(
+                label: settings.safeForLongLivedSecrets
+                    ? 'Long-lived secrets enabled'
+                    : 'Short-lived credentials only',
+                enabled: settings.safeForLongLivedSecrets,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CredentialStorageFact extends StatelessWidget {
+  const _CredentialStorageFact({required this.label, required this.enabled});
+
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = enabled
+        ? const Color(0xFF26734D)
+        : theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(color: color),
       ),
     );
   }

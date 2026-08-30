@@ -217,6 +217,7 @@ class AppBootstrap {
     this.lspGateway,
     this.extensionStartupPlan,
     this.platformManagers,
+    this.credentialStorage,
     RuntimeOutputLiveBuffer? runtimeOutputBuffer,
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
@@ -263,6 +264,7 @@ class AppBootstrap {
   final VityodLspGateway? lspGateway;
   final AppExtensionStartupPlan? extensionStartupPlan;
   final PlatformManagerBundle? platformManagers;
+  final PlatformCredentialDataStoreBootstrap? credentialStorage;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
@@ -321,6 +323,13 @@ class AppBootstrap {
           ownerLayer: 'environment',
           requiredInjection: false,
           capabilityGapCode: 'platform.manager-bundle.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'environment.credential-store',
+          ownerLayer: 'environment',
+          requiredInjection: false,
+          capabilityGapCode: 'environment.credential-store.unavailable',
           recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
@@ -544,6 +553,7 @@ class AppBootstrap {
     final injectedByServiceId = <String, bool>{
       'platform.target': true,
       'platform.manager-bundle': platformManagers != null,
+      'environment.credential-store': credentialStorage != null,
       'module.registry': true,
       'module.native-loader': true,
       'project-graph.adapter': true,
@@ -652,12 +662,12 @@ class AppBootstrap {
       workspaceRoot: projectSnapshot.workspaceRoot,
     );
     final foundationDataStore = _createFoundationDataStore(platformManagers);
-    final credentialDataStore = FoundationCredentialDataStore(
-      dataStore: foundationDataStore,
+    final credentialStorage = await createPlatformCredentialDataStoreBootstrap(
+      platformTarget: platformTarget,
     );
     final configurationStore = _createConfigurationStore(
       dataStore: foundationDataStore,
-      credentialDataStore: credentialDataStore,
+      credentialDataStore: credentialStorage.dataStore,
     );
     final themeOverrideStore = VityoThemeOverrideStore.fromDataStore(
       dataStore: foundationDataStore,
@@ -878,6 +888,7 @@ class AppBootstrap {
           : VityodLspGateway(client: vityodClient),
       extensionStartupPlan: extensionStartupPlan,
       platformManagers: platformManagers,
+      credentialStorage: credentialStorage,
       runtimeOutputBuffer: runtimeOutputBuffer,
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,

@@ -1,10 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
-import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
-
-import 'support/test_file_system_manager.dart';
 
 void main() {
   test('credential data store writes and reads secret records', () async {
@@ -56,23 +51,26 @@ void main() {
     expect(jsonText, contains('redactedValue'));
   });
 
-  test('credential references can be stored in ordinary configuration safely', () {
-    const reference = CredentialReference(
-      key: CredentialDataStoreKey(
-        namespace: 'toolchain',
-        name: 'styio-registry',
-        scope: CredentialScope.toolchain,
-      ),
-      kind: CredentialKind.token,
-      displayName: 'Styio registry token',
-    );
+  test(
+    'credential references can be stored in ordinary configuration safely',
+    () {
+      const reference = CredentialReference(
+        key: CredentialDataStoreKey(
+          namespace: 'toolchain',
+          name: 'styio-registry',
+          scope: CredentialScope.toolchain,
+        ),
+        kind: CredentialKind.token,
+        displayName: 'Styio registry token',
+      );
 
-    final jsonText = reference.toJson().toString();
+      final jsonText = reference.toJson().toString();
 
-    expect(jsonText, contains('styio-registry'));
-    expect(jsonText, contains('token'));
-    expect(jsonText, isNot(contains('secret')));
-  });
+      expect(jsonText, contains('styio-registry'));
+      expect(jsonText, contains('token'));
+      expect(jsonText, isNot(contains('secret')));
+    },
+  );
 
   test('credential models parse loose JSON and scoped metadata', () async {
     final reference = CredentialReference.fromJson(<String, Object?>{
@@ -116,19 +114,18 @@ void main() {
     await store.write(expired);
     await store.write(tinySecret);
 
-    expect(
-      CredentialKind.values.map((kind) => kind.wireValue),
-      <String>[
-        'token',
-        'registry-credential',
-        'remote-service-credential',
-        'generic-secret',
-      ],
-    );
-    expect(
-      CredentialScope.values.map((scope) => scope.wireValue),
-      <String>['user', 'workspace', 'toolchain', 'service'],
-    );
+    expect(CredentialKind.values.map((kind) => kind.wireValue), <String>[
+      'token',
+      'registry-credential',
+      'remote-service-credential',
+      'generic-secret',
+    ]);
+    expect(CredentialScope.values.map((scope) => scope.wireValue), <String>[
+      'user',
+      'workspace',
+      'toolchain',
+      'service',
+    ]);
     expect(reference.key.stableId, 'workspace:registry:demo:nightly');
     expect(reference.kind, CredentialKind.remoteServiceCredential);
     expect(fallbackReference.key.scope, CredentialScope.service);
@@ -160,55 +157,5 @@ void main() {
     expect(await store.read(key), isNotNull);
     expect(await store.delete(key), isTrue);
     expect(await store.read(key), isNull);
-  });
-
-  test('foundation credential data store persists secret records separately', () async {
-    final tempRoot = await Directory.systemTemp.createTemp(
-      'vityo_foundation_credential_test_',
-    );
-    addTearDown(() => tempRoot.delete(recursive: true));
-    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
-    final resourceManager = LocalResourceManager(
-      facts: ResourceFacts.linuxDebianArm(
-        systemTempPath: tempRoot.path,
-        homePath: tempRoot.path,
-      ),
-    );
-    final coordinator = FoundationResourceCoordinator(
-      resourceManager: resourceManager,
-      fileSystemManager: fileSystemManager,
-    );
-    final foundationDataStore = FoundationDataStore(
-      resourceCoordinator: coordinator,
-      fileSystemManager: fileSystemManager,
-    );
-    final store = FoundationCredentialDataStore(
-      dataStore: foundationDataStore,
-    );
-    const key = CredentialDataStoreKey(
-      namespace: 'toolchain',
-      name: 'styio-registry',
-      scope: CredentialScope.toolchain,
-      targetId: 'nightly',
-    );
-
-    await store.write(
-      CredentialSecretRecord(
-        key: key,
-        kind: CredentialKind.token,
-        secretValue: 'persisted-token-value',
-        displayName: 'Persisted token',
-      ),
-    );
-    final reloaded = FoundationCredentialDataStore(
-      dataStore: foundationDataStore,
-    );
-    final loaded = await reloaded.read(key);
-    final snapshot = await reloaded.snapshot();
-
-    expect(loaded, isNotNull);
-    expect(loaded!.secretValue, 'persisted-token-value');
-    expect(snapshot.credentials.single.redactedValue, 'pe****ue');
-    expect(snapshot.toJson().toString(), isNot(contains('persisted-token-value')));
   });
 }

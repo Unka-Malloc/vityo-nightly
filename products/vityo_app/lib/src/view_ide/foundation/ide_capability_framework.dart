@@ -270,12 +270,10 @@ class VityoIdeCapabilityFramework {
           id: 'environment.credential-store',
           layer: IdeCapabilityLayer.environment,
           title: 'Credential DataStore',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/environment/configuration',
           summary:
-              'Credential references, redacted metadata, injection results, batch injection, access audit trails, persisted FoundationDataStore credentials, platform secure storage adapter contracts, PlatformSecureCredentialDataStore, PlatformSecureCredentialStorageAdapterRegistry backend selection, policy-enforcing credential stores, credential storage health facts, adapter backend descriptors, audit retention policies, and storage policy decisions are wired.',
-          todo:
-              'TODO: register OS SecretStorage/Keychain/Credential Manager/libsecret production adapters in PlatformSecureCredentialStorageAdapterRegistry.',
+              'Credential references, redacted metadata, injection results, batch injection, access audit trails, policy enforcement, and health facts are wired. PlatformSecureJsonCredentialStorageAdapter persists versioned records through flutter_secure_storage; PlatformSecureCredentialStorageAdapterRegistry selects verified macOS/iOS Keychain, Android encrypted storage, Windows Credential Manager-backed storage, or Linux libsecret routes. App bootstrap performs an isolated write/read/delete probe, falls back to short-lived session memory when the platform backend is unavailable, and exposes the active protection state in SettingsSurface. Plaintext FoundationDataStore credential persistence has been removed.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code SecretStorage',

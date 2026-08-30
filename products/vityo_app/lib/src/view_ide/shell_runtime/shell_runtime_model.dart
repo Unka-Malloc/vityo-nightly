@@ -117,6 +117,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     CommandPaletteLivePreferenceController? commandPalettePreferenceController,
     PlatformManagerBundle? platformManagers,
     PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
+    CredentialStorageSettingsSurface? credentialStorageSettings,
     ClangCppVersionPreference? clangCppVersionPreference,
     this.agentClientRegistry,
     this.agentCollaboration,
@@ -270,6 +271,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       commandPalettePreferenceController: commandPalettePreferenceController,
       platformManagers: platformManagers,
       platformProbeRegistry: platformProbeRegistry,
+      credentialStorageSettings: credentialStorageSettings,
     )..addListener(_handleSettingsChanged);
     if (platformManagers != null) {
       unawaited(_settingsController.refreshPlatformManagerHealth());

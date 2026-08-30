@@ -5,7 +5,7 @@
 **Owner:** Better Plan -- Settings Profile Theme Personalization  
 **File:** `docs/contracts/SettingsProfileThemePersonalization.md`  
 **Status:** Current  
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-31
 
 This owner contract supplies current facts to [Vityo requirements](../plan/vityo/Requirements.md)
 `REQ-IDE-006` through `REQ-IDE-008`. Agent-runtime settings and model-provider configuration belong
@@ -34,7 +34,9 @@ to the separate Vityo Coding Agent delivery track.
 | `CredentialDataStoreKey` | `products/vityo_app/lib/.../credential_data_store.dart` | Composite key: `namespace`, `name`, `scope` (user|workspace|toolchain|service), optional `targetId`. |
 | `CredentialReference` | same file | Lightweight pointer to a stored credential. |
 | `CredentialSecretRecord` | same file | Full secret record with `secretValue`, expiry, metadata. |
-| `FoundationCredentialDataStore` | same file | Persists credentials under namespace `configuration.credentials`. |
+| `PlatformSecureCredentialDataStore` | `.../configuration/credential_data_store.dart` | Credential DataStore backed by a selected platform-secure adapter. |
+| `PlatformSecureJsonCredentialStorageAdapter` | `.../configuration/platform_secure_credential_storage.dart` | Stores versioned credential envelopes through OS secure storage and reports live health. |
+| `PlatformCredentialDataStoreBootstrap` | same file | Probes, selects, and exposes a production backend or a policy-enforced session-only store. |
 | `SecretStore` (abstract) | `.../configuration/secret_store.dart` | Abstract interface: read/write/delete/list. |
 | `InMemorySecretStore` | same file | Volatile in-memory implementation for tests and previews. |
 | `SecretStoreWritePolicy` | same file | Blocks long-lived web-fallback secrets without user confirmation. |
@@ -96,7 +98,6 @@ Agent-runtime owned.
 | Owner ID | Layer | Namespace(s) |
 |----------|-------|-------------|
 | `environment.configuration` | `environment` | `configuration.*` (prefix) |
-| `environment.configuration.credentials` | `environment` | `configuration.credentials` |
 | `vityo.theme-override` | `configuration` | `theme.override` |
 | `interaction.command-palette.preferences` | `interaction` | `interaction.command-palette.preferences` |
 | `interaction.command-palette.recent` | `interaction` | `interaction.command-palette.recent` |
@@ -113,7 +114,7 @@ Agent-runtime owned.
 - User-configurable settings: toolchain selection, shell profile, command palette display, keybinding overrides, theme colors.
 - Theme presets and per-workspace color overrides.
 - Domain-specific shell, keybinding, launch, and test-run profiles.
-- Credential and secret storage (via `FoundationCredentialDataStore` and `SecretStore`).
+- Credential and secret storage through verified OS-backed adapters and explicit session-only fallback policy.
 - Log redaction of secrets, tokens, and PII.
 - Viewport-driven adaptive layout of settings surfaces.
 - Persistence through `FoundationDataStore`.
@@ -133,7 +134,7 @@ Agent-runtime owned.
 - General user/prompt profile persistence and a runtime `ProfileSyncAdapter`.
 - Model-provider profiles, endpoints, credentials, prompt profiles, or fallback routes; those belong
   exclusively to the connected Agent runtime.
-- OS-native secure credential storage (TODO for Keychain/libsecret migration).
+- Hosted or remote secret vault implementations.
 - User authentication or identity management.
 - Debug console or runtime terminal settings.
 - Source control credentials.
@@ -183,9 +184,9 @@ user paths, session IDs.
 
 ### I8: Single Implementation Path
 
-No fallback, legacy, v1/v2, compat, or experimental paths exist.  Only
-`InMemorySecretStore` is a non-persistent alternative tagged for
-tests/previews.
+No fallback, legacy, v1/v2, compat, or experimental persistence paths exist.
+Session-memory stores are the only non-persistent alternative; production
+bootstrap wraps them with a policy that rejects long-lived credentials.
 
 ---
 
@@ -213,8 +214,8 @@ Secrets path:
 User-provided credential
     |
     v
-FoundationCredentialDataStore.write(CredentialSecretRecord)
-    |  secretValue stored, metadata redacted
+PlatformSecureCredentialDataStore.write(CredentialSecretRecord)
+    |  versioned envelope handed directly to OS secure storage
     v
 ConfigurationSettingRecord.credentialReferences (pointer only)
     |  _assertNoSecretLikeValues rejects raw secrets at write time
@@ -243,7 +244,6 @@ LogRedactor (redacts secret-like patterns in all output paths)
 
 | Gap | Owner | Reason | Recovery |
 |-----|-------|--------|----------|
-| OS-native secure credential storage | `environment.configuration.credentials` | Stored in DataStore JSON, not OS-backed | Migrate to Keychain/Credential Manager/libsecret |
 | Cloud sync of settings/theme | No owner | No sync service exists | Add sync adapter contract |
 | Theme live preview in settings | `vityo.theme-override` | Applies on save only | Add `onPreviewThemeOverride` callback |
 | Dark theme support | `VityoTheme` | Only `light()` exists | Add `VityoTheme.dark()` |
@@ -273,7 +273,9 @@ LogRedactor (redacts secret-like patterns in all output paths)
 - `VityoThemeOverrideStore` save/read round-trip.
 - `CommandPaletteDisplayPreferencesStore` save/read round-trip.
 - `CommandKeybindingProfileStore` save/read round-trip.
-- `FoundationCredentialDataStore` write/read round-trip.
+- `PlatformSecureJsonCredentialStorageAdapter` write/read/list/delete and malformed-envelope handling.
+- Platform selection contract tests for macOS, iOS, Android, Windows, Linux, Web, and unavailable backends.
+- Real macOS Keychain write/read/delete integration test.
 - `ConfigurationStore` rejects raw secrets, accepts `CredentialReference`.
 - `SettingsSurface` render with sample configurations.
 
@@ -281,7 +283,8 @@ LogRedactor (redacts secret-like patterns in all output paths)
 
 - No raw-secret-containing configuration record in any DataStore namespace.
 - All settings-surface API callbacks accept only validated inputs.
-- `SecretStoreHealth.message` contains the known migration TODO.
+- The selected production backend passes an isolated write/read/delete health probe and removes its probe entry.
+- Source scans contain no plaintext Foundation DataStore credential implementation.
 
 ---
 
@@ -290,7 +293,7 @@ LogRedactor (redacts secret-like patterns in all output paths)
 | Area | Current | Legacy | Closure |
 |------|---------|--------|---------|
 | Theme persistence | `VityoThemeOverrideStore` | None | Single store |
-| Credential storage | `FoundationCredentialDataStore` | `InMemorySecretStore` (test only) | Production path only |
+| Credential storage | `PlatformSecureCredentialDataStore` + OS backend | Policy-enforced session memory when unavailable; in-memory fixtures in tests | Single secure persistence path |
 | Command palette prefs | `CommandPaletteDisplayPreferencesStore` | None | Single store |
 | Keybinding profiles | `CommandKeybindingProfileStore` | None | Single store |
 | Provider/model profiles | Agent runtime-owned | Removed IDE store | No IDE compatibility path |

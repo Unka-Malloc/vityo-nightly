@@ -2,7 +2,7 @@
 
 **Purpose:** Record accepted, planned, and deferred dependencies across the Vityo IDE and its first-party companion Agent runtime.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-31
 
 ## 1. 已接受依赖
 
@@ -12,6 +12,7 @@
 | Dart SDK | Accepted | Flutter 语言运行时 | 作为 Flutter 的直接依赖。 |
 | `styio` upstream repository | Accepted (first-party upstream) | 语言与编译器核心 | 非第三方，但属于本仓依赖边界。 |
 | LLVM | Accepted (via `styio`) | CodeGen / JIT / IR 后端 | 由上游 `styio` 维护。 |
+| `flutter_secure_storage` | Accepted | 系统安全凭据存储 | 桌面与移动端使用操作系统密钥存储；Web 不作为长期凭据的生产持久化路径。BSD-3-Clause。 |
 
 ## 1.1 UI 字体与预设来源
 

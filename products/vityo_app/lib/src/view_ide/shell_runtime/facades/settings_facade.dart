@@ -13,6 +13,9 @@ mixin ShellRuntimeSettingsFacade on ShellRuntimeFacadeHost {
   PlatformManagerSettingsSurface? get platformManagerSettingsSurface =>
       _settingsController.platformManagerSettingsSurface;
 
+  CredentialStorageSettingsSurface? get credentialStorageSettingsSurface =>
+      _settingsController.credentialStorageSettings;
+
   PlatformManagerRecoveryActionRoute? get lastPlatformRecoveryRoute =>
       _settingsController.lastPlatformRecoveryRoute;
 

@@ -18,6 +18,7 @@ final class SettingsController extends ChangeNotifier {
     CommandPaletteDisplayPreferences? commandPalettePreferences,
     CommandPaletteLivePreferenceController? commandPalettePreferenceController,
     this.platformManagers,
+    this.credentialStorageSettings,
     PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
   }) : _ownsCommandPalettePreferenceController =
            commandPalettePreferenceController == null,
@@ -46,6 +47,7 @@ final class SettingsController extends ChangeNotifier {
   final VityoThemeOverrideStore? themeOverrideStore;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final PlatformManagerBundle? platformManagers;
+  final CredentialStorageSettingsSurface? credentialStorageSettings;
   final PlatformManagerLiveOperationProbeRegistry _platformProbeRegistry;
   final CommandPaletteLivePreferenceController
   commandPalettePreferenceController;

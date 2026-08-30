@@ -15,6 +15,7 @@ ALLOWED_EXTERNAL_DART_PACKAGES = {
     "flutter",
     "crypto",
     "ffi",
+    "flutter_secure_storage",
     "cupertino_icons",
     "shared_preferences",
     "path_provider",
@@ -24,6 +25,7 @@ ALLOWED_EXTERNAL_DART_PACKAGES = {
     "integration_test",
     "flutter_lints",
     "test",
+    "vm_service",
 }
 
 FIRST_PARTY_DART_PACKAGE_PATHS = {

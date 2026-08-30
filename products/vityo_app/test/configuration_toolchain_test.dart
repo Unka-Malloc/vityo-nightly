@@ -12,6 +12,7 @@ import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain.dart';
 
 import 'support/test_file_system_manager.dart';
+import 'support/test_secure_credential_backend.dart';
 import 'support/vityod_test_harness.dart';
 
 const _interactivePtyTimeout = Duration(seconds: 30);
@@ -311,26 +312,18 @@ void main() {
     );
   });
 
-  test('foundation credential datastore persists redacted metadata', () async {
-    final tempRoot = await Directory.systemTemp.createTemp(
-      'vityo_foundation_credential_store_test_',
+  test('platform credential datastore persists redacted metadata', () async {
+    final backend = TestSecureCredentialKeyValueBackend();
+    final adapter = PlatformSecureJsonCredentialStorageAdapter(
+      adapterId: 'test-keychain',
+      backendId: 'test-keychain',
+      backend: backend,
+      productionSupported: true,
+      platformLabel: 'Test Keychain',
     );
-    addTearDown(() => tempRoot.delete(recursive: true));
-    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
-    final resourceManager = LocalResourceManager(
-      facts: ResourceFacts.linuxDebianArm(
-        systemTempPath: tempRoot.path,
-        homePath: tempRoot.path,
-      ),
+    final credentialStore = CredentialStoragePolicyEnforcingDataStore(
+      delegate: PlatformSecureCredentialDataStore(adapter: adapter),
     );
-    final dataStore = FoundationDataStore(
-      resourceCoordinator: FoundationResourceCoordinator(
-        resourceManager: resourceManager,
-        fileSystemManager: fileSystemManager,
-      ),
-      fileSystemManager: fileSystemManager,
-    );
-    final credentialStore = FoundationCredentialDataStore(dataStore: dataStore);
     const key = CredentialDataStoreKey(
       namespace: 'toolchain',
       name: 'styio-registry',
@@ -346,7 +339,15 @@ void main() {
         displayName: 'Styio registry token',
       ),
     );
-    final reloadedStore = FoundationCredentialDataStore(dataStore: dataStore);
+    final reloadedStore = PlatformSecureCredentialDataStore(
+      adapter: PlatformSecureJsonCredentialStorageAdapter(
+        adapterId: 'test-keychain',
+        backendId: 'test-keychain',
+        backend: backend,
+        productionSupported: true,
+        platformLabel: 'Test Keychain',
+      ),
+    );
     final loaded = await reloadedStore.read(key);
     final snapshot = await reloadedStore.snapshot();
     final snapshotJson = snapshot.toJson().toString();

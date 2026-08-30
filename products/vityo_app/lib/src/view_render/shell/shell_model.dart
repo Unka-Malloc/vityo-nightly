@@ -67,6 +67,7 @@ class ShellModel extends ShellRuntimeModel {
     super.commandPalettePreferencesStore,
     super.platformManagers,
     super.platformProbeRegistry,
+    super.credentialStorageSettings,
     super.languageServiceStatus,
     super.toolchainStatusReport,
     super.clangCppVersionPreference,

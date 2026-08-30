@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../view_render/theme/theme.dart';
+import '../view_ide/environment/configuration/platform_secure_credential_storage.dart';
 import '../view_ide/environment/configuration/vityo_theme_override.dart';
 import '../view_render/shell/shell_model.dart';
 import '../view_render/shell/shell_scope.dart';
@@ -47,6 +48,11 @@ class _VityoAppState extends State<VityoApp> {
       debugAdapterLauncher: widget.bootstrap.debugAdapterLauncher,
       workspaceTextSearchProvider: widget.bootstrap.workspaceTextSearchProvider,
       platformManagers: widget.bootstrap.platformManagers,
+      credentialStorageSettings: widget.bootstrap.credentialStorage == null
+          ? null
+          : CredentialStorageSettingsSurface.fromBootstrap(
+              widget.bootstrap.credentialStorage!,
+            ),
       runtimeOutputBuffer: widget.bootstrap.runtimeOutputBuffer,
       refreshActiveLanguageService:
           widget.bootstrap.refreshActiveLanguageService,

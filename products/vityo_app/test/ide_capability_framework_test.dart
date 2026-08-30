@@ -158,16 +158,17 @@ void main() {
     );
     expect(
       entriesById['environment.credential-store']?.summary,
-      contains('audit retention policies'),
+      contains('PlatformSecureJsonCredentialStorageAdapter'),
     );
     expect(
       entriesById['environment.credential-store']?.summary,
       contains('PlatformSecureCredentialStorageAdapterRegistry'),
     );
     expect(
-      entriesById['environment.credential-store']?.todo,
-      contains('production adapters'),
+      entriesById['environment.credential-store']?.status,
+      IdeCapabilityStatus.ready,
     );
+    expect(entriesById['environment.credential-store']?.todo, isEmpty);
     expect(
       entriesById['environment.credential-store']?.runtimeMaturityBlocking,
       isFalse,

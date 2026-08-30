@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/vityo_theme_override.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/platform_secure_credential_storage.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/system_compatibility.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
@@ -69,6 +70,14 @@ void main() {
                 recoveryActions: <ToolchainRecoveryAction>[],
               ),
               platformManagerSettings: settings,
+              credentialStorageSettings: const CredentialStorageSettingsSurface(
+                platformLabel: 'macOS',
+                backendLabel: 'macOS Keychain',
+                productionReady: true,
+                persistent: true,
+                safeForLongLivedSecrets: true,
+                message: 'Keychain verification passed.',
+              ),
               onRefreshPlatformManagers: () async {
                 refreshCount += 1;
               },
@@ -88,6 +97,12 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('1/2 live checks ready'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings-credential-storage-card')),
+        findsOneWidget,
+      );
+      expect(find.text('Protected'), findsOneWidget);
+      expect(find.text('macOS Keychain · macOS'), findsOneWidget);
 
       final shellSection = find.byKey(
         const ValueKey('settings-platform-section-shell'),
