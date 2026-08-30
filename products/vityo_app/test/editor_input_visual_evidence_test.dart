@@ -23,6 +23,7 @@ void main() {
   testWidgets(
     'capture declared desktop input states',
     (tester) async {
+      await _loadEvidenceFonts();
       final outDir = _evidenceDir();
       outDir.createSync(recursive: true);
 
@@ -139,6 +140,7 @@ EditorSessionController _controller(String text) {
 
 Widget _harness(EditorSessionController controller, Size size) {
   return MaterialApp(
+    theme: ThemeData(fontFamily: 'Roboto'),
     home: Scaffold(
       body: Center(
         child: RepaintBoundary(
@@ -162,6 +164,41 @@ Widget _harness(EditorSessionController controller, Size size) {
       ),
     ),
   );
+}
+
+Future<void> _loadEvidenceFonts() async {
+  final flutterRoot = Directory(_flutterRootPath());
+  final sans = File(
+    '${flutterRoot.path}/bin/cache/artifacts/material_fonts/Roboto-Regular.ttf',
+  );
+  final mono = File(
+    '${flutterRoot.path}/bin/cache/dart-sdk/bin/resources/devtools/assets/'
+    'fonts/Roboto_Mono/RobotoMono-Regular.ttf',
+  );
+  for (final font in <File>[sans, mono]) {
+    expect(font.existsSync(), isTrue, reason: 'missing evidence font');
+  }
+
+  await _loadFontFamily('Roboto', <File>[sans]);
+  await _loadFontFamily('monospace', <File>[mono]);
+}
+
+String _flutterRootPath() {
+  final configured = Platform.environment['FLUTTER_ROOT']?.trim();
+  if (configured != null && configured.isNotEmpty) return configured;
+  final lookup = Process.runSync('which', const <String>['flutter']);
+  expect(lookup.exitCode, 0, reason: 'Flutter SDK is not on PATH');
+  final executable = File((lookup.stdout as String).trim());
+  return File(executable.resolveSymbolicLinksSync()).parent.parent.path;
+}
+
+Future<void> _loadFontFamily(String family, List<File> files) async {
+  final loader = FontLoader(family);
+  for (final file in files) {
+    final bytes = file.readAsBytesSync();
+    loader.addFont(Future<ByteData>.value(bytes.buffer.asByteData()));
+  }
+  await loader.load();
 }
 
 TextEditingValue _remoteEditingValue(WidgetTester tester) {

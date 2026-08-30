@@ -9,6 +9,12 @@ Build mode: flutter test debug
 Viewports: 1200×800 and 1600×1200
 Tool: Flutter `RepaintBoundary.toImage` via `test/editor_input_visual_evidence_test.dart`
 
+The widget-evidence lane loads the Flutter SDK's bundled Roboto and Roboto
+Mono fonts before capture so IDE labels and source text remain readable outside
+the host font environment. Native CJK/emoji glyph fidelity is established by
+the separate macOS-engine image below; the deterministic widget harness may
+show fallback boxes for glyphs absent from those bundled test fonts.
+
 Regenerate explicitly from `products/vityo_app`:
 
 ```sh
