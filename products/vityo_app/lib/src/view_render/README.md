@@ -28,6 +28,14 @@ Render internals are split into:
 5. `theme/`: Flutter `ThemeData` and theme override presentation objects.
 6. `platform/`: viewport profile and responsive render-family selection.
 
+The editor render library keeps `editor_surface.dart` as its public library
+root and separates implementation by responsibility: `editor_surface_shell`
+owns composition and document chrome, `editor_source_pane` owns input and
+source interactions, `editor_language_inspector` owns language presentation,
+and `editor_render_pipeline` owns viewport-bounded line painting and semantics.
+The smoke entrypoint mirrors those boundaries through the focused registration
+files under `test/smoke/` while preserving one canonical test command.
+
 Runtime command execution and workflow state are inherited from `view_ide/shell_runtime`.
 
 Move widgets here incrementally after each move preserves the one-way dependency:
