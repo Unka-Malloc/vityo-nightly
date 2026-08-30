@@ -973,6 +973,7 @@ REMOVE_ME=from-file
       expect(result.succeeded, isTrue);
       expect(result.toolchainId, 'printf');
       expect(result.stdout, 'toolchain-ok');
+      expect(result.metadata['processHandleId'], isNotEmpty);
       expect(result.toJson()['status'], 'succeeded');
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
@@ -1031,6 +1032,7 @@ REMOVE_ME=from-file
       expect(platformManagers.process.facts.targetId, 'toolchain-platform');
       expect(result.succeeded, isTrue);
       expect(result.stdout, 'toolchain-platform-ok');
+      expect(result.metadata['processHandleId'], isNotEmpty);
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );

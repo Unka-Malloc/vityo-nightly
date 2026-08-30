@@ -67,16 +67,57 @@ void main() {
     expect(result.processHandle?.source, 'toolchain-runtime');
     expect(result.toJson()['processHandle'], isA<Map<String, Object?>>());
   });
+
+  for (final facts in <ProcessFacts>[
+    ProcessFacts.linuxDebianArm(targetId: 'linux-diagnostics'),
+    ProcessFacts.windowsX64(targetId: 'windows-diagnostics'),
+  ]) {
+    test(
+      'toolchain process identity survives ${facts.operatingSystem} dispatch',
+      () async {
+        final catalog = ToolchainCatalog()
+          ..register(
+            const ToolchainDescriptor(
+              id: 'diagnostics-fixture',
+              kind: ToolchainKind.staticAnalyzer,
+              displayName: 'Diagnostics Fixture',
+              executablePath: 'diagnostics-fixture',
+            ),
+            activate: true,
+          );
+        final runtime = ToolchainRuntime(
+          catalog: catalog,
+          processManager: _IdentityProcessManager(facts: facts),
+        );
+
+        final result = await runtime.run(
+          kind: ToolchainKind.staticAnalyzer,
+          arguments: const <String>['check'],
+        );
+        final identity = RuntimeProcessHandleIdentity.tryFromMetadata(
+          result.metadata,
+          managerId: 'toolchain-manager',
+        );
+
+        expect(identity?.processHandleId, 'toolchain-proc-1');
+        expect(identity?.pid, 6161);
+      },
+    );
+  }
 }
 
 class _IdentityProcessManager implements ProcessManager {
-  @override
-  final ProcessFacts facts = ProcessFacts.linuxDebianArm();
+  _IdentityProcessManager({ProcessFacts? facts})
+    : facts = facts ?? ProcessFacts.linuxDebianArm(),
+      compatibility = ProcessAdapter(
+        facts ?? ProcessFacts.linuxDebianArm(),
+      ).adapt();
 
   @override
-  final ProcessCompatibility compatibility = ProcessAdapter(
-    ProcessFacts.linuxDebianArm(),
-  ).adapt();
+  final ProcessFacts facts;
+
+  @override
+  final ProcessCompatibility compatibility;
 
   @override
   Future<ProcessCommandResult> run(ProcessCommandRequest request) async {

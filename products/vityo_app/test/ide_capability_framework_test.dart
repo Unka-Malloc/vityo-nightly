@@ -399,9 +399,10 @@ void main() {
       entriesById['interaction.diagnostics']?.summary,
       contains('ShellRuntime diagnostics producer cancellation bridge'),
     );
+    expect(entriesById['interaction.diagnostics']?.todo, isEmpty);
     expect(
-      entriesById['interaction.diagnostics']?.todo,
-      contains('processHandleId/pid metadata'),
+      entriesById['interaction.diagnostics']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.diagnostics']?.runtimeMaturityBlocking,
@@ -427,6 +428,7 @@ void main() {
       entriesById['workspace.diagnostics']?.summary,
       contains('WorkspaceQuickFixTelemetryStore persisted review outcomes'),
     );
+    expect(entriesById['workspace.diagnostics']?.todo, isEmpty);
     expect(entriesById['runtime.terminal']?.status, IdeCapabilityStatus.wired);
     expect(
       entriesById['runtime.terminal']?.summary,

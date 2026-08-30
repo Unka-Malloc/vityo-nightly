@@ -6,6 +6,7 @@ import '../../../ide/editor/editor.dart';
 import '../../interaction/interaction.dart';
 import '../../language/language_contract.dart';
 import '../../platform/platform.dart';
+import '../../runtime/runtime.dart';
 import '../../toolchain/toolchain.dart';
 import '../../../ide/workspace/workspace.dart';
 
@@ -48,6 +49,12 @@ class NativeToolCommandResult {
   final String message;
   final Map<String, Object?> metadata;
   final List<Diagnostic> diagnostics;
+
+  RuntimeProcessHandleIdentity? get processHandle =>
+      RuntimeProcessHandleIdentity.tryFromMetadata(
+        metadata,
+        managerId: 'toolchain-manager',
+      );
 }
 
 class NativeDocumentFormatResult {
@@ -98,6 +105,12 @@ class NativeToolResultRecord {
 
   String get commandId => command.name;
 
+  RuntimeProcessHandleIdentity? get processHandle =>
+      RuntimeProcessHandleIdentity.tryFromMetadata(
+        metadata,
+        managerId: 'toolchain-manager',
+      );
+
   WorkspaceDiagnosticsSnapshot toWorkspaceDiagnosticsSnapshot({
     String fallbackDocumentId = '',
     String providerId = '',
@@ -129,6 +142,7 @@ class NativeToolResultRecord {
       providerId: resolvedProviderId,
       message: message,
       diagnostics: workspaceDiagnostics,
+      producerProcessHandle: processHandle,
     );
   }
 
@@ -149,6 +163,7 @@ class NativeToolResultRecord {
   }
 
   Map<String, Object?> toJson() {
+    final handle = processHandle;
     return <String, Object?>{
       'commandId': commandId,
       'label': label,
@@ -157,6 +172,7 @@ class NativeToolResultRecord {
       'metadata': metadata,
       'diagnosticCount': diagnostics.length,
       'completedAt': completedAt.toIso8601String(),
+      if (handle != null) 'processHandle': handle.toJson(),
       'executionResult': toResultContract().toJson(),
     };
   }
@@ -299,6 +315,7 @@ final class ExecutionController extends ChangeNotifier {
     ToolchainRuntimeResult result,
   ) {
     return <String, Object?>{
+      ...nativeToolProcessIdentityMetadata(result),
       if (result.exitCode != null) 'exitCode': result.exitCode,
       'stdoutLength': result.stdout.length,
       'stderrLength': result.stderr.length,
@@ -306,6 +323,25 @@ final class ExecutionController extends ChangeNotifier {
         'stdoutPreview': _nativeToolOutputPreview(result.stdout),
       if (result.stderr.trim().isNotEmpty)
         'stderrPreview': _nativeToolOutputPreview(result.stderr),
+    };
+  }
+
+  Map<String, Object?> nativeToolProcessIdentityMetadata(
+    ToolchainRuntimeResult result,
+  ) {
+    final handle = RuntimeProcessHandleIdentity.tryFromMetadata(
+      result.metadata,
+      managerId: 'toolchain-manager',
+    );
+    if (handle == null) {
+      return const <String, Object?>{};
+    }
+    return <String, Object?>{
+      if (handle.processHandleId.isNotEmpty)
+        'processHandleId': handle.processHandleId,
+      if (handle.pid != null) 'pid': handle.pid,
+      if (handle.source.isNotEmpty) 'processHandleSource': handle.source,
+      ...handle.metadata,
     };
   }
 
@@ -439,10 +475,12 @@ final class ExecutionController extends ChangeNotifier {
     final message = result.succeeded
         ? 'Run Static Analysis completed.'
         : 'Run Static Analysis failed${detail == null || detail.isEmpty ? '' : ': $detail'}.';
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     return NativeToolCommandResult(
       applied: result.succeeded,
       message: message,
       metadata: <String, Object?>{
+        ...processIdentity,
         'staticAnalysisResult': <String, Object?>{
           'runner': 'clang-tidy',
           'status': result.succeeded ? 'passed' : 'failed',
@@ -504,12 +542,13 @@ final class ExecutionController extends ChangeNotifier {
       ...nativeToolProcessMetadata(result),
     };
     final detail = result.message?.trim();
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     return NativeToolCommandResult(
       applied: result.succeeded,
       message: result.succeeded
           ? 'Run Tests completed.'
           : 'Run Tests failed${detail == null || detail.isEmpty ? '' : ': $detail'}.',
-      metadata: <String, Object?>{'testResult': testResult},
+      metadata: <String, Object?>{...processIdentity, 'testResult': testResult},
     );
   }
 
@@ -528,6 +567,7 @@ final class ExecutionController extends ChangeNotifier {
       standardInput: document.text,
       timeout: const Duration(seconds: 20),
     );
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     if (!result.succeeded) {
       final detail = result.message?.trim();
       return NativeDocumentFormatResult(
@@ -536,6 +576,7 @@ final class ExecutionController extends ChangeNotifier {
           message:
               'Format Active Document failed${detail == null || detail.isEmpty ? '' : ': $detail'}.',
           metadata: <String, Object?>{
+            ...processIdentity,
             'formatResult': <String, Object?>{
               'runner': 'clang-format',
               'status': 'failed',
@@ -556,6 +597,7 @@ final class ExecutionController extends ChangeNotifier {
             ? 'Format Active Document completed with empty formatter output.'
             : 'Format Active Document completed.',
         metadata: <String, Object?>{
+          ...processIdentity,
           'formatResult': <String, Object?>{
             'runner': 'clang-format',
             'status': 'passed',
@@ -645,6 +687,7 @@ final class ExecutionController extends ChangeNotifier {
             applied: false,
             message: _nativeToolFailureMessage('Run Build', configure.message),
             metadata: <String, Object?>{
+              ...nativeToolProcessIdentityMetadata(configure),
               'buildResult': <String, Object?>{
                 'runner': 'cmake',
                 'status': 'failed',
@@ -721,6 +764,7 @@ final class ExecutionController extends ChangeNotifier {
           ? 'Run Build completed.'
           : _nativeToolFailureMessage('Run Build', result.message),
       metadata: <String, Object?>{
+        ...nativeToolProcessIdentityMetadata(result),
         'buildResult': <String, Object?>{
           'runner': runner,
           'status': result.succeeded ? 'passed' : 'failed',

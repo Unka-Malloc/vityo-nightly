@@ -179,6 +179,11 @@ void main() {
         stdout: 'test output',
         stderr: 'failure output',
         exitCode: 8,
+        metadata: <String, Object?>{
+          'processHandleId': 'native-process-8',
+          'pid': 8008,
+          'processHandleSource': 'process-manager',
+        },
       ),
     );
 
@@ -192,6 +197,53 @@ void main() {
     expect(processMetadata['exitCode'], 8);
     expect(processMetadata['stdoutPreview'], 'test output');
     expect(processMetadata['stderrPreview'], 'failure output');
+    expect(processMetadata['processHandleId'], 'native-process-8');
+    expect(processMetadata['pid'], 8008);
+    expect(processMetadata['processHandleSource'], 'process-manager');
+  });
+
+  test('native diagnostics preserve production process identity', () async {
+    final controller = _createExecutionController();
+    addTearDown(controller.dispose);
+    final manager = _RecordingToolchainManager(<ToolchainRuntimeResult>[
+      const ToolchainRuntimeResult(
+        status: ToolchainRuntimeStatus.failed,
+        toolchainId: 'clang-tidy',
+        stdout: '',
+        stderr:
+            'src/main.cpp:1:1: warning: prefer trailing return type [modernize-use-trailing-return-type]',
+        exitCode: 1,
+        metadata: <String, Object?>{
+          'processHandleId': 'diagnostics-process-1',
+          'pid': 6101,
+          'processHandleSource': 'vityod',
+        },
+      ),
+    ]);
+
+    final result = await controller.runNativeStaticAnalysis(
+      manager: manager,
+      workspaceLayout: NativeBuildWorkspaceLayout.fromFiles(const <String>[
+        'build/compile_commands.json',
+        'src/main.cpp',
+      ]),
+      workspaceRoot: '/workspace',
+      activeDocumentPath: 'src/main.cpp',
+      document: const DocumentState(
+        documentId: 'src/main.cpp',
+        text: 'int main() {}\n',
+        revision: 0,
+      ),
+    );
+
+    expect(result.processHandle?.processHandleId, 'diagnostics-process-1');
+    expect(result.processHandle?.pid, 6101);
+    expect(result.processHandle?.source, 'vityod');
+    expect(result.metadata['processHandleId'], 'diagnostics-process-1');
+    expect(
+      result.metadata['staticAnalysisResult'],
+      containsPair('processHandleId', 'diagnostics-process-1'),
+    );
   });
 
   test('native build layout normalizes workspace evidence once', () {
