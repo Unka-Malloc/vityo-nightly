@@ -360,10 +360,6 @@ class EditorSurface extends StatelessWidget {
                                                   activeToken: activeToken,
                                                   activeSemanticKind:
                                                       activeSemanticKind,
-                                                  document: document,
-                                                  selection: selection,
-                                                  analysis: analysis,
-                                                  renderPlan: renderPlan,
                                                   semanticThemeBinding:
                                                       semanticThemeBinding,
                                                 ),
@@ -415,10 +411,6 @@ class EditorSurface extends StatelessWidget {
                                                 activeToken: activeToken,
                                                 activeSemanticKind:
                                                     activeSemanticKind,
-                                                document: document,
-                                                selection: selection,
-                                                analysis: analysis,
-                                                renderPlan: renderPlan,
                                                 semanticThemeBinding:
                                                     semanticThemeBinding,
                                               ),
@@ -468,10 +460,6 @@ class EditorSurface extends StatelessWidget {
                                               activeToken: activeToken,
                                               activeSemanticKind:
                                                   activeSemanticKind,
-                                              document: document,
-                                              selection: selection,
-                                              analysis: analysis,
-                                              renderPlan: renderPlan,
                                               semanticThemeBinding:
                                                   semanticThemeBinding,
                                             ),
@@ -715,10 +703,6 @@ class _IdeEditorSurface extends StatelessWidget {
                           activeReferences: activeReferences,
                           activeToken: activeToken,
                           activeSemanticKind: activeSemanticKind,
-                          document: document,
-                          selection: selection,
-                          analysis: analysis,
-                          renderPlan: renderPlan,
                           semanticThemeBinding: semanticThemeBinding,
                           showDebugChrome: false,
                           showSemanticBlockCards: true,
@@ -1138,10 +1122,6 @@ class _SourcePreviewPane extends StatefulWidget {
     required this.activeReferences,
     required this.activeToken,
     required this.activeSemanticKind,
-    required this.document,
-    required this.selection,
-    required this.analysis,
-    required this.renderPlan,
     required this.semanticThemeBinding,
     this.showDebugChrome = true,
     this.showSemanticBlockCards = true,
@@ -1156,15 +1136,16 @@ class _SourcePreviewPane extends StatefulWidget {
   final List<ReferenceSpan> activeReferences;
   final TokenSpan? activeToken;
   final SemanticKind? activeSemanticKind;
-  final DocumentState document;
-  final SelectionState selection;
-  final StyioDocumentAnalysis analysis;
-  final EditorRenderPlan renderPlan;
   final EditorSemanticThemeBinding semanticThemeBinding;
   final bool showDebugChrome;
   final bool showSemanticBlockCards;
   final bool showInlineLanguageFeedback;
   final bool compactInlineLanguageFeedback;
+
+  DocumentState get document => controller.document;
+  SelectionState get selection => controller.selection;
+  StyioDocumentAnalysis get analysis => controller.analysis;
+  EditorRenderPlan get renderPlan => controller.renderPlan;
 
   @override
   State<_SourcePreviewPane> createState() => _SourcePreviewPaneState();
@@ -3076,6 +3057,12 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          KeyedSubtree(
+                            key: ValueKey(
+                              'source-document-revision-${widget.document.revision}',
+                            ),
+                            child: const SizedBox.shrink(),
+                          ),
                           if (widget.showDebugChrome && !cramped)
                             _HorizontalChipStrip(
                               height: 36,

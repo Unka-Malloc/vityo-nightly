@@ -663,6 +663,7 @@ class EditorSessionFacade extends ChangeNotifier {
         document: _document,
         source: WorkspaceEditSource.userInput,
         edits: edits,
+        includeContentHash: false,
       ),
     );
     if (!result.isApplied) {
@@ -749,6 +750,7 @@ class EditorSessionFacade extends ChangeNotifier {
         document: _document,
         source: WorkspaceEditSource.userInput,
         edits: edits,
+        includeContentHash: false,
         undoGroupId:
             'text-input-${intent.connectionGeneration}-${intent.sequence}',
         label: 'Text input',

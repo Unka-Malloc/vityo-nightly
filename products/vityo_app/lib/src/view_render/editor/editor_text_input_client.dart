@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../../ide/editor/controllers/editor_session_facade.dart';
+import '../../ide/editor/document/document_state.dart';
 import '../../ide/editor/input/editor_composition.dart';
 import '../../ide/editor/input/unicode_boundary_index.dart';
 import '../../ide/editor/selection/selection_state.dart';
@@ -280,11 +281,10 @@ final class EditorTextInputClient with TextInputClient {
         nextSelections.add(selection);
         continue;
       }
-      final index = UnicodeBoundaryIndex.forTextWindow(
-        documentId: document.documentId,
-        revision: document.revision,
-        text: document.text,
-        anchorOffset: selection.end,
+      final index = _boundaryIndexForDocument(
+        document,
+        start: selection.end,
+        end: selection.end,
       );
       final range = index.deletionRange(
         selection.end,
@@ -383,14 +383,24 @@ final class EditorTextInputClient with TextInputClient {
         : const EditorInputRange(start: 0, end: 0);
 
     if (_composition.phase == EditorCompositionPhase.idle && composing) {
-      final started = _composition.start(
-        documentId: document.documentId,
-        documentText: document.text,
-        revision: document.revision,
-        selectionSet: _controller.selectionSet,
-        connectionGeneration: _generation,
-        sequence: ++_sequence,
-      );
+      final started = document.lineCount >= 10000
+          ? _composition.startFromCommittedWindow(
+              documentId: document.documentId,
+              documentLength: document.length,
+              revision: document.revision,
+              selectionSet: _controller.selectionSet,
+              connectionGeneration: _generation,
+              sequence: ++_sequence,
+              window: _window,
+            )
+          : _composition.start(
+              documentId: document.documentId,
+              documentText: document.text,
+              revision: document.revision,
+              selectionSet: _controller.selectionSet,
+              connectionGeneration: _generation,
+              sequence: ++_sequence,
+            );
       _composition = started.nextState;
     }
 
@@ -512,14 +522,30 @@ final class EditorTextInputClient with TextInputClient {
     final document = _controller.document;
     final primary = _controller.selectionSet.primarySelection;
     if (document.lineCount >= 10000) {
-      final index = UnicodeBoundaryIndex.forTextWindow(
-        documentId: document.documentId,
-        revision: document.revision,
-        text: document.text,
-        anchorOffset: primary.extentOffset,
+      final completeStart = primary.start;
+      final completeEnd = primary.end;
+      if (completeEnd - completeStart >
+          EditorCompositionState.maximumTransportCodeUnits) {
+        _window = EditorCompositionWindow(
+          documentStart: completeStart,
+          text: '',
+          primaryReplacement: const EditorInputRange(start: 0, end: 0),
+          completePrimaryRange: EditorInputRange(
+            start: completeStart,
+            end: completeEnd,
+          ),
+        );
+        _editingValue = TextEditingValue.empty;
+        _publishedRevision = document.revision;
+        return;
+      }
+      final index = _boundaryIndexForDocument(
+        document,
+        start: completeStart,
+        end: completeEnd,
       );
-      final relativeStart = primary.start - index.windowStart;
-      final relativeEnd = primary.end - index.windowStart;
+      final relativeStart = completeStart - index.windowStart;
+      final relativeEnd = completeEnd - index.windowStart;
       final windowText = index.windowText;
       _window = EditorCompositionWindow(
         documentStart: index.windowStart,
@@ -529,8 +555,8 @@ final class EditorTextInputClient with TextInputClient {
           end: relativeEnd.clamp(0, windowText.length),
         ),
         completePrimaryRange: EditorInputRange(
-          start: primary.start,
-          end: primary.end,
+          start: completeStart,
+          end: completeEnd,
         ),
       );
       _editingValue = TextEditingValue(
@@ -565,6 +591,36 @@ final class EditorTextInputClient with TextInputClient {
       ),
     );
     _publishedRevision = document.revision;
+  }
+
+  UnicodeBoundaryIndex _boundaryIndexForDocument(
+    DocumentState document, {
+    required int start,
+    required int end,
+  }) {
+    final sourceWindow = document.textWindowForRange(
+      start: start,
+      end: end,
+      maxCodeUnits: EditorCompositionState.maximumTransportCodeUnits,
+    );
+    if (sourceWindow == null) {
+      return UnicodeBoundaryIndex.forTextRange(
+        documentId: document.documentId,
+        revision: document.revision,
+        text: document.text,
+        rangeStart: start,
+        rangeEnd: end,
+        maxCodeUnits: EditorCompositionState.maximumTransportCodeUnits,
+      );
+    }
+    return UnicodeBoundaryIndex.forGraphemeAlignedWindow(
+      documentId: document.documentId,
+      revision: document.revision,
+      windowStart: sourceWindow.start,
+      windowText: sourceWindow.text,
+      anchorOffset: end,
+      maxCodeUnits: EditorCompositionState.maximumTransportCodeUnits,
+    );
   }
 
   void _publishEditingState() {

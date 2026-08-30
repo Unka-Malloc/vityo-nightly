@@ -11,6 +11,30 @@ void main() {
   );
 
   group('EditorCompositionState', () {
+    test('starts from an already-published bounded source window', () {
+      const window = EditorCompositionWindow(
+        documentStart: 10,
+        text: 'alpha',
+        primaryReplacement: EditorInputRange(start: 2, end: 2),
+        completePrimaryRange: EditorInputRange(start: 12, end: 12),
+      );
+      final transition = const EditorCompositionState.idle()
+          .startFromCommittedWindow(
+            documentId: 'large.styio',
+            documentLength: 100000,
+            revision: 7,
+            selectionSet: EditorSelectionSet.single(
+              const SelectionState.collapsed(12),
+              documentLength: 100000,
+            ),
+            connectionGeneration: 1,
+            sequence: 1,
+            window: window,
+          );
+
+      expect(transition.kind, EditorCompositionTransitionKind.started);
+      expect(identical(transition.nextState.window, window), isTrue);
+    });
     test('provisional updates preserve captured multi-selection anchors', () {
       const source = 'one two';
       final selections = EditorSelectionSet.normalized(

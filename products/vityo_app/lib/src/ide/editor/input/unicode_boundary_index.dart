@@ -66,6 +66,62 @@ final class UnicodeBoundaryIndex {
     );
   }
 
+  /// Builds an index from a bounded source slice whose start and end are known
+  /// grapheme boundaries (for example, complete logical-line boundaries).
+  /// Offsets exposed by the result remain absolute document offsets.
+  factory UnicodeBoundaryIndex.forGraphemeAlignedWindow({
+    required String documentId,
+    required int revision,
+    required int windowStart,
+    required String windowText,
+    required int anchorOffset,
+    int maxCodeUnits = 8192,
+  }) {
+    if (documentId.isEmpty) {
+      throw ArgumentError.value(documentId, 'documentId', 'must not be empty');
+    }
+    if (revision < 0) {
+      throw ArgumentError.value(revision, 'revision', 'must not be negative');
+    }
+    if (windowStart < 0) {
+      throw RangeError.value(
+        windowStart,
+        'windowStart',
+        'must not be negative',
+      );
+    }
+    if (maxCodeUnits <= 0 || maxCodeUnits > maximumCachedCodeUnits) {
+      throw RangeError.range(
+        maxCodeUnits,
+        1,
+        maximumCachedCodeUnits,
+        'maxCodeUnits',
+      );
+    }
+    if (windowText.length > maxCodeUnits) {
+      throw RangeError.range(
+        windowText.length,
+        0,
+        maxCodeUnits,
+        'windowText.length',
+      );
+    }
+    RangeError.checkValueInInterval(
+      anchorOffset,
+      windowStart,
+      windowStart + windowText.length,
+      'anchorOffset',
+    );
+
+    _invalidateOtherRevisions(documentId, revision);
+    return _cacheAlignedWindow(
+      documentId: documentId,
+      revision: revision,
+      windowStart: windowStart,
+      windowText: windowText,
+    );
+  }
+
   /// Builds a bounded index which preferentially contains [rangeStart] to
   /// [rangeEnd], then balances any remaining capacity around that range.
   factory UnicodeBoundaryIndex.forTextRange({
@@ -313,11 +369,25 @@ final class UnicodeBoundaryIndex {
     }
 
     final selectedText = text.substring(selectedStart, selectedEnd);
-    final key = _BoundaryCacheKey(
+    return _cacheAlignedWindow(
       documentId: documentId,
       revision: revision,
       windowStart: selectedStart,
       windowText: selectedText,
+    );
+  }
+
+  static UnicodeBoundaryIndex _cacheAlignedWindow({
+    required String documentId,
+    required int revision,
+    required int windowStart,
+    required String windowText,
+  }) {
+    final key = _BoundaryCacheKey(
+      documentId: documentId,
+      revision: revision,
+      windowStart: windowStart,
+      windowText: windowText,
     );
     final cached = _cache.remove(key);
     if (cached != null) {
@@ -325,17 +395,17 @@ final class UnicodeBoundaryIndex {
       return cached;
     }
 
-    final boundaries = <int>[selectedStart];
-    cursor = selectedStart;
-    for (final character in selectedText.characters) {
+    final boundaries = <int>[windowStart];
+    var cursor = windowStart;
+    for (final character in windowText.characters) {
       cursor += character.length;
       boundaries.add(cursor);
     }
     final result = UnicodeBoundaryIndex._(
       documentId: documentId,
       revision: revision,
-      windowStart: selectedStart,
-      windowText: selectedText,
+      windowStart: windowStart,
+      windowText: windowText,
       boundaries: boundaries,
     );
     _cache[key] = result;

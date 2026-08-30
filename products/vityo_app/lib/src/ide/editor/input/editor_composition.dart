@@ -185,6 +185,74 @@ final class EditorCompositionState {
       revision: revision,
       primary: primary,
     );
+    return _startWithTransport(
+      documentId: documentId,
+      revision: revision,
+      selectionSet: selectionSet,
+      connectionGeneration: connectionGeneration,
+      sequence: sequence,
+      transport: transport,
+    );
+  }
+
+  /// Starts composition from the already-published bounded transport window.
+  /// This is equivalent to [start] but avoids re-reading a large source buffer.
+  EditorCompositionTransition startFromCommittedWindow({
+    required String documentId,
+    required int documentLength,
+    required int revision,
+    required EditorSelectionSet selectionSet,
+    required int connectionGeneration,
+    required int sequence,
+    required EditorCompositionWindow window,
+  }) {
+    if (phase != EditorCompositionPhase.idle) {
+      return _ignored(EditorCompositionTransitionReason.staleSequence);
+    }
+    final gate = _idleEventGate(connectionGeneration, sequence);
+    if (gate != null) return gate;
+    if (documentId.isEmpty) {
+      throw ArgumentError.value(documentId, 'documentId', 'must not be empty');
+    }
+    if (documentLength < 0 ||
+        revision < 0 ||
+        connectionGeneration < 0 ||
+        sequence < 0) {
+      throw ArgumentError(
+        'Length, revision, generation, and sequence must be non-negative.',
+      );
+    }
+    final primary = selectionSet.primarySelection;
+    RangeError.checkValidRange(primary.start, primary.end, documentLength);
+    if (window.completePrimaryRange.start != primary.start ||
+        window.completePrimaryRange.end != primary.end ||
+        window.documentStart < 0 ||
+        window.documentEnd > documentLength ||
+        window.primaryReplacement.end > window.text.length) {
+      throw ArgumentError.value(
+        window,
+        'window',
+        'must describe the current primary selection',
+      );
+    }
+    return _startWithTransport(
+      documentId: documentId,
+      revision: revision,
+      selectionSet: selectionSet,
+      connectionGeneration: connectionGeneration,
+      sequence: sequence,
+      transport: window,
+    );
+  }
+
+  EditorCompositionTransition _startWithTransport({
+    required String documentId,
+    required int revision,
+    required EditorSelectionSet selectionSet,
+    required int connectionGeneration,
+    required int sequence,
+    required EditorCompositionWindow transport,
+  }) {
     final next = EditorCompositionState._(
       phase: EditorCompositionPhase.composing,
       documentId: documentId,

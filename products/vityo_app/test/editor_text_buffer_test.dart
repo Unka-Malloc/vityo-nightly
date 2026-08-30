@@ -18,92 +18,96 @@ void main() {
     expect(snapshot.positionAt(5), const TextPosition(line: 0, column: 5));
     expect(snapshot.positionAt(6), const TextPosition(line: 0, column: 5));
     expect(snapshot.positionAt(7), const TextPosition(line: 1, column: 0));
-    expect(
-      snapshot.offsetAt(const TextPosition(line: 1, column: 99)),
-      15,
-    );
+    expect(snapshot.offsetAt(const TextPosition(line: 1, column: 99)), 15);
   });
 
-  test('piece table edits match String.replaceRange for random unicode edits', () {
-    final rng = Random(7349);
-    final replacements = <String>[
-      '',
-      'x',
-      '\n',
-      '\r\n',
-      'Ω',
-      '😀',
-      'left\rbreak',
-      '尾\nnext',
-    ];
+  test(
+    'piece table edits match String.replaceRange for random unicode edits',
+    () {
+      final rng = Random(7349);
+      final replacements = <String>[
+        '',
+        'x',
+        '\n',
+        '\r\n',
+        'Ω',
+        '😀',
+        'left\rbreak',
+        '尾\nnext',
+      ];
 
-    var oracle = 'α\nbeta\r\ngamma😀\rdelta';
-    var buffer = PieceTreeTextBuffer.fromText(oracle);
+      var oracle = 'α\nbeta\r\ngamma😀\rdelta';
+      var buffer = PieceTreeTextBuffer.fromText(oracle);
 
-    for (var editIndex = 0; editIndex < 500; editIndex += 1) {
-      final start = oracle.isEmpty ? 0 : rng.nextInt(oracle.length + 1);
-      final remaining = oracle.length - start;
-      final end = start + (remaining == 0 ? 0 : rng.nextInt(remaining + 1));
-      final replacement = replacements[rng.nextInt(replacements.length)];
+      for (var editIndex = 0; editIndex < 500; editIndex += 1) {
+        final start = oracle.isEmpty ? 0 : rng.nextInt(oracle.length + 1);
+        final remaining = oracle.length - start;
+        final end = start + (remaining == 0 ? 0 : rng.nextInt(remaining + 1));
+        final replacement = replacements[rng.nextInt(replacements.length)];
 
-      buffer = buffer.replace(
-        TextRange(start: start, end: end),
-        replacement,
-      );
-      oracle = oracle.replaceRange(start, end, replacement);
+        buffer = buffer.replace(TextRange(start: start, end: end), replacement);
+        oracle = oracle.replaceRange(start, end, replacement);
 
-      if (editIndex % 11 != 0 && editIndex != 499) {
-        continue;
-      }
+        if (editIndex % 11 != 0 && editIndex != 499) {
+          continue;
+        }
 
-      final snapshot = buffer.snapshot();
-      final oracleLines = _OracleLineMap.fromText(oracle);
-      expect(snapshot.text, oracle, reason: 'edit $editIndex text');
-      expect(snapshot.length, oracle.length, reason: 'edit $editIndex length');
-      expect(
-        snapshot.lineStarts,
-        oracleLines.lineStarts,
-        reason: 'edit $editIndex line starts',
-      );
-      expect(
-        snapshot.lines,
-        oracleLines.lines,
-        reason: 'edit $editIndex lines',
-      );
-
-      for (final offset in _sampleOffsets(oracle.length)) {
+        final snapshot = buffer.snapshot();
+        final oracleLines = _OracleLineMap.fromText(oracle);
+        expect(snapshot.text, oracle, reason: 'edit $editIndex text');
         expect(
-          snapshot.positionAt(offset),
-          oracleLines.positionAt(offset),
-          reason: 'edit $editIndex offset $offset',
+          snapshot.length,
+          oracle.length,
+          reason: 'edit $editIndex length',
         );
+        expect(
+          snapshot.lineStarts,
+          oracleLines.lineStarts,
+          reason: 'edit $editIndex line starts',
+        );
+        expect(
+          snapshot.lines,
+          oracleLines.lines,
+          reason: 'edit $editIndex lines',
+        );
+
+        for (final offset in _sampleOffsets(oracle.length)) {
+          expect(
+            snapshot.positionAt(offset),
+            oracleLines.positionAt(offset),
+            reason: 'edit $editIndex offset $offset',
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
-  test('DocumentState facade caches line queries and preserves revision edits', () {
-    const document = DocumentState(
-      documentId: 'sample.styio',
-      text: 'one\r\ntwo\nthree',
-      revision: 5,
-    );
+  test(
+    'DocumentState facade caches line queries and preserves revision edits',
+    () {
+      const document = DocumentState(
+        documentId: 'sample.styio',
+        text: 'one\r\ntwo\nthree',
+        revision: 5,
+      );
 
-    expect(document.lines, <String>['one', 'two', 'three']);
-    expect(document.lineStarts, <int>[0, 5, 9]);
-    expect(identical(document.lineStarts, document.lineStarts), isTrue);
-    expect(
-      document.positionForOffset(4),
-      const DocumentPosition(line: 0, column: 3),
-    );
-    expect(document.offsetForLineColumn(line: 1, column: 99), 8);
+      expect(document.lines, <String>['one', 'two', 'three']);
+      expect(document.lineStarts, <int>[0, 5, 9]);
+      expect(identical(document.lineStarts, document.lineStarts), isTrue);
+      expect(
+        document.positionForOffset(4),
+        const DocumentPosition(line: 0, column: 3),
+      );
+      expect(document.offsetForLineColumn(line: 1, column: 99), 8);
 
-    final next = document.replaceRange(start: 5, end: 8, replacement: 'TWO');
+      final next = document.replaceRange(start: 5, end: 8, replacement: 'TWO');
 
-    expect(next.text, 'one\r\nTWO\nthree');
-    expect(next.revision, 6);
-    expect(next.lines, <String>['one', 'TWO', 'three']);
-    expect(identical(next.lineStarts, next.lineStarts), isTrue);
-  });
+      expect(next.text, 'one\r\nTWO\nthree');
+      expect(next.revision, 6);
+      expect(next.lines, <String>['one', 'TWO', 'three']);
+      expect(identical(next.lineStarts, next.lineStarts), isTrue);
+    },
+  );
 
   test('large documents reuse indexed line starts for line-column mapping', () {
     final text = List<String>.generate(
@@ -139,6 +143,47 @@ void main() {
     expect(next.lines.length, 60001);
     expect(next.lines[30000], 'inserted');
   });
+
+  test('bounded document windows stay line and grapheme aligned', () {
+    const document = DocumentState(
+      documentId: 'window.styio',
+      text: 'alpha\nAe\u0301👨‍👩‍👧‍👦Z\nomega\n',
+      revision: 3,
+    );
+    final cluster = document.text.indexOf('👨');
+    final window = document.textWindowForRange(
+      start: cluster,
+      end: cluster,
+      maxCodeUnits: 20,
+    );
+
+    expect(window, isNotNull);
+    expect(window!.start, document.lineStarts[1]);
+    expect(window.text, startsWith('Ae\u0301'));
+    expect(window.text, endsWith('\n'));
+    expect(window.containsRange(cluster, cluster), isTrue);
+  });
+
+  test('single-line tail edits keep a large indexed document coherent', () {
+    final source =
+        '${List<String>.generate(20000, (i) => 'line $i').join('\n')}\n';
+    final original = DocumentState(
+      documentId: 'tail.styio',
+      text: source,
+      revision: 0,
+    ).withTextBuffer();
+    expect(original.lineCount, 20001);
+
+    final inserted = original.replaceRange(
+      start: original.length,
+      end: original.length,
+      replacement: 'x',
+    );
+
+    expect(inserted.lineCount, original.lineCount);
+    expect(inserted.lineAt(inserted.lineCount - 1), 'x');
+    expect(inserted.positionForOffset(inserted.length).line, 20000);
+  });
 }
 
 List<int> _sampleOffsets(int length) {
@@ -148,8 +193,7 @@ List<int> _sampleOffsets(int length) {
     if (length > 0) 1,
     if (length > 1) length - 1,
     length ~/ 2,
-  }.toList()
-    ..sort();
+  }.toList()..sort();
 }
 
 class _OracleLineMap {
@@ -206,8 +250,8 @@ class _OracleLineMap {
     final line = _lineForOffset(safeOffset);
     final lineStart = lineStarts[line];
     final lineContentEnd = lineContentEnds[line];
-    final column = safeOffset.clamp(lineStart, lineContentEnd).toInt() -
-        lineStart;
+    final column =
+        safeOffset.clamp(lineStart, lineContentEnd).toInt() - lineStart;
     return TextPosition(line: line, column: column);
   }
 

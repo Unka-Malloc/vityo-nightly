@@ -62,24 +62,25 @@ void main() {
           in EditorRenderedInputProfileHarness.fixtureLineCounts) {
         final fixture = _cachedFixture(lineCount);
 
-        for (final substitution in <bool>[false, true]) {
-          final controller = EditorSessionController(
-            initialDocument: DocumentState(
-              documentId: 'profile-$lineCount.styio',
-              text: fixture.text,
-              revision: 0,
-            ),
-            languageService: const LocalStyioLanguageService(),
-          );
-          controller.setGlyphSubstitutionEnabled(substitution);
-          addTearDown(controller.dispose);
+        for (final operation in EditorRenderedInputProfileHarness.operations) {
+          // Keep the disabled/enabled lanes adjacent so their p95 delta
+          // measures rendering policy instead of unrelated allocator/GC drift.
+          for (final substitution in <bool>[false, true]) {
+            final controller = EditorSessionController(
+              initialDocument: DocumentState(
+                documentId: 'profile-$lineCount.styio',
+                text: fixture.text,
+                revision: 0,
+              ),
+              languageService: const LocalStyioLanguageService(),
+            );
+            controller.setGlyphSubstitutionEnabled(substitution);
+            addTearDown(controller.dispose);
 
-          await tester.pumpWidget(_harness(controller));
-          await tester.pump();
-          await tester.focusEditorSource();
+            await tester.pumpWidget(_harness(controller));
+            await tester.pump();
+            await tester.focusEditorSource();
 
-          for (final operation
-              in EditorRenderedInputProfileHarness.operations) {
             if (operation == EditorRenderedInputOperation.multiCursorMovement) {
               _ensureMultiCursor(controller);
               await tester.pump();
@@ -149,13 +150,44 @@ String _profileFailureSummary(
       failures.add(
         '${lane.fixtureLineCount}/${lane.operation.label}/'
         '${lane.glyphSubstitutionEnabled ? 'on' : 'off'}:'
-        '${result.status.name}',
+        '${result.status.name}'
+        '(median=${lane.medianEditLatencyMicros}/'
+        '${result.maxMedianMicros},p95=${lane.p95EditLatencyMicros}/'
+        '${result.maxP95Micros})',
       );
     }
   }
-  return failures.isEmpty
-      ? 'A substitution-delta lane exceeded its budget.'
-      : failures.join(', ');
+  if (failures.isNotEmpty) return failures.join(', ');
+
+  final deltaFailures = <String>[];
+  for (final lineCount in EditorRenderedInputProfileHarness.fixtureLineCounts) {
+    for (final operation in EditorRenderedInputProfileHarness.operations) {
+      final matching = receipt.lanes.where(
+        (lane) =>
+            lane.fixtureLineCount == lineCount && lane.operation == operation,
+      );
+      if (matching.length != 2) continue;
+      final disabled = matching.firstWhere(
+        (lane) => !lane.glyphSubstitutionEnabled,
+      );
+      final enabled = matching.firstWhere(
+        (lane) => lane.glyphSubstitutionEnabled,
+      );
+      final delta = harness.gate.compareRenderedSubstitutionDelta(
+        enabled: enabled,
+        disabled: disabled,
+      );
+      if (!delta.passed) {
+        deltaFailures.add(
+          '$lineCount/${operation.label}:delta=${delta.p95DeltaMicros}/'
+          '${delta.maxDeltaMicros}',
+        );
+      }
+    }
+  }
+  return deltaFailures.isEmpty
+      ? 'The rendered input receipt did not pass.'
+      : deltaFailures.join(', ');
 }
 
 /// Stable editor-surface facts mirrored for viewport-cap computation.
@@ -189,6 +221,14 @@ Future<EditorRenderedInputLaneMeasurements> _measureLane({
     await context.perform(operation, index);
     await tester.pump();
     stopwatch.stop();
+
+    expect(
+      find.byKey(
+        ValueKey('source-document-revision-${controller.document.revision}'),
+      ),
+      findsOneWidget,
+      reason: 'the rendered source must consume the committed revision',
+    );
 
     final micros = stopwatch.elapsedMicroseconds;
     final rendered = _countRenderedLines(tester);

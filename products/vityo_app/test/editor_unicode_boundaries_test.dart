@@ -102,6 +102,26 @@ void main() {
       expect(index.windowText.length, index.indexedCodeUnitCount);
     });
 
+    test('indexes a line-aligned source slice with absolute offsets', () {
+      const window = 'Ae\u0301👩🏽‍💻Z\n';
+      final clusterStart = 100 + window.indexOf('👩');
+      final index = UnicodeBoundaryIndex.forGraphemeAlignedWindow(
+        documentId: 'slice',
+        revision: 4,
+        windowStart: 100,
+        windowText: window,
+        anchorOffset: clusterStart,
+        maxCodeUnits: 64,
+      );
+
+      expect(index.windowStart, 100);
+      expect(index.windowText, window);
+      expect(
+        index.nextBoundary(clusterStart, documentRevision: 4),
+        clusterStart + '👩🏽‍💻'.length,
+      );
+    });
+
     test('LRU cache obeys entry and aggregate code-unit caps', () {
       for (var entry = 0; entry < 140; entry += 1) {
         UnicodeBoundaryIndex.forTextWindow(
