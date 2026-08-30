@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../view_render/theme/theme.dart';
+import '../view_ide/environment/configuration/vityo_theme_override.dart';
 import '../view_render/shell/shell_model.dart';
 import '../view_render/shell/shell_scope.dart';
 import '../view_render/shell/vityo_shell_scaffold.dart';
@@ -89,7 +90,10 @@ class _VityoAppState extends State<VityoApp> {
           child: MaterialApp(
             title: 'Vityo',
             debugShowCheckedModeBanner: false,
-            theme: VityoTheme.light(overrides: _shellModel.themeOverride),
+            theme: VityoTheme.light(
+              preset: VityoThemePreset.graphite,
+              overrides: _shellModel.themeOverride,
+            ),
             initialRoute: _editorInitialRoute(widget.initialPath),
             onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
               _editorRoute(initialRoute),

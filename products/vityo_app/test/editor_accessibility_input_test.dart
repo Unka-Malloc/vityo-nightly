@@ -9,6 +9,8 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
 void main() {
   group('editor accessibility input semantics', () {
     testWidgets('focused source semantics expose editable value and actions', (
@@ -24,7 +26,7 @@ void main() {
       ], primaryIndex: 1);
 
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       final node = tester.getSemantics(
         find.byKey(const ValueKey('source-buffer-semantics')),
@@ -55,7 +57,7 @@ void main() {
       final controller = _controller('seed');
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       tester.testTextInput.updateEditingValue(
         _replaceRemoteSelection(
@@ -118,12 +120,6 @@ Widget _harness(EditorSessionController controller) {
       ),
     ),
   );
-}
-
-Future<void> _focusSource(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
-  await tester.pump();
-  await tester.pump();
 }
 
 TextEditingValue _remoteEditingValue(WidgetTester tester) {

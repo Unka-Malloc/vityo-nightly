@@ -112,7 +112,7 @@ void main() {
       expect(await store.deletePreferences(workspaceId: 'demo'), isTrue);
       expect(
         (await store.readPreferences(workspaceId: 'demo')).activeBottomTab,
-        BottomSurfaceTab.agent,
+        BottomSurfaceTab.navigate,
       );
     },
   );
@@ -128,7 +128,7 @@ void main() {
     controller.setBottomPanelExpanded(false);
     final binding = controller.renderBindingForViewport(compact: false);
 
-    expect(controller.revision, 4);
+    expect(controller.revision, 3);
     expect(binding.activeBottomPanelId, 'bottom.debug');
     expect(binding.bottomPanelExpanded, isFalse);
     expect(binding.isPanelVisible('bottom.runtime'), isFalse);

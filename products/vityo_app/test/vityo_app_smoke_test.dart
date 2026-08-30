@@ -24,6 +24,7 @@ import 'package:vityo_app/src/view_ide/toolchain/toolchain_manager.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_resolver.dart';
 
 import 'backend_provider_test_support.dart';
+import 'support/editor_widget_test_driver.dart';
 
 void main() {
   Future<void> revealMobileLanguagePane(WidgetTester tester) async {
@@ -51,28 +52,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> focusSourceBuffer(WidgetTester tester) async {
-    final sourceSurface = find.byKey(const ValueKey('source-buffer-surface'));
-    final sourceFocus = find.ancestor(
-      of: sourceSurface,
-      matching: find.byType(Focus),
-    );
-    if (sourceFocus.evaluate().isNotEmpty) {
-      tester.widget<Focus>(sourceFocus.first).focusNode?.requestFocus();
-      await tester.pump();
-      return;
+  Future<void> revealDesktopLanguagePane(WidgetTester tester) async {
+    final languagePane = find.byKey(const ValueKey('language-pane-desktop'));
+    if (languagePane.evaluate().isEmpty) {
+      await tester.tap(
+        find.byKey(const ValueKey('editor-language-inspector-toggle')),
+      );
+      await tester.pumpAndSettle();
     }
-
-    final sourceHeader = find.descendant(
-      of: sourceSurface,
-      matching: find.text('Source Buffer'),
-    );
-    if (sourceHeader.evaluate().isNotEmpty) {
-      await tester.tap(sourceHeader.first);
-    } else {
-      await tester.tap(sourceSurface);
-    }
-    await tester.pump();
+    expect(languagePane, findsOneWidget);
   }
 
   Future<void> tapVisibleKey(WidgetTester tester, String keyValue) async {
@@ -730,10 +718,16 @@ fn blend(left: f64, right: f64): f64 {
       find.byKey(const ValueKey('editor-viewport-desktop')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('language-pane-desktop')), findsOneWidget);
+    expect(find.byKey(const ValueKey('language-pane-desktop')), findsNothing);
     expect(
       find.byKey(const ValueKey('editor-language-family-desktop')),
       findsOneWidget,
+    );
+    expect(find.textContaining('M2/M3 editor anchor'), findsNothing);
+    expect(find.textContaining('input disconnected'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('workbench-auxiliary-panel')),
+      findsNothing,
     );
     expect(find.byKey(const ValueKey('explorer-tree-scroll')), findsOneWidget);
     expect(find.text('EXPLORER'), findsOneWidget);
@@ -742,6 +736,30 @@ fn blend(left: f64, right: f64): f64 {
     final shell = ShellScope.of(
       tester.element(find.byType(VityoShellScaffold)),
     );
+    expect(shell.activeBottomTab, BottomSurfaceTab.navigate);
+    expect(find.byKey(const ValueKey('workbench-bottom-panel')), findsNothing);
+
+    final commandLauncher = find.byKey(
+      const ValueKey('workbench-command-launcher'),
+    );
+    await tester.tap(commandLauncher);
+    await tester.pumpAndSettle();
+    expect(shell.activeBottomTab, BottomSurfaceTab.commandPalette);
+    expect(
+      find.byKey(const ValueKey('command-palette-surface')),
+      findsOneWidget,
+    );
+
+    await tester.tap(commandLauncher);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('workbench-bottom-panel')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('editor-language-inspector-toggle')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('language-pane-desktop')), findsOneWidget);
+
     shell.selectBottomTab(BottomSurfaceTab.runtime);
     await tester.pumpAndSettle();
     expect(
@@ -789,7 +807,7 @@ fn blend(left: f64, right: f64): f64 {
 
     expect(shell.lastDependencySourceCommand?.command, 'vendor');
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.tap(find.byKey(const ValueKey('source-line-0')));
     await tester.pump();
@@ -797,9 +815,8 @@ fn blend(left: f64, right: f64): f64 {
     expect(find.byKey(const ValueKey('source-buffer-surface')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('inline-language-feedback-desktop')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.byKey(const ValueKey('active-token-context')), findsOneWidget);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -807,7 +824,7 @@ fn blend(left: f64, right: f64): f64 {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.pump();
 
-    expect(find.textContaining('selection '), findsOneWidget);
+    expect(shell.editorController.selection.isCollapsed, isFalse);
 
     await shell.executeCommand(AppCommandId.showDebug);
     await tester.pumpAndSettle();
@@ -1042,7 +1059,7 @@ fn blend(left: f64, right: f64): f64 {
     await tapActivity('Settings', BottomSurfaceTab.settings);
   });
 
-  testWidgets('collapses medium desktop sidebar into the activity rail', (
+  testWidgets('keeps the explorer available in a medium desktop window', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1024, 768);
@@ -1058,7 +1075,7 @@ fn blend(left: f64, right: f64): f64 {
       find.byKey(const ValueKey('workbench-activity-rail')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('explorer-tree-scroll')), findsNothing);
+    expect(find.byKey(const ValueKey('explorer-tree-scroll')), findsOneWidget);
 
     await tester.tap(find.byTooltip('Search'));
     await tester.pumpAndSettle();
@@ -1581,9 +1598,23 @@ fn blend(left: f64, right: f64): f64 {
     bootstrap.editorController.selectCollapsed(sourceOffset + 2);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
-    expect(find.byKey(const ValueKey('active-token-context')), findsOneWidget);
-    expect(find.textContaining('Token `source`'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('language-token-context')),
+      120,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('language-pane-desktop')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('language-token-context')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Lexeme `source`'), findsOneWidget);
   });
 
   testWidgets('highlights resolved current-file usages at caret', (
@@ -1634,6 +1665,7 @@ fn blend(left: f64, right: f64): f64 {
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     expect(
       bootstrap.editorController.analysis.diagnostics.map(
@@ -1680,7 +1712,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.f2);
     await tester.pump();
@@ -1714,6 +1746,7 @@ fn blend(left: f64, right: f64): f64 {
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -1755,6 +1788,7 @@ fn blend(left: f64, right: f64): f64 {
     bootstrap.editorController.selectCollapsed(text.lastIndexOf('value') + 2);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('language-go-to-definition')),
@@ -1791,7 +1825,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
@@ -1823,7 +1857,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
@@ -1867,7 +1901,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.slash);
@@ -1906,7 +1940,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
@@ -1939,7 +1973,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -1972,7 +2006,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -2005,7 +2039,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
@@ -2036,7 +2070,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
@@ -2069,7 +2103,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.home);
     await tester.pump();
@@ -2100,7 +2134,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -2142,7 +2176,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -2176,7 +2210,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     expect(find.byKey(const ValueKey('source-fold-toggle-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('source-line-2')), findsOneWidget);
@@ -2218,7 +2252,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -2248,7 +2282,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await commitPlatformText(tester, '{');
 
@@ -2278,7 +2312,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pump();
@@ -2310,7 +2344,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
@@ -2346,7 +2380,7 @@ fn blend(left: f64, right: f64): f64 {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
@@ -2386,7 +2420,7 @@ value = blend(right: tax, left: price)
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
@@ -2435,6 +2469,7 @@ value = blend(price, tax)
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
     await tester.pump();
+    await revealDesktopLanguagePane(tester);
 
     final callLine = bootstrap.editorController.document
         .positionForOffset(text.indexOf('value = blend'))
@@ -2526,7 +2561,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
@@ -2627,6 +2662,7 @@ value -> @stdout
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -2673,7 +2709,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -2729,7 +2765,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.f3);
     await tester.pump();
@@ -2769,7 +2805,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f7);
@@ -2825,6 +2861,7 @@ value -> @stdout
     bootstrap.editorController.selectCollapsed(text.indexOf('= value') + 3);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -2871,7 +2908,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
     expect(
       bootstrap.editorController.completionsAtSelection.map(
         (item) => item.label,
@@ -2906,7 +2943,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
     expect(
       bootstrap.editorController.completionsAtSelection.map(
         (item) => item.label,
@@ -2943,7 +2980,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await commitPlatformText(tester, 'j');
     await tester.pumpAndSettle();
@@ -2990,7 +3027,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await commitPlatformText(tester, 'j');
     await tester.pumpAndSettle();
@@ -3020,7 +3057,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -3094,7 +3131,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -3154,7 +3191,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -3217,7 +3254,7 @@ value -> @stdout
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await sendShortcut(tester, LogicalKeyboardKey.space, control: true);
     await pumpKeyboardSurface(tester);
@@ -3279,7 +3316,7 @@ value -> @stdout
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await sendShortcut(
       tester,
@@ -3309,7 +3346,7 @@ value -> @stdout
 
     bootstrap.editorController.selectCollapsed(text.indexOf('value') + 2);
     await tester.pump();
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
     await sendShortcut(
       tester,
       LogicalKeyboardKey.keyT,
@@ -3362,7 +3399,7 @@ value -> @stdout
     bootstrap.editorController.selectCollapsed(text.indexOf('stream') + 2);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await sendShortcut(tester, LogicalKeyboardKey.enter, alt: true);
     await pumpKeyboardSurface(tester);
@@ -3408,7 +3445,7 @@ value -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -3488,7 +3525,7 @@ blend(price, tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -3543,7 +3580,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -3593,7 +3630,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
@@ -3629,7 +3666,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
@@ -3672,7 +3709,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3718,7 +3755,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3772,7 +3809,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3818,7 +3855,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3872,7 +3909,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3919,7 +3956,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
@@ -3987,7 +4024,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f6);
@@ -4064,7 +4101,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f6);
@@ -4109,7 +4146,7 @@ blend(left: price, right: tax) -> @stdout
       await tester.pump();
       await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
       await pumpKeyboardSurface(tester);
-      await focusSourceBuffer(tester);
+      await tester.focusEditorSource();
     }
 
     const renameText = 'value = value\n';
@@ -4300,6 +4337,7 @@ blend(left: price, right: tax) -> @stdout
     bootstrap.editorController.selectCollapsed(text.lastIndexOf('value') + 2);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -4341,7 +4379,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f6);
@@ -4388,7 +4426,7 @@ blend(left: price, right: tax) -> @stdout
     bootstrap.editorController.selectCollapsed(text.indexOf('value') + 2);
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f6);
@@ -4426,7 +4464,7 @@ blend(left: price, right: tax) -> @stdout
     bootstrap.editorController.selectCollapsed(text.indexOf('price'));
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
-    await focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.f6);
@@ -4470,8 +4508,7 @@ blend(left: price, right: tax) -> @stdout
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
-    await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
-    await tester.pump();
+    await tester.focusEditorSource();
     await tester.tap(find.byKey(const ValueKey('source-line-0')));
     await tester.pump();
 
@@ -4595,6 +4632,7 @@ blend(left: price, right: tax) -> @stdout
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -4639,6 +4677,7 @@ blend(left: price, right: tax) -> @stdout
     );
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),
@@ -4679,6 +4718,7 @@ blend(left: price, right: tax) -> @stdout
     bootstrap.editorController.selectCollapsed(text.indexOf('price'));
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
+    await revealDesktopLanguagePane(tester);
 
     final languageScrollable = find.descendant(
       of: find.byKey(const ValueKey('language-pane-desktop')),

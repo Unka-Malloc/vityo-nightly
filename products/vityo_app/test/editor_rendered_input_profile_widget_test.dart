@@ -9,6 +9,7 @@ import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
 import '../benchmark/fixture_generator.dart';
+import 'support/editor_widget_test_driver.dart';
 
 final Map<int, RenderedEditorFixture> _fixtureCache =
     <int, RenderedEditorFixture>{};
@@ -75,7 +76,7 @@ void main() {
 
           await tester.pumpWidget(_harness(controller));
           await tester.pump();
-          await _focusSource(tester);
+          await tester.focusEditorSource();
 
           for (final operation
               in EditorRenderedInputProfileHarness.operations) {
@@ -397,12 +398,6 @@ Widget _harness(EditorSessionController controller) {
       ),
     ),
   );
-}
-
-Future<void> _focusSource(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
-  await tester.pump();
-  await tester.pump();
 }
 
 void _ensureMultiCursor(EditorSessionController controller) {

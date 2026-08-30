@@ -28,7 +28,7 @@ class WorkbenchTitleBar extends StatelessWidget {
       label: 'Workbench title and command strip',
       child: Container(
         key: const ValueKey('workbench-title-bar'),
-        height: 38,
+        height: 40,
         decoration: BoxDecoration(
           color: tokens.region,
           border: Border(bottom: BorderSide(color: tokens.divider)),
@@ -36,12 +36,15 @@ class WorkbenchTitleBar extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 640;
-            final visibleActionCount = constraints.maxWidth >= 1180
+            final visibleActionCount = constraints.maxWidth >= 1400
                 ? actions.length
+                : constraints.maxWidth >= 1050
+                ? actions.length.clamp(0, 3)
                 : constraints.maxWidth >= 840
-                ? actions.length.clamp(0, 2)
+                ? actions.length.clamp(0, 1)
                 : 0;
             final visibleActions = actions.take(visibleActionCount);
+            final showConnectionLabel = constraints.maxWidth >= 1280;
             final statusColor = switch (status) {
               WorkbenchStatus.ready => tokens.success,
               WorkbenchStatus.reconnecting => tokens.warning,
@@ -51,14 +54,36 @@ class WorkbenchTitleBar extends StatelessWidget {
             return Row(
               children: [
                 const SizedBox(width: 12),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: compact ? 52 : 220),
-                  child: Text(
-                    compact ? 'Vityo' : title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: tokens.focus,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'V',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: compact ? 42 : 240),
+                      child: Text(
+                        compact ? 'Vityo' : title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -69,6 +94,7 @@ class WorkbenchTitleBar extends StatelessWidget {
                         button: true,
                         label: 'Open command palette',
                         child: InkWell(
+                          key: const ValueKey('workbench-command-launcher'),
                           onTap: onOpenCommands,
                           child: Container(
                             height: 28,
@@ -78,12 +104,35 @@ class WorkbenchTitleBar extends StatelessWidget {
                               border: Border.all(color: tokens.divider),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              commandHint,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.search,
+                                  size: 15,
+                                  color: tokens.muted,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    commandHint,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ),
+                                if (!compact) ...[
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '⌘K',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: tokens.muted),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
@@ -94,14 +143,14 @@ class WorkbenchTitleBar extends StatelessWidget {
                 const SizedBox(width: 12),
                 ...visibleActions,
                 if (visibleActionCount > 0) const SizedBox(width: 8),
-                if (compact)
-                  Tooltip(
-                    message: connectionLabel,
-                    child: Icon(Icons.circle, size: 10, color: statusColor),
-                  )
-                else
+                Tooltip(
+                  message: connectionLabel,
+                  child: Icon(Icons.circle, size: 9, color: statusColor),
+                ),
+                if (showConnectionLabel) ...[
+                  const SizedBox(width: 7),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 220),
+                    constraints: const BoxConstraints(maxWidth: 180),
                     child: Text(
                       connectionLabel,
                       maxLines: 1,
@@ -109,6 +158,7 @@ class WorkbenchTitleBar extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
+                ],
                 const SizedBox(width: 12),
               ],
             );
@@ -148,9 +198,14 @@ class WorkbenchStatusBar extends StatelessWidget {
         key: const ValueKey('workbench-status-bar'),
         height: 24,
         padding: const EdgeInsets.symmetric(horizontal: 10),
-        color: statusColor,
+        decoration: BoxDecoration(
+          color: tokens.region,
+          border: Border(top: BorderSide(color: tokens.divider)),
+        ),
         child: Row(
           children: [
+            Icon(Icons.circle, size: 7, color: statusColor),
+            const SizedBox(width: 7),
             Expanded(
               flex: 3,
               child: Text(
@@ -159,7 +214,7 @@ class WorkbenchStatusBar extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(
                   context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.black),
+                ).textTheme.bodySmall?.copyWith(color: tokens.ink),
               ),
             ),
             const SizedBox(width: 12),
@@ -172,7 +227,7 @@ class WorkbenchStatusBar extends StatelessWidget {
                 textAlign: TextAlign.end,
                 style: Theme.of(
                   context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.black),
+                ).textTheme.bodySmall?.copyWith(color: tokens.muted),
               ),
             ),
           ],

@@ -6,6 +6,8 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
 void main() {
   group('EditorTextInputClient transport', () {
     testWidgets('CJK composition stays provisional until platform commit', (
@@ -15,7 +17,7 @@ void main() {
       addTearDown(controller.dispose);
       controller.selectCollapsed(0);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       final composing = _replaceRemoteSelection(
         _remoteEditingValue(tester),
@@ -27,7 +29,10 @@ void main() {
 
       expect(controller.document.text, 'ab');
       expect(controller.document.revision, 0);
-      expect(find.byKey(const ValueKey('source-composition-range')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('source-composition-range')),
+        findsOneWidget,
+      );
 
       tester.testTextInput.updateEditingValue(
         composing.copyWith(composing: TextRange.empty),
@@ -45,7 +50,7 @@ void main() {
       addTearDown(controller.dispose);
       controller.selectCollapsed(0);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       final committed = _replaceRemoteSelection(
         _remoteEditingValue(tester),
@@ -68,7 +73,7 @@ void main() {
       final controller = _controller('keep');
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       tester.testTextInput.updateEditingValue(
         _replaceRemoteSelection(
@@ -90,48 +95,49 @@ void main() {
       expect(find.byKey(const ValueKey('source-input-status')), findsOneWidget);
     });
 
-    testWidgets('connection close commits once and reconnect uses new generation', (
-      tester,
-    ) async {
-      final controller = _controller('seed');
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
-      final closedClientId = _lastTextInputClientId(tester);
+    testWidgets(
+      'connection close commits once and reconnect uses new generation',
+      (tester) async {
+        final controller = _controller('seed');
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(_harness(controller));
+        await tester.focusEditorSource();
+        final closedClientId = _lastTextInputClientId(tester);
 
-      tester.testTextInput.updateEditingValue(
-        _replaceRemoteSelection(
-          _remoteEditingValue(tester),
-          'é',
-          composing: true,
-        ),
-      );
-      await tester.pump();
-      tester.testTextInput.closeConnection();
-      await tester.pump();
+        tester.testTextInput.updateEditingValue(
+          _replaceRemoteSelection(
+            _remoteEditingValue(tester),
+            'é',
+            composing: true,
+          ),
+        );
+        await tester.pump();
+        tester.testTextInput.closeConnection();
+        await tester.pump();
 
-      expect(controller.document.text, 'seedé');
-      expect(tester.testTextInput.hasAnyClients, isFalse);
+        expect(controller.document.text, 'seedé');
+        expect(tester.testTextInput.hasAnyClients, isFalse);
 
-      await _focusSource(tester);
-      expect(tester.testTextInput.hasAnyClients, isTrue);
-      expect(_lastTextInputClientId(tester), isNot(closedClientId));
+        await tester.focusEditorSource();
+        expect(tester.testTextInput.hasAnyClients, isTrue);
+        expect(_lastTextInputClientId(tester), isNot(closedClientId));
 
-      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .handlePlatformMessage(
-            SystemChannels.textInput.name,
-            SystemChannels.textInput.codec.encodeMethodCall(
-              MethodCall('TextInputClient.updateEditingState', <Object?>[
-                closedClientId,
-                _remoteEditingValue(tester).toJSON(),
-              ]),
-            ),
-            (_) {},
-          );
-      await tester.pump();
-      expect(controller.document.text, 'seedé');
-      expect(controller.historyController.undoDepth, 1);
-    });
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              SystemChannels.textInput.name,
+              SystemChannels.textInput.codec.encodeMethodCall(
+                MethodCall('TextInputClient.updateEditingState', <Object?>[
+                  closedClientId,
+                  _remoteEditingValue(tester).toJSON(),
+                ]),
+              ),
+              (_) {},
+            );
+        await tester.pump();
+        expect(controller.document.text, 'seedé');
+        expect(controller.historyController.undoDepth, 1);
+      },
+    );
 
     testWidgets('stale revision and selection changes reject replay', (
       tester,
@@ -139,7 +145,7 @@ void main() {
       final controller = _controller('line');
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       tester.testTextInput.updateEditingValue(
         _replaceRemoteSelection(
@@ -166,7 +172,7 @@ void main() {
       final controller = _controller('fixed');
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, character: 'z');
       await tester.pump();
@@ -175,23 +181,24 @@ void main() {
       expect(controller.historyController.undoDepth, 0);
     });
 
-    testWidgets('backspace deletes one emoji grapheme through text-input seam', (
-      tester,
-    ) async {
-      const emoji = '👨‍👩‍👧‍👦';
-      final controller = _controller('x${emoji}y');
-      addTearDown(controller.dispose);
-      controller.selectCollapsed(1 + emoji.length);
-      await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+    testWidgets(
+      'backspace deletes one emoji grapheme through text-input seam',
+      (tester) async {
+        const emoji = '👨‍👩‍👧‍👦';
+        final controller = _controller('x${emoji}y');
+        addTearDown(controller.dispose);
+        controller.selectCollapsed(1 + emoji.length);
+        await tester.pumpWidget(_harness(controller));
+        await tester.focusEditorSource();
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-      await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pump();
 
-      expect(controller.document.text, 'xy');
-      expect(controller.selectionSet.primarySelection.extentOffset, 1);
-      expect(controller.historyController.undoDepth, 1);
-    });
+        expect(controller.document.text, 'xy');
+        expect(controller.selectionSet.primarySelection.extentOffset, 1);
+        expect(controller.historyController.undoDepth, 1);
+      },
+    );
 
     testWidgets('multi-cursor backspace and enter share one undo intent', (
       tester,
@@ -209,7 +216,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.pump();
@@ -259,12 +266,6 @@ Widget _harness(EditorSessionController controller) {
       ),
     ),
   );
-}
-
-Future<void> _focusSource(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
-  await tester.pump();
-  await tester.pump();
 }
 
 TextEditingValue _remoteEditingValue(WidgetTester tester) {

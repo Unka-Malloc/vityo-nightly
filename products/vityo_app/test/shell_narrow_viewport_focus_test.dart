@@ -143,7 +143,7 @@ void main() {
       expect(controller.revision, 3);
 
       controller.setBottomPanelExpanded(false);
-      expect(controller.revision, 4);
+      expect(controller.revision, 3);
     });
   });
 

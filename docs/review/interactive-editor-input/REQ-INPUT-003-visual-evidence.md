@@ -9,6 +9,14 @@ Build mode: flutter test debug
 Viewports: 1200×800 and 1600×1200
 Tool: Flutter `RepaintBoundary.toImage` via `test/editor_input_visual_evidence_test.dart`
 
+Regenerate explicitly from `products/vityo_app`:
+
+```sh
+flutter test --dart-define=VITYO_WRITE_EDITOR_INPUT_EVIDENCE=true test/editor_input_visual_evidence_test.dart
+```
+
+Normal regression runs skip evidence generation so tracked images remain unchanged.
+
 ## Captured states
 
 | State | 1200×800 | 1600×1200 |
@@ -23,6 +31,7 @@ Tool: Flutter `RepaintBoundary.toImage` via `test/editor_input_visual_evidence_t
 
 - Surrogate-safe TextSpan splitting and painting sanitization in `editor_surface.dart`
 - Tokenizer emits complete UTF-16 scalar pairs for non-BMP characters in `styio_syntax_highlighter.dart`
+- Focus-only widget validation invokes the editor's `requestKeyboard`-style action; pointer taps remain reserved for caret placement and never stand in for keyboard acquisition or reconnection.
 - Regression: `test/editor_emoji_selection_render_test.dart`
 
 ## Notes

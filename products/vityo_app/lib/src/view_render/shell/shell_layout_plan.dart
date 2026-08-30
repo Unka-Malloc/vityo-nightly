@@ -434,10 +434,10 @@ List<ShellPanelContribution> _defaultBottomPanelContributions() {
 class ShellLayoutPreferences {
   const ShellLayoutPreferences({
     required this.workspaceId,
-    this.activeBottomTab = BottomSurfaceTab.agent,
+    this.activeBottomTab = BottomSurfaceTab.navigate,
     this.hiddenPanelIds = const <String>{},
     this.pinnedPanelIds = const <String>{},
-    this.bottomPanelExpanded = true,
+    this.bottomPanelExpanded = false,
     this.updatedAt,
   });
 
@@ -447,7 +447,7 @@ class ShellLayoutPreferences {
       activeBottomTab: _bottomTabFromWire(json['activeBottomTab']),
       hiddenPanelIds: _jsonStringSet(json['hiddenPanelIds']),
       pinnedPanelIds: _jsonStringSet(json['pinnedPanelIds']),
-      bottomPanelExpanded: json['bottomPanelExpanded'] as bool? ?? true,
+      bottomPanelExpanded: json['bottomPanelExpanded'] as bool? ?? false,
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '')?.toUtc(),
     );
   }
@@ -752,7 +752,7 @@ BottomSurfaceTab _bottomTabFromWire(Object? value) {
       return tab;
     }
   }
-  return BottomSurfaceTab.agent;
+  return BottomSurfaceTab.navigate;
 }
 
 String _bottomTabTitle(BottomSurfaceTab tab) {

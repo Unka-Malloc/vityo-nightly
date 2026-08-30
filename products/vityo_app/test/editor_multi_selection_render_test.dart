@@ -5,6 +5,8 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
 void main() {
   group('rendered multi-selection and composition overlays', () {
     testWidgets('composition overlay and selection markers stay aligned', (
@@ -19,7 +21,7 @@ void main() {
       ], primaryIndex: 1);
 
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       expect(controller.selectionSet.selections, hasLength(2));
       expect(controller.selectionSet.primaryIndex, 1);
@@ -71,7 +73,7 @@ void main() {
       final controller = _controller('one\ntwo\nthree');
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(controller));
-      await _focusSource(tester);
+      await tester.focusEditorSource();
 
       controller.selectSelections(const <SelectionState>[
         SelectionState.collapsed(0),
@@ -121,12 +123,6 @@ Widget _harness(EditorSessionController controller) {
       ),
     ),
   );
-}
-
-Future<void> _focusSource(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
-  await tester.pump();
-  await tester.pump();
 }
 
 TextEditingValue _remoteEditingValue(WidgetTester tester) {

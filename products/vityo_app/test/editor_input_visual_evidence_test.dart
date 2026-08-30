@@ -10,6 +10,12 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
+const _writeEvidenceEnabled = bool.fromEnvironment(
+  'VITYO_WRITE_EDITOR_INPUT_EVIDENCE',
+);
+
 /// Bounded Visual Verifier evidence capture for REQ-INPUT-003.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +40,7 @@ void main() {
 
         await tester.pumpWidget(_harness(controller, size));
         await tester.pump(const Duration(milliseconds: 16));
-        await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
+        await tester.focusEditorSource();
         await tester.pump(const Duration(milliseconds: 16));
         expect(tester.takeException(), isNull);
         await _capture(tester, outDir, 'multi-selection-$tag.png');
@@ -92,6 +98,7 @@ void main() {
       }
     },
     timeout: const Timeout(Duration(minutes: 2)),
+    skip: !_writeEvidenceEnabled,
   );
 }
 

@@ -13,6 +13,15 @@ import '../../ide/editor/selection_state.dart';
 import 'editor_text_style_binding.dart';
 import 'editor_text_input_client.dart';
 
+/// Requests keyboard ownership without applying pointer-selection semantics.
+///
+/// Like Flutter's `EditableTextState.requestKeyboard`, this focuses an idle
+/// editor or explicitly reopens the text-input connection when it is already
+/// focused.
+final class EditorRequestKeyboardIntent extends Intent {
+  const EditorRequestKeyboardIntent();
+}
+
 List<CompletionItem> mergeCompletionItems(
   Iterable<CompletionItem> primary,
   Iterable<CompletionItem> fallback,
@@ -53,6 +62,9 @@ class EditorSurface extends StatelessWidget {
     this.onSelectDocument,
     this.onCloseDocument,
     this.onRefreshLanguageService,
+    this.showDevelopmentChrome = true,
+    this.languageInspectorVisible = true,
+    this.onToggleLanguageInspector,
   });
 
   final EditorSessionController controller;
@@ -76,6 +88,9 @@ class EditorSurface extends StatelessWidget {
   final ValueChanged<String>? onSelectDocument;
   final ValueChanged<String>? onCloseDocument;
   final VoidCallback? onRefreshLanguageService;
+  final bool showDevelopmentChrome;
+  final bool languageInspectorVisible;
+  final VoidCallback? onToggleLanguageInspector;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +132,49 @@ class EditorSurface extends StatelessWidget {
           ? <String>[document.documentId]
           : openDocumentIds;
       final visibleServiceStatus = serviceStatus;
+      if (!showDevelopmentChrome) {
+        final notice = closeRequest != null && closeRequest.requiresUserChoice
+            ? _CloseRequestBanner(
+                request: closeRequest,
+                onSaveLocalChanges: onSaveAndCloseRequest ?? onSaveLocalChanges,
+                onDiscardLocalChanges:
+                    onDiscardAndCloseRequest ?? onDiscardLocalChanges,
+                onSwitchToCloseRequestFile: onSwitchToCloseRequestFile,
+                onCancelCloseRequest: onCancelCloseRequest,
+              )
+            : fileBindingStatus != null
+            ? _FileBindingStatusBanner(
+                status: fileBindingStatus,
+                onAcceptExternalChange: onAcceptExternalChange,
+                onSaveLocalChanges: onSaveLocalChanges,
+                onDiscardLocalChanges: onDiscardLocalChanges,
+              )
+            : null;
+        return _IdeEditorSurface(
+          controller: controller,
+          viewportProfile: viewportProfile,
+          document: document,
+          selection: selection,
+          analysis: analysis,
+          renderPlan: renderPlan,
+          semanticThemeBinding: semanticThemeBinding,
+          hover: hover,
+          completions: completions,
+          activeReferences: activeReferences,
+          activeToken: activeToken,
+          activeSemanticKind: activeSemanticKind,
+          languageServiceStatus: visibleServiceStatus,
+          onRefreshLanguageService: onRefreshLanguageService,
+          documentIds: visibleOpenDocumentIds,
+          dirtyDocumentIds: dirtyDocumentIds,
+          activeDocumentId: activeOpenDocumentId,
+          onSelectDocument: onSelectDocument,
+          onCloseDocument: onCloseDocument,
+          notice: notice,
+          languageInspectorVisible: languageInspectorVisible,
+          onToggleLanguageInspector: onToggleLanguageInspector,
+        );
+      }
       final summaryPills = <String>[
         'lines ${document.lineCount}',
         'chars ${document.length}',
@@ -468,6 +526,239 @@ class EditorSurface extends StatelessWidget {
   }
 }
 
+class _IdeEditorSurface extends StatelessWidget {
+  const _IdeEditorSurface({
+    required this.controller,
+    required this.viewportProfile,
+    required this.document,
+    required this.selection,
+    required this.analysis,
+    required this.renderPlan,
+    required this.semanticThemeBinding,
+    required this.hover,
+    required this.completions,
+    required this.activeReferences,
+    required this.activeToken,
+    required this.activeSemanticKind,
+    required this.languageServiceStatus,
+    required this.onRefreshLanguageService,
+    required this.documentIds,
+    required this.dirtyDocumentIds,
+    required this.activeDocumentId,
+    required this.onSelectDocument,
+    required this.onCloseDocument,
+    required this.notice,
+    required this.languageInspectorVisible,
+    required this.onToggleLanguageInspector,
+  });
+
+  final EditorSessionController controller;
+  final ViewportProfile viewportProfile;
+  final DocumentState document;
+  final SelectionState selection;
+  final StyioDocumentAnalysis analysis;
+  final EditorRenderPlan renderPlan;
+  final EditorSemanticThemeBinding semanticThemeBinding;
+  final HoverPayload? hover;
+  final List<CompletionItem> completions;
+  final List<ReferenceSpan> activeReferences;
+  final TokenSpan? activeToken;
+  final SemanticKind? activeSemanticKind;
+  final LanguageServiceStatusSurface? languageServiceStatus;
+  final VoidCallback? onRefreshLanguageService;
+  final List<String> documentIds;
+  final List<String> dirtyDocumentIds;
+  final String activeDocumentId;
+  final ValueChanged<String>? onSelectDocument;
+  final ValueChanged<String>? onCloseDocument;
+  final Widget? notice;
+  final bool languageInspectorVisible;
+  final VoidCallback? onToggleLanguageInspector;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final serviceStatus = languageServiceStatus;
+    final serviceColor = switch (serviceStatus?.severity) {
+      LanguageServiceStatusSeverity.ready => const Color(0xFF277447),
+      LanguageServiceStatusSeverity.refreshing => const Color(0xFFA35A12),
+      LanguageServiceStatusSeverity.degraded => const Color(0xFFA35A12),
+      LanguageServiceStatusSeverity.unavailable => const Color(0xFF7A5269),
+      LanguageServiceStatusSeverity.failed => theme.colorScheme.error,
+      null => theme.disabledColor,
+    };
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showInspector =
+            languageInspectorVisible && constraints.maxWidth >= 720;
+        return Container(
+          key: ValueKey(
+            'editor-viewport-${viewportProfile.label.toLowerCase()}',
+          ),
+          color: theme.colorScheme.surface,
+          child: Column(
+            children: [
+              Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: theme.dividerColor)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _OpenDocumentTabStrip(
+                        documentIds: documentIds,
+                        dirtyDocumentIds: dirtyDocumentIds,
+                        activeDocumentId: activeDocumentId,
+                        onSelectDocument: onSelectDocument,
+                        onCloseDocument: onCloseDocument,
+                      ),
+                    ),
+                    if (analysis.diagnosticCount > 0)
+                      Tooltip(
+                        message: '${analysis.diagnosticCount} diagnostics',
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.error_outline_rounded,
+                                size: 15,
+                                color: theme.colorScheme.error,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${analysis.diagnosticCount}',
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    Tooltip(
+                      message: renderPlan.glyphSubstitutionEnabled
+                          ? 'Show literal operators'
+                          : 'Show operator glyphs',
+                      child: IconButton(
+                        key: const ValueKey('editor-glyph-substitution-toggle'),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 34,
+                          height: 34,
+                        ),
+                        onPressed: controller.toggleGlyphSubstitution,
+                        icon: Icon(
+                          Icons.functions_rounded,
+                          size: 17,
+                          color: renderPlan.glyphSubstitutionEnabled
+                              ? theme.colorScheme.primary
+                              : theme.disabledColor,
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: showInspector
+                          ? 'Hide language inspector'
+                          : serviceStatus?.title ?? 'Show language inspector',
+                      child: IconButton(
+                        key: const ValueKey('editor-language-inspector-toggle'),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 36,
+                          height: 34,
+                        ),
+                        onPressed: onToggleLanguageInspector,
+                        icon: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(
+                              showInspector
+                                  ? Icons.view_sidebar_rounded
+                                  : Icons.view_sidebar_outlined,
+                              size: 18,
+                            ),
+                            Positioned(
+                              right: -2,
+                              top: -2,
+                              child: Icon(
+                                Icons.circle,
+                                size: 7,
+                                color: serviceColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
+              ),
+              if (notice case final visibleNotice?)
+                Padding(padding: const EdgeInsets.all(8), child: visibleNotice),
+              Expanded(
+                child: KeyedSubtree(
+                  key: const ValueKey('editor-language-family-desktop'),
+                  child: Row(
+                    key: const ValueKey('editor-language-layout-desktop'),
+                    children: [
+                      Expanded(
+                        child: _SourcePreviewPane(
+                          controller: controller,
+                          viewportProfile: viewportProfile,
+                          hover: hover,
+                          completions: completions,
+                          activeReferences: activeReferences,
+                          activeToken: activeToken,
+                          activeSemanticKind: activeSemanticKind,
+                          document: document,
+                          selection: selection,
+                          analysis: analysis,
+                          renderPlan: renderPlan,
+                          semanticThemeBinding: semanticThemeBinding,
+                          showDebugChrome: false,
+                          showSemanticBlockCards: true,
+                          showInlineLanguageFeedback: true,
+                          compactInlineLanguageFeedback: true,
+                        ),
+                      ),
+                      if (showInspector) ...[
+                        const VerticalDivider(width: 1, thickness: 1),
+                        SizedBox(
+                          width: constraints.maxWidth >= 1100 ? 320 : 280,
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: _LanguageServicePane(
+                              controller: controller,
+                              viewportProfile: viewportProfile,
+                              analysis: analysis,
+                              hover: hover,
+                              completions: completions,
+                              activeToken: activeToken,
+                              activeSemanticKind: activeSemanticKind,
+                              languageServiceStatus: languageServiceStatus,
+                              onRefreshLanguageService:
+                                  onRefreshLanguageService,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _CloseRequestBanner extends StatelessWidget {
   const _CloseRequestBanner({
     required this.request,
@@ -561,11 +852,11 @@ class _OpenDocumentTabStrip extends StatelessWidget {
     final theme = Theme.of(context);
     return SizedBox(
       key: const ValueKey('editor-open-file-tab-strip'),
-      height: 42,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: documentIds.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        separatorBuilder: (context, index) => const SizedBox.shrink(),
         itemBuilder: (context, index) {
           final documentId = documentIds[index];
           final active = documentId == activeDocumentId;
@@ -577,11 +868,8 @@ class _OpenDocumentTabStrip extends StatelessWidget {
             onSelectDocument: onSelectDocument,
             onCloseDocument: onCloseDocument,
             color: active
-                ? theme.colorScheme.primaryContainer
+                ? theme.scaffoldBackgroundColor
                 : theme.colorScheme.surface,
-            borderColor: active
-                ? theme.colorScheme.primary.withValues(alpha: 0.42)
-                : theme.dividerColor,
           );
         },
       ),
@@ -597,7 +885,6 @@ class _OpenDocumentTab extends StatelessWidget {
     required this.onSelectDocument,
     required this.onCloseDocument,
     required this.color,
-    required this.borderColor,
   });
 
   final String documentId;
@@ -606,7 +893,6 @@ class _OpenDocumentTab extends StatelessWidget {
   final ValueChanged<String>? onSelectDocument;
   final ValueChanged<String>? onCloseDocument;
   final Color color;
-  final Color borderColor;
 
   @override
   Widget build(BuildContext context) {
@@ -614,14 +900,18 @@ class _OpenDocumentTab extends StatelessWidget {
     return Material(
       key: ValueKey('editor-open-file-tab-$documentId'),
       color: color,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(999),
-        side: BorderSide(color: borderColor),
-      ),
-      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: active ? null : () => onSelectDocument?.call(documentId),
-        child: Padding(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              right: BorderSide(color: theme.dividerColor),
+              bottom: BorderSide(
+                color: active ? theme.colorScheme.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
           padding: const EdgeInsets.only(left: 14, right: 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -633,9 +923,7 @@ class _OpenDocumentTab extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    color: active
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.onSurface,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -645,9 +933,7 @@ class _OpenDocumentTab extends StatelessWidget {
                   '•',
                   key: ValueKey('editor-open-file-tab-dirty-$documentId'),
                   style: theme.textTheme.titleSmall?.copyWith(
-                    color: active
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.primary,
+                    color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -857,6 +1143,10 @@ class _SourcePreviewPane extends StatefulWidget {
     required this.analysis,
     required this.renderPlan,
     required this.semanticThemeBinding,
+    this.showDebugChrome = true,
+    this.showSemanticBlockCards = true,
+    this.showInlineLanguageFeedback = true,
+    this.compactInlineLanguageFeedback = false,
   });
 
   final EditorSessionController controller;
@@ -871,6 +1161,10 @@ class _SourcePreviewPane extends StatefulWidget {
   final StyioDocumentAnalysis analysis;
   final EditorRenderPlan renderPlan;
   final EditorSemanticThemeBinding semanticThemeBinding;
+  final bool showDebugChrome;
+  final bool showSemanticBlockCards;
+  final bool showInlineLanguageFeedback;
+  final bool compactInlineLanguageFeedback;
 
   @override
   State<_SourcePreviewPane> createState() => _SourcePreviewPaneState();
@@ -879,7 +1173,7 @@ class _SourcePreviewPane extends StatefulWidget {
 class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
   static const double _gutterWidth = 62;
   static const double _estimatedCharacterWidth = 8.4;
-  static const double _estimatedLineHeight = 34;
+  static const double _estimatedLineHeight = 26;
   static const int _maxRenderedPreviewLines = 400;
 
   late final FocusNode _focusNode;
@@ -2646,7 +2940,8 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     final theme = Theme.of(context);
     final lineStarts = widget.document.lineStarts;
     final semanticBlocks =
-        widget.renderPlan.activeLayers.contains(EditorRenderLayer.overlay)
+        widget.showSemanticBlockCards &&
+            widget.renderPlan.activeLayers.contains(EditorRenderLayer.overlay)
         ? _resolveLineBlocks(
             document: widget.document,
             lineStarts: lineStarts,
@@ -2664,7 +2959,11 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
             constraints.maxWidth < 380 ||
             constraints.maxHeight < 240;
         final cramped = constraints.maxHeight < 120;
-        final contentPadding = dense ? 12.0 : 18.0;
+        final contentPadding = widget.showDebugChrome
+            ? dense
+                  ? 12.0
+                  : 18.0
+            : 8.0;
         final scrollOffset = _sourceScrollController.hasClients
             ? _sourceScrollController.offset
             : _sourceScrollController.initialScrollOffset;
@@ -2705,239 +3004,262 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
         final semanticsDocumentValue = widget.document.lineCount >= 10000
             ? '${widget.document.lineCount}-line generated document'
             : semanticsValue.text;
-        return Focus(
-          focusNode: _focusNode,
-          onKeyEvent: _handleKeyEvent,
-          child: KeyedSubtree(
-            key: const ValueKey('source-input-status'),
-            child: Semantics(
-              key: const ValueKey('source-buffer-semantics'),
-              container: true,
-              explicitChildNodes: false,
-              textField: true,
-              multiline: true,
-              focusable: true,
-              focused: _focusNode.hasFocus,
-              value: semanticsDocumentValue,
-              textDirection: Directionality.of(context),
-              label:
-                  '${widget.controller.selectionSet.selections.length} selections, '
-                  'primary line ${primaryPosition.line + 1} column ${primaryPosition.column + 1}',
-              hint:
-                  '${_textInputClient.isComposing ? 'composition active' : 'composition idle'}, '
-                  '${_textInputClient.status}',
-              onSetText: (text) {
-                _textInputClient.updateEditingValue(
-                  TextEditingValue(
-                    text: text,
-                    selection: TextSelection.collapsed(offset: text.length),
-                  ),
-                );
-              },
-              onSetSelection: (selection) {
-                _textInputClient.updateEditingValue(
-                  semanticsValue.copyWith(selection: selection),
-                );
-              },
-              onMoveCursorForwardByCharacter: (extend) {
-                widget.controller.moveCaretHorizontally(
-                  1,
-                  expandSelection: extend,
-                );
-              },
-              onMoveCursorBackwardByCharacter: (extend) {
-                widget.controller.moveCaretHorizontally(
-                  -1,
-                  expandSelection: extend,
-                );
-              },
-              onFocus: () => _focusSourcePane(attachInput: false),
-              child: _SourceBufferTextSelectionSemantics(
-                textSelection: semanticsValue.selection,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _focusAndAttachInput,
-                  child: Container(
-                    key: const ValueKey('source-buffer-surface'),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7F2E9),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: _focusNode.hasFocus
-                            ? const Color(0xFF8B7CC5)
-                            : Colors.transparent,
-                        width: 1.5,
-                      ),
+        return Actions(
+          actions: <Type, Action<Intent>>{
+            EditorRequestKeyboardIntent:
+                CallbackAction<EditorRequestKeyboardIntent>(
+                  onInvoke: (_) {
+                    _focusAndAttachInput();
+                    return null;
+                  },
+                ),
+          },
+          child: Focus(
+            key: const ValueKey('source-buffer-focus'),
+            focusNode: _focusNode,
+            onKeyEvent: _handleKeyEvent,
+            child: KeyedSubtree(
+              key: const ValueKey('source-input-status'),
+              child: Semantics(
+                key: const ValueKey('source-buffer-semantics'),
+                container: true,
+                explicitChildNodes: false,
+                textField: true,
+                multiline: true,
+                focusable: true,
+                focused: _focusNode.hasFocus,
+                value: semanticsDocumentValue,
+                textDirection: Directionality.of(context),
+                label:
+                    '${widget.controller.selectionSet.selections.length} selections, '
+                    'primary line ${primaryPosition.line + 1} column ${primaryPosition.column + 1}',
+                hint:
+                    '${_textInputClient.isComposing ? 'composition active' : 'composition idle'}, '
+                    '${_textInputClient.status}',
+                onSetText: (text) {
+                  _textInputClient.updateEditingValue(
+                    TextEditingValue(
+                      text: text,
+                      selection: TextSelection.collapsed(offset: text.length),
                     ),
-                    padding: EdgeInsets.all(cramped ? 8 : contentPadding),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (!cramped)
-                          _HorizontalChipStrip(
-                            height: 36,
-                            children: [
-                              Text(
-                                'Source Buffer',
-                                style: theme.textTheme.titleMedium,
-                              ),
-                              _CapabilityPill(
-                                label: _focusNode.hasFocus
-                                    ? 'editing'
-                                    : 'click to focus',
-                              ),
-                              _CapabilityPill(label: _textInputClient.status),
-                              _CapabilityPill(
-                                label: viewportBinding.boundToScrollController
-                                    ? 'viewport bound'
-                                    : 'viewport unbound',
-                              ),
-                              _CapabilityPill(
-                                label:
-                                    'visible ${viewportBinding.viewportFirstLine + 1}+${viewportBinding.viewportLineCapacity}',
-                              ),
-                              _CapabilityPill(
-                                label:
-                                    'renderer ${renderPipelinePlan.rendererKind}',
-                              ),
-                            ],
-                          ),
-                        if (!dense && !cramped) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            compact
-                                ? 'Glyph substitution stays display-only while one editor surface owns input.'
-                                : 'Platform text input is live. Token spans color the buffer, semantic ranges add structure, and glyph substitution stays display-only.',
-                            style: theme.textTheme.bodySmall,
+                  );
+                },
+                onSetSelection: (selection) {
+                  _textInputClient.updateEditingValue(
+                    semanticsValue.copyWith(selection: selection),
+                  );
+                },
+                onMoveCursorForwardByCharacter: (extend) {
+                  widget.controller.moveCaretHorizontally(
+                    1,
+                    expandSelection: extend,
+                  );
+                },
+                onMoveCursorBackwardByCharacter: (extend) {
+                  widget.controller.moveCaretHorizontally(
+                    -1,
+                    expandSelection: extend,
+                  );
+                },
+                onFocus: () => _focusSourcePane(attachInput: false),
+                child: _SourceBufferTextSelectionSemantics(
+                  textSelection: semanticsValue.selection,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _focusAndAttachInput,
+                    child: Container(
+                      key: const ValueKey('source-buffer-surface'),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(
+                          widget.showDebugChrome ? 18 : 0,
+                        ),
+                        border: Border.all(
+                          color: _focusNode.hasFocus
+                              ? const Color(0xFF8B7CC5)
+                              : Colors.transparent,
+                          width: 1.5,
+                        ),
+                      ),
+                      padding: widget.showDebugChrome
+                          ? EdgeInsets.all(cramped ? 8 : contentPadding)
+                          : EdgeInsets.symmetric(vertical: contentPadding),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.showDebugChrome && !cramped)
+                            _HorizontalChipStrip(
+                              height: 36,
+                              children: [
+                                Text(
+                                  'Source Buffer',
+                                  style: theme.textTheme.titleMedium,
+                                ),
+                                _CapabilityPill(
+                                  label: _focusNode.hasFocus
+                                      ? 'editing'
+                                      : 'click to focus',
+                                ),
+                                _CapabilityPill(label: _textInputClient.status),
+                                _CapabilityPill(
+                                  label: viewportBinding.boundToScrollController
+                                      ? 'viewport bound'
+                                      : 'viewport unbound',
+                                ),
+                                _CapabilityPill(
+                                  label:
+                                      'visible ${viewportBinding.viewportFirstLine + 1}+${viewportBinding.viewportLineCapacity}',
+                                ),
+                                _CapabilityPill(
+                                  label:
+                                      'renderer ${renderPipelinePlan.rendererKind}',
+                                ),
+                              ],
+                            ),
+                          if (widget.showDebugChrome && !dense && !cramped) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              compact
+                                  ? 'Glyph substitution stays display-only while one editor surface owns input.'
+                                  : 'Platform text input is live. Token spans color the buffer, semantic ranges add structure, and glyph substitution stays display-only.',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                          if (widget.showDebugChrome && !cramped)
+                            const SizedBox(height: 14),
+                          Expanded(
+                            child: ListView(
+                              key: const ValueKey('source-buffer-scroll'),
+                              controller: _sourceScrollController,
+                              children: [
+                                KeyedSubtree(
+                                  key: ValueKey(
+                                    'source-editor-degradation-${degradationState.label}',
+                                  ),
+                                  child: const SizedBox.shrink(),
+                                ),
+                                if (_textInputClient.isComposing)
+                                  Text(
+                                    _textInputClient.provisionalText,
+                                    key: const ValueKey(
+                                      'source-composition-range',
+                                    ),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      backgroundColor: const Color(0x337A65B3),
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                for (
+                                  var index = 0;
+                                  index <
+                                      widget
+                                          .controller
+                                          .selectionSet
+                                          .selections
+                                          .length;
+                                  index += 1
+                                )
+                                  SizedBox.shrink(
+                                    key: ValueKey(
+                                      'source-selection-item-$index',
+                                    ),
+                                  ),
+                                KeyedSubtree(
+                                  key: ValueKey(
+                                    viewportBinding.boundToScrollController
+                                        ? 'source-viewport-binding-bound'
+                                        : 'source-viewport-binding-unbound',
+                                  ),
+                                  child: const SizedBox.shrink(),
+                                ),
+                                if (_inlineRenameOpen) ...[
+                                  _buildInlineRenamePanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_introduceVariablePanelOpen) ...[
+                                  _buildIntroduceVariablePanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_extractFunctionPanelOpen) ...[
+                                  _buildExtractFunctionPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_changeSignaturePanelOpen) ...[
+                                  _buildChangeSignaturePanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_surroundLookupOpen) ...[
+                                  _buildSurroundLookupPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_completionLookupOpen) ...[
+                                  _buildCompletionLookupPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_symbolLookupOpen) ...[
+                                  _buildSymbolLookupPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_quickFixLookupOpen) ...[
+                                  _buildQuickFixLookupPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_quickDocumentationOpen) ...[
+                                  _buildQuickDocumentationPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_parameterInfoOpen) ...[
+                                  _buildParameterInfoPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_usagesPanelOpen) ...[
+                                  _buildUsagesPanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_safeDeletePanelOpen) ...[
+                                  _buildSafeDeletePanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                if (_inlineVariablePanelOpen) ...[
+                                  _buildInlineVariablePanel(context),
+                                  const SizedBox(height: 12),
+                                ],
+                                ..._buildPreviewChildren(
+                                  context,
+                                  controller: widget.controller,
+                                  viewportProfile: widget.viewportProfile,
+                                  hover: widget.hover,
+                                  completions: widget.completions,
+                                  activeReferences: widget.activeReferences,
+                                  activeToken: widget.activeToken,
+                                  activeSemanticKind: widget.activeSemanticKind,
+                                  document: widget.document,
+                                  selection: widget.selection,
+                                  analysis: widget.analysis,
+                                  renderPlan: widget.renderPlan,
+                                  semanticThemeBinding:
+                                      widget.semanticThemeBinding,
+                                  lineStarts: lineStarts,
+                                  semanticBlocks: effectiveSemanticBlocks,
+                                  renderWindow: renderPipelinePlan.renderWindow,
+                                  maxRenderedLineCount: viewportLineCap,
+                                  collapsedSemanticBlockKeys:
+                                      _collapsedSemanticBlockKeys,
+                                  onToggleSemanticBlock: _toggleSemanticBlock,
+                                  onTapLine: _handleLineTapDown,
+                                  onPanStartLine: _handleLinePanStart,
+                                  onPanUpdateLine: _handleLinePanUpdate,
+                                  onPanEnd: _handleLinePanEnd,
+                                  showInlineLanguageFeedback:
+                                      widget.showInlineLanguageFeedback,
+                                  compactInlineLanguageFeedback:
+                                      widget.compactInlineLanguageFeedback,
+                                ),
+                              ],
+                            ),
                           ),
                         ],
-                        if (!cramped) const SizedBox(height: 14),
-                        Expanded(
-                          child: ListView(
-                            key: const ValueKey('source-buffer-scroll'),
-                            controller: _sourceScrollController,
-                            children: [
-                              KeyedSubtree(
-                                key: ValueKey(
-                                  'source-editor-degradation-${degradationState.label}',
-                                ),
-                                child: const SizedBox.shrink(),
-                              ),
-                              if (_textInputClient.isComposing)
-                                Text(
-                                  _textInputClient.provisionalText,
-                                  key: const ValueKey(
-                                    'source-composition-range',
-                                  ),
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    backgroundColor: const Color(0x337A65B3),
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              for (
-                                var index = 0;
-                                index <
-                                    widget
-                                        .controller
-                                        .selectionSet
-                                        .selections
-                                        .length;
-                                index += 1
-                              )
-                                SizedBox.shrink(
-                                  key: ValueKey('source-selection-item-$index'),
-                                ),
-                              KeyedSubtree(
-                                key: ValueKey(
-                                  viewportBinding.boundToScrollController
-                                      ? 'source-viewport-binding-bound'
-                                      : 'source-viewport-binding-unbound',
-                                ),
-                                child: const SizedBox.shrink(),
-                              ),
-                              if (_inlineRenameOpen) ...[
-                                _buildInlineRenamePanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_introduceVariablePanelOpen) ...[
-                                _buildIntroduceVariablePanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_extractFunctionPanelOpen) ...[
-                                _buildExtractFunctionPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_changeSignaturePanelOpen) ...[
-                                _buildChangeSignaturePanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_surroundLookupOpen) ...[
-                                _buildSurroundLookupPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_completionLookupOpen) ...[
-                                _buildCompletionLookupPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_symbolLookupOpen) ...[
-                                _buildSymbolLookupPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_quickFixLookupOpen) ...[
-                                _buildQuickFixLookupPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_quickDocumentationOpen) ...[
-                                _buildQuickDocumentationPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_parameterInfoOpen) ...[
-                                _buildParameterInfoPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_usagesPanelOpen) ...[
-                                _buildUsagesPanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_safeDeletePanelOpen) ...[
-                                _buildSafeDeletePanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              if (_inlineVariablePanelOpen) ...[
-                                _buildInlineVariablePanel(context),
-                                const SizedBox(height: 12),
-                              ],
-                              ..._buildPreviewChildren(
-                                context,
-                                controller: widget.controller,
-                                viewportProfile: widget.viewportProfile,
-                                hover: widget.hover,
-                                completions: widget.completions,
-                                activeReferences: widget.activeReferences,
-                                activeToken: widget.activeToken,
-                                activeSemanticKind: widget.activeSemanticKind,
-                                document: widget.document,
-                                selection: widget.selection,
-                                analysis: widget.analysis,
-                                renderPlan: widget.renderPlan,
-                                semanticThemeBinding:
-                                    widget.semanticThemeBinding,
-                                lineStarts: lineStarts,
-                                semanticBlocks: effectiveSemanticBlocks,
-                                renderWindow: renderPipelinePlan.renderWindow,
-                                maxRenderedLineCount: viewportLineCap,
-                                collapsedSemanticBlockKeys:
-                                    _collapsedSemanticBlockKeys,
-                                onToggleSemanticBlock: _toggleSemanticBlock,
-                                onTapLine: _handleLineTapDown,
-                                onPanStartLine: _handleLinePanStart,
-                                onPanUpdateLine: _handleLinePanUpdate,
-                                onPanEnd: _handleLinePanEnd,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -4983,7 +5305,7 @@ class _HighlightedLineRow extends StatelessWidget {
         .toList(growable: false);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.zero,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTapDown: onTapDown,
@@ -4992,28 +5314,31 @@ class _HighlightedLineRow extends StatelessWidget {
         onPanEnd: onPanEnd,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: caretOnLine ? const Color(0xFFF0E8DA) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: caretOnLine
+                ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                : Colors.transparent,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  width: 42,
+                  width: 40,
                   child: Text(
-                    '${lineIndex + 1}'.padLeft(2, '0'),
-                    style: theme.textTheme.bodySmall,
+                    '${lineIndex + 1}',
+                    textAlign: TextAlign.end,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
                 Container(
-                  width: 8,
-                  height: 22,
-                  margin: const EdgeInsets.only(top: 1, right: 12),
+                  width: 2,
+                  height: 20,
+                  margin: const EdgeInsets.only(left: 10, right: 10),
                   decoration: BoxDecoration(
                     color: _diagnosticStripeColor(context, lineDiagnostics),
-                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
                 Expanded(
@@ -5059,6 +5384,7 @@ class _InlineLanguageFeedback extends StatelessWidget {
     required this.formattingEdits,
     required this.activeToken,
     required this.activeSemanticKind,
+    this.compact = false,
   });
 
   final EditorSessionController controller;
@@ -5069,6 +5395,7 @@ class _InlineLanguageFeedback extends StatelessWidget {
   final List<FormattingEdit> formattingEdits;
   final TokenSpan? activeToken;
   final SemanticKind? activeSemanticKind;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -5077,6 +5404,54 @@ class _InlineLanguageFeedback extends StatelessWidget {
     final quickFixes = controller.quickFixesForDiagnostics(diagnostics);
     const fallbackMessage =
         'Caret context ready. Move across tokens to inspect hover and completion results.';
+
+    if (compact) {
+      final diagnostic = diagnostics.first;
+      final severityColor = _severityColor(diagnostic.severity);
+      return Padding(
+        padding: const EdgeInsets.only(left: 60, right: 10, bottom: 4),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 28),
+          decoration: BoxDecoration(
+            color: severityColor.withValues(alpha: 0.06),
+            border: Border(left: BorderSide(color: severityColor, width: 2)),
+          ),
+          padding: const EdgeInsets.only(left: 8, right: 2),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline_rounded, size: 14, color: severityColor),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  diagnostic.message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
+                  ),
+                ),
+              ),
+              if (quickFixes.isNotEmpty)
+                Tooltip(
+                  message: quickFixes.first.label,
+                  child: IconButton(
+                    key: const ValueKey('inline-diagnostic-fix-0'),
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.lightbulb_outline_rounded, size: 16),
+                    onPressed: () =>
+                        controller.applyDiagnosticQuickFix(quickFixes.first),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(left: 68, right: 8, bottom: 10),
@@ -6342,8 +6717,11 @@ class _InspectorCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E9),
-        borderRadius: BorderRadius.circular(18),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.42,
+        ),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: theme.dividerColor),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -6372,16 +6750,20 @@ class _InspectorTabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: Ink(
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFEFE7DA) : const Color(0xFFF7F2E9),
-          borderRadius: BorderRadius.circular(999),
+          color: active
+              ? theme.colorScheme.primary.withValues(alpha: 0.12)
+              : theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.34,
+                ),
+          borderRadius: BorderRadius.circular(4),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Text(label),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Text(label, style: theme.textTheme.labelMedium),
       ),
     );
   }
@@ -6422,14 +6804,15 @@ class _CapabilityPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE6D9),
-        borderRadius: BorderRadius.circular(999),
+        color: theme.colorScheme.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(label),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Text(label, style: theme.textTheme.labelSmall),
       ),
     );
   }
@@ -6461,6 +6844,8 @@ List<Widget> _buildPreviewChildren(
   required void Function(int lineIndex, DragUpdateDetails details)
   onPanUpdateLine,
   required ValueChanged<DragEndDetails> onPanEnd,
+  required bool showInlineLanguageFeedback,
+  required bool compactInlineLanguageFeedback,
 }) {
   final children = <Widget>[];
   final blockByStart = <int, _SemanticLineBlock>{
@@ -6537,7 +6922,7 @@ List<Widget> _buildPreviewChildren(
           : visibleLimitEnd;
       children.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.only(bottom: 2),
           child: _SemanticBlockCard(
             block: block,
             label: block.label,
@@ -6574,6 +6959,9 @@ List<Widget> _buildPreviewChildren(
                     onPanStartLine: onPanStartLine,
                     onPanUpdateLine: onPanUpdateLine,
                     onPanEnd: onPanEnd,
+                    showInlineLanguageFeedback: showInlineLanguageFeedback,
+                    compactInlineLanguageFeedback:
+                        compactInlineLanguageFeedback,
                   ),
                 if (collapsed)
                   _CollapsedBlockSummary(
@@ -6613,6 +7001,8 @@ List<Widget> _buildPreviewChildren(
         onPanStartLine: onPanStartLine,
         onPanUpdateLine: onPanUpdateLine,
         onPanEnd: onPanEnd,
+        showInlineLanguageFeedback: showInlineLanguageFeedback,
+        compactInlineLanguageFeedback: compactInlineLanguageFeedback,
       ),
     );
     lineIndex += 1;
@@ -6765,6 +7155,8 @@ List<Widget> _buildLineWithInlineFeedback(
   required void Function(int lineIndex, DragUpdateDetails details)
   onPanUpdateLine,
   required ValueChanged<DragEndDetails> onPanEnd,
+  required bool showInlineLanguageFeedback,
+  required bool compactInlineLanguageFeedback,
 }) {
   final widgets = <Widget>[
     _HighlightedLineRow(
@@ -6800,21 +7192,25 @@ List<Widget> _buildLineWithInlineFeedback(
       .where((diagnostic) => diagnostic.range.intersects(lineRange))
       .toList(growable: false);
 
-  widgets.add(
-    _InlineLanguageFeedback(
-      key: ValueKey(
-        'inline-language-feedback-${viewportProfile.label.toLowerCase()}',
+  if (showInlineLanguageFeedback &&
+      (!compactInlineLanguageFeedback || lineDiagnostics.isNotEmpty)) {
+    widgets.add(
+      _InlineLanguageFeedback(
+        key: ValueKey(
+          'inline-language-feedback-${viewportProfile.label.toLowerCase()}',
+        ),
+        controller: controller,
+        viewportProfile: viewportProfile,
+        diagnostics: lineDiagnostics,
+        hover: hover,
+        completions: completions,
+        formattingEdits: analysis.formattingEdits,
+        activeToken: activeToken,
+        activeSemanticKind: activeSemanticKind,
+        compact: compactInlineLanguageFeedback,
       ),
-      controller: controller,
-      viewportProfile: viewportProfile,
-      diagnostics: lineDiagnostics,
-      hover: hover,
-      completions: completions,
-      formattingEdits: analysis.formattingEdits,
-      activeToken: activeToken,
-      activeSemanticKind: activeSemanticKind,
-    ),
-  );
+    );
+  }
 
   return widgets;
 }
@@ -7398,7 +7794,6 @@ Color _diagnosticStripeColor(
   BuildContext context,
   List<Diagnostic> diagnostics,
 ) {
-  final theme = Theme.of(context);
   if (diagnostics.any((item) => item.severity == DiagnosticSeverity.error)) {
     return _severityColor(DiagnosticSeverity.error);
   }
@@ -7408,7 +7803,7 @@ Color _diagnosticStripeColor(
   if (diagnostics.any((item) => item.severity == DiagnosticSeverity.hint)) {
     return _severityColor(DiagnosticSeverity.hint);
   }
-  return theme.dividerColor;
+  return Colors.transparent;
 }
 
 Color _severityColor(DiagnosticSeverity severity) {
@@ -7432,7 +7827,11 @@ TextStyle _textStyleForToken(
   return EditorFlutterTextStyleBinding(
     semanticThemeBinding: semanticThemeBinding,
   ).styleForToken(
-    baseStyle: Theme.of(context).textTheme.bodyMedium!,
+    baseStyle: Theme.of(context).textTheme.bodyMedium!.copyWith(
+      fontFamily: 'monospace',
+      fontSize: 13.5,
+      height: 1.5,
+    ),
     tokenKind: tokenKind,
     semanticKind: semanticKind,
     diagnosticSeverity: diagnosticSeverity,
@@ -7501,39 +7900,55 @@ class _SemanticBlockCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE9E2D7),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFD8D0C2)),
+        border: Border(
+          left: BorderSide(color: theme.dividerColor.withValues(alpha: 0.72)),
+        ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.code_rounded,
-                size: 16,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
-              ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(label, style: theme.textTheme.labelLarge)),
-              Tooltip(
-                message: collapsed ? 'Expand block' : 'Collapse block',
-                child: IconButton(
-                  key: ValueKey('source-fold-toggle-${block.startLine}'),
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    collapsed
-                        ? Icons.unfold_more_rounded
-                        : Icons.unfold_less_rounded,
+          SizedBox(
+            height: 24,
+            child: Row(
+              children: [
+                Tooltip(
+                  message: collapsed ? 'Expand block' : 'Collapse block',
+                  child: IconButton(
+                    key: ValueKey('source-fold-toggle-${block.startLine}'),
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 24,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: Icon(
+                      collapsed
+                          ? Icons.keyboard_arrow_right_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 17,
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.54,
+                      ),
+                    ),
+                    onPressed: onToggle,
                   ),
-                  onPressed: onToggle,
                 ),
-              ),
-            ],
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.48,
+                      ),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
           child,
         ],
       ),

@@ -12,6 +12,7 @@ import '../../view_ide/backend_toolchain/execution_adapter.dart';
 import '../../view_ide/backend_toolchain/execution_route_summary.dart';
 import '../../view_ide/backend_toolchain/project_graph_contract.dart';
 import '../../view_ide/backend_toolchain/required_handoff_summary.dart';
+import '../../view_ide/interaction/interaction.dart';
 import 'package:vityo_app/src/view_ide/module_host/module_definition.dart';
 import 'package:vityo_app/src/view_ide/module_host/module_manifest.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
@@ -48,6 +49,15 @@ class VityoShellScaffold extends StatelessWidget {
       height: MediaQuery.sizeOf(context).height,
     );
     final servicePresentation = _servicePresentationFor(shell);
+    final activeFileLabel = _fileName(shell.workspaceController.activeFilePath);
+    final activeFileDisplayPath = _workspaceDisplayPath(
+      workspaceRoot: project.workspaceRoot,
+      filePath: shell.workspaceController.activeFilePath,
+    );
+    final caret = shell.editorController.document.positionForOffset(
+      shell.editorController.selection.extentOffset,
+    );
+    final languageStatus = shell.languageServiceStatus.value;
 
     return Shortcuts(
       shortcuts: AppCommandShortcutRegistry.shortcutIntents,
@@ -72,8 +82,9 @@ class VityoShellScaffold extends StatelessWidget {
                   children: [
                     if (!viewportProfile.isMobile)
                       WorkbenchTitleBar(
-                        title:
-                            'Vityo — ${shell.workspaceController.activeFilePath}',
+                        title: activeFileLabel.isEmpty
+                            ? project.title
+                            : '${project.title} · $activeFileLabel',
                         commandHint: 'Search files or run a command',
                         connectionLabel: servicePresentation.label,
                         status: servicePresentation.status,
@@ -133,9 +144,9 @@ class VityoShellScaffold extends StatelessWidget {
                     ),
                     WorkbenchStatusBar(
                       leading:
-                          '${project.title} · ${shell.workspaceController.activeFilePath}',
+                          '$activeFileDisplayPath  Ln ${caret.line + 1}, Col ${caret.column + 1}',
                       trailing:
-                          '${shell.platformTarget.label} · ${servicePresentation.label}',
+                          '${shell.editorController.analysis.diagnosticCount} problems · ${_languageStatusLabel(languageStatus)} · ${shell.platformTarget.label}',
                       status: servicePresentation.status,
                     ),
                   ],
@@ -489,15 +500,15 @@ class _DesktopShellBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final denseDesktop = viewportProfile.width < 1440;
-    final primarySidebarVisible = viewportProfile.width >= 1180;
+    final primarySidebarVisible = viewportProfile.width >= 760;
     final primaryToolSurface = _usesPrimarySidebar(shell.activeBottomTab);
     final workspaceWidth = primaryToolSurface
         ? denseDesktop
-              ? 288.0
-              : 320.0
+              ? 264.0
+              : 288.0
         : denseDesktop
-        ? 252.0
-        : 288.0;
+        ? 220.0
+        : 240.0;
     final bottomSurfaceHeight = viewportProfile.height >= 840
         ? 250.0
         : viewportProfile.height >= 680
@@ -571,7 +582,11 @@ class _DesktopShellBody extends StatelessWidget {
                     shell.selectBottomTab(BottomSurfaceTab.sourceControl);
                     break;
                   case 3:
-                    shell.selectBottomTab(BottomSurfaceTab.agent);
+                    shell.selectBottomTab(
+                      shell.activeBottomTab == BottomSurfaceTab.agent
+                          ? BottomSurfaceTab.navigate
+                          : BottomSurfaceTab.agent,
+                    );
                     break;
                   case 4:
                     shell.selectBottomTab(BottomSurfaceTab.extensions);
@@ -647,6 +662,11 @@ class _DesktopShellBody extends StatelessWidget {
                                 AppCommandId.refreshLanguageService,
                               );
                             },
+                            showDevelopmentChrome: false,
+                            languageInspectorVisible:
+                                shell.editorLanguageInspectorVisible,
+                            onToggleLanguageInspector:
+                                shell.toggleEditorLanguageInspector,
                           ),
                         ),
                       ],
@@ -660,6 +680,7 @@ class _DesktopShellBody extends StatelessWidget {
                   if (bottomSurfaceVisible) ...[
                     const Divider(height: 1, thickness: 1),
                     SizedBox(
+                      key: const ValueKey('workbench-bottom-panel'),
                       height: bottomSurfaceHeight,
                       child: KeyedSubtree(
                         key: ValueKey(layoutBinding.activeBottomPanelId),
@@ -2225,26 +2246,31 @@ class _BottomSurfaceTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomToolTabs = <Widget>[
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-runtime'),
         label: 'Runtime',
         active: shell.activeBottomTab == BottomSurfaceTab.runtime,
         onTap: () => shell.selectBottomTab(BottomSurfaceTab.runtime),
       ),
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-terminal'),
         label: 'Terminal',
         active: shell.activeBottomTab == BottomSurfaceTab.terminal,
         onTap: () => shell.selectBottomTab(BottomSurfaceTab.terminal),
       ),
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-problems'),
         label: 'Problems',
         active: shell.activeBottomTab == BottomSurfaceTab.problems,
         onTap: () => shell.selectBottomTab(BottomSurfaceTab.problems),
       ),
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-tests'),
         label: 'Tests',
         active: shell.activeBottomTab == BottomSurfaceTab.testing,
         onTap: () => shell.selectBottomTab(BottomSurfaceTab.testing),
       ),
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-debug'),
         label: 'Debug',
         active: shell.activeBottomTab == BottomSurfaceTab.debug,
         onTap: () => shell.selectBottomTab(BottomSurfaceTab.debug),
@@ -2302,15 +2328,15 @@ class _BottomSurfaceTabs extends StatelessWidget {
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (var index = 0; index < tabs.length; index += 1) ...[
-            if (index > 0) const SizedBox(width: 10),
-            tabs[index],
-          ],
-        ],
+    return SizedBox(
+      width: double.infinity,
+      height: 32,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 6),
+          child: Row(children: tabs),
+        ),
       ),
     );
   }
@@ -2606,6 +2632,7 @@ IconData _commandIcon(AppCommandId commandId) {
 
 class _SurfaceTabChip extends StatelessWidget {
   const _SurfaceTabChip({
+    super.key,
     required this.label,
     required this.active,
     required this.onTap,
@@ -2617,19 +2644,71 @@ class _SurfaceTabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: Ink(
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFEFE7DA) : const Color(0xFFF7F2E9),
-          borderRadius: BorderRadius.circular(999),
+          color: active
+              ? theme.colorScheme.primary.withValues(alpha: 0.08)
+              : Colors.transparent,
+          border: Border(
+            bottom: BorderSide(
+              color: active ? theme.colorScheme.primary : Colors.transparent,
+              width: 2,
+            ),
+          ),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Text(label),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: active
+                ? theme.colorScheme.onSurface
+                : theme.colorScheme.onSurface.withValues(alpha: 0.68),
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
+}
+
+String _fileName(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  final segments = normalized.split('/').where((segment) => segment.isNotEmpty);
+  return segments.isEmpty ? path : segments.last;
+}
+
+String _workspaceDisplayPath({
+  required String workspaceRoot,
+  required String filePath,
+}) {
+  final normalizedRoot = workspaceRoot
+      .replaceAll('\\', '/')
+      .replaceFirst(RegExp(r'/$'), '');
+  final normalizedPath = filePath.replaceAll('\\', '/');
+  final rootPrefix = '$normalizedRoot/';
+  if (normalizedRoot.isNotEmpty && normalizedPath.startsWith(rootPrefix)) {
+    return normalizedPath.substring(rootPrefix.length);
+  }
+  if (!normalizedPath.startsWith('/')) {
+    return normalizedPath;
+  }
+  return _fileName(normalizedPath);
+}
+
+String _languageStatusLabel(LanguageServiceStatusSurface? status) {
+  if (status == null) {
+    return 'language starting';
+  }
+  return switch (status.severity) {
+    LanguageServiceStatusSeverity.ready => 'Styio ready',
+    LanguageServiceStatusSeverity.refreshing => 'Styio refreshing',
+    LanguageServiceStatusSeverity.degraded => 'Styio degraded',
+    LanguageServiceStatusSeverity.unavailable => 'Styio unavailable',
+    LanguageServiceStatusSeverity.failed => 'Styio failed',
+  };
 }
 
 class _ModuleTile extends StatelessWidget {

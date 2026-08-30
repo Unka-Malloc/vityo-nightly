@@ -97,6 +97,7 @@ class ShellModel extends ShellRuntimeModel {
   final ShellLayoutPreferenceController shellLayoutPreferenceController;
   final VityodClient? vityodClient;
   StreamSubscription<VityodConnectionState>? _vityodStateSubscription;
+  bool _editorLanguageInspectorVisible = false;
 
   VityodConnectionState get localServiceConnection =>
       vityodClient?.state ?? const VityodConnectionState.disconnected();
@@ -128,11 +129,29 @@ class ShellModel extends ShellRuntimeModel {
   BottomSurfaceTab get activeBottomTab =>
       shellLayoutPreferenceController.preferences.activeBottomTab;
 
+  bool get editorLanguageInspectorVisible => _editorLanguageInspectorVisible;
+
+  void toggleEditorLanguageInspector() {
+    _editorLanguageInspectorVisible = !_editorLanguageInspectorVisible;
+    notifyListeners();
+  }
+
   void selectBottomTab(BottomSurfaceTab tab) {
     if (activeBottomTab == tab) {
+      if (_isDockedBottomTab(tab)) {
+        final expanded =
+            shellLayoutPreferenceController.preferences.bottomPanelExpanded;
+        shellLayoutPreferenceController.setBottomPanelExpanded(!expanded);
+        appendLog('Bottom surface ${expanded ? "collapsed" : "expanded"}.');
+      }
       return;
     }
     shellLayoutPreferenceController.selectBottomTab(tab);
+    // Mobile presents every workbench destination through the bottom surface,
+    // while desktop routes some destinations into the primary sidebar. Keeping
+    // the preference expanded here serves both layouts without coupling the
+    // shared model to a viewport family.
+    shellLayoutPreferenceController.setBottomPanelExpanded(true);
     appendLog('Bottom surface switched to ${tab.name}.');
   }
 
@@ -317,4 +336,17 @@ class ShellModel extends ShellRuntimeModel {
         return;
     }
   }
+}
+
+bool _isDockedBottomTab(BottomSurfaceTab tab) {
+  return switch (tab) {
+    BottomSurfaceTab.runtime ||
+    BottomSurfaceTab.terminal ||
+    BottomSurfaceTab.commandPalette ||
+    BottomSurfaceTab.problems ||
+    BottomSurfaceTab.testing ||
+    BottomSurfaceTab.debug ||
+    BottomSurfaceTab.agent => true,
+    _ => false,
+  };
 }

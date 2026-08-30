@@ -5,6 +5,8 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
 void main() {
   testWidgets(
     'family emoji multi-selection and composition paint without UTF-16 faults',
@@ -49,7 +51,7 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.byKey(const ValueKey('source-buffer-surface')));
+      await tester.focusEditorSource();
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(tester.testTextInput.hasAnyClients, isTrue);
