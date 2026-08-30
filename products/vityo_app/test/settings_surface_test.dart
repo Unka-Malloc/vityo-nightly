@@ -715,6 +715,73 @@ void main() {
 
     expect(selectedClangCppVersions, <String>['clang-17:23', 'clang-18:20']);
   });
+
+  testWidgets('toolchain installer requires an explicit review confirmation', (
+    tester,
+  ) async {
+    var executionCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SettingsSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 800,
+            ),
+            toolchainStatus: const ToolchainStatusSurface(
+              source: 'manager-report',
+              severity: ToolchainStatusSeverity.unavailable,
+              title: 'Toolchain unavailable',
+              message: 'Review an installer plan.',
+              recoveryActions: <ToolchainRecoveryAction>[],
+            ),
+            toolchainInstallPlan: const ToolchainInstallPlanSurface(
+              status: 'planned',
+              mode: 'externalCommand',
+              kind: 'compiler',
+              actionable: true,
+              externalCommand: '/usr/bin/true',
+              requiresConfirmation: true,
+            ),
+            onExecuteToolchainInstallPlan: () async {
+              executionCount += 1;
+            },
+          ),
+        ),
+      ),
+    );
+
+    final review = find.byKey(
+      const ValueKey('settings-toolchain-execute-install-plan'),
+    );
+    await tester.ensureVisible(review);
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('settings-toolchain-install-confirmation')),
+      findsOneWidget,
+    );
+    expect(executionCount, 0);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('settings-toolchain-install-confirmation-cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(executionCount, 0);
+
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('settings-toolchain-install-confirmation-confirm'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(executionCount, 1);
+  });
 }
 
 Color _swatchColor(WidgetTester tester, String keyName) {

@@ -61,7 +61,15 @@ void main() {
         kind: ToolchainKind.languageService,
         displayName: 'Styio Language Service',
         executablePath: '/usr/bin/styio',
-        metadata: <String, Object?>{'language': 'styio'},
+        metadata: <String, Object?>{
+          'language': 'styio',
+          ToolchainManagedDownloadConfig.metadataKey: <String, Object?>{
+            'downloadUri': 'https://toolchains.example/styio',
+            'expectedSha256':
+                '0000000000000000000000000000000000000000000000000000000000000000',
+            'trustedDownloadHosts': <String>['toolchains.example'],
+          },
+        },
       ),
       activate: true,
     );
@@ -95,6 +103,13 @@ void main() {
       isNotEmpty,
     );
 
+    final managedPlan = await manager.planBootstrapInstallation(
+      const ToolchainRequirement(kind: ToolchainKind.languageService),
+    );
+    expect(managedPlan.actionable, isTrue);
+    expect(managedPlan.mode, ToolchainInstallMode.managedDownload);
+    expect(managedPlan.downloadUri?.host, 'toolchains.example');
+
     final routedActionIds = <String>[];
     final router = ToolchainBootstrapActionRouter(
       onSettingsAction: (step) async {
@@ -124,7 +139,7 @@ void main() {
       missing.status,
       ToolchainBootstrapActionDispatchStatus.missingHandler,
     );
-    expect(missing.todo, contains('TODO'));
+    expect(missing.recoveryHint, contains('Register'));
     expect(
       unknown.status,
       ToolchainBootstrapActionDispatchStatus.unknownAction,

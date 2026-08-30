@@ -8,6 +8,7 @@ import '../../view_ide/foundation/foundation.dart';
 import '../../view_ide/environment/environment.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
 import '../../view_ide/toolchain/toolchain_manager.dart';
+import '../../view_ide/toolchain/toolchain_project_validation.dart';
 import '../../ide/workspace/workspace.dart';
 import '../platform/viewport_profile.dart';
 import '../theme/theme.dart';
@@ -619,8 +620,9 @@ class _CommandPaletteSettingsCardState
       key: const ValueKey('settings-command-palette-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE8F1),
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(14),
       child: Material(
@@ -767,8 +769,9 @@ class _IdeCapabilityFrameworkCard extends StatelessWidget {
       key: const ValueKey('settings-ide-capability-framework'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE6EEF1),
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -949,8 +952,9 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
       key: const ValueKey('settings-theme-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8EFE6),
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1298,10 +1302,10 @@ class _ToolchainSettingsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final status = settings.status;
     final accent = switch (status.severity) {
-      ToolchainStatusSeverity.ready => const Color(0xFFDFF0DE),
-      ToolchainStatusSeverity.unavailable => const Color(0xFFF0E8D6),
-      ToolchainStatusSeverity.blocked => const Color(0xFFF4E8D8),
-      ToolchainStatusSeverity.failed => const Color(0xFFF3D8D6),
+      ToolchainStatusSeverity.ready => theme.colorScheme.primary,
+      ToolchainStatusSeverity.unavailable => theme.colorScheme.tertiary,
+      ToolchainStatusSeverity.blocked => theme.colorScheme.tertiary,
+      ToolchainStatusSeverity.failed => theme.colorScheme.error,
     };
     final selectClangCppVersion =
         onSelectClangCppVersion ??
@@ -1315,8 +1319,9 @@ class _ToolchainSettingsCard extends StatelessWidget {
       key: const ValueKey('settings-toolchain-status-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: accent,
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.42)),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1478,11 +1483,43 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
                       dispatchResult!.message,
                       style: theme.textTheme.bodySmall,
                     ),
-                  if (dispatchResult!.todo.isNotEmpty)
+                  if (dispatchResult!.recoveryHint.isNotEmpty)
                     Text(
-                      dispatchResult!.todo,
+                      dispatchResult!.recoveryHint,
                       style: theme.textTheme.bodySmall,
                     ),
+                ],
+              ),
+            ),
+          ],
+          if (summary.projectValidation case final validation?) ...[
+            const SizedBox(height: 10),
+            Container(
+              key: const ValueKey(
+                'settings-toolchain-project-validation-result',
+              ),
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: validation.ready
+                    ? theme.colorScheme.primaryContainer.withValues(alpha: 0.22)
+                    : theme.colorScheme.errorContainer.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: validation.ready
+                      ? theme.colorScheme.primary.withValues(alpha: 0.42)
+                      : theme.colorScheme.error.withValues(alpha: 0.42),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Project validation · ${validation.status.wireValue}',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(validation.message, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
@@ -1737,12 +1774,78 @@ class _ToolchainInstallPlanView extends StatelessWidget {
           const SizedBox(height: 8),
           OutlinedButton(
             key: const ValueKey('settings-toolchain-execute-install-plan'),
-            onPressed: onExecuteToolchainInstallPlan,
-            child: const Text('Continue install plan'),
+            onPressed: () => _continueInstallPlan(context),
+            child: Text(
+              plan.requiresConfirmation
+                  ? 'Review installation'
+                  : 'Continue install plan',
+            ),
           ),
         ],
       ],
     );
+  }
+
+  Future<void> _continueInstallPlan(BuildContext context) async {
+    if (plan.requiresConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          final theme = Theme.of(context);
+          final download = plan.downloadUri == null
+              ? null
+              : Uri.tryParse(plan.downloadUri!);
+          return AlertDialog(
+            key: const ValueKey('settings-toolchain-install-confirmation'),
+            title: const Text('Review toolchain installation'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Vityo will run the reviewed ${plan.mode} plan for the ${plan.kind} toolchain.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  if (download != null)
+                    Text(
+                      'Download source: ${download.scheme}://${download.host}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  if (plan.externalCommand != null)
+                    Text(
+                      'Command: ${plan.externalCommand}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: const ValueKey(
+                  'settings-toolchain-install-confirmation-cancel',
+                ),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const ValueKey(
+                  'settings-toolchain-install-confirmation-confirm',
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Install'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true || !context.mounted) {
+        return;
+      }
+    }
+    await onExecuteToolchainInstallPlan!();
   }
 }
 

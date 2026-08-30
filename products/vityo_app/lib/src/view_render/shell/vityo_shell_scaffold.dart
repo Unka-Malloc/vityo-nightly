@@ -524,7 +524,8 @@ class VityoShellScaffold extends StatelessWidget {
             );
           },
           onClearToolchain: shell.clearToolchainCandidate,
-          onExecuteToolchainInstallPlan: shell.executeLastToolchainInstallPlan,
+          onExecuteToolchainInstallPlan:
+              shell.executeConfirmedToolchainInstallPlan,
           onRefreshPlatformManagers: shell.refreshPlatformManagerHealth,
           onPlatformRecoveryRoute: shell.handlePlatformRecoveryRoute,
           onSelectPlatformSettingsSection: shell.selectPlatformSettingsSection,

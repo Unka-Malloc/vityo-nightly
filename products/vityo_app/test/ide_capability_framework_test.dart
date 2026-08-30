@@ -511,8 +511,14 @@ void main() {
       contains('install execution recovery action rendering'),
     );
     expect(
-      entriesById['toolchain.manager']?.todo,
-      contains('ToolchainBootstrapExecutionBridge'),
+      entriesById['toolchain.manager']?.summary,
+      contains('ToolchainProjectValidationRunner'),
+    );
+    expect(entriesById['toolchain.manager']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['toolchain.manager']?.todo, isEmpty);
+    expect(
+      entriesById['toolchain.manager']?.summary,
+      contains('hermetic Linux and Windows'),
     );
     expect(entriesById['toolchain.manager']?.runtimeMaturityBlocking, isFalse);
     expect(

@@ -47,6 +47,10 @@ mixin ShellRuntimeToolchainFacade on ShellRuntimeFacadeHost {
   Future<ToolchainInstallExecutionResult?> executeLastToolchainInstallPlan() =>
       _toolchainController.executeLastInstallPlan();
 
+  Future<ToolchainInstallExecutionResult?>
+  executeConfirmedToolchainInstallPlan() =>
+      _toolchainController.executeLastInstallPlan(confirmed: true);
+
   Future<ToolchainManagerBootstrapSummary?> refreshToolchainBootstrapSummary({
     String reason = 'toolchain bootstrap refresh',
   }) => _toolchainController.refreshBootstrapSummary(reason: reason);

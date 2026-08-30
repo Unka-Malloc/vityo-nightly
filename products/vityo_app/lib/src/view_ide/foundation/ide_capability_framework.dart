@@ -539,12 +539,10 @@ class VityoIdeCapabilityFramework {
           id: 'toolchain.manager',
           layer: IdeCapabilityLayer.toolchain,
           title: 'Toolchain manager',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/toolchain',
           summary:
-              'Toolchain catalog, resolver, install policy, health checks, configuration persistence, generic bootstrap summaries, install execution recovery action rendering, installer recovery route handling, ToolchainBootstrapExecutionPlan settings/installer/project action steps, ToolchainBootstrapActionRouter dispatch contracts, ToolchainBootstrapExecutionBridge sequential step execution, ShellRuntimeModel bootstrap action dispatch, SettingsSurface bootstrap dispatch result rendering, settings controls, Clang/C++ selection, and extension toolchain route consumption are wired. Styio compiler identity is consumed through its machine contract and is not installed, pinned, or switched by Pafio.',
-          todo:
-              'TODO: bind generic installer UX and project validation runners to ToolchainBootstrapExecutionBridge handlers.',
+              'Toolchain catalog, resolver, managed-download policy, health checks, configuration persistence, generic bootstrap summaries, install execution recovery action rendering, ToolchainBootstrapExecutionPlan settings/installer/project action steps, ToolchainBootstrapActionRouter contracts, and ToolchainBootstrapExecutionBridge dispatch now share one route. ToolchainProjectValidationRunner verifies the workspace, resolved executable presence, executable permission, and optional safe process probe before project readiness is claimed. SettingsSurface presents theme-aware status, project validation receipts, managed or external install-plan review, and explicit confirmation before execution; Clang/C++ selection and extension toolchain routes remain on the same manager. Native macOS clicks cover real project validation and confirmed installer execution, while hermetic Linux and Windows matrices cover path semantics. Styio compiler identity is consumed through its machine contract and is not installed, pinned, or switched by Pafio.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code extensions toolchain model',

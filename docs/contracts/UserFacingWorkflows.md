@@ -204,27 +204,31 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 ### Settings
 29. `SettingsSurface` renders toolchain, prefs, theme, capabilities.
 30. Theme changes persisted and reflected immediately.
+31. Toolchain bootstrap actions dispatch through `ToolchainBootstrapExecutionBridge`; project
+    validation checks the workspace and executable before reporting readiness.
+32. Managed-download and external-command install plans require an in-product review confirmation
+    before the manager executes them.
 
 ### Modules
-31. `canMount` requires `installed && enabled && trusted`.
-32. Extension lifecycle: `registered` -> `activated` (or `blocked`/`failed`).
-33. Module visibility resolved per `PlatformTarget`.
+33. `canMount` requires `installed && enabled && trusted`.
+34. Extension lifecycle: `registered` -> `activated` (or `blocked`/`failed`).
+35. Module visibility resolved per `PlatformTarget`.
 
 ### Hosted Export
-34. Close plan includes `requiresClearConfirmation` when not deleted.
-35. Export URL and expiration in banner when `exportReady`.
-36. Pending deletion computes retention/deadline/remaining/expired.
+36. Close plan includes `requiresClearConfirmation` when not deleted.
+37. Export URL and expiration in banner when `exportReady`.
+38. Pending deletion computes retention/deadline/remaining/expired.
 
 ### Recovery UX
-37. Toolchain recovery dispatched via `onToolchainRecoveryAction`.
-38. Language service recovery transitions through session event states.
-39. Retry action result reports `completed`/`blocked`/`unsupported`/`failed`.
+39. Toolchain recovery dispatched via `onToolchainRecoveryAction`.
+40. Language service recovery transitions through session event states.
+41. Retry action result reports `completed`/`blocked`/`unsupported`/`failed`.
 
 ### Cross-Surface State Projection
-40. `ShellModel` is single entry point via `ShellScope.of(context)`.
-41. `IdeCapabilityRegistry` is single truth; no widget-tree inference.
-42. `FoundationLifecycleCoordinator` registers all before `initializeAll`.
-43. `BottomSurfaceTab` has exactly one mapping to `ShellPanelDescriptor`.
+42. `ShellModel` is single entry point via `ShellScope.of(context)`.
+43. `IdeCapabilityRegistry` is single truth; no widget-tree inference.
+44. `FoundationLifecycleCoordinator` registers all before `initializeAll`.
+45. `BottomSurfaceTab` has exactly one mapping to `ShellPanelDescriptor`.
 
 ---
 
@@ -262,6 +266,11 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 - **Blocked unrunnable:** `RuntimeExecutionPlanStatus.blockedUnrunnable`.
 - **Blocked hosted:** Retry actions.
 - **Recovery:** Install toolchain or retry.
+- **Toolchain validation:** Settings verifies the current workspace and resolved executable through
+  the platform file-system manager; an optional explicit probe command can add process-level health.
+- **Toolchain install:** A trusted managed-download or external-command plan is rendered for review,
+  requires confirmation, executes through `ToolchainManager`, and records the result and recovery
+  actions in Settings.
 
 ### 4.5 Diagnostics
 - **Success:** Snapshot dispatched; problems surface updated.
@@ -369,6 +378,8 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `runtime_execution_native_ui_test.dart` | Native macOS Flutter Run/Stop clicks against a real vityod-managed process |
 | `debugger_dap_desktop_matrix_test.dart` | Hermetic Linux Python and Windows JavaScript DAP launch identity and force termination |
 | `debugger_dap_native_ui_test.dart` | Native macOS adapter selection, launch editing, first-line breakpoint, real PID, and confirmed force-stop clicks |
+| `toolchain_project_validation_desktop_matrix_test.dart` | Hermetic Linux and Windows workspace/executable validation and ready-plan bridge dispatch |
+| `toolchain_manager_native_ui_test.dart` | Native macOS project validation plus reviewed and confirmed real installer execution |
 | `runtime_output_channel_test.dart` | Event production, subscription, channel summary |
 | `debug_console_surface_test.dart` | Replay, graph digest, debug lanes |
 | `workspace_diagnostics_controller_test.dart` | Producer lifecycle, snapshot dispatch, retry |
