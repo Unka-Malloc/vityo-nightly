@@ -137,7 +137,7 @@ void main() {
       expect(failing.p95DeltaMicros, 4000);
     });
 
-    testWidgets('10k and 100k editors render only the bounded viewport', (
+    testWidgets('10k and 100k editors virtualize the complete scroll range', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1200, 800);
@@ -174,6 +174,22 @@ void main() {
         expect(renderedLines, lessThan(lineCount));
         expect(
           find.byKey(
+            const ValueKey(
+              'source-render-backend-${EditorRenderPipelinePlan.flutterVirtualListRenderer}',
+            ),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey('source-large-document-truncation-banner'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(
+          find.byKey(
             ValueKey(
               lineCount == 10000
                   ? 'source-editor-degradation-viewportBounded'
@@ -184,10 +200,48 @@ void main() {
           findsOneWidget,
         );
 
+        final scrollable = tester.state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('source-buffer-scroll')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        expect(scrollable.position.maxScrollExtent, greaterThan(100000));
+        scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+        await tester.pump();
+        expect(
+          find.byKey(
+            ValueKey('source-line-${lineCount - 1}'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(_renderedLineCount(), lessThanOrEqualTo(400));
+
+        final middleLine = lineCount ~/ 2;
+        controller.selectLineColumn(line: middleLine, column: 0);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          find.byKey(ValueKey('source-line-$middleLine'), skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(_renderedLineCount(), lessThanOrEqualTo(400));
+
         controller.dispose();
       }
     });
   });
+}
+
+int _renderedLineCount() {
+  return find
+      .byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> && key.value.startsWith('source-line-');
+      }, skipOffstage: false)
+      .evaluate()
+      .length;
 }
 
 EditorRenderedInputPerformanceSample _sample({

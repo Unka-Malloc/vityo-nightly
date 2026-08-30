@@ -17,3 +17,4 @@ part 'editor_surface_shell.dart';
 part 'editor_source_pane.dart';
 part 'editor_language_inspector.dart';
 part 'editor_render_pipeline.dart';
+part 'editor_high_volume_viewport.dart';

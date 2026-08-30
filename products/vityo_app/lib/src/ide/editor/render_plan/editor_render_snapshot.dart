@@ -27,11 +27,12 @@ class EditorRenderSnapshot {
   });
 
   factory EditorRenderSnapshot.fromController(
-    EditorSessionController controller,
-  ) {
+    EditorSessionController controller, {
+    EditorRenderViewportBinding? viewportBinding,
+  }) {
     final activeToken = controller.tokenAtSelection;
     final activeSemanticKind = controller.semanticKindAtSelection;
-    final rowWindow = EditorVirtualizedRowWindow.fromViewport(
+    final fallbackWindow = EditorVirtualizedRowWindow.fromViewport(
       totalLineCount: controller.document.lines.length,
       firstVisibleLine: _editorLineIndexForOffset(
         controller.document.text,
@@ -39,11 +40,11 @@ class EditorRenderSnapshot {
       ),
       viewportLineCapacity: 80,
     );
-    final viewportBinding = EditorRenderViewportBinding.fromWindow(
-      rowWindow,
-      boundToScrollController: false,
-      todo:
-          'TODO: bind viewport facts to the concrete Flutter ScrollController.',
+    final resolvedViewportBinding =
+        viewportBinding ??
+        EditorRenderViewportBinding.fromWindow(fallbackWindow);
+    final rowWindow = resolvedViewportBinding.toWindow(
+      totalLineCount: controller.document.lines.length,
     );
     return EditorRenderSnapshot(
       documentId: controller.document.documentId,
@@ -57,11 +58,11 @@ class EditorRenderSnapshot {
       semanticCount: controller.analysis.semanticCount,
       diagnosticCount: controller.analysis.diagnosticCount,
       virtualizedRowWindow: rowWindow,
-      viewportBinding: viewportBinding,
+      viewportBinding: resolvedViewportBinding,
       renderPipelinePlan: EditorRenderPipelinePlan.fromRenderFacts(
         renderPlan: controller.renderPlan,
         lineCount: controller.document.lines.length,
-        viewportBinding: viewportBinding,
+        viewportBinding: resolvedViewportBinding,
       ),
       hoverAvailable: controller.hoverAtSelection != null,
       completionCount: controller.completionsAtSelection.length,
@@ -69,8 +70,6 @@ class EditorRenderSnapshot {
       codeActionWidget: EditorCodeActionWidgetState.fromController(controller),
       activeTokenText: activeToken?.lexeme ?? '',
       activeSemanticKind: activeSemanticKind?.name ?? '',
-      todo:
-          'TODO: bind this snapshot to the concrete scroll controller viewport state.',
     );
   }
 
@@ -391,7 +390,7 @@ class EditorRenderViewportBinding {
       scrollOffsetPixels = 0,
       lineHeightPixels = 20,
       boundToScrollController = false,
-      todo = 'TODO: bind editor viewport to concrete scroll controller facts.';
+      todo = '';
 
   factory EditorRenderViewportBinding.fromWindow(
     EditorVirtualizedRowWindow window, {
@@ -485,6 +484,13 @@ class EditorRenderViewportBinding {
 }
 
 class EditorRenderPipelinePlan {
+  static const int highVolumeLineThreshold = 10000;
+  static const String flutterLayerListRenderer = 'flutter-list-layer-stack';
+  static const String flutterVirtualListRenderer =
+      'flutter-fixed-extent-virtual-list';
+  static const String flutterPlainTextFallbackRenderer =
+      'flutter-plain-text-fallback';
+
   const EditorRenderPipelinePlan({
     required this.rendererKind,
     required this.renderPlan,
@@ -511,7 +517,7 @@ class EditorRenderPipelinePlan {
       canRender = false,
       maxRenderedLines = 0,
       fallbackReason = 'Editor render pipeline has not been bound.',
-      todo = 'TODO: bind renderer kind to concrete editor rendering backend.';
+      todo = '';
 
   factory EditorRenderPipelinePlan.fromRenderFacts({
     required EditorRenderPlan renderPlan,
@@ -523,8 +529,10 @@ class EditorRenderPipelinePlan {
     final canRender = window.renderLineCount <= maxRenderedLines;
     return EditorRenderPipelinePlan(
       rendererKind: canRender
-          ? 'virtualized-layer-stack'
-          : 'plain-text-fallback',
+          ? lineCount >= highVolumeLineThreshold
+                ? flutterVirtualListRenderer
+                : flutterLayerListRenderer
+          : flutterPlainTextFallbackRenderer,
       renderPlan: renderPlan,
       renderWindow: window,
       canRender: canRender,
@@ -532,8 +540,6 @@ class EditorRenderPipelinePlan {
       fallbackReason: canRender
           ? ''
           : 'Editor render window has ${window.renderLineCount} lines, above limit $maxRenderedLines.',
-      todo:
-          'TODO: connect this plan to concrete Flutter viewport and layer renderers.',
     );
   }
 

@@ -433,12 +433,10 @@ class VityoIdeCapabilityFramework {
           id: 'editor.rendering',
           layer: IdeCapabilityLayer.editor,
           title: 'Editor rendering and presentation bridge',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_render/editor',
           summary:
-              'Editor surface renders document, tabs, selection, token/semantic/diagnostic layers, folding, hover, completion, code-action facts, language-service health status pills, EditorCodeActionWidgetState, EditorSemanticThemeBinding render styles, concrete Flutter TextSpan/TextStyle binding, EditorRenderViewportBinding concrete ScrollController facts, EditorRenderPipelinePlan renderer/fallback facts, viewport-bound source scroll telemetry, and serializable EditorRenderSnapshot contracts for UI and Agent consumers.',
-          todo:
-              'TODO: bind high-volume editor layer backend beyond the current Flutter ListView preview renderer.',
+              'Editor surface renders document, tabs, selection, token/semantic/diagnostic layers, folding, hover, completion, code-action facts, language-service health status pills, EditorCodeActionWidgetState, EditorSemanticThemeBinding render styles, concrete Flutter TextSpan/TextStyle binding, EditorRenderViewportBinding concrete ScrollController facts, EditorRenderPipelinePlan renderer/fallback facts, viewport-bound source scroll telemetry, and serializable EditorRenderSnapshot contracts for UI and Agent consumers. Documents at or above 10,000 lines use the concrete flutter-fixed-extent-virtual-list backend: Flutter lazily builds fixed-extent rows over the complete document scroll range, bounds cache work, keeps transient editor panels visible as overlays, and reveals controller-driven caret navigation without replacing the user\'s free scrolling.',
           runtimeMaturityBlocking: false,
           references: <String>['Monaco editor', 'VS Code workbench editor'],
         ),

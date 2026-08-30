@@ -299,9 +299,11 @@ void main() {
       entriesById['editor.rendering']?.summary,
       contains('concrete ScrollController facts'),
     );
+    expect(entriesById['editor.rendering']?.todo, isEmpty);
+    expect(entriesById['editor.rendering']?.status, IdeCapabilityStatus.ready);
     expect(
-      entriesById['editor.rendering']?.todo,
-      contains('high-volume editor layer backend'),
+      entriesById['editor.rendering']?.summary,
+      contains('complete document scroll range'),
     );
     expect(entriesById['editor.rendering']?.runtimeMaturityBlocking, isFalse);
     expect(
@@ -678,9 +680,10 @@ void main() {
       contains('Flutter TextSpan/TextStyle binding'),
     );
     expect(
-      entriesById['editor.rendering']?.todo,
-      contains('Flutter ListView preview renderer'),
+      entriesById['editor.rendering']?.summary,
+      contains('flutter-fixed-extent-virtual-list'),
     );
+    expect(entriesById['editor.rendering']?.todo, isEmpty);
     expect(
       entriesById['workspace.edit-application']?.status,
       IdeCapabilityStatus.wired,

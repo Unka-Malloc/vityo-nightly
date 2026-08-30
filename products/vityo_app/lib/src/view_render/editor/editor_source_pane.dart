@@ -83,6 +83,14 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
   String? _extractFunctionError;
   String? _changeSignatureError;
   int _observedInputCommitSerial = 0;
+  int _observedCaretLine = 0;
+  int _observedScrollLine = 0;
+  int? _pendingCaretRevealLine;
+  bool _caretRevealScheduled = false;
+
+  bool get _usesHighVolumeRenderBackend =>
+      widget.document.lineCount >=
+      EditorRenderPipelinePlan.highVolumeLineThreshold;
 
   @override
   void initState() {
@@ -107,6 +115,10 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     _sourceScrollController = ScrollController()
       ..addListener(_handleSourceScrollChanged);
     widget.controller.addListener(_handleControllerChanged);
+    _observedCaretLine = _primaryCaretLine;
+    if (_usesHighVolumeRenderBackend) {
+      _pendingCaretRevealLine = _observedCaretLine;
+    }
     _inlineRenameController = TextEditingController();
     _introduceVariableController = TextEditingController();
     _extractFunctionController = TextEditingController();
@@ -120,15 +132,71 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_handleControllerChanged);
       widget.controller.addListener(_handleControllerChanged);
+      _observedCaretLine = _primaryCaretLine;
+      _pendingCaretRevealLine = _usesHighVolumeRenderBackend
+          ? _observedCaretLine
+          : null;
     }
     _textInputClient.synchronizeCommittedState();
   }
 
   void _handleControllerChanged() {
     _textInputClient.synchronizeCommittedState();
+    final caretLine = _primaryCaretLine;
+    if (caretLine != _observedCaretLine) {
+      _observedCaretLine = caretLine;
+      if (_usesHighVolumeRenderBackend) {
+        _pendingCaretRevealLine = caretLine;
+      }
+    }
     if (mounted) {
       setState(() {});
     }
+  }
+
+  int get _primaryCaretLine => widget.document
+      .positionForOffset(
+        widget.controller.selectionSet.primarySelection.extentOffset,
+      )
+      .line;
+
+  void _schedulePendingCaretReveal() {
+    if (_pendingCaretRevealLine == null || _caretRevealScheduled) {
+      return;
+    }
+    _caretRevealScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _caretRevealScheduled = false;
+      if (!mounted ||
+          !_usesHighVolumeRenderBackend ||
+          !_sourceScrollController.hasClients) {
+        return;
+      }
+      final line = _pendingCaretRevealLine;
+      if (line == null) {
+        return;
+      }
+      final position = _sourceScrollController.position;
+      final firstVisibleLine =
+          (_sourceScrollController.offset / _estimatedLineHeight).floor();
+      final visibleLineCount =
+          (position.viewportDimension / _estimatedLineHeight).floor().clamp(
+            1,
+            widget.document.lineCount,
+          );
+      final lastVisibleLine = firstVisibleLine + visibleLineCount - 1;
+      _pendingCaretRevealLine = null;
+      if (line >= firstVisibleLine && line <= lastVisibleLine) {
+        return;
+      }
+      final contextLineCount = visibleLineCount ~/ 3;
+      final targetOffset =
+          ((line - contextLineCount).clamp(0, widget.document.lineCount - 1) *
+                  _estimatedLineHeight)
+              .clamp(position.minScrollExtent, position.maxScrollExtent)
+              .toDouble();
+      _sourceScrollController.jumpTo(targetOffset);
+    });
   }
 
   @override
@@ -191,6 +259,12 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
   void _focusAndAttachInput() => _focusSourcePane(attachInput: true);
 
   void _handleSourceScrollChanged() {
+    final visibleLine = (_sourceScrollController.offset / _estimatedLineHeight)
+        .floor();
+    if (visibleLine == _observedScrollLine) {
+      return;
+    }
+    _observedScrollLine = visibleLine;
     if (mounted) {
       setState(() {});
     }
@@ -1808,7 +1882,8 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     final theme = Theme.of(context);
     final lineStarts = widget.document.lineStarts;
     final semanticBlocks =
-        widget.showSemanticBlockCards &&
+        !_usesHighVolumeRenderBackend &&
+            widget.showSemanticBlockCards &&
             widget.renderPlan.activeLayers.contains(EditorRenderLayer.overlay)
         ? _resolveLineBlocks(
             document: widget.document,
@@ -1863,6 +1938,9 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                 EditorLargeFileDegradation.largeFileReducedDecorations
             ? const <_SemanticLineBlock>[]
             : semanticBlocks;
+        if (_usesHighVolumeRenderBackend) {
+          _schedulePendingCaretReveal();
+        }
 
         final primary = widget.controller.selectionSet.primarySelection;
         final primaryPosition = widget.document.positionForOffset(
@@ -1991,135 +2069,152 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                           if (widget.showDebugChrome && !cramped)
                             const SizedBox(height: 14),
                           Expanded(
-                            child: ListView(
-                              key: const ValueKey('source-buffer-scroll'),
-                              controller: _sourceScrollController,
-                              children: [
-                                KeyedSubtree(
-                                  key: ValueKey(
-                                    'source-editor-degradation-${degradationState.label}',
+                            child: _usesHighVolumeRenderBackend
+                                ? _buildHighVolumeViewport(
+                                    context,
+                                    lineStarts: lineStarts,
+                                    degradationState: degradationState,
+                                    viewportBinding: viewportBinding,
+                                    cacheLineCount: dense ? 8 : 16,
+                                  )
+                                : ListView(
+                                    key: const ValueKey('source-buffer-scroll'),
+                                    controller: _sourceScrollController,
+                                    children: [
+                                      KeyedSubtree(
+                                        key: ValueKey(
+                                          'source-editor-degradation-${degradationState.label}',
+                                        ),
+                                        child: const SizedBox.shrink(),
+                                      ),
+                                      if (_textInputClient.isComposing)
+                                        Text(
+                                          _textInputClient.provisionalText,
+                                          key: const ValueKey(
+                                            'source-composition-range',
+                                          ),
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                backgroundColor: const Color(
+                                                  0x337A65B3,
+                                                ),
+                                                decoration:
+                                                    TextDecoration.underline,
+                                              ),
+                                        ),
+                                      for (
+                                        var index = 0;
+                                        index <
+                                            widget
+                                                .controller
+                                                .selectionSet
+                                                .selections
+                                                .length;
+                                        index += 1
+                                      )
+                                        SizedBox.shrink(
+                                          key: ValueKey(
+                                            'source-selection-item-$index',
+                                          ),
+                                        ),
+                                      KeyedSubtree(
+                                        key: ValueKey(
+                                          viewportBinding
+                                                  .boundToScrollController
+                                              ? 'source-viewport-binding-bound'
+                                              : 'source-viewport-binding-unbound',
+                                        ),
+                                        child: const SizedBox.shrink(),
+                                      ),
+                                      if (_inlineRenameOpen) ...[
+                                        _buildInlineRenamePanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_introduceVariablePanelOpen) ...[
+                                        _buildIntroduceVariablePanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_extractFunctionPanelOpen) ...[
+                                        _buildExtractFunctionPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_changeSignaturePanelOpen) ...[
+                                        _buildChangeSignaturePanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_surroundLookupOpen) ...[
+                                        _buildSurroundLookupPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_completionLookupOpen) ...[
+                                        _buildCompletionLookupPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_symbolLookupOpen) ...[
+                                        _buildSymbolLookupPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_quickFixLookupOpen) ...[
+                                        _buildQuickFixLookupPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_quickDocumentationOpen) ...[
+                                        _buildQuickDocumentationPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_parameterInfoOpen) ...[
+                                        _buildParameterInfoPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_usagesPanelOpen) ...[
+                                        _buildUsagesPanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_safeDeletePanelOpen) ...[
+                                        _buildSafeDeletePanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      if (_inlineVariablePanelOpen) ...[
+                                        _buildInlineVariablePanel(context),
+                                        const SizedBox(height: 12),
+                                      ],
+                                      ..._buildPreviewChildren(
+                                        context,
+                                        controller: widget.controller,
+                                        viewportProfile: widget.viewportProfile,
+                                        hover: widget.hover,
+                                        completions: widget.completions,
+                                        activeReferences:
+                                            widget.activeReferences,
+                                        activeToken: widget.activeToken,
+                                        activeSemanticKind:
+                                            widget.activeSemanticKind,
+                                        document: widget.document,
+                                        selection: widget.selection,
+                                        analysis: widget.analysis,
+                                        renderPlan: widget.renderPlan,
+                                        semanticThemeBinding:
+                                            widget.semanticThemeBinding,
+                                        lineStarts: lineStarts,
+                                        semanticBlocks: effectiveSemanticBlocks,
+                                        renderWindow:
+                                            renderPipelinePlan.renderWindow,
+                                        maxRenderedLineCount: viewportLineCap,
+                                        collapsedSemanticBlockKeys:
+                                            _collapsedSemanticBlockKeys,
+                                        onToggleSemanticBlock:
+                                            _toggleSemanticBlock,
+                                        onTapLine: _handleLineTapDown,
+                                        onPanStartLine: _handleLinePanStart,
+                                        onPanUpdateLine: _handleLinePanUpdate,
+                                        onPanEnd: _handleLinePanEnd,
+                                        showInlineLanguageFeedback:
+                                            widget.showInlineLanguageFeedback,
+                                        compactInlineLanguageFeedback: widget
+                                            .compactInlineLanguageFeedback,
+                                      ),
+                                    ],
                                   ),
-                                  child: const SizedBox.shrink(),
-                                ),
-                                if (_textInputClient.isComposing)
-                                  Text(
-                                    _textInputClient.provisionalText,
-                                    key: const ValueKey(
-                                      'source-composition-range',
-                                    ),
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      backgroundColor: const Color(0x337A65B3),
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                for (
-                                  var index = 0;
-                                  index <
-                                      widget
-                                          .controller
-                                          .selectionSet
-                                          .selections
-                                          .length;
-                                  index += 1
-                                )
-                                  SizedBox.shrink(
-                                    key: ValueKey(
-                                      'source-selection-item-$index',
-                                    ),
-                                  ),
-                                KeyedSubtree(
-                                  key: ValueKey(
-                                    viewportBinding.boundToScrollController
-                                        ? 'source-viewport-binding-bound'
-                                        : 'source-viewport-binding-unbound',
-                                  ),
-                                  child: const SizedBox.shrink(),
-                                ),
-                                if (_inlineRenameOpen) ...[
-                                  _buildInlineRenamePanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_introduceVariablePanelOpen) ...[
-                                  _buildIntroduceVariablePanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_extractFunctionPanelOpen) ...[
-                                  _buildExtractFunctionPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_changeSignaturePanelOpen) ...[
-                                  _buildChangeSignaturePanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_surroundLookupOpen) ...[
-                                  _buildSurroundLookupPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_completionLookupOpen) ...[
-                                  _buildCompletionLookupPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_symbolLookupOpen) ...[
-                                  _buildSymbolLookupPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_quickFixLookupOpen) ...[
-                                  _buildQuickFixLookupPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_quickDocumentationOpen) ...[
-                                  _buildQuickDocumentationPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_parameterInfoOpen) ...[
-                                  _buildParameterInfoPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_usagesPanelOpen) ...[
-                                  _buildUsagesPanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_safeDeletePanelOpen) ...[
-                                  _buildSafeDeletePanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                if (_inlineVariablePanelOpen) ...[
-                                  _buildInlineVariablePanel(context),
-                                  const SizedBox(height: 12),
-                                ],
-                                ..._buildPreviewChildren(
-                                  context,
-                                  controller: widget.controller,
-                                  viewportProfile: widget.viewportProfile,
-                                  hover: widget.hover,
-                                  completions: widget.completions,
-                                  activeReferences: widget.activeReferences,
-                                  activeToken: widget.activeToken,
-                                  activeSemanticKind: widget.activeSemanticKind,
-                                  document: widget.document,
-                                  selection: widget.selection,
-                                  analysis: widget.analysis,
-                                  renderPlan: widget.renderPlan,
-                                  semanticThemeBinding:
-                                      widget.semanticThemeBinding,
-                                  lineStarts: lineStarts,
-                                  semanticBlocks: effectiveSemanticBlocks,
-                                  renderWindow: renderPipelinePlan.renderWindow,
-                                  maxRenderedLineCount: viewportLineCap,
-                                  collapsedSemanticBlockKeys:
-                                      _collapsedSemanticBlockKeys,
-                                  onToggleSemanticBlock: _toggleSemanticBlock,
-                                  onTapLine: _handleLineTapDown,
-                                  onPanStartLine: _handleLinePanStart,
-                                  onPanUpdateLine: _handleLinePanUpdate,
-                                  onPanEnd: _handleLinePanEnd,
-                                  showInlineLanguageFeedback:
-                                      widget.showInlineLanguageFeedback,
-                                  compactInlineLanguageFeedback:
-                                      widget.compactInlineLanguageFeedback,
-                                ),
-                              ],
-                            ),
                           ),
                         ],
                       ),
