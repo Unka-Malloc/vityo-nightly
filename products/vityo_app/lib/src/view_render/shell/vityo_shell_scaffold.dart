@@ -454,6 +454,10 @@ class VityoShellScaffold extends StatelessWidget {
           viewportProfile: viewportProfile,
           visibleModules: shell.visibleModules,
           mountedModules: shell.mountedModules,
+          activationSession: shell.extensionActivationSession,
+          supervisorSnapshot: shell.extensionHostSupervisorSnapshot,
+          launchResults: shell.extensionHostLaunchResults,
+          telemetryEvents: shell.extensionHostTelemetryEvents,
           onRefreshModules: () {
             return shell.executeCommand(AppCommandId.refreshModules);
           },

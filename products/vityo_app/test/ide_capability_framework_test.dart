@@ -525,6 +525,19 @@ void main() {
       entriesById['extension.manifest']?.summary,
       contains('ExtensionActivationPlan'),
     );
+    expect(
+      entriesById['extension.manifest']?.summary,
+      contains('ExtensionHostStartupExecutor'),
+    );
+    expect(
+      entriesById['extension.manifest']?.summary,
+      contains('browser Workers'),
+    );
+    expect(
+      entriesById['extension.manifest']?.status,
+      IdeCapabilityStatus.ready,
+    );
+    expect(entriesById['extension.manifest']?.todo, isEmpty);
     expect(entriesById['extension.manifest']?.runtimeMaturityBlocking, isFalse);
     expect(
       entriesById['extension.marketplace']?.summary,

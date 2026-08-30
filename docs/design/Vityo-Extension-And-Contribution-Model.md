@@ -3,15 +3,17 @@
 **Purpose:** Define Vityo's Styio-native extension and contribution model — how modules declare capabilities, how contributions are routed, and how the extension host isolates and activates extensions. This is NOT a VS Code extension API clone.
 
 **Owner:** Extension/module architecture owner (`CODEOWNERS` → module_host domain)
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-31
 
 ---
 
 ## 1. Design Principles
 
 1. **Styio-first, not VS Code-compatible.** Vityo extensions use a Styio-native manifest schema and typed contribution model. No attempt is made to load or run VS Code extensions.
-2. **Capability-gated activation.** Extensions declare their required capabilities; the host activates them only when the capability matrix permits.
-3. **Isolated execution.** Extensions run in an isolated context; they cannot directly access the file system, network, or UI tree without declared permissions.
+2. **Capability-gated activation.** Extensions expose capability flags; the host activates them only when trust, lifecycle state, and the module capability matrix permit.
+3. **Trust-matched execution.** Bundled code may use the registered in-process
+   host path; installable code must use an OS process, browser Worker, or an
+   explicitly configured remote service.
 4. **Typed contributions, not string-based.** Contribution points are typed Dart classes, not JSON string identifiers.
 5. **Staged updates.** Extensions support staged update cycles: verify → stage → activate → rollback on failure.
 
@@ -23,14 +25,18 @@ Extensions declare their identity, capabilities, contributions, and requirements
 
 ```dart
 class ExtensionManifest {
-  final int schemaVersion;         // Manifest schema version
-  final String id;                 // Unique extension ID (e.g., "styio.cpp-tools")
-  final String name;               // Human-readable name
-  final String version;            // SemVer
-  final List<String> activationEvents;  // e.g., ["onLanguage:cpp", "onWorkspaceOpen"]
-  final List<ExtensionContribution> contributions;  // Typed contributions
-  final List<String> requiredCapabilities;  // e.g., ["language.cpp", "toolchain.clang"]
-  final ExtensionIsolation isolation;  // process | same-process | hosted
+  final int schemaVersion;
+  final String extensionId;
+  final String displayName;
+  final String version;
+  final String publisher;
+  final String entrypoint;
+  final String? moduleId;
+  final List<String> activationEvents;
+  final List<ExtensionContributionPoint> contributions;
+  final Map<String, bool> capabilities;
+  final bool trustedByDefault;
+  final Map<String, Object?> metadata;
 }
 ```
 
@@ -38,10 +44,13 @@ Reference: `products/vityo_app/lib/src/view_ide/module_host/extension_manifest_c
 
 ### 2.2 Manifest Validation
 
-- Schema version must be parseable and <= current host version.
-- ID must be unique within the installed extension set.
-- Required capabilities must be satisfiable by the current capability matrix.
-- Contributions must be valid for their declared contribution point type.
+- ID, version, publisher, and entrypoint must be non-empty.
+- ID must be unique within the installed extension registry.
+- Every contribution must have a non-empty ID and target.
+- Schema version and unknown extension fields round-trip through JSON so later
+  schema owners can migrate without silently dropping data.
+- Activation requires both enabled and trusted state; installed third-party
+  extensions are not implicitly trusted.
 
 ## 3. Contribution Model
 
@@ -83,17 +92,40 @@ The `ExtensionContributionRouter` (at `products/vityo_app/lib/src/view_ide/modul
 
 | Level | Description | Use Case |
 |-------|------------|----------|
-| `same-process` | Extension runs in the Vityo process (Dart isolate) | Simple themes, keybindings |
-| `process` | Extension runs as a separate OS process | Language servers, toolchains |
-| `hosted` | Extension runs on a remote host | Cloud-backed services |
+| `in-process` | Compiled-in module activates from Vityo's registered host set | Shell, editor, themes |
+| `local-process` | Extension runs as a vityod-managed OS process | Language servers, toolchains |
+| `web-worker` | Extension runs in a browser Worker | Web language and analysis workers |
+| `remote-service` | Extension connects to an explicitly configured remote service | Cloud-backed services |
+| `blocked` | Trust or platform policy rejected execution | Untrusted or unsupported extensions |
 
 ### 4.2 Isolation Rules
 
-- `same-process` extensions must not access `dart:io` directly.
-- `process` extensions communicate via stdin/stdout or socket with typed codecs.
-- `hosted` extensions require network permission and health monitoring.
+- `in-process` extensions are compiled into Vityo and activate only from the
+  bundled module registry.
+- `local-process` extensions launch through the platform `ProcessManager`, so
+  vityod owns process identity and cancellation.
+- `web-worker` extensions use the browser Worker constructor and the browser's
+  origin/security policy.
+- `remote-service` extensions require a registered client and explicit network
+  permission; the host never silently substitutes another isolation mode.
 
 Reference: `products/vityo_app/lib/src/view_ide/module_host/extension_host_isolation.dart`
+
+### 4.3 Startup execution and telemetry
+
+`ExtensionHostStartupExecutor` consumes the activation supervisor snapshot and
+dispatches every active record through the platform launcher registry. Each
+record must leave `starting` as either `running` or `failed`; the execution
+receipt retains launch identity and both transition events. App bootstrap owns
+this receipt and the Extensions surface exposes it under **Activation & Hosts**.
+
+The platform catalog is selected at compile time:
+
+- Native targets register the compiled-in container and managed OS-process
+  launcher.
+- Web registers the compiled-in container and browser Worker launcher.
+- Unsupported targets register only capabilities they can execute; missing
+  launchers remain explicit failures instead of false-ready states.
 
 ## 5. Extension Lifecycle
 
@@ -140,7 +172,7 @@ The `ExtensionMarketplace` (at `products/vityo_app/lib/src/view_ide/module_host/
 
 ## 7. Capability Matrix Integration
 
-Extensions declare `requiredCapabilities` in their manifest. The `ModuleCapabilityMatrix` (at `products/vityo_app/lib/src/view_ide/module_host/module_capability_matrix.dart`) gates activation:
+Extensions expose capability flags in their manifest. The `ModuleCapabilityMatrix` (at `products/vityo_app/lib/src/view_ide/module_host/module_capability_matrix.dart`) gates mounting and activation:
 
 - If a required capability is unavailable, the extension is blocked.
 - If a required capability is degraded, the extension activates with limited functionality.
@@ -158,9 +190,11 @@ Every new contribution point must have:
 ### 8.2 Extension Security
 
 - Extensions must declare all permissions in their manifest.
-- `same-process` extensions are subject to Dart isolate restrictions.
-- `process` extensions run with the user's OS permissions; host validates before launch.
-- `hosted` extensions require explicit network permission and TLS.
+- `in-process` extensions are limited to compiled-in, trusted modules.
+- `local-process` extensions run with the user's OS permissions; the host
+  validates trust and isolation policy before launch.
+- `web-worker` extensions remain subject to browser origin and CSP policy.
+- `remote-service` extensions require explicit network permission and TLS.
 
 ### 8.3 Extension Hygiene
 

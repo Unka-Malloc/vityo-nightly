@@ -3,7 +3,7 @@
 **Purpose:** Define security and supply-chain rules across the Vityo IDE, the shared Agent protocol, and compatible Agent runtimes.
 
 **Owner:** Governance owner (`CODEOWNERS` → governance domain)
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-31
 
 ---
 
@@ -221,10 +221,12 @@ Review-required and prohibited license checks are enforced by `scripts/check_lic
 
 ### 5.1 Extension Permissions
 
-Vityo extensions (modules) must declare all required permissions in their manifest. The extension host enforces:
-- `same-process` extensions: Dart isolate restrictions, no `dart:io` direct access
-- `process` extensions: User OS permissions, validated before launch
-- `hosted` extensions: Network permission required, TLS enforced
+Vityo extensions (modules) must declare their capabilities and isolation mode. The extension host enforces:
+- `in-process`: compiled-in, trusted modules from the bundled registry only
+- `local-process`: trust-policy validation followed by vityod-managed launch
+- `web-worker`: browser Worker origin and CSP enforcement
+- `remote-service`: explicit client registration, network permission, and TLS
+- unknown or unsupported isolation values: blocked without fallback
 
 ### 5.2 Extension Vetting
 

@@ -35,6 +35,14 @@ class _VityoAppState extends State<VityoApp> {
       workspaceDocumentStore: widget.bootstrap.workspaceDocumentStore,
       moduleRegistry: widget.bootstrap.moduleRegistry,
       nativeModuleLoader: widget.bootstrap.nativeModuleLoader,
+      extensionActivationSession:
+          widget.bootstrap.extensionStartupPlan?.activationSession,
+      extensionHostSupervisorSnapshot:
+          widget.bootstrap.extensionStartupPlan?.supervisorSnapshot,
+      extensionHostLaunchResults:
+          widget.bootstrap.extensionStartupPlan?.launchResults ?? const [],
+      extensionHostTelemetryEvents:
+          widget.bootstrap.extensionStartupPlan?.telemetryEvents ?? const [],
       editorController: widget.bootstrap.editorController,
       executionAdapter: widget.bootstrap.executionAdapter,
       executionAdapterFactory: widget.bootstrap.executionAdapterFactory,

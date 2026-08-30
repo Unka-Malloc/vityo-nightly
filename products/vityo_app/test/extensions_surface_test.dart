@@ -159,6 +159,84 @@ void main() {
       expect(trustedModuleId, 'agent.panel');
     },
   );
+
+  testWidgets('extensions surface expands activation host telemetry', (
+    tester,
+  ) async {
+    final timestamp = DateTime.utc(2026, 8, 31, 9);
+    final plan = const ExtensionHostExecutionPlan(
+      extensionId: 'styio.language',
+      mode: ExtensionHostIsolationMode.localProcess,
+      requestedMode: ExtensionHostIsolationMode.localProcess,
+      reason: 'Trusted extension uses a managed local process.',
+    );
+    final record = ExtensionHostSupervisorRecord(
+      extensionId: 'styio.language',
+      plan: plan,
+      status: ExtensionHostSupervisorStatus.running,
+      action: ExtensionHostSupervisorAction.spawnLocalProcess,
+      message: 'Managed extension-host process started.',
+      updatedAt: timestamp,
+    );
+    final session = ExtensionActivationSession(
+      event: 'onStartup',
+      activatedAt: timestamp,
+      decisions: const <ExtensionActivationDecision>[
+        ExtensionActivationDecision(
+          extensionId: 'styio.language',
+          event: 'onStartup',
+          status: ExtensionActivationDecisionStatus.activated,
+          message: 'Extension activated.',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ExtensionsSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 800,
+            ),
+            visibleModules: const <ModuleDefinition>[],
+            mountedModules: const <ModuleDefinition>[],
+            activationSession: session,
+            supervisorSnapshot: ExtensionHostSupervisorSnapshot(
+              records: <ExtensionHostSupervisorRecord>[record],
+            ),
+            telemetryEvents: <ExtensionHostSupervisorTelemetryEvent>[
+              ExtensionHostSupervisorTelemetryEvent.fromRecord(record),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Activation & Hosts'), findsOneWidget);
+    expect(find.textContaining('1 running'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('extensions-host-styio.language')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('extensions-activation-telemetry-toggle')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('extensions-host-styio.language')),
+      findsOneWidget,
+    );
+    expect(find.text('local-process'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('extensions-activation-timeline')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 ModuleDefinition _module({

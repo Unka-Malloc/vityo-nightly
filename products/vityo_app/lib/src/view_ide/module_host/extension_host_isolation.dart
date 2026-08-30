@@ -490,9 +490,14 @@ ExtensionHostIsolationMode _requestedIsolationMode(ExtensionManifest manifest) {
   final raw = manifest.metadata['isolationMode'];
   return switch (raw) {
     'in-process' => ExtensionHostIsolationMode.inProcess,
+    'local-process' => ExtensionHostIsolationMode.localProcess,
     'web-worker' => ExtensionHostIsolationMode.webWorker,
     'remote-service' => ExtensionHostIsolationMode.remoteService,
     'blocked' => ExtensionHostIsolationMode.blocked,
+    _ when raw is String && raw.trim().isNotEmpty =>
+      ExtensionHostIsolationMode.blocked,
+    _ when manifest.metadata['source'] == 'module-registry' =>
+      ExtensionHostIsolationMode.inProcess,
     _ =>
       manifest.trustedByDefault
           ? ExtensionHostIsolationMode.localProcess

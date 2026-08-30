@@ -133,6 +133,7 @@ class ExtensionManifest {
     List<ExtensionContributionPoint> contributions =
         const <ExtensionContributionPoint>[],
     Map<String, Object?> metadata = const <String, Object?>{},
+    bool? trustedByDefault,
   }) {
     return ExtensionManifest(
       extensionId: module.moduleId,
@@ -146,7 +147,8 @@ class ExtensionManifest {
       contributions: contributions,
       capabilities: module.capabilityFlags,
       trustedByDefault:
-          module.enabledByDefault && module.kind == ModuleKind.core,
+          trustedByDefault ??
+          (module.enabledByDefault && module.kind == ModuleKind.core),
       metadata: metadata,
     );
   }
@@ -234,9 +236,9 @@ class ExtensionManifest {
 class ExtensionManifestRegistry {
   ExtensionManifestRegistry([
     Iterable<ExtensionManifest> manifests = const <ExtensionManifest>[],
-  ])  : schemaVersion = 1,
-        extensions = const <String, Object?>{},
-        _manifests = <String, ExtensionManifest>{} {
+  ]) : schemaVersion = 1,
+       extensions = const <String, Object?>{},
+       _manifests = <String, ExtensionManifest>{} {
     for (final manifest in manifests) {
       register(manifest);
     }

@@ -105,6 +105,12 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     required this.workspaceDocumentStore,
     required ModuleRegistry moduleRegistry,
     required NativeModuleLoader nativeModuleLoader,
+    this.extensionActivationSession,
+    this.extensionHostSupervisorSnapshot,
+    this.extensionHostLaunchResults =
+        const <ExtensionHostSandboxLaunchResult>[],
+    this.extensionHostTelemetryEvents =
+        const <ExtensionHostSupervisorTelemetryEvent>[],
     required this.editorController,
     required ExecutionAdapter executionAdapter,
     required ExecutionAdapterFactory executionAdapterFactory,
@@ -656,6 +662,11 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   final ValueListenable<ToolchainManagerStatusReport>? toolchainStatusReport;
   final ProjectStyioLanguageService projectLanguageService;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
+  final ExtensionActivationSession? extensionActivationSession;
+  final ExtensionHostSupervisorSnapshot? extensionHostSupervisorSnapshot;
+  final List<ExtensionHostSandboxLaunchResult> extensionHostLaunchResults;
+  final List<ExtensionHostSupervisorTelemetryEvent>
+  extensionHostTelemetryEvents;
   final AgentClientRegistry? agentClientRegistry;
   final AgentCollaborationService? agentCollaboration;
   final bool _ownsLanguageServiceStatus;

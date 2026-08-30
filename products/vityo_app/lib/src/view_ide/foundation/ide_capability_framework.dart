@@ -581,12 +581,10 @@ class VityoIdeCapabilityFramework {
           id: 'extension.manifest',
           layer: IdeCapabilityLayer.extension,
           title: 'Extension and module manifest',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/module_host',
           summary:
-              'Module manifests can be projected into stable extension manifests with activation events, ExtensionActivationPlan enabled/trusted gating, contribution points, capability flags, registry lookup, Foundation DataStore persistence, extension activation sessions, persisted activation history, lifecycle snapshots, lifecycle hook catalogs/runners, host isolation plans, trust-policy gating, host supervisor snapshots, ExtensionHostSupervisorExecutionBridge runtime dispatch, ExtensionHostSandboxLauncherRegistry launcher dispatch, activation telemetry events, theme/view contribution catalogs, and contribution route manifests for target registries.',
-          todo:
-              'TODO: implement concrete OS/web sandbox launcher registrations and render activation telemetry UI.',
+              'Module manifests project into stable extension manifests with activation events, ExtensionActivationPlan enabled/trusted gating, typed contribution points, capability flags, registry lookup, Foundation DataStore persistence, activation history, lifecycle hooks, isolation policy, and contribution routes. ExtensionHostStartupExecutor now closes each activation from starting to running/failed through concrete conditional launcher registrations: a compiled-in host registry, vityod-managed OS processes with process identity, and browser Workers. App bootstrap preserves the execution receipt, runtime output dispatch, launch results, and transition telemetry; the Extensions surface renders an expandable Activation & Hosts inspector. Native macOS process launch/UI click evidence plus hermetic Linux/Windows and Chrome Worker tests cover the production boundaries.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code extension manifest',

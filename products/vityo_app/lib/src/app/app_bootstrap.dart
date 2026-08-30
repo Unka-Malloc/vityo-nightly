@@ -79,18 +79,59 @@ class AppExtensionStartupPlan {
     required this.activationSession,
     required this.supervisorSnapshot,
     required this.contributionRoutes,
+    this.launchResults = const <ExtensionHostSandboxLaunchResult>[],
+    this.telemetryEvents = const <ExtensionHostSupervisorTelemetryEvent>[],
+    this.launcherRegistrations =
+        const <ExtensionHostSandboxLauncherRegistration>[],
+    this.executedAt,
   });
 
   final ExtensionManifestRegistry manifestRegistry;
   final ExtensionActivationSession activationSession;
   final ExtensionHostSupervisorSnapshot supervisorSnapshot;
   final ExtensionContributionRouteManifest contributionRoutes;
+  final List<ExtensionHostSandboxLaunchResult> launchResults;
+  final List<ExtensionHostSupervisorTelemetryEvent> telemetryEvents;
+  final List<ExtensionHostSandboxLauncherRegistration> launcherRegistrations;
+  final DateTime? executedAt;
+
+  bool get executed => executedAt != null;
+
+  AppExtensionStartupPlan applyExecution({
+    required ExtensionHostStartupExecutionReceipt receipt,
+    required List<ExtensionHostSandboxLauncherRegistration> launchers,
+  }) {
+    return AppExtensionStartupPlan(
+      manifestRegistry: manifestRegistry,
+      activationSession: activationSession,
+      supervisorSnapshot: receipt.supervisorSnapshot,
+      contributionRoutes: contributionRoutes,
+      launchResults: receipt.launchResults,
+      telemetryEvents: receipt.telemetryEvents,
+      launcherRegistrations:
+          List<ExtensionHostSandboxLauncherRegistration>.unmodifiable(
+            launchers,
+          ),
+      executedAt: receipt.executedAt,
+    );
+  }
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'manifestCount': manifestRegistry.list().length,
+      'executed': executed,
+      if (executedAt != null) 'executedAt': executedAt!.toIso8601String(),
       'activationSession': activationSession.toJson(),
       'supervisorSnapshot': supervisorSnapshot.toJson(),
+      'launchResults': launchResults
+          .map((result) => result.toJson())
+          .toList(growable: false),
+      'telemetryEvents': telemetryEvents
+          .map((event) => event.toJson())
+          .toList(growable: false),
+      'launcherRegistrations': launcherRegistrations
+          .map((launcher) => launcher.toJson())
+          .toList(growable: false),
       'contributionRoutes': contributionRoutes.toJson(),
     };
   }
@@ -660,7 +701,7 @@ class AppBootstrap {
       platformTarget: platformTarget,
     );
     final runtimeOutputBuffer = RuntimeOutputLiveBuffer();
-    final extensionStartupPlan = createExtensionStartupPlan(
+    var extensionStartupPlan = createExtensionStartupPlan(
       moduleRegistry: moduleRegistry,
     );
     final nativeModuleLoader = NoopNativeModuleLoader(
@@ -689,6 +730,31 @@ class AppBootstrap {
       workspaceRoot: projectSnapshot.workspaceRoot,
     );
     final foundationDataStore = _createFoundationDataStore(platformManagers);
+    final extensionHostLaunchers =
+        createPlatformExtensionHostSandboxLauncherRegistry(
+          platformTarget: platformTarget,
+          processManager: platformManagers.process,
+          compiledInExtensionIds: extensionStartupPlan.manifestRegistry
+              .list()
+              .where(
+                (manifest) => manifest.metadata['source'] == 'module-registry',
+              )
+              .map((manifest) => manifest.extensionId),
+        );
+    final extensionHostExecution =
+        await ExtensionHostStartupExecutor(
+          bridge: ExtensionHostSupervisorExecutionBridge(
+            sandboxLaunchers: extensionHostLaunchers,
+          ),
+        ).execute(
+          snapshot: extensionStartupPlan.supervisorSnapshot,
+          manifestRegistry: extensionStartupPlan.manifestRegistry,
+          buffer: runtimeOutputBuffer,
+        );
+    extensionStartupPlan = extensionStartupPlan.applyExecution(
+      receipt: extensionHostExecution,
+      launchers: extensionHostLaunchers.launchers,
+    );
     final credentialStorage = await createPlatformCredentialDataStoreBootstrap(
       platformTarget: platformTarget,
     );
@@ -1133,6 +1199,7 @@ class AppBootstrap {
           publisher: publisher,
           activationEvents: extensionActivationEvents,
           contributions: extensionContributions,
+          trustedByDefault: true,
           metadata: <String, Object?>{
             'source': 'module-registry',
             'moduleSlot': definition.manifest.slot.wireValue,
