@@ -493,6 +493,7 @@ class DebugRuntimeExecutionAdapter {
     required DebugRuntimeExecutionResult execution,
     required RuntimeOutputLiveBuffer buffer,
     String reason = 'Debug execution cancelled.',
+    bool force = false,
   }) async {
     final handle = execution.handle;
     if (handle == null) {
@@ -507,7 +508,7 @@ class DebugRuntimeExecutionAdapter {
     }
     final terminationExecution = await _terminationExecutor.execute(
       handle: handle,
-      plan: handle.terminationPlan(),
+      plan: handle.terminationPlan(force: force),
       reason: reason,
     );
     if (!terminationExecution.executed) {
@@ -518,6 +519,7 @@ class DebugRuntimeExecutionAdapter {
         status: DebugRuntimeExecutionStatus.blocked,
         telemetryStatus: DebugLaunchTelemetryStatus.blocked,
         message: terminationExecution.message,
+        terminationExecution: terminationExecution,
       );
     }
     final record = DebugLaunchTelemetryRecord.fromSessionSnapshot(
@@ -563,6 +565,7 @@ class DebugRuntimeExecutionAdapter {
     required DebugRuntimeExecutionStatus status,
     required DebugLaunchTelemetryStatus telemetryStatus,
     required String message,
+    DebugSessionTerminationExecutionResult? terminationExecution,
   }) {
     final record = DebugLaunchTelemetryRecord.fromExecutionPlan(
       workspaceId: workspaceId,
@@ -591,6 +594,7 @@ class DebugRuntimeExecutionAdapter {
       telemetry: telemetry,
       outputEvents: outputEvents,
       dispatchResult: dispatchResult,
+      terminationExecution: terminationExecution,
     );
   }
 

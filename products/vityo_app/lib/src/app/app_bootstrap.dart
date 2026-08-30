@@ -22,6 +22,9 @@ import '../view_ide/backend_toolchain/project_graph_contract.dart';
 import '../view_ide/backend_toolchain/runtime_event_adapter.dart';
 import '../view_ide/debugger/debug_adapter_launcher.dart';
 import '../view_ide/debugger/debug_adapter_process_transport_io.dart';
+import '../view_ide/debugger/debug_breakpoint_store.dart';
+import '../view_ide/debugger/debug_launch_contract.dart';
+import '../view_ide/debugger/extension_debug_contributions.dart';
 import '../view_ide/interaction/interaction.dart';
 import '../ide/editor/document_state.dart';
 import '../view_ide/environment/environment.dart';
@@ -215,6 +218,9 @@ class AppBootstrap {
     this.agentCollaboration,
     this.vityodClient,
     this.debugAdapterLauncher,
+    this.debugBreakpointStore,
+    this.debugLaunchConfigurationStore,
+    this.debugLaunchProfiles = const <DebugLaunchProfile>[],
     this.workspaceTextSearchProvider,
     this.lspGateway,
     this.extensionStartupPlan,
@@ -264,6 +270,9 @@ class AppBootstrap {
   final AgentCollaborationService? agentCollaboration;
   final VityodClient? vityodClient;
   final DapDebugAdapterLauncher? debugAdapterLauncher;
+  final DebugBreakpointStore? debugBreakpointStore;
+  final DebugLaunchConfigurationStore? debugLaunchConfigurationStore;
+  final List<DebugLaunchProfile> debugLaunchProfiles;
   final WorkspaceTextSearchProvider? workspaceTextSearchProvider;
   final VityodLspGateway? lspGateway;
   final AppExtensionStartupPlan? extensionStartupPlan;
@@ -698,6 +707,16 @@ class AppBootstrap {
         WorkspaceFileExplorerStateStore.fromDataStore(
           dataStore: foundationDataStore,
         );
+    final debugBreakpointStore = DebugBreakpointStore.fromDataStore(
+      dataStore: foundationDataStore,
+    );
+    final debugLaunchConfigurationStore =
+        DebugLaunchConfigurationStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
+    final debugLaunchProfiles = ExtensionDebugContributionCatalog.fromRoutes(
+      extensionStartupPlan.contributionRoutes,
+    ).profiles;
     final toolchainStore = ToolchainConfigurationStore(
       configurationStore: configurationStore,
     );
@@ -918,6 +937,9 @@ class AppBootstrap {
       debugAdapterLauncher: vityodClient == null
           ? null
           : createIoDapDebugAdapterLauncher(vityodClient),
+      debugBreakpointStore: debugBreakpointStore,
+      debugLaunchConfigurationStore: debugLaunchConfigurationStore,
+      debugLaunchProfiles: debugLaunchProfiles,
       workspaceTextSearchProvider: vityodClient == null
           ? null
           : VityodWorkspaceTextSearchProvider(client: vityodClient),

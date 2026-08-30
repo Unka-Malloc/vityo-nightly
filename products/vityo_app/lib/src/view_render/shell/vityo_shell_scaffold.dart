@@ -465,6 +465,7 @@ class VityoShellScaffold extends StatelessWidget {
           runtimeEvents: shell.lastRuntimeEvents,
           debugSession: shell.debugSession,
           debugRuntimeExecution: shell.lastDebugRuntimeExecutionResult,
+          debugLaunchConfigurations: shell.debugLaunchConfigurations,
           onStartDebugging: () {
             return shell.executeCommand(AppCommandId.startDebugging);
           },
@@ -474,12 +475,20 @@ class VityoShellScaffold extends StatelessWidget {
           onStopDebugging: () {
             return shell.executeCommand(AppCommandId.stopDebugging);
           },
+          onForceStopDebugging: () async {
+            await shell.forceStopDebugging();
+          },
           onContinueDebugging: () {
             return shell.executeCommand(AppCommandId.continueDebugging);
           },
           onStepOver: () {
             return shell.executeCommand(AppCommandId.stepOver);
           },
+          onSelectLaunchProfile: shell.selectDebugLaunchProfile,
+          onUpdateLaunchConfiguration: shell.updateDebugLaunchConfiguration,
+          onSaveBreakpoint: shell.saveDebugBreakpoint,
+          onRemoveBreakpoint: shell.removeDebugBreakpoint,
+          onSetBreakpointEnabled: shell.setDebugBreakpointEnabled,
           onSelectStackFrame: (frameId) {
             shell.selectDebugStackFrame(frameId);
           },

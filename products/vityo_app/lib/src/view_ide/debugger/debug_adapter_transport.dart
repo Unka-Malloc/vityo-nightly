@@ -20,6 +20,24 @@ abstract interface class DapProcessLifecycleSource {
   Future<int> get processExitCode;
 }
 
+class DapProcessTerminationOutcome {
+  const DapProcessTerminationOutcome({
+    required this.accepted,
+    required this.processTerminated,
+    required this.message,
+    this.metadata = const <String, Object?>{},
+  });
+
+  final bool accepted;
+  final bool processTerminated;
+  final String message;
+  final Map<String, Object?> metadata;
+}
+
+abstract interface class DapProcessTerminationSource {
+  Future<DapProcessTerminationOutcome> terminateProcess({required bool force});
+}
+
 class DapSessionTransportBridge {
   DapSessionTransportBridge({
     required this.transport,

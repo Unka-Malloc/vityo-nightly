@@ -459,15 +459,27 @@ class DebugSessionTerminationExecutor {
     required String reason,
   }) async {
     final handler = processTerminationHandler;
-    if (handler == null) {
+    final transport = handle.bridge.transport;
+    if (handler == null && transport is! DapProcessTerminationSource) {
       return DebugSessionTerminationExecutionResult(
         plan: plan,
         status: DebugSessionTerminationExecutionStatus.blocked,
         message:
-            'Debug process termination is blocked: no process termination handler is registered.',
+            'Debug process termination is blocked: the adapter transport does not expose process termination.',
       );
     }
-    final result = await handler(handle: handle, plan: plan, reason: reason);
+    final result = handler != null
+        ? await handler(handle: handle, plan: plan, reason: reason)
+        : await (() async {
+            final outcome = await (transport as DapProcessTerminationSource)
+                .terminateProcess(force: true);
+            return DebugProcessTerminationResult(
+              accepted: outcome.accepted,
+              processTerminated: outcome.processTerminated,
+              message: outcome.message,
+              metadata: outcome.metadata,
+            );
+          })();
     if (!result.accepted) {
       return DebugSessionTerminationExecutionResult(
         plan: plan,

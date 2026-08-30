@@ -481,9 +481,15 @@ void main() {
       entriesById['debugger.dap']?.summary,
       contains('DebugSessionTerminationExecutor'),
     );
+    expect(entriesById['debugger.dap']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['debugger.dap']?.todo, isEmpty);
     expect(
-      entriesById['debugger.dap']?.todo,
-      contains('production process-kill handlers'),
+      entriesById['debugger.dap']?.summary,
+      contains('first-line-safe breakpoint'),
+    );
+    expect(
+      entriesById['debugger.dap']?.summary,
+      contains('Windows JavaScript'),
     );
     expect(entriesById['debugger.dap']?.runtimeMaturityBlocking, isFalse);
     expect(

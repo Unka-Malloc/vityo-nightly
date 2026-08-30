@@ -251,6 +251,13 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 
 ### 4.4 Run / Debug
 - **Success:** CompileAndRun succeeds; output to runtime surface.
+- **Debug success:** Select any registered DAP profile (including extension-provided Python or
+  JavaScript adapters), edit its program, working directory, arguments, and stop-on-entry setting,
+  add or edit persisted breakpoints, then Start. The Debug Console exposes the real daemon process
+  handle and OS PID alongside launch telemetry, threads, frames, scopes, variables, and output.
+- **Debug stop:** Stop sends the graceful DAP disconnect route. Force Stop requires confirmation and
+  terminates the adapter through its production transport owner; both routes close the session and
+  record termination telemetry.
 - **Blocked compiler not installed:** Install prompt.
 - **Blocked unrunnable:** `RuntimeExecutionPlanStatus.blockedUnrunnable`.
 - **Blocked hosted:** Retry actions.
@@ -360,6 +367,8 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `runtime_execution_plan_test.dart` | Planning, handoff, binding, dispatch |
 | `runtime_execution_desktop_matrix_test.dart` | Hermetic Linux and Windows process identity, shell routing, and cancellation |
 | `runtime_execution_native_ui_test.dart` | Native macOS Flutter Run/Stop clicks against a real vityod-managed process |
+| `debugger_dap_desktop_matrix_test.dart` | Hermetic Linux Python and Windows JavaScript DAP launch identity and force termination |
+| `debugger_dap_native_ui_test.dart` | Native macOS adapter selection, launch editing, first-line breakpoint, real PID, and confirmed force-stop clicks |
 | `runtime_output_channel_test.dart` | Event production, subscription, channel summary |
 | `debug_console_surface_test.dart` | Replay, graph digest, debug lanes |
 | `workspace_diagnostics_controller_test.dart` | Producer lifecycle, snapshot dispatch, retry |

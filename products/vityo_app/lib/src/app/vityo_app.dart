@@ -46,6 +46,10 @@ class _VityoAppState extends State<VityoApp> {
       agentCollaboration: widget.bootstrap.agentCollaboration,
       vityodClient: widget.bootstrap.vityodClient,
       debugAdapterLauncher: widget.bootstrap.debugAdapterLauncher,
+      debugBreakpointStore: widget.bootstrap.debugBreakpointStore,
+      debugLaunchConfigurationStore:
+          widget.bootstrap.debugLaunchConfigurationStore,
+      initialDebugLaunchProfiles: widget.bootstrap.debugLaunchProfiles,
       workspaceTextSearchProvider: widget.bootstrap.workspaceTextSearchProvider,
       platformManagers: widget.bootstrap.platformManagers,
       credentialStorageSettings: widget.bootstrap.credentialStorage == null

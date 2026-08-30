@@ -8,6 +8,8 @@ mixin ShellRuntimeDebugFacade on ShellRuntimeFacadeHost {
   DebugRuntimeExecutionResult? get lastDebugRuntimeExecutionResult =>
       _debugController.lastRuntimeExecutionResult;
   List<DebugBreakpoint> get debugBreakpoints => _debugController.breakpoints;
+  DebugLaunchConfigurationSet get debugLaunchConfigurations =>
+      _debugController.launchConfigurations;
 
   DebugCommandResult toggleBreakpointAtSelection() {
     final position = editorController.document.positionForOffset(
@@ -24,6 +26,45 @@ mixin ShellRuntimeDebugFacade on ShellRuntimeFacadeHost {
 
   Future<DebugCommandResult> stopDebugging() =>
       _debugController.stopConfiguredSession();
+
+  Future<DebugCommandResult> forceStopDebugging() =>
+      _debugController.forceStopConfiguredSession();
+
+  Future<DebugCommandResult> saveDebugBreakpoint({
+    DebugBreakpoint? previous,
+    required String filePath,
+    required int line,
+    required bool enabled,
+  }) => _debugController.saveBreakpoint(
+    previous: previous,
+    filePath: filePath,
+    line: line,
+    enabled: enabled,
+  );
+
+  Future<DebugCommandResult> removeDebugBreakpoint(
+    DebugBreakpoint breakpoint,
+  ) => _debugController.removeBreakpoint(breakpoint);
+
+  Future<DebugCommandResult> setDebugBreakpointEnabled(
+    DebugBreakpoint breakpoint,
+    bool enabled,
+  ) => _debugController.setBreakpointEnabled(breakpoint, enabled);
+
+  Future<DebugCommandResult> selectDebugLaunchProfile(String profileId) =>
+      _debugController.selectLaunchProfile(profileId);
+
+  Future<DebugCommandResult> updateDebugLaunchConfiguration({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  }) => _debugController.updateSelectedLaunchConfiguration(
+    programPath: programPath,
+    cwd: cwd,
+    arguments: arguments,
+    stopOnEntry: stopOnEntry,
+  );
 
   bool refreshDebugAdapterSession() =>
       _debugController.refreshConfiguredSession();

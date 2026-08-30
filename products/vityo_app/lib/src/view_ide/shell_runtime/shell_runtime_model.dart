@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import '../backend_toolchain/backend_toolchain.dart';
 import '../commands/commands.dart';
 import '../debugger/debug_adapter_launcher.dart';
+import '../debugger/debug_breakpoint_store.dart';
+import '../debugger/debug_launch_contract.dart';
 import '../debugger/debug_launch_telemetry_store.dart';
 import '../debugger/debug_runtime_task_history.dart';
 import '../../ide/editor/editor.dart' hide WorkspaceEditSource;
@@ -137,6 +139,10 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     ProjectStyioLanguageService? projectLanguageService,
     EditorDocumentResourceBinding? editorFileBinding,
     DapDebugAdapterLauncher? debugAdapterLauncher,
+    DebugBreakpointStore? debugBreakpointStore,
+    DebugLaunchConfigurationStore? debugLaunchConfigurationStore,
+    Iterable<DebugLaunchProfile> initialDebugLaunchProfiles =
+        const <DebugLaunchProfile>[],
     DebugRuntimeTaskHistoryBinder debugRuntimeTaskHistoryBinder =
         const DebugRuntimeTaskHistoryBinder(),
     RuntimeTaskHistoryStore? debugRuntimeTaskHistoryStore,
@@ -399,15 +405,20 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     _debugController = DebugController.configured(
       toolchainManager: toolchainManager,
       workspaceRoot: () => workspaceController.activeProject.workspaceRoot,
+      workspaceId: () => workspaceController.activeProject.id,
       launcher: debugAdapterLauncher,
       runtimeOutputBuffer: this.runtimeOutputBuffer,
       runtimeTaskHistoryBinder: debugRuntimeTaskHistoryBinder,
       runtimeTaskHistoryStore: debugRuntimeTaskHistoryStore,
       runtimeTaskHistoryWorkspaceId: debugRuntimeTaskHistoryWorkspaceId,
       runtimeTaskHistoryMaxEntries: debugRuntimeTaskHistoryMaxEntries,
+      breakpointStore: debugBreakpointStore,
+      launchConfigurationStore: debugLaunchConfigurationStore,
+      initialLaunchProfiles: initialDebugLaunchProfiles,
       log: appendLog,
     );
     _debugController.addListener(_handleDebugChanged);
+    unawaited(_debugController.loadConfiguredState());
     _shellCommandFallbackController = ShellCommandFallbackController(
       log: appendLog,
       notify: notifyListeners,

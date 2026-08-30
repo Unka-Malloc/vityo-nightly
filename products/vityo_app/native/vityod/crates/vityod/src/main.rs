@@ -2336,7 +2336,11 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 working_directory,
                 environment,
             }) {
-                Ok(()) => json!({"state": "running", "processId": process_id}),
+                Ok(pid) => json!({
+                    "state": "running",
+                    "processId": process_id,
+                    "pid": pid,
+                }),
                 Err(error) => {
                     return error_response(
                         request,

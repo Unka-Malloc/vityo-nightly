@@ -800,7 +800,7 @@ impl ManagedByteProcessRegistry {
         }
     }
 
-    pub fn start(&mut self, launch: ByteProcessLaunch) -> Result<(), ByteProcessError> {
+    pub fn start(&mut self, launch: ByteProcessLaunch) -> Result<u32, ByteProcessError> {
         self.reap_exited();
         if launch.id.is_empty()
             || launch.id.len() > 256
@@ -847,6 +847,7 @@ impl ManagedByteProcessRegistry {
             command.process_group(0);
         }
         let mut child = command.spawn().map_err(|_| ByteProcessError::StartFailed)?;
+        let process_id = child.id();
         #[cfg(windows)]
         let job = WindowsJob::assign(&child).map_err(|_| ByteProcessError::StartFailed)?;
         #[cfg(unix)]
@@ -879,7 +880,7 @@ impl ManagedByteProcessRegistry {
                 exit_code: None,
             },
         );
-        Ok(())
+        Ok(process_id)
     }
 
     pub fn write(&mut self, id: &str, bytes: &[u8]) -> Result<(), ByteProcessError> {
@@ -1228,5 +1229,24 @@ mod tests {
         assert_eq!(snapshot.stdout, b"stdout-value");
         assert_eq!(snapshot.stderr, b"stderr-value");
         tasks.remove("drain").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_byte_process_returns_real_os_process_id() {
+        let mut processes = ManagedByteProcessRegistry::new(2, 1024);
+        let process_id = processes
+            .start(ByteProcessLaunch {
+                id: "dap:pid".into(),
+                executable: PathBuf::from("/bin/cat"),
+                arguments: Vec::new(),
+                working_directory: None,
+                environment: HashMap::new(),
+            })
+            .unwrap();
+
+        assert!(process_id > 0);
+        assert_eq!(processes.active_ids(), vec!["dap:pid".to_string()]);
+        processes.stop("dap:pid").unwrap();
     }
 }

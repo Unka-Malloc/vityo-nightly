@@ -39,15 +39,16 @@ void main() {
           )
           .toList(growable: false),
       <String>[
+        '/workspace/main.styio:0:true',
         '/workspace/main.styio:2:false',
         '/workspace/main.styio:4:true',
         '/workspace/other.styio:9:true',
       ],
     );
-    expect(next.breakpointsForFile('/workspace/main.styio'), hasLength(2));
+    expect(next.breakpointsForFile('/workspace/main.styio'), hasLength(3));
     expect(
       DebugBreakpointSet.fromJson(next.toJson()).breakpoints,
-      hasLength(3),
+      hasLength(4),
     );
   });
 

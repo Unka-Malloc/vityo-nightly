@@ -528,12 +528,10 @@ class VityoIdeCapabilityFramework {
           id: 'debugger.dap',
           layer: IdeCapabilityLayer.debugger,
           title: 'Debug Adapter Protocol framework',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/debugger',
           summary:
-              'DAP launch contracts, breakpoint serialization, persisted workspace breakpoint sets, launch profiles, workspace launch configuration sets, Foundation DataStore persistence, runtime task projection, runtime execution handoff, debug route plans, failure navigation actions, DapDebugAdapterExecutionPlan, DebugSessionTerminationPlan graceful/forced termination facts, DebugSessionTerminationExecutor DAP disconnect/terminate and process-kill handler bridge, DebugRuntimeExecutionAdapter, DebugLaunchTelemetryStore, DebugLaunchRuntimeOutputBinding output events, DebugConsoleSurface launch plan, telemetry summaries, runtime execution result controls, retry handoff, launcher execution-plan handoff, DAP snapshot task-history binding, live ShellRuntime DAP history appends, and extension debugger route consumption are wired.',
-          todo:
-              'TODO: wire breakpoint UI editing, non-C++ debug adapters, launch UI editing, and production process-kill handlers for debug adapters.',
+              'DAP launch contracts, language-neutral toolchain and extension adapter profiles, workspace launch configuration selection and editing, first-line-safe breakpoint serialization and persistence, breakpoint add/edit/enable/remove controls, Foundation DataStore persistence, runtime task projection, runtime execution handoff, debug route plans, failure navigation actions, DapDebugAdapterExecutionPlan, DebugSessionTerminationPlan graceful/forced termination facts, DebugSessionTerminationExecutor DAP disconnect/terminate and production transport process-kill handling, real vityod operating-system process identities, DebugRuntimeExecutionAdapter cancellation telemetry, DebugLaunchTelemetryStore, DebugLaunchRuntimeOutputBinding output events, theme-aware DebugConsoleSurface launch, process identity, output, retry, stack, thread, and variable controls, launcher execution-plan handoff, DAP snapshot task-history binding, live ShellRuntime DAP history appends, and extension debugger route consumption share one runtime path. Native macOS Flutter clicks cover Python adapter selection, launch editing, first-line breakpoint creation, real adapter start, process identity, and confirmed force-stop; hermetic Linux Python and Windows JavaScript matrices cover cross-platform DAP launch and termination contracts.',
           runtimeMaturityBlocking: false,
           references: <String>['Debug Adapter Protocol'],
         ),

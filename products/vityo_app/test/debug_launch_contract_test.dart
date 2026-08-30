@@ -10,6 +10,33 @@ import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
 import 'support/test_file_system_manager.dart';
 
 void main() {
+  test('launch editor recomputes readiness and resolves workspace paths', () {
+    const draft = DebugLaunchConfiguration(
+      readiness: DebugLaunchReadiness.missingProgram,
+      reason: 'Select a program.',
+      debuggerId: 'python-dap',
+      debuggerLabel: 'Python Debug Adapter',
+      debuggerExecutablePath: '/usr/bin/debugpy-adapter',
+      adapterProtocol: 'dap',
+      programPath: null,
+      cwd: '',
+    );
+
+    final configured = draft
+        .reconfigure(
+          programPath: 'src/main.py',
+          arguments: const <String>['value with spaces'],
+          stopOnEntry: true,
+        )
+        .resolveForWorkspace('/workspace/demo');
+
+    expect(configured.ready, isTrue);
+    expect(configured.programPath, '/workspace/demo/src/main.py');
+    expect(configured.cwd, '/workspace/demo');
+    expect(configured.arguments, <String>['value with spaces']);
+    expect(configured.stopOnEntry, isTrue);
+  });
+
   test(
     'debug launch contract builds DAP launch configuration from toolchain',
     () {

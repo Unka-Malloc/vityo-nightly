@@ -83,9 +83,9 @@ final class _VityodDapManagedProcess implements DapManagedProcess {
   _VityodDapManagedProcess._({
     required VityodClient client,
     required String processId,
+    required this.pid,
   }) : _client = client,
-       _processId = processId,
-       pid = processId.hashCode & 0x7fffffff {
+       _processId = processId {
     unawaited(_poll());
   }
 
@@ -106,7 +106,15 @@ final class _VityodDapManagedProcess implements DapManagedProcess {
       },
     );
     _throwIfError(response);
-    return _VityodDapManagedProcess._(client: client, processId: processId);
+    final pid = response.params['pid'];
+    if (pid is! int || pid <= 0) {
+      throw StateError('vityod returned an invalid DAP process id.');
+    }
+    return _VityodDapManagedProcess._(
+      client: client,
+      processId: processId,
+      pid: pid,
+    );
   }
 
   final VityodClient _client;
@@ -245,7 +253,8 @@ class DapProcessTransport
     implements
         DapByteTransport,
         DapProcessIdentitySource,
-        DapProcessLifecycleSource {
+        DapProcessLifecycleSource,
+        DapProcessTerminationSource {
   DapProcessTransport({
     required this.executable,
     this.arguments = const <String>[],
@@ -288,6 +297,7 @@ class DapProcessTransport
     return RuntimeProcessHandleIdentity(
       managerId: 'debug-adapter',
       processHandleId: process.processHandleId.trim(),
+      pid: process.pid,
       source: 'vityod-dap',
     );
   }
@@ -356,6 +366,19 @@ class DapProcessTransport
 
   Future<DapProcessShutdownResult> shutdown() {
     return _shutdownFuture ??= _shutdown();
+  }
+
+  @override
+  Future<DapProcessTerminationOutcome> terminateProcess({
+    required bool force,
+  }) async {
+    final result = await shutdown();
+    return DapProcessTerminationOutcome(
+      accepted: result.processTerminated,
+      processTerminated: result.processTerminated,
+      message: result.message,
+      metadata: <String, Object?>{...result.toJson(), 'forceRequested': force},
+    );
   }
 
   Future<DapProcessShutdownResult> _shutdown() async {

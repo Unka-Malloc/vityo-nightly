@@ -22,11 +22,20 @@ class DebugConsoleSurface extends StatelessWidget {
     this.debugLaunchPlan,
     this.debugTelemetry,
     this.debugRuntimeExecution,
+    this.debugLaunchConfigurations = const DebugLaunchConfigurationSet(
+      workspaceId: '',
+    ),
     this.onStartDebugging,
     this.onRetryDebugLaunch,
     this.onStopDebugging,
     this.onContinueDebugging,
     this.onStepOver,
+    this.onForceStopDebugging,
+    this.onSelectLaunchProfile,
+    this.onUpdateLaunchConfiguration,
+    this.onSaveBreakpoint,
+    this.onRemoveBreakpoint,
+    this.onSetBreakpointEnabled,
     this.onSelectStackFrame,
     this.onSelectThread,
   });
@@ -38,11 +47,36 @@ class DebugConsoleSurface extends StatelessWidget {
   final DapDebugAdapterExecutionPlan? debugLaunchPlan;
   final DebugLaunchTelemetrySnapshot? debugTelemetry;
   final DebugRuntimeExecutionResult? debugRuntimeExecution;
+  final DebugLaunchConfigurationSet debugLaunchConfigurations;
   final Future<void> Function()? onStartDebugging;
   final Future<void> Function()? onRetryDebugLaunch;
   final Future<void> Function()? onStopDebugging;
   final Future<void> Function()? onContinueDebugging;
   final Future<void> Function()? onStepOver;
+  final Future<void> Function()? onForceStopDebugging;
+  final Future<DebugCommandResult> Function(String profileId)?
+  onSelectLaunchProfile;
+  final Future<DebugCommandResult> Function({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  })?
+  onUpdateLaunchConfiguration;
+  final Future<DebugCommandResult> Function({
+    DebugBreakpoint? previous,
+    required String filePath,
+    required int line,
+    required bool enabled,
+  })?
+  onSaveBreakpoint;
+  final Future<DebugCommandResult> Function(DebugBreakpoint breakpoint)?
+  onRemoveBreakpoint;
+  final Future<DebugCommandResult> Function(
+    DebugBreakpoint breakpoint,
+    bool enabled,
+  )?
+  onSetBreakpointEnabled;
   final ValueChanged<String>? onSelectStackFrame;
   final ValueChanged<String>? onSelectThread;
 
@@ -143,7 +177,7 @@ class DebugConsoleSurface extends StatelessWidget {
                       child: Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF3ECDD),
+                          color: theme.colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         padding: const EdgeInsets.all(12),
@@ -278,15 +312,23 @@ class DebugConsoleSurface extends StatelessWidget {
                   ],
                   ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxHeight: viewportProfile.isMobile ? 220 : 190,
+                      maxHeight: viewportProfile.isMobile ? 420 : 380,
                     ),
                     child: SingleChildScrollView(
                       child: _DebuggerSessionSection(
                         session: debugSession,
+                        launchConfigurations: debugLaunchConfigurations,
                         onStartDebugging: onStartDebugging,
                         onStopDebugging: onStopDebugging,
                         onContinueDebugging: onContinueDebugging,
                         onStepOver: onStepOver,
+                        onForceStopDebugging: onForceStopDebugging,
+                        onSelectLaunchProfile: onSelectLaunchProfile,
+                        onUpdateLaunchConfiguration:
+                            onUpdateLaunchConfiguration,
+                        onSaveBreakpoint: onSaveBreakpoint,
+                        onRemoveBreakpoint: onRemoveBreakpoint,
+                        onSetBreakpointEnabled: onSetBreakpointEnabled,
                         onSelectStackFrame: onSelectStackFrame,
                         onSelectThread: onSelectThread,
                       ),
@@ -302,21 +344,33 @@ class DebugConsoleSurface extends StatelessWidget {
                         borderRadius: BorderRadius.circular(18),
                       ),
                       padding: const EdgeInsets.all(14),
-                      child: ListView.separated(
-                        reverse: false,
-                        itemCount: combinedEntries.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          return Text(
-                            combinedEntries[index],
-                            style: const TextStyle(
-                              color: Color(0xFFF2F0EC),
-                              height: 1.35,
-                              fontFamily: 'monospace',
+                      child: combinedEntries.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No debug output yet.',
+                                key: ValueKey('debug-output-empty'),
+                                style: TextStyle(
+                                  color: Color(0xFFB8B5BD),
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              reverse: false,
+                              itemCount: combinedEntries.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                return Text(
+                                  combinedEntries[index],
+                                  style: const TextStyle(
+                                    color: Color(0xFFF2F0EC),
+                                    height: 1.35,
+                                    fontFamily: 'monospace',
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
                   ),
                 ],
@@ -357,8 +411,9 @@ class _DebugLaunchPlanSection extends StatelessWidget {
       key: const ValueKey('debug-launch-plan-section'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE7F6),
-        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -383,9 +438,7 @@ class _DebugLaunchPlanSection extends StatelessWidget {
               ],
               if (executionResult != null) ...[
                 Chip(
-                  label: Text(
-                    'execution ${executionResult.status.wireValue}',
-                  ),
+                  label: Text('execution ${executionResult.status.wireValue}'),
                 ),
                 Chip(
                   label: Text(
@@ -393,9 +446,7 @@ class _DebugLaunchPlanSection extends StatelessWidget {
                   ),
                 ),
                 Chip(
-                  label: Text(
-                    'output ${executionResult.outputEvents.length}',
-                  ),
+                  label: Text('output ${executionResult.outputEvents.length}'),
                 ),
               ],
             ],
@@ -441,6 +492,14 @@ class _DebugLaunchPlanSection extends StatelessWidget {
               key: const ValueKey('debug-runtime-execution-output'),
               style: theme.textTheme.bodySmall,
             ),
+            if (executionResult.processHandle case final processHandle?) ...[
+              const SizedBox(height: 4),
+              Text(
+                'process ${processHandle.processHandleId}${processHandle.pid == null ? '' : ' · pid ${processHandle.pid}'}',
+                key: const ValueKey('debug-process-identity'),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
             if (canRetryExecution) ...[
               const SizedBox(height: 8),
               OutlinedButton(
@@ -461,19 +520,51 @@ class _DebugLaunchPlanSection extends StatelessWidget {
 class _DebuggerSessionSection extends StatelessWidget {
   const _DebuggerSessionSection({
     required this.session,
+    required this.launchConfigurations,
     this.onStartDebugging,
     this.onStopDebugging,
     this.onContinueDebugging,
     this.onStepOver,
+    this.onForceStopDebugging,
+    this.onSelectLaunchProfile,
+    this.onUpdateLaunchConfiguration,
+    this.onSaveBreakpoint,
+    this.onRemoveBreakpoint,
+    this.onSetBreakpointEnabled,
     this.onSelectStackFrame,
     this.onSelectThread,
   });
 
   final DebugSessionSnapshot session;
+  final DebugLaunchConfigurationSet launchConfigurations;
   final Future<void> Function()? onStartDebugging;
   final Future<void> Function()? onStopDebugging;
   final Future<void> Function()? onContinueDebugging;
   final Future<void> Function()? onStepOver;
+  final Future<void> Function()? onForceStopDebugging;
+  final Future<DebugCommandResult> Function(String profileId)?
+  onSelectLaunchProfile;
+  final Future<DebugCommandResult> Function({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  })?
+  onUpdateLaunchConfiguration;
+  final Future<DebugCommandResult> Function({
+    DebugBreakpoint? previous,
+    required String filePath,
+    required int line,
+    required bool enabled,
+  })?
+  onSaveBreakpoint;
+  final Future<DebugCommandResult> Function(DebugBreakpoint breakpoint)?
+  onRemoveBreakpoint;
+  final Future<DebugCommandResult> Function(
+    DebugBreakpoint breakpoint,
+    bool enabled,
+  )?
+  onSetBreakpointEnabled;
   final ValueChanged<String>? onSelectStackFrame;
   final ValueChanged<String>? onSelectThread;
 
@@ -487,8 +578,9 @@ class _DebuggerSessionSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE9EEF7),
-        borderRadius: BorderRadius.circular(16),
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -510,29 +602,97 @@ class _DebuggerSessionSection extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
+          _DebugConfigurationEditor(
+            configurations: launchConfigurations,
+            onSelectProfile: onSelectLaunchProfile,
+            onUpdateConfiguration: onUpdateLaunchConfiguration,
+          ),
+          const SizedBox(height: 10),
           _DebugControlStrip(
             session: session,
             onStartDebugging: onStartDebugging,
             onStopDebugging: onStopDebugging,
             onContinueDebugging: onContinueDebugging,
             onStepOver: onStepOver,
+            onForceStopDebugging: onForceStopDebugging,
           ),
-          const SizedBox(height: 4),
-          Text(
-            'breakpoints ${breakpoints.length}',
-            style: theme.textTheme.bodySmall,
-          ),
-          ...breakpoints
-              .take(4)
-              .map(
-                (breakpoint) => Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    '${breakpoint.filePath}:${breakpoint.line + 1}',
-                    style: theme.textTheme.bodySmall,
-                  ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Breakpoints · ${breakpoints.length}',
+                  style: theme.textTheme.titleSmall,
                 ),
               ),
+              TextButton.icon(
+                key: const ValueKey('debug-add-breakpoint'),
+                onPressed: onSaveBreakpoint == null
+                    ? null
+                    : () => _showBreakpointEditor(
+                        context,
+                        onSave: onSaveBreakpoint!,
+                      ),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add'),
+              ),
+            ],
+          ),
+          if (breakpoints.isEmpty)
+            Text('No breakpoints.', style: theme.textTheme.bodySmall),
+          ...breakpoints.map(
+            (breakpoint) => Row(
+              key: ValueKey('debug-breakpoint-${breakpoint.key}'),
+              children: [
+                Checkbox(
+                  key: ValueKey('debug-breakpoint-enabled-${breakpoint.key}'),
+                  value: breakpoint.enabled,
+                  visualDensity: VisualDensity.compact,
+                  onChanged: onSetBreakpointEnabled == null
+                      ? null
+                      : (enabled) {
+                          if (enabled != null) {
+                            onSetBreakpointEnabled!(breakpoint, enabled);
+                          }
+                        },
+                ),
+                Expanded(
+                  child: Text(
+                    '${breakpoint.filePath}:${breakpoint.line + 1}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: breakpoint.enabled
+                          ? null
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: ValueKey('debug-breakpoint-edit-${breakpoint.key}'),
+                  tooltip: 'Edit breakpoint',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onSaveBreakpoint == null
+                      ? null
+                      : () => _showBreakpointEditor(
+                          context,
+                          breakpoint: breakpoint,
+                          onSave: onSaveBreakpoint!,
+                        ),
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                ),
+                IconButton(
+                  key: ValueKey('debug-breakpoint-remove-${breakpoint.key}'),
+                  tooltip: 'Remove breakpoint',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onRemoveBreakpoint == null
+                      ? null
+                      : () => onRemoveBreakpoint!(breakpoint),
+                  icon: const Icon(Icons.close, size: 16),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 8),
           Text('Threads', style: theme.textTheme.titleSmall),
           if (threads.isEmpty)
@@ -601,6 +761,348 @@ class _DebuggerSessionSection extends StatelessWidget {
   }
 }
 
+class _DebugConfigurationEditor extends StatelessWidget {
+  const _DebugConfigurationEditor({
+    required this.configurations,
+    this.onSelectProfile,
+    this.onUpdateConfiguration,
+  });
+
+  final DebugLaunchConfigurationSet configurations;
+  final Future<DebugCommandResult> Function(String profileId)? onSelectProfile;
+  final Future<DebugCommandResult> Function({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  })?
+  onUpdateConfiguration;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final profile = configurations.selectedProfile;
+    final profiles = configurations.profiles;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Launch Configuration', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 6),
+        if (profiles.isEmpty)
+          Text(
+            'No DAP adapters are registered. Install a debugger extension or configure a debugger toolchain.',
+            key: const ValueKey('debug-no-adapters'),
+            style: theme.textTheme.bodySmall,
+          )
+        else ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  key: const ValueKey('debug-adapter-selector'),
+                  initialValue: profile?.id,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'DAP adapter',
+                    isDense: true,
+                  ),
+                  items: profiles
+                      .map(
+                        (candidate) => DropdownMenuItem<String>(
+                          value: candidate.id,
+                          child: Text(
+                            '${candidate.displayName} · ${_debugProfileScope(candidate)}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: onSelectProfile == null
+                      ? null
+                      : (profileId) {
+                          if (profileId != null) {
+                            onSelectProfile!(profileId);
+                          }
+                        },
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('debug-edit-launch-configuration'),
+                onPressed: profile == null || onUpdateConfiguration == null
+                    ? null
+                    : () => _showLaunchConfigurationEditor(
+                        context,
+                        profile: profile,
+                        onUpdate: onUpdateConfiguration!,
+                      ),
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('Configure'),
+              ),
+            ],
+          ),
+          if (profile != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              profile.configuration.programPath == null
+                  ? profile.configuration.reason
+                  : '${profile.configuration.programPath} · ${profile.configuration.cwd}',
+              key: const ValueKey('debug-launch-configuration-summary'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: profile.configuration.ready
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.error,
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+Future<void> _showLaunchConfigurationEditor(
+  BuildContext context, {
+  required DebugLaunchProfile profile,
+  required Future<DebugCommandResult> Function({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  })
+  onUpdate,
+}) async {
+  final configuration = profile.configuration;
+  var programPath = configuration.programPath ?? '';
+  var cwd = configuration.cwd;
+  var argumentsText = configuration.arguments.join('\n');
+  var stopOnEntry = configuration.stopOnEntry;
+  String? errorText;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) => AlertDialog(
+        title: Text('Configure ${profile.displayName}'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Adapter ${configuration.debuggerExecutablePath}',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: const ValueKey('debug-launch-program-field'),
+                  initialValue: programPath,
+                  onChanged: (value) => programPath = value,
+                  decoration: const InputDecoration(
+                    labelText: 'Program',
+                    hintText: '/workspace/build/app',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  key: const ValueKey('debug-launch-cwd-field'),
+                  initialValue: cwd,
+                  onChanged: (value) => cwd = value,
+                  decoration: const InputDecoration(
+                    labelText: 'Working directory',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  key: const ValueKey('debug-launch-arguments-field'),
+                  initialValue: argumentsText,
+                  onChanged: (value) => argumentsText = value,
+                  minLines: 2,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Program arguments',
+                    helperText: 'One argument per line',
+                  ),
+                ),
+                CheckboxListTile(
+                  key: const ValueKey('debug-launch-stop-on-entry'),
+                  contentPadding: EdgeInsets.zero,
+                  value: stopOnEntry,
+                  title: const Text('Stop on entry'),
+                  onChanged: (value) {
+                    setState(() => stopOnEntry = value ?? false);
+                  },
+                ),
+                if (errorText != null)
+                  Text(
+                    errorText!,
+                    style: TextStyle(
+                      color: Theme.of(dialogContext).colorScheme.error,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('debug-launch-save'),
+            onPressed: () async {
+              final result = await onUpdate(
+                programPath: programPath,
+                cwd: cwd,
+                arguments: argumentsText
+                    .split('\n')
+                    .map((argument) => argument.trim())
+                    .where((argument) => argument.isNotEmpty)
+                    .toList(growable: false),
+                stopOnEntry: stopOnEntry,
+              );
+              if (!result.applied) {
+                setState(() => errorText = result.message);
+                return;
+              }
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _showBreakpointEditor(
+  BuildContext context, {
+  DebugBreakpoint? breakpoint,
+  required Future<DebugCommandResult> Function({
+    DebugBreakpoint? previous,
+    required String filePath,
+    required int line,
+    required bool enabled,
+  })
+  onSave,
+}) async {
+  var filePath = breakpoint?.filePath ?? '';
+  var lineText = breakpoint == null ? '' : '${breakpoint.line + 1}';
+  var enabled = breakpoint?.enabled ?? true;
+  String? errorText;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) => AlertDialog(
+        title: Text(breakpoint == null ? 'Add Breakpoint' : 'Edit Breakpoint'),
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                key: const ValueKey('debug-breakpoint-path-field'),
+                initialValue: filePath,
+                onChanged: (value) => filePath = value,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'File path'),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                key: const ValueKey('debug-breakpoint-line-field'),
+                initialValue: lineText,
+                onChanged: (value) => lineText = value,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Line'),
+              ),
+              CheckboxListTile(
+                key: const ValueKey('debug-breakpoint-enabled-field'),
+                contentPadding: EdgeInsets.zero,
+                value: enabled,
+                title: const Text('Enabled'),
+                onChanged: (value) {
+                  setState(() => enabled = value ?? true);
+                },
+              ),
+              if (errorText != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    errorText!,
+                    style: TextStyle(
+                      color: Theme.of(dialogContext).colorScheme.error,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('debug-breakpoint-save'),
+            onPressed: () async {
+              final displayLine = int.tryParse(lineText.trim());
+              if (filePath.trim().isEmpty ||
+                  displayLine == null ||
+                  displayLine < 1) {
+                setState(() {
+                  errorText =
+                      'Enter a file path and a line number of 1 or greater.';
+                });
+                return;
+              }
+              final result = await onSave(
+                previous: breakpoint,
+                filePath: filePath,
+                line: displayLine - 1,
+                enabled: enabled,
+              );
+              if (!result.applied) {
+                setState(() => errorText = result.message);
+                return;
+              }
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _debugProfileScope(DebugLaunchProfile profile) {
+  final languages = profile.metadata['languages'];
+  if (languages is List) {
+    final labels = languages
+        .whereType<String>()
+        .map((language) => language.trim())
+        .where((language) => language.isNotEmpty)
+        .toList(growable: false);
+    if (labels.isNotEmpty) {
+      return labels.join(', ');
+    }
+  }
+  final debuggerType = profile.metadata['debuggerType'];
+  if (debuggerType is String && debuggerType.trim().isNotEmpty) {
+    return debuggerType.trim();
+  }
+  return 'DAP';
+}
+
 class _DebugControlStrip extends StatelessWidget {
   const _DebugControlStrip({
     required this.session,
@@ -608,6 +1110,7 @@ class _DebugControlStrip extends StatelessWidget {
     this.onStopDebugging,
     this.onContinueDebugging,
     this.onStepOver,
+    this.onForceStopDebugging,
   });
 
   final DebugSessionSnapshot session;
@@ -615,6 +1118,7 @@ class _DebugControlStrip extends StatelessWidget {
   final Future<void> Function()? onStopDebugging;
   final Future<void> Function()? onContinueDebugging;
   final Future<void> Function()? onStepOver;
+  final Future<void> Function()? onForceStopDebugging;
 
   @override
   Widget build(BuildContext context) {
@@ -653,6 +1157,10 @@ class _DebugControlStrip extends StatelessWidget {
               enabled: _canStopDebugging(status),
               onPressed: onStopDebugging,
             ),
+            _DebugForceStopButton(
+              enabled: _canStopDebugging(status),
+              onPressed: onForceStopDebugging,
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -689,6 +1197,52 @@ class _DebugControlButton extends StatelessWidget {
             }
           : null,
       child: Text(label),
+    );
+  }
+}
+
+class _DebugForceStopButton extends StatelessWidget {
+  const _DebugForceStopButton({required this.enabled, this.onPressed});
+
+  final bool enabled;
+  final Future<void> Function()? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final callback = onPressed;
+    return OutlinedButton(
+      key: const ValueKey('debug-control-force-stop'),
+      onPressed: enabled && callback != null
+          ? () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('Force stop debug adapter?'),
+                  content: const Text(
+                    'The adapter process will be terminated immediately. Use this only when normal Stop does not respond.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      key: const ValueKey('debug-force-stop-confirm'),
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Force Stop'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) {
+                await callback();
+              }
+            }
+          : null,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Theme.of(context).colorScheme.error,
+      ),
+      child: const Text('Force Stop'),
     );
   }
 }
