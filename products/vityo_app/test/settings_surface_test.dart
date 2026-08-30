@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/vityo_theme_override.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/system_compatibility.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
 import 'package:vityo_app/src/view_ide/interaction/interaction.dart';
@@ -12,6 +13,104 @@ import 'package:vityo_app/src/view_render/platform/platform.dart';
 import 'package:vityo_app/src/view_render/settings/settings_surface.dart';
 
 void main() {
+  testWidgets(
+    'settings surface runs platform checks and opens recovery section',
+    (tester) async {
+      const health = PlatformManagerHealthSnapshot(
+        targetId: 'settings-platform-test',
+        ready: false,
+        components: <PlatformManagerComponentHealth>[
+          PlatformManagerComponentHealth(
+            managerKey: 'fileSystem',
+            ready: true,
+            message: 'File system live read succeeded.',
+            operationId: 'platform.fileSystem.live-operation',
+          ),
+          PlatformManagerComponentHealth(
+            managerKey: 'shell',
+            ready: false,
+            message: 'Shell live command is blocked.',
+            operationId: 'platform.shell.live-operation',
+            description: 'Run a no-output command through the selected shell.',
+            recoveryActions: <PlatformManagerRecoveryAction>[
+              PlatformManagerRecoveryAction(
+                id: 'platform.shell.open-settings',
+                label: 'Review Shell settings',
+                managerKey: 'shell',
+                message: 'Select a shell profile.',
+                metadata: <String, Object?>{'settingsSectionId': 'shell'},
+              ),
+            ],
+          ),
+        ],
+        probeSource: 'platform-live-operation-registry',
+      );
+      final settings = PlatformManagerSettingsSurface.fromHealthSnapshot(
+        health,
+      );
+      var refreshCount = 0;
+      String? selectedSection;
+      PlatformManagerRecoveryActionRoute? handledRoute;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SettingsSurface(
+              viewportProfile: resolveViewportProfile(
+                platformTarget: PlatformTarget.macos,
+                width: 1200,
+                height: 900,
+              ),
+              toolchainStatus: const ToolchainStatusSurface(
+                source: 'test',
+                severity: ToolchainStatusSeverity.ready,
+                title: 'Toolchain ready',
+                message: 'Ready.',
+                recoveryActions: <ToolchainRecoveryAction>[],
+              ),
+              platformManagerSettings: settings,
+              onRefreshPlatformManagers: () async {
+                refreshCount += 1;
+              },
+              onSelectPlatformSettingsSection: (sectionId) {
+                selectedSection = sectionId;
+              },
+              onPlatformRecoveryRoute: (route) {
+                handledRoute = route;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('settings-platform-managers-card')),
+        findsOneWidget,
+      );
+      expect(find.text('1/2 live checks ready'), findsOneWidget);
+
+      final shellSection = find.byKey(
+        const ValueKey('settings-platform-section-shell'),
+      );
+      await tester.tap(shellSection);
+      await tester.pump();
+      expect(selectedSection, 'shell');
+
+      final recovery = find.byKey(
+        const ValueKey(
+          'settings-platform-recovery-platform.shell.open-settings',
+        ),
+      );
+      await tester.tap(recovery);
+      await tester.pump();
+      expect(handledRoute?.settingsSectionId, 'shell');
+
+      await tester.tap(find.byKey(const ValueKey('settings-platform-refresh')));
+      await tester.pump();
+      expect(refreshCount, 1);
+    },
+  );
+
   testWidgets('settings surface saves persisted theme accent override', (
     tester,
   ) async {
@@ -434,7 +533,7 @@ void main() {
     expect(handledActions, <String>['select-existing-toolchain']);
 
     final bootstrapSettingsButton = find.byKey(
-        const ValueKey(
+      const ValueKey(
         'settings-toolchain-bootstrap-settings-select-existing-toolchain',
       ),
     );

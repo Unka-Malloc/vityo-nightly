@@ -233,12 +233,10 @@ class VityoIdeCapabilityFramework {
           id: 'environment.platform',
           layer: IdeCapabilityLayer.environment,
           title: 'Platform context and system compatibility',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/environment/system_compatibility',
           summary:
-              'Platform Detector, Platform Context, Platform Adapter, Platform Manager bundle, fact-level health snapshots, PlatformManagerHealthProbe contracts, PlatformManagerLiveOperationProbeRegistry callback contracts, probe-kind counts, manager live-operation probe metadata, PlatformManagerRecoveryActionRouter settings routes with settings section ids, and UI-facing recovery actions are available for file system, shell, process, resource, network, clipboard, notification, local service, and PTY managers.',
-          todo:
-              'TODO: register platform-specific live-operation smoke callbacks and bind recovery actions to Settings UI panels.',
+              'Platform Detector, Platform Context, Platform Adapter, and the production Platform Manager bundle are wired for file system, shell, process, resource, network, clipboard, notification, local service, and PTY services. PlatformManagerLiveOperationProbeRegistry.defaults executes nine safe native smoke operations concurrently, preserves structured probe metadata, and reports actionable failures. PlatformManagerRecoveryActionRouter maps failures into typed settings://platform routes, PlatformManagerSettingsSurface projects them into product state, and SettingsSurface renders refreshable service health with section-specific recovery controls.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code platform services',

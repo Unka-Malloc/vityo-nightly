@@ -137,20 +137,21 @@ void main() {
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('PlatformManagerRecoveryActionRouter settings routes'),
+      contains('PlatformManagerRecoveryActionRouter'),
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('manager live-operation probe metadata'),
+      contains('structured probe metadata'),
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('PlatformManagerLiveOperationProbeRegistry'),
+      contains('PlatformManagerLiveOperationProbeRegistry.defaults'),
     );
     expect(
-      entriesById['environment.platform']?.todo,
-      contains('live-operation smoke callbacks'),
+      entriesById['environment.platform']?.status,
+      IdeCapabilityStatus.ready,
     );
+    expect(entriesById['environment.platform']?.todo, isEmpty);
     expect(
       entriesById['environment.platform']?.runtimeMaturityBlocking,
       isFalse,
@@ -254,9 +255,7 @@ void main() {
     );
     expect(
       entriesById['service.semantic-snapshot']?.summary,
-      contains(
-        'ToolchainManager and the vityod local service',
-      ),
+      contains('ToolchainManager and the vityod local service'),
     );
     expect(entriesById['service.semantic-snapshot']?.todo, isEmpty);
     expect(

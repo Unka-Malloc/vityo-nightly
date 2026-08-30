@@ -216,6 +216,7 @@ class AppBootstrap {
     this.workspaceTextSearchProvider,
     this.lspGateway,
     this.extensionStartupPlan,
+    this.platformManagers,
     RuntimeOutputLiveBuffer? runtimeOutputBuffer,
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
@@ -261,6 +262,7 @@ class AppBootstrap {
   final WorkspaceTextSearchProvider? workspaceTextSearchProvider;
   final VityodLspGateway? lspGateway;
   final AppExtensionStartupPlan? extensionStartupPlan;
+  final PlatformManagerBundle? platformManagers;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
@@ -313,6 +315,13 @@ class AppBootstrap {
           serviceId: 'platform.target',
           ownerLayer: 'app',
           requiredInjection: true,
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'platform.manager-bundle',
+          ownerLayer: 'environment',
+          requiredInjection: false,
+          capabilityGapCode: 'platform.manager-bundle.unavailable',
+          recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
           serviceId: 'module.registry',
@@ -534,6 +543,7 @@ class AppBootstrap {
   AppBootstrapServiceWiringManifest serviceWiringManifest() {
     final injectedByServiceId = <String, bool>{
       'platform.target': true,
+      'platform.manager-bundle': platformManagers != null,
       'module.registry': true,
       'module.native-loader': true,
       'project-graph.adapter': true,
@@ -867,6 +877,7 @@ class AppBootstrap {
           ? null
           : VityodLspGateway(client: vityodClient),
       extensionStartupPlan: extensionStartupPlan,
+      platformManagers: platformManagers,
       runtimeOutputBuffer: runtimeOutputBuffer,
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,

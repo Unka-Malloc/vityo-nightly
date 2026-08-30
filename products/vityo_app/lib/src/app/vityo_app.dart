@@ -46,6 +46,7 @@ class _VityoAppState extends State<VityoApp> {
       vityodClient: widget.bootstrap.vityodClient,
       debugAdapterLauncher: widget.bootstrap.debugAdapterLauncher,
       workspaceTextSearchProvider: widget.bootstrap.workspaceTextSearchProvider,
+      platformManagers: widget.bootstrap.platformManagers,
       runtimeOutputBuffer: widget.bootstrap.runtimeOutputBuffer,
       refreshActiveLanguageService:
           widget.bootstrap.refreshActiveLanguageService,

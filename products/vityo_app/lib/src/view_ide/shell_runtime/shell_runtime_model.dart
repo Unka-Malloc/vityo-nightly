@@ -11,6 +11,7 @@ import '../debugger/debug_launch_telemetry_store.dart';
 import '../debugger/debug_runtime_task_history.dart';
 import '../../ide/editor/editor.dart' hide WorkspaceEditSource;
 import '../environment/configuration/configuration.dart';
+import '../environment/system_compatibility/system_compatibility.dart';
 import '../interaction/interaction.dart';
 import '../language/language_contract.dart';
 import '../language/service/semantic_snapshot_event_bridge.dart';
@@ -114,6 +115,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore,
     CommandPaletteDisplayPreferences? commandPalettePreferences,
     CommandPaletteLivePreferenceController? commandPalettePreferenceController,
+    PlatformManagerBundle? platformManagers,
+    PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
     ClangCppVersionPreference? clangCppVersionPreference,
     this.agentClientRegistry,
     this.agentCollaboration,
@@ -265,7 +268,12 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       commandPalettePreferences: commandPalettePreferences,
       commandPalettePreferenceController: commandPalettePreferenceController,
+      platformManagers: platformManagers,
+      platformProbeRegistry: platformProbeRegistry,
     )..addListener(_handleSettingsChanged);
+    if (platformManagers != null) {
+      unawaited(_settingsController.refreshPlatformManagerHealth());
+    }
     _executionController = ExecutionController(
       executionAdapter: executionAdapter,
       executionAdapterFactory: executionAdapterFactory,

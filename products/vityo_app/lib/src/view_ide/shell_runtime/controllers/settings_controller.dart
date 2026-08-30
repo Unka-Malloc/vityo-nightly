@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../commands/commands.dart';
 import '../../environment/configuration/configuration.dart';
+import '../../environment/system_compatibility/system_compatibility.dart';
 
 /// Owns shell-level settings state and persistence while the shell remains the
 /// composition root that relays changes to presentation listeners.
@@ -16,8 +17,14 @@ final class SettingsController extends ChangeNotifier {
     this.commandPalettePreferencesStore,
     CommandPaletteDisplayPreferences? commandPalettePreferences,
     CommandPaletteLivePreferenceController? commandPalettePreferenceController,
+    this.platformManagers,
+    PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
   }) : _ownsCommandPalettePreferenceController =
            commandPalettePreferenceController == null,
+       _platformProbeRegistry =
+           platformProbeRegistry ??
+           PlatformManagerLiveOperationProbeRegistry.defaults(),
+       _platformManagerHealth = platformManagers?.healthSnapshot(),
        commandPalettePreferenceController =
            commandPalettePreferenceController ??
            CommandPaletteLivePreferenceController(
@@ -38,6 +45,8 @@ final class SettingsController extends ChangeNotifier {
   final void Function(String message) log;
   final VityoThemeOverrideStore? themeOverrideStore;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
+  final PlatformManagerBundle? platformManagers;
+  final PlatformManagerLiveOperationProbeRegistry _platformProbeRegistry;
   final CommandPaletteLivePreferenceController
   commandPalettePreferenceController;
   final bool _ownsCommandPalettePreferenceController;
@@ -46,11 +55,69 @@ final class SettingsController extends ChangeNotifier {
   _commandPalettePreferenceSubscription;
 
   VityoThemeOverride _themeOverride = const VityoThemeOverride();
+  PlatformManagerHealthSnapshot? _platformManagerHealth;
+  PlatformManagerRecoveryActionRoute? _lastPlatformRecoveryRoute;
+  String? _activePlatformSettingsSectionId;
+  var _platformManagerProbeRunning = false;
 
   VityoThemeOverride get themeOverride => _themeOverride;
 
   CommandPaletteDisplayPreferences get commandPalettePreferences =>
       commandPalettePreferenceController.state.preferences;
+
+  PlatformManagerHealthSnapshot? get platformManagerHealth =>
+      _platformManagerHealth;
+
+  PlatformManagerSettingsSurface? get platformManagerSettingsSurface {
+    final health = _platformManagerHealth;
+    if (health == null) return null;
+    return PlatformManagerSettingsSurface.fromHealthSnapshot(
+      health,
+      activeSectionId: _activePlatformSettingsSectionId,
+    );
+  }
+
+  PlatformManagerRecoveryActionRoute? get lastPlatformRecoveryRoute =>
+      _lastPlatformRecoveryRoute;
+
+  bool get platformManagerProbeRunning => _platformManagerProbeRunning;
+
+  Future<PlatformManagerHealthSnapshot?> refreshPlatformManagerHealth() async {
+    final managers = platformManagers;
+    if (managers == null || _platformManagerProbeRunning) {
+      return _platformManagerHealth;
+    }
+    _platformManagerProbeRunning = true;
+    notifyListeners();
+    try {
+      final health = await managers.probeLiveOperationHealthSnapshot(
+        registry: _platformProbeRegistry,
+      );
+      _platformManagerHealth = health;
+      log(
+        'Platform live checks completed: ${health.readyCount}/${health.components.length} ready.',
+      );
+      return health;
+    } on Object catch (error) {
+      log('Platform live checks failed before completion: $error');
+      return _platformManagerHealth;
+    } finally {
+      _platformManagerProbeRunning = false;
+      notifyListeners();
+    }
+  }
+
+  void handlePlatformRecoveryRoute(PlatformManagerRecoveryActionRoute route) {
+    _lastPlatformRecoveryRoute = route;
+    _activePlatformSettingsSectionId = route.settingsSectionId;
+    log('Platform recovery opened ${route.settingsSectionId} settings.');
+    notifyListeners();
+  }
+
+  void selectPlatformSettingsSection(String sectionId) {
+    _activePlatformSettingsSectionId = sectionId;
+    notifyListeners();
+  }
 
   Future<void> loadThemeOverride({String key = 'default'}) async {
     final store = themeOverrideStore;

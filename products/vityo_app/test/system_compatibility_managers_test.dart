@@ -367,6 +367,40 @@ void main() {
   );
 
   test(
+    'default live probes pass through every real desktop manager',
+    () async {
+      final workspace = await Directory.systemTemp.createTemp(
+        'vityo_platform_live_probe_',
+      );
+      addTearDown(() => workspace.delete(recursive: true));
+      final bundle = await createDetectedPlatformManagerBundle(
+        targetId: 'desktop-live-probe',
+        vityodClient: vityod!.client,
+        workspaceRoot: workspace.path,
+      );
+
+      final health = await bundle.probeLiveOperationHealthSnapshot();
+
+      expect(health.components, hasLength(9));
+      expect(health.ready, isTrue);
+      expect(health.readyCount, 9);
+      expect(health.blockedCount, 0);
+      expect(health.recoveryActions, isEmpty);
+      expect(
+        health.components.every(
+          (component) =>
+              component.probeKind ==
+              PlatformManagerHealthProbeKind.managerLiveOperation,
+        ),
+        isTrue,
+      );
+    },
+    skip: VityodTestHarness.isSupported
+        ? false
+        : 'Native desktop manager probes require vityod.',
+  );
+
+  test(
     'network manager reaches local service manager loopback service',
     () async {
       final localServiceFacts = await LocalLoopbackServiceProber(

@@ -460,6 +460,8 @@ class VityoShellScaffold extends StatelessWidget {
           toolchainBootstrapSummary: shell.toolchainBootstrapSummary,
           toolchainBootstrapActionDispatch:
               shell.lastToolchainBootstrapActionDispatch,
+          platformManagerSettings: shell.platformManagerSettingsSurface,
+          platformManagerProbeRunning: shell.platformManagerProbeRunning,
           themeOverride: shell.themeOverride,
           commandPalettePreferences: shell.commandPalettePreferences,
           onToolchainRecoveryAction: shell.handleToolchainRecoveryAction,
@@ -473,6 +475,9 @@ class VityoShellScaffold extends StatelessWidget {
           },
           onClearToolchain: shell.clearToolchainCandidate,
           onExecuteToolchainInstallPlan: shell.executeLastToolchainInstallPlan,
+          onRefreshPlatformManagers: shell.refreshPlatformManagerHealth,
+          onPlatformRecoveryRoute: shell.handlePlatformRecoveryRoute,
+          onSelectPlatformSettingsSection: shell.selectPlatformSettingsSection,
           onSaveCommandPalettePreferences: shell.saveCommandPalettePreferences,
           onSaveThemeOverride: shell.saveThemeOverride,
         );

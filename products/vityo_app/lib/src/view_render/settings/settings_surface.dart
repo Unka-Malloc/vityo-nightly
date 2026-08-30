@@ -4,6 +4,7 @@ import '../../view_ide/commands/commands.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/foundation/foundation.dart';
 import '../../view_ide/environment/configuration/vityo_theme_override.dart';
+import '../../view_ide/environment/system_compatibility/system_compatibility.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
 import '../../view_ide/toolchain/toolchain_manager.dart';
 import '../platform/viewport_profile.dart';
@@ -25,6 +26,11 @@ class SettingsSurface extends StatelessWidget {
     this.onSelectClangCppVersion,
     this.onClearToolchain,
     this.onExecuteToolchainInstallPlan,
+    this.platformManagerSettings,
+    this.platformManagerProbeRunning = false,
+    this.onRefreshPlatformManagers,
+    this.onPlatformRecoveryRoute,
+    this.onSelectPlatformSettingsSection,
     this.ideCapabilities,
     this.commandPalettePreferences = const CommandPaletteDisplayPreferences(
       workspaceId: 'default',
@@ -50,6 +56,12 @@ class SettingsSurface extends StatelessWidget {
   onSelectClangCppVersion;
   final Future<void> Function(ToolchainKind kind)? onClearToolchain;
   final Future<void> Function()? onExecuteToolchainInstallPlan;
+  final PlatformManagerSettingsSurface? platformManagerSettings;
+  final bool platformManagerProbeRunning;
+  final Future<void> Function()? onRefreshPlatformManagers;
+  final void Function(PlatformManagerRecoveryActionRoute route)?
+  onPlatformRecoveryRoute;
+  final void Function(String sectionId)? onSelectPlatformSettingsSection;
   final IdeCapabilityFrameworkSnapshot? ideCapabilities;
   final CommandPaletteDisplayPreferences commandPalettePreferences;
   final Future<void> Function(CommandPaletteDisplayPreferences preferences)?
@@ -82,6 +94,16 @@ class SettingsSurface extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 14),
+              if (platformManagerSettings case final platformSettings?) ...[
+                _PlatformManagerSettingsCard(
+                  settings: platformSettings,
+                  refreshing: platformManagerProbeRunning,
+                  onRefresh: onRefreshPlatformManagers,
+                  onRecoveryRoute: onPlatformRecoveryRoute,
+                  onSelectSection: onSelectPlatformSettingsSection,
+                ),
+                const SizedBox(height: 14),
+              ],
               _ToolchainSettingsCard(
                 settings: settings,
                 installPlan: toolchainInstallPlan,
@@ -109,6 +131,178 @@ class SettingsSurface extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlatformManagerSettingsCard extends StatelessWidget {
+  const _PlatformManagerSettingsCard({
+    required this.settings,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.onRecoveryRoute,
+    required this.onSelectSection,
+  });
+
+  final PlatformManagerSettingsSurface settings;
+  final bool refreshing;
+  final Future<void> Function()? onRefresh;
+  final void Function(PlatformManagerRecoveryActionRoute route)?
+  onRecoveryRoute;
+  final void Function(String sectionId)? onSelectSection;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      key: const ValueKey('settings-platform-managers-card'),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE7EBEF),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Platform Services',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${settings.readyCount}/${settings.sections.length} live checks ready',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('settings-platform-refresh'),
+                  onPressed: refreshing ? null : onRefresh,
+                  icon: refreshing
+                      ? const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded, size: 18),
+                  label: Text(refreshing ? 'Checking' : 'Run checks'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...settings.sections.map((section) {
+              final selected = settings.activeSectionId == section.id;
+              final stateColor = section.ready
+                  ? const Color(0xFF26734D)
+                  : colorScheme.error;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: InkWell(
+                  key: ValueKey('settings-platform-section-${section.id}'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onSelectSection == null
+                      ? null
+                      : () => onSelectSection!(section.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? colorScheme.surface.withValues(alpha: 0.92)
+                          : colorScheme.surface.withValues(alpha: 0.56),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? colorScheme.primary.withValues(alpha: 0.45)
+                            : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              section.ready
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_rounded,
+                              size: 17,
+                              color: stateColor,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                section.title,
+                                style: theme.textTheme.labelLarge,
+                              ),
+                            ),
+                            Text(
+                              section.ready ? 'Ready' : 'Needs attention',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: stateColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(section.message, style: theme.textTheme.bodySmall),
+                        if (selected && section.description.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            section.description,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (section.recoveryRoutes.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: section.recoveryRoutes
+                                .map((route) {
+                                  return TextButton.icon(
+                                    key: ValueKey(
+                                      'settings-platform-recovery-${route.actionId}',
+                                    ),
+                                    onPressed: onRecoveryRoute == null
+                                        ? null
+                                        : () => onRecoveryRoute!(route),
+                                    icon: const Icon(
+                                      Icons.settings_rounded,
+                                      size: 16,
+                                    ),
+                                    label: Text(route.label),
+                                  );
+                                })
+                                .toList(growable: false),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
