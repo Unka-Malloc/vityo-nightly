@@ -618,11 +618,15 @@ void main() {
       );
 
       expect(plan.shouldRefresh, isTrue);
+      expect(plan.receivedEventCount, 4);
       expect(plan.eventCount, 3);
       expect(plan.refreshEventCount, 1);
       expect(plan.ignoredEventCount, 1);
       expect(plan.nonRefreshableEventCount, 1);
       expect(plan.truncated, isTrue);
+      expect(plan.queueOverflowed, isTrue);
+      expect(plan.droppedEventCount, 1);
+      expect(plan.backpressured, isTrue);
       expect(
         (plan.toJson()['policy']! as Map<String, Object?>)['debounceMillis'],
         75,
@@ -631,6 +635,15 @@ void main() {
       expect(flushedBatch?.eventCount, 2);
       expect(flushedBatch?.shouldRefresh, isTrue);
       expect(flushedBatch?.toJson()['shouldRefresh'], isTrue);
+      final telemetry = WorkspaceSearchWatcherBackpressureTracker(
+        facts: FileSystemFacts.linuxDebianArm(),
+      ).recordBatch(flushedBatch!);
+      expect(
+        telemetry.state,
+        WorkspaceSearchWatcherBackpressureState.batchLimitReached,
+      );
+      expect(telemetry.receivedEventCount, 2);
+      expect(telemetry.droppedEventCount, 0);
       expect(
         retryPlan.action,
         WorkspaceSearchWatcherRecoveryAction.restartWatcher,
@@ -641,6 +654,100 @@ void main() {
         WorkspaceSearchWatcherRecoveryAction.disableWatcher,
       );
       expect(disablePlan.canRetry, isFalse);
+    },
+  );
+
+  test(
+    'workspace search watcher rebuilds and reattaches after typed overflow',
+    () async {
+      final store = InMemoryWorkspaceDocumentStore(
+        seededDocuments: const <String, DocumentState>{
+          'main.styio': DocumentState(
+            documentId: 'main.styio',
+            text: 'value := 1\n',
+            revision: 1,
+          ),
+        },
+      );
+      final controller = WorkspaceSearchIndexController(
+        service: WorkspaceSearchService(documentStore: store),
+      );
+      final fileSystemManager = _OverflowThenEventFileSystemManager();
+      final binding = WorkspaceSearchIndexFileSystemWatcherBinding(
+        controller: controller,
+        fileSystemManager: fileSystemManager,
+        workspaceRoot: '/workspace/vityo',
+        currentDocuments: () => const <DocumentState>[],
+        currentDocumentIds: () => const <String>['main.styio'],
+        watcherPolicy: const WorkspaceSearchWatcherPolicy(
+          debounceWindow: Duration.zero,
+          overflowRecoveryDelay: Duration.zero,
+        ),
+      );
+
+      final snapshots = await binding.watchAndRefresh().toList();
+      final overflowSnapshot = snapshots.firstWhere(
+        (snapshot) => snapshot.recoveryPlan != null && snapshot.ready,
+      );
+
+      expect(fileSystemManager.watchCount, 2);
+      expect(
+        snapshots.where(
+          (snapshot) =>
+              snapshot.status == WorkspaceSearchIndexWatcherStatus.listening,
+        ),
+        hasLength(2),
+      );
+      expect(overflowSnapshot.backpressure?.providerOverflowCount, 1);
+      expect(overflowSnapshot.backpressure?.droppedEventCount, 7);
+      expect(
+        overflowSnapshot.recoveryPlan?.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan,
+      );
+      expect(overflowSnapshot.recoveryPlan?.requiresIndexRebuild, isTrue);
+      expect(overflowSnapshot.recoveryPlan?.requiresWatcherRestart, isTrue);
+      expect(controller.snapshot.ready, isTrue);
+      expect(controller.searchCached(query: 'value').matches, hasLength(1));
+      expect(snapshots.last.status, WorkspaceSearchIndexWatcherStatus.stopped);
+    },
+  );
+
+  test(
+    'workspace search overflow recovery selects target watcher strategy',
+    () {
+      final linux = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: '/workspace',
+        facts: FileSystemFacts.linuxDebianArm(),
+      );
+      final macos = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: '/workspace',
+        facts: FileSystemFacts.linuxDebianArm().copyWith(
+          operatingSystem: 'macos',
+          distributionId: 'macos',
+          distributionName: 'macOS',
+        ),
+      );
+      final windows = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: r'C:\workspace',
+        facts: FileSystemFacts.windowsX64(),
+      );
+
+      expect(
+        linux.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan,
+      );
+      expect(
+        macos.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.fseventsFullRescan,
+      );
+      expect(
+        windows.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.readDirectoryChangesFullRescan,
+      );
+      expect(
+        windows.toJson()['overflowStrategy'],
+        'read-directory-changes-full-rescan',
+      );
     },
   );
 
@@ -1245,6 +1352,32 @@ class _FakeWorkspaceSearchFileSystemManager
     watchedPath = path;
     watchedRecursive = recursive;
     return events;
+  }
+}
+
+class _OverflowThenEventFileSystemManager extends UnsupportedFileSystemManager {
+  _OverflowThenEventFileSystemManager()
+    : super(facts: FileSystemFacts.linuxDebianArm());
+
+  int watchCount = 0;
+
+  @override
+  Stream<FileSystemManagerEvent> watch(
+    String path, {
+    bool recursive = false,
+  }) async* {
+    watchCount += 1;
+    if (watchCount == 1) {
+      throw const FileSystemWatchOverflowException(
+        operation: 'test.watch',
+        droppedEventCount: 7,
+      );
+    }
+    yield const FileSystemManagerEvent(
+      kind: FileSystemManagerEventKind.modified,
+      path: '/workspace/vityo/main.styio',
+      normalizedPath: '/workspace/vityo/main.styio',
+    );
   }
 }
 

@@ -370,12 +370,10 @@ class VityoIdeCapabilityFramework {
           id: 'interaction.search',
           layer: IdeCapabilityLayer.interaction,
           title: 'Search, symbols, and quick open',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/ide/workspace',
           summary:
-              'Workspace text search service, in-memory search index snapshot, WorkspaceSearchIndexController stale-revision refresh execution, WorkspaceSearchIndexFileSystemWatcherBinding File System Manager watch refresh execution, WorkspaceSearchWatcherPolicy debounce/queue/ignore contracts, WorkspaceSearchWatcherRefreshPlan batched refresh facts, WorkspaceSearchWatcherEventBatchController project-scale event batches, WorkspaceSearchWatcherStreamBatcher timer-backed watcher stream flushing, WorkspaceSearchWatcherRecoveryPlan recovery action facts, WorkspaceSearchWatcherRecoveryStore DataStore-backed recovery persistence, persistent index invalidation key contract, symbol search service with semantic snapshot source/confidence propagation and Search Surface rendering, file quick open service, replace preview contract with before/after diff summary, virtualized replace-preview document windows, persisted multi-file diff expansion state, replace apply confirmation, search history persistence, persisted result filter state, search history/index/filter/expansion summaries in the user surface, typed command input routing, and match-level navigation callback are wired.',
-          todo:
-              'TODO: add production watcher backpressure telemetry and platform-specific overflow recovery.',
+              'Workspace text search service, offline in-process fallback, in-memory search index snapshot, WorkspaceSearchIndexController stale-revision refresh execution, and the production ShellRuntime watcher lifecycle are wired. WorkspaceSearchIndexFileSystemWatcherBinding consumes typed FileSystemWatchOverflowException failures, publishes cumulative batch/drop/overflow telemetry to the Search Surface and RuntimeOutputLiveBuffer, performs authoritative full-index rebuilds, and reattaches the watcher with FSEvents, inotify, ReadDirectoryChangesW, or generic-provider recovery facts. Debounce/queue/ignore policy, batched refresh plans, timer-backed stream flushing, DataStore-backed recovery persistence, symbol search with semantic confidence, quick open, replace preview/apply, virtualized diff windows, persisted expansion/history/filter models, typed command routing, and match navigation remain available.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code search service',

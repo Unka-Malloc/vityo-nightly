@@ -28,7 +28,7 @@ void main() {
     expect(ids, contains('presentation.shell'));
     expect(
       entriesById['interaction.search']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['service.language-result-cache']?.summary,
@@ -36,23 +36,20 @@ void main() {
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('match-level navigation callback'),
+      contains('match navigation'),
+    );
+    expect(entriesById['interaction.search']?.summary, contains('quick open'));
+    expect(
+      entriesById['interaction.search']?.summary,
+      contains('symbol search'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('file quick open service'),
+      contains('replace preview'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('symbol search service'),
-    );
-    expect(
-      entriesById['interaction.search']?.summary,
-      contains('replace preview contract'),
-    );
-    expect(
-      entriesById['interaction.search']?.summary,
-      contains('typed command input routing'),
+      contains('typed command routing'),
     );
     expect(
       entriesById['interaction.search']?.summary,
@@ -60,31 +57,32 @@ void main() {
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('persisted result filter state'),
+      contains('persisted expansion/history/filter models'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherPolicy'),
+      contains('Debounce/queue/ignore policy'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherRecoveryPlan'),
+      contains('FileSystemWatchOverflowException'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherEventBatchController'),
+      contains('batched refresh plans'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherRecoveryStore'),
+      contains('DataStore-backed recovery persistence'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherStreamBatcher'),
+      contains('timer-backed stream flushing'),
     );
+    expect(entriesById['interaction.search']?.todo, isEmpty);
     expect(
-      entriesById['interaction.search']?.todo,
-      contains('production watcher backpressure telemetry'),
+      entriesById['interaction.search']?.summary,
+      contains('ReadDirectoryChangesW'),
     );
     expect(entriesById['interaction.search']?.runtimeMaturityBlocking, isFalse);
     expect(

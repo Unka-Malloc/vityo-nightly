@@ -514,7 +514,10 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       documentSamples: () => _workspaceDocumentSamples,
       log: appendLog,
       textSearchProvider: workspaceTextSearchProvider,
-    );
+      fileSystemManager: platformManagers?.fileSystem,
+      runtimeOutputBuffer: this.runtimeOutputBuffer,
+    )..addListener(_handleWorkspaceSearchChanged);
+    unawaited(_workspaceSearchController.start());
     _backendCommandPolicyController = BackendCommandPolicyController(
       platformTarget: platformTarget,
     );
@@ -637,6 +640,10 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       _workspaceSearchController.lastTextSearch;
   WorkspaceSymbolSearchResult? get lastWorkspaceSymbolSearch =>
       _workspaceSearchController.lastSymbolSearch;
+  WorkspaceSearchIndex? get workspaceSearchIndex =>
+      _workspaceSearchController.searchIndex;
+  WorkspaceSearchIndexWatcherSnapshot? get workspaceSearchWatcherSnapshot =>
+      _workspaceSearchController.watcherSnapshot;
   String? get lastWorkspaceSearchQuery => _workspaceSearchController.lastQuery;
   int get lastWorkspaceSearchScannedCount =>
       _workspaceSearchController.lastScannedDocumentCount;

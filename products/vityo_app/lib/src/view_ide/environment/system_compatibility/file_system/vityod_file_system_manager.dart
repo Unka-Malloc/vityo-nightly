@@ -272,9 +272,12 @@ final class VityodFileSystemManager implements FileSystemManager {
           'watchId': watchId,
         });
         if (response.params['overflowed'] == true) {
-          throw const VityodFileSystemException(
-            'file_watch_overflow',
-            'fs.watch.poll',
+          throw FileSystemWatchOverflowException(
+            operation: 'fs.watch.poll',
+            droppedEventCount: _optionalInt(
+              response.params,
+              'droppedEventCount',
+            ),
           );
         }
         final events = response.params['events'];
@@ -325,7 +328,9 @@ final class VityodFileSystemManager implements FileSystemManager {
     required String target,
     String? recoveryHint,
   }) {
-    final kind = error is VityodFileSystemException
+    final kind = error is FileSystemWatchOverflowException
+        ? FileSystemFailureKind.resourceLimitReached
+        : error is VityodFileSystemException
         ? _failureKind(error.code)
         : FileSystemFailureKind.unknownFailure;
     return FileSystemOperationFailure(
@@ -488,6 +493,11 @@ bool _requiredBool(Map<String, Object?> source, String key) {
   final value = source[key];
   if (value is bool) return value;
   throw const VityodFileSystemException('invalid_file_response', 'decode');
+}
+
+int? _optionalInt(Map<String, Object?> source, String key) {
+  final value = source[key];
+  return value is int && value >= 0 ? value : null;
 }
 
 VityoFileSystemEntityType _entityType(String value) => switch (value) {

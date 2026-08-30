@@ -317,7 +317,10 @@ class VityoShellScaffold extends StatelessWidget {
           lastSearchQuery: shell.lastWorkspaceSearchQuery,
           lastSearchScannedDocumentCount: shell.lastWorkspaceSearchScannedCount,
           lastReplacePreview: shell.lastWorkspaceReplacePreview,
+          searchIndex: shell.workspaceSearchIndex,
+          watcherSnapshot: shell.workspaceSearchWatcherSnapshot,
           onSearch: shell.searchWorkspace,
+          onRecoverWatcher: shell.recoverWorkspaceSearchWatcher,
           onOpenFile: shell.openWorkspaceFile,
           onPreviewReplace: (query, replacement) async {
             await shell.previewWorkspaceReplace(

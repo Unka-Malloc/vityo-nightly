@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../editor/document_state.dart';
+import '../../view_ide/environment/system_compatibility/file_system/file_system_facts.dart';
 import '../../view_ide/environment/system_compatibility/file_system/file_system_manager.dart';
 import '../../view_ide/language/contract/language_contract.dart';
 import '../../view_ide/language/service/language_service_foundation.dart';
@@ -468,9 +469,38 @@ enum WorkspaceSearchWatcherRecoveryAction {
   disableWatcher,
 }
 
+enum WorkspaceSearchWatcherBackpressureState {
+  nominal,
+  batchLimitReached,
+  queueOverflow,
+  providerOverflow,
+}
+
+enum WorkspaceSearchWatcherOverflowStrategy {
+  fseventsFullRescan,
+  inotifyFullRescan,
+  readDirectoryChangesFullRescan,
+  providerFullRescan,
+}
+
+extension WorkspaceSearchWatcherOverflowStrategyX
+    on WorkspaceSearchWatcherOverflowStrategy {
+  String get wireValue => switch (this) {
+    WorkspaceSearchWatcherOverflowStrategy.fseventsFullRescan =>
+      'fsevents-full-rescan',
+    WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan =>
+      'inotify-full-rescan',
+    WorkspaceSearchWatcherOverflowStrategy.readDirectoryChangesFullRescan =>
+      'read-directory-changes-full-rescan',
+    WorkspaceSearchWatcherOverflowStrategy.providerFullRescan =>
+      'provider-full-rescan',
+  };
+}
+
 class WorkspaceSearchWatcherPolicy {
   const WorkspaceSearchWatcherPolicy({
     this.debounceWindow = const Duration(milliseconds: 250),
+    this.overflowRecoveryDelay = const Duration(milliseconds: 250),
     this.maxEventsPerBatch = 100,
     this.maxQueuedEvents = 1000,
     this.ignoredPathPrefixes = const <String>[],
@@ -478,6 +508,7 @@ class WorkspaceSearchWatcherPolicy {
   });
 
   final Duration debounceWindow;
+  final Duration overflowRecoveryDelay;
   final int maxEventsPerBatch;
   final int maxQueuedEvents;
   final List<String> ignoredPathPrefixes;
@@ -498,6 +529,7 @@ class WorkspaceSearchWatcherPolicy {
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'debounceMillis': debounceWindow.inMilliseconds,
+      'overflowRecoveryMillis': overflowRecoveryDelay.inMilliseconds,
       'maxEventsPerBatch': maxEventsPerBatch,
       'maxQueuedEvents': maxQueuedEvents,
       if (ignoredPathPrefixes.isNotEmpty)
@@ -511,6 +543,7 @@ class WorkspaceSearchWatcherPolicy {
 class WorkspaceSearchWatcherRefreshPlan {
   const WorkspaceSearchWatcherRefreshPlan({
     required this.policy,
+    required this.receivedEventCount,
     required this.events,
     required this.refreshEvents,
     required this.ignoredEvents,
@@ -523,7 +556,13 @@ class WorkspaceSearchWatcherRefreshPlan {
     required List<FileSystemManagerEvent> events,
     WorkspaceSearchWatcherPolicy policy = const WorkspaceSearchWatcherPolicy(),
   }) {
-    final queuedEvents = events.take(policy.maxQueuedEvents).toList();
+    final maxQueuedEvents = policy.maxQueuedEvents < 0
+        ? 0
+        : policy.maxQueuedEvents;
+    final maxEventsPerBatch = policy.maxEventsPerBatch < 0
+        ? 0
+        : policy.maxEventsPerBatch;
+    final queuedEvents = events.take(maxQueuedEvents).toList();
     final ignoredEvents = queuedEvents
         .where(policy.ignores)
         .toList(growable: false);
@@ -538,18 +577,25 @@ class WorkspaceSearchWatcherRefreshPlan {
         .where(policy.refreshesForEvent)
         .toList(growable: false);
     final refreshEvents = refreshableEvents
-        .take(policy.maxEventsPerBatch)
+        .take(maxEventsPerBatch)
         .toList(growable: false);
     final truncated =
-        events.length > policy.maxQueuedEvents ||
-        refreshableEvents.length > policy.maxEventsPerBatch;
+        events.length > maxQueuedEvents ||
+        refreshableEvents.length > maxEventsPerBatch;
+    final droppedEventCount =
+        events.length -
+        queuedEvents.length +
+        refreshableEvents.length -
+        refreshEvents.length;
     final reason = refreshEvents.isNotEmpty
-        ? 'Workspace search watcher refresh planned for ${refreshEvents.length} event(s).'
+        ? 'Workspace search watcher refresh planned for ${refreshEvents.length} event(s)'
+              '${droppedEventCount == 0 ? '.' : ' after dropping $droppedEventCount overflow event(s).'}'
         : ignoredEvents.isNotEmpty
         ? 'Workspace search watcher ignored ${ignoredEvents.length} event(s).'
         : 'Workspace search watcher found no refreshable events.';
     return WorkspaceSearchWatcherRefreshPlan(
       policy: policy,
+      receivedEventCount: events.length,
       events: List<FileSystemManagerEvent>.unmodifiable(queuedEvents),
       refreshEvents: List<FileSystemManagerEvent>.unmodifiable(refreshEvents),
       ignoredEvents: List<FileSystemManagerEvent>.unmodifiable(ignoredEvents),
@@ -562,6 +608,7 @@ class WorkspaceSearchWatcherRefreshPlan {
   }
 
   final WorkspaceSearchWatcherPolicy policy;
+  final int receivedEventCount;
   final List<FileSystemManagerEvent> events;
   final List<FileSystemManagerEvent> refreshEvents;
   final List<FileSystemManagerEvent> ignoredEvents;
@@ -574,13 +621,32 @@ class WorkspaceSearchWatcherRefreshPlan {
   int get refreshEventCount => refreshEvents.length;
   int get ignoredEventCount => ignoredEvents.length;
   int get nonRefreshableEventCount => nonRefreshableEvents.length;
+  int get droppedEventCount =>
+      receivedEventCount -
+      eventCount +
+      (eventCount - ignoredEventCount - nonRefreshableEventCount) -
+      refreshEventCount;
+  bool get queueOverflowed => receivedEventCount > eventCount;
+  bool get batchLimitExceeded =>
+      eventCount - ignoredEventCount - nonRefreshableEventCount >
+      refreshEventCount;
+  bool get backpressured =>
+      queueOverflowed ||
+      batchLimitExceeded ||
+      (policy.maxEventsPerBatch > 0 &&
+          receivedEventCount >= policy.maxEventsPerBatch);
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
+      'receivedEventCount': receivedEventCount,
       'eventCount': eventCount,
       'refreshEventCount': refreshEventCount,
       'ignoredEventCount': ignoredEventCount,
       'nonRefreshableEventCount': nonRefreshableEventCount,
+      'droppedEventCount': droppedEventCount,
+      'queueOverflowed': queueOverflowed,
+      'batchLimitExceeded': batchLimitExceeded,
+      'backpressured': backpressured,
       'shouldRefresh': shouldRefresh,
       'truncated': truncated,
       'reason': reason,
@@ -620,6 +686,161 @@ class WorkspaceSearchWatcherEventBatch {
       'flushedAt': flushedAt.toIso8601String(),
       'refreshPlan': refreshPlan.toJson(),
     };
+  }
+}
+
+class WorkspaceSearchWatcherBackpressureTelemetry {
+  const WorkspaceSearchWatcherBackpressureTelemetry({
+    required this.targetId,
+    required this.operatingSystem,
+    required this.providerKind,
+    required this.state,
+    required this.overflowStrategy,
+    required this.batchCount,
+    required this.receivedEventCount,
+    required this.acceptedEventCount,
+    required this.refreshEventCount,
+    required this.ignoredEventCount,
+    required this.nonRefreshableEventCount,
+    required this.droppedEventCount,
+    required this.providerOverflowCount,
+    required this.peakBatchEventCount,
+    this.observedAt,
+  });
+
+  factory WorkspaceSearchWatcherBackpressureTelemetry.initial(
+    FileSystemFacts facts,
+  ) {
+    return WorkspaceSearchWatcherBackpressureTelemetry(
+      targetId: facts.targetId,
+      operatingSystem: facts.operatingSystem,
+      providerKind: facts.providerKind.wireValue,
+      state: WorkspaceSearchWatcherBackpressureState.nominal,
+      overflowStrategy: _workspaceSearchOverflowStrategy(facts),
+      batchCount: 0,
+      receivedEventCount: 0,
+      acceptedEventCount: 0,
+      refreshEventCount: 0,
+      ignoredEventCount: 0,
+      nonRefreshableEventCount: 0,
+      droppedEventCount: 0,
+      providerOverflowCount: 0,
+      peakBatchEventCount: 0,
+    );
+  }
+
+  final String targetId;
+  final String operatingSystem;
+  final String providerKind;
+  final WorkspaceSearchWatcherBackpressureState state;
+  final WorkspaceSearchWatcherOverflowStrategy overflowStrategy;
+  final int batchCount;
+  final int receivedEventCount;
+  final int acceptedEventCount;
+  final int refreshEventCount;
+  final int ignoredEventCount;
+  final int nonRefreshableEventCount;
+  final int droppedEventCount;
+  final int providerOverflowCount;
+  final int peakBatchEventCount;
+  final DateTime? observedAt;
+
+  bool get hasBackpressure =>
+      state != WorkspaceSearchWatcherBackpressureState.nominal ||
+      droppedEventCount > 0 ||
+      providerOverflowCount > 0;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'targetId': targetId,
+      'operatingSystem': operatingSystem,
+      'providerKind': providerKind,
+      'state': state.name,
+      'overflowStrategy': overflowStrategy.wireValue,
+      'batchCount': batchCount,
+      'receivedEventCount': receivedEventCount,
+      'acceptedEventCount': acceptedEventCount,
+      'refreshEventCount': refreshEventCount,
+      'ignoredEventCount': ignoredEventCount,
+      'nonRefreshableEventCount': nonRefreshableEventCount,
+      'droppedEventCount': droppedEventCount,
+      'providerOverflowCount': providerOverflowCount,
+      'peakBatchEventCount': peakBatchEventCount,
+      'hasBackpressure': hasBackpressure,
+      if (observedAt != null) 'observedAt': observedAt!.toIso8601String(),
+    };
+  }
+}
+
+class WorkspaceSearchWatcherBackpressureTracker {
+  WorkspaceSearchWatcherBackpressureTracker({required FileSystemFacts facts})
+    : _facts = facts;
+
+  final FileSystemFacts _facts;
+  var _state = WorkspaceSearchWatcherBackpressureState.nominal;
+  var _batchCount = 0;
+  var _receivedEventCount = 0;
+  var _acceptedEventCount = 0;
+  var _refreshEventCount = 0;
+  var _ignoredEventCount = 0;
+  var _nonRefreshableEventCount = 0;
+  var _droppedEventCount = 0;
+  var _providerOverflowCount = 0;
+  var _peakBatchEventCount = 0;
+  DateTime? _observedAt;
+
+  WorkspaceSearchWatcherBackpressureTelemetry recordBatch(
+    WorkspaceSearchWatcherEventBatch batch,
+  ) {
+    final plan = batch.refreshPlan;
+    _batchCount += 1;
+    _receivedEventCount += plan.receivedEventCount;
+    _acceptedEventCount += plan.eventCount;
+    _refreshEventCount += plan.refreshEventCount;
+    _ignoredEventCount += plan.ignoredEventCount;
+    _nonRefreshableEventCount += plan.nonRefreshableEventCount;
+    _droppedEventCount += plan.droppedEventCount;
+    if (batch.eventCount > _peakBatchEventCount) {
+      _peakBatchEventCount = batch.eventCount;
+    }
+    _state = plan.queueOverflowed
+        ? WorkspaceSearchWatcherBackpressureState.queueOverflow
+        : plan.backpressured
+        ? WorkspaceSearchWatcherBackpressureState.batchLimitReached
+        : WorkspaceSearchWatcherBackpressureState.nominal;
+    _observedAt = batch.flushedAt;
+    return snapshot;
+  }
+
+  WorkspaceSearchWatcherBackpressureTelemetry recordProviderOverflow(
+    FileSystemWatchOverflowException overflow, {
+    DateTime? observedAt,
+  }) {
+    _state = WorkspaceSearchWatcherBackpressureState.providerOverflow;
+    _providerOverflowCount += 1;
+    _droppedEventCount += overflow.droppedEventCount ?? 0;
+    _observedAt = (observedAt ?? DateTime.now()).toUtc();
+    return snapshot;
+  }
+
+  WorkspaceSearchWatcherBackpressureTelemetry get snapshot {
+    return WorkspaceSearchWatcherBackpressureTelemetry(
+      targetId: _facts.targetId,
+      operatingSystem: _facts.operatingSystem,
+      providerKind: _facts.providerKind.wireValue,
+      state: _state,
+      overflowStrategy: _workspaceSearchOverflowStrategy(_facts),
+      batchCount: _batchCount,
+      receivedEventCount: _receivedEventCount,
+      acceptedEventCount: _acceptedEventCount,
+      refreshEventCount: _refreshEventCount,
+      ignoredEventCount: _ignoredEventCount,
+      nonRefreshableEventCount: _nonRefreshableEventCount,
+      droppedEventCount: _droppedEventCount,
+      providerOverflowCount: _providerOverflowCount,
+      peakBatchEventCount: _peakBatchEventCount,
+      observedAt: _observedAt,
+    );
   }
 }
 
@@ -758,6 +979,8 @@ class WorkspaceSearchIndexWatcherSnapshot {
     this.event,
     this.refreshPlan,
     this.refreshSnapshot,
+    this.backpressure,
+    this.recoveryPlan,
     this.message = '',
   });
 
@@ -767,6 +990,8 @@ class WorkspaceSearchIndexWatcherSnapshot {
   final FileSystemManagerEvent? event;
   final WorkspaceSearchWatcherRefreshPlan? refreshPlan;
   final WorkspaceSearchIndexRefreshSnapshot? refreshSnapshot;
+  final WorkspaceSearchWatcherBackpressureTelemetry? backpressure;
+  final WorkspaceSearchWatcherRecoveryPlan? recoveryPlan;
   final String message;
 
   bool get active =>
@@ -786,6 +1011,8 @@ class WorkspaceSearchIndexWatcherSnapshot {
       if (event != null) 'event': _workspaceSearchFileSystemEventJson(event!),
       if (refreshPlan != null) 'refreshPlan': refreshPlan!.toJson(),
       if (refreshSnapshot != null) 'refresh': refreshSnapshot!.toJson(),
+      if (backpressure != null) 'backpressure': backpressure!.toJson(),
+      if (recoveryPlan != null) 'recoveryPlan': recoveryPlan!.toJson(),
     };
   }
 }
@@ -797,6 +1024,9 @@ class WorkspaceSearchWatcherRecoveryPlan {
     required this.persistenceKey,
     required this.canRetry,
     required this.message,
+    this.overflowStrategy,
+    this.requiresIndexRebuild = false,
+    this.requiresWatcherRestart = false,
   });
 
   factory WorkspaceSearchWatcherRecoveryPlan.fromSnapshot(
@@ -820,9 +1050,40 @@ class WorkspaceSearchWatcherRecoveryPlan {
       canRetry:
           action == WorkspaceSearchWatcherRecoveryAction.restartWatcher ||
           action == WorkspaceSearchWatcherRecoveryAction.rebuildIndex,
+      requiresIndexRebuild:
+          action == WorkspaceSearchWatcherRecoveryAction.rebuildIndex,
+      requiresWatcherRestart:
+          action == WorkspaceSearchWatcherRecoveryAction.restartWatcher,
       message: action == WorkspaceSearchWatcherRecoveryAction.none
           ? 'Workspace search watcher does not need recovery.'
           : 'Workspace search watcher recovery action ${action.name} is planned.',
+    );
+  }
+
+  factory WorkspaceSearchWatcherRecoveryPlan.forOverflow({
+    required String workspaceRoot,
+    required FileSystemFacts facts,
+    String persistenceKey = 'workspace-search-watcher',
+  }) {
+    final strategy = _workspaceSearchOverflowStrategy(facts);
+    final providerLabel = switch (strategy) {
+      WorkspaceSearchWatcherOverflowStrategy.fseventsFullRescan => 'FSEvents',
+      WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan => 'inotify',
+      WorkspaceSearchWatcherOverflowStrategy.readDirectoryChangesFullRescan =>
+        'ReadDirectoryChangesW',
+      WorkspaceSearchWatcherOverflowStrategy.providerFullRescan =>
+        'file-system provider',
+    };
+    return WorkspaceSearchWatcherRecoveryPlan(
+      action: WorkspaceSearchWatcherRecoveryAction.rebuildIndex,
+      workspaceRoot: workspaceRoot,
+      persistenceKey: persistenceKey,
+      canRetry: true,
+      overflowStrategy: strategy,
+      requiresIndexRebuild: true,
+      requiresWatcherRestart: true,
+      message:
+          '$providerLabel overflow requires a full search-index rebuild before the watcher is restarted.',
     );
   }
 
@@ -831,6 +1092,9 @@ class WorkspaceSearchWatcherRecoveryPlan {
   final String persistenceKey;
   final bool canRetry;
   final String message;
+  final WorkspaceSearchWatcherOverflowStrategy? overflowStrategy;
+  final bool requiresIndexRebuild;
+  final bool requiresWatcherRestart;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -839,6 +1103,10 @@ class WorkspaceSearchWatcherRecoveryPlan {
       'persistenceKey': persistenceKey,
       'canRetry': canRetry,
       'message': message,
+      'requiresIndexRebuild': requiresIndexRebuild,
+      'requiresWatcherRestart': requiresWatcherRestart,
+      if (overflowStrategy != null)
+        'overflowStrategy': overflowStrategy!.wireValue,
     };
   }
 }
@@ -849,6 +1117,7 @@ class WorkspaceSearchIndexFileSystemWatcherBinding {
     required this.fileSystemManager,
     required this.workspaceRoot,
     required this.currentDocuments,
+    this.currentDocumentIds,
     this.recursive = true,
     this.maxDocuments = 5000,
     this.watcherPolicy = const WorkspaceSearchWatcherPolicy(),
@@ -858,37 +1127,104 @@ class WorkspaceSearchIndexFileSystemWatcherBinding {
   final FileSystemManager fileSystemManager;
   final String workspaceRoot;
   final WorkspaceSearchDocumentSnapshotProvider currentDocuments;
+  final Iterable<String> Function()? currentDocumentIds;
   final bool recursive;
   final int maxDocuments;
   final WorkspaceSearchWatcherPolicy watcherPolicy;
 
   Stream<WorkspaceSearchIndexWatcherSnapshot> watchAndRefresh() async* {
-    yield WorkspaceSearchIndexWatcherSnapshot(
-      status: WorkspaceSearchIndexWatcherStatus.listening,
-      workspaceRoot: workspaceRoot,
-      recursive: recursive,
-      message: 'Workspace search index watcher attached.',
+    final backpressureTracker = WorkspaceSearchWatcherBackpressureTracker(
+      facts: fileSystemManager.facts,
     );
-    try {
-      final batches = WorkspaceSearchWatcherStreamBatcher(
-        policy: watcherPolicy,
-      ).bind(fileSystemManager.watch(workspaceRoot, recursive: recursive));
-      await for (final batch in batches) {
-        yield await refreshFromBatch(batch);
+    var attachmentCount = 0;
+    while (true) {
+      attachmentCount += 1;
+      yield WorkspaceSearchIndexWatcherSnapshot(
+        status: WorkspaceSearchIndexWatcherStatus.listening,
+        workspaceRoot: workspaceRoot,
+        recursive: recursive,
+        backpressure: backpressureTracker.snapshot,
+        message: attachmentCount == 1
+            ? 'Workspace search index watcher attached.'
+            : 'Workspace search index watcher reattached after recovery.',
+      );
+      try {
+        final batches = WorkspaceSearchWatcherStreamBatcher(
+          policy: watcherPolicy,
+        ).bind(fileSystemManager.watch(workspaceRoot, recursive: recursive));
+        await for (final batch in batches) {
+          final backpressure = backpressureTracker.recordBatch(batch);
+          yield await refreshFromBatch(batch, backpressure: backpressure);
+        }
+        yield WorkspaceSearchIndexWatcherSnapshot(
+          status: WorkspaceSearchIndexWatcherStatus.stopped,
+          workspaceRoot: workspaceRoot,
+          recursive: recursive,
+          backpressure: backpressureTracker.snapshot,
+          message: 'Workspace search index watcher stopped.',
+        );
+        return;
+      } on FileSystemWatchOverflowException catch (overflow) {
+        final backpressure = backpressureTracker.recordProviderOverflow(
+          overflow,
+        );
+        final recoveryPlan = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+          workspaceRoot: workspaceRoot,
+          facts: fileSystemManager.facts,
+        );
+        yield WorkspaceSearchIndexWatcherSnapshot(
+          status: WorkspaceSearchIndexWatcherStatus.refreshing,
+          workspaceRoot: workspaceRoot,
+          recursive: recursive,
+          backpressure: backpressure,
+          recoveryPlan: recoveryPlan,
+          message:
+              'Workspace search watcher overflow detected; rebuilding the complete index.',
+        );
+        final refresh = await _rebuildIndex();
+        if (!refresh.ready) {
+          yield WorkspaceSearchIndexWatcherSnapshot(
+            status: WorkspaceSearchIndexWatcherStatus.failed,
+            workspaceRoot: workspaceRoot,
+            recursive: recursive,
+            refreshSnapshot: refresh,
+            backpressure: backpressure,
+            recoveryPlan: recoveryPlan,
+            message:
+                'Workspace search index rebuild failed after watcher overflow.',
+          );
+          return;
+        }
+        yield WorkspaceSearchIndexWatcherSnapshot(
+          status: WorkspaceSearchIndexWatcherStatus.ready,
+          workspaceRoot: workspaceRoot,
+          recursive: recursive,
+          refreshSnapshot: refresh,
+          backpressure: backpressure,
+          recoveryPlan: recoveryPlan,
+          message:
+              'Workspace search index rebuilt after watcher overflow; restarting the watcher.',
+        );
+        if (watcherPolicy.overflowRecoveryDelay > Duration.zero) {
+          await Future<void>.delayed(watcherPolicy.overflowRecoveryDelay);
+        }
+      } on Object catch (error) {
+        final failure = fileSystemManager.classifyFailure(
+          error,
+          operation: 'watch',
+          target: workspaceRoot,
+          recoveryHint: 'Restart the workspace search watcher.',
+        );
+        yield WorkspaceSearchIndexWatcherSnapshot(
+          status: WorkspaceSearchIndexWatcherStatus.failed,
+          workspaceRoot: workspaceRoot,
+          recursive: recursive,
+          backpressure: backpressureTracker.snapshot,
+          message:
+              'Workspace search index watcher failed (${failure.kind.name}).',
+        );
+        return;
       }
-      yield WorkspaceSearchIndexWatcherSnapshot(
-        status: WorkspaceSearchIndexWatcherStatus.stopped,
-        workspaceRoot: workspaceRoot,
-        recursive: recursive,
-        message: 'Workspace search index watcher stopped.',
-      );
-    } on Object catch (error) {
-      yield WorkspaceSearchIndexWatcherSnapshot(
-        status: WorkspaceSearchIndexWatcherStatus.failed,
-        workspaceRoot: workspaceRoot,
-        recursive: recursive,
-        message: 'Workspace search index watcher failed: $error',
-      );
     }
   }
 
@@ -908,10 +1244,16 @@ class WorkspaceSearchIndexFileSystemWatcherBinding {
   }
 
   Future<WorkspaceSearchIndexWatcherSnapshot> refreshFromBatch(
-    WorkspaceSearchWatcherEventBatch batch,
-  ) async {
+    WorkspaceSearchWatcherEventBatch batch, {
+    WorkspaceSearchWatcherBackpressureTelemetry? backpressure,
+  }) async {
     final refreshPlan = batch.refreshPlan;
     final event = batch.events.isEmpty ? null : batch.events.first;
+    final telemetry =
+        backpressure ??
+        WorkspaceSearchWatcherBackpressureTracker(
+          facts: fileSystemManager.facts,
+        ).recordBatch(batch);
     if (!refreshPlan.shouldRefresh) {
       return WorkspaceSearchIndexWatcherSnapshot(
         status: WorkspaceSearchIndexWatcherStatus.listening,
@@ -919,13 +1261,19 @@ class WorkspaceSearchIndexFileSystemWatcherBinding {
         recursive: recursive,
         event: event,
         refreshPlan: refreshPlan,
+        backpressure: telemetry,
         message: 'Workspace search index ignored file system event.',
       );
     }
-    final refresh = await controller.refreshIfStale(
-      currentDocuments: currentDocuments(),
-      maxDocuments: maxDocuments,
-    );
+    final refresh = currentDocumentIds == null
+        ? await controller.refreshIfStale(
+            currentDocuments: currentDocuments(),
+            maxDocuments: maxDocuments,
+          )
+        : await controller.refresh(
+            documentIds: currentDocumentIds!(),
+            maxDocuments: maxDocuments,
+          );
     return WorkspaceSearchIndexWatcherSnapshot(
       status: WorkspaceSearchIndexWatcherStatus.ready,
       workspaceRoot: workspaceRoot,
@@ -933,10 +1281,33 @@ class WorkspaceSearchIndexFileSystemWatcherBinding {
       event: event,
       refreshPlan: refreshPlan,
       refreshSnapshot: refresh,
+      backpressure: telemetry,
       message:
           'Workspace search index refreshed from ${batch.eventCount} file system event(s).',
     );
   }
+
+  Future<WorkspaceSearchIndexRefreshSnapshot> _rebuildIndex() {
+    final documentIds =
+        currentDocumentIds?.call() ??
+        currentDocuments().map((document) => document.documentId);
+    return controller.refresh(
+      documentIds: documentIds,
+      maxDocuments: maxDocuments,
+    );
+  }
+}
+
+WorkspaceSearchWatcherOverflowStrategy _workspaceSearchOverflowStrategy(
+  FileSystemFacts facts,
+) {
+  return switch (facts.operatingSystem.toLowerCase()) {
+    'macos' => WorkspaceSearchWatcherOverflowStrategy.fseventsFullRescan,
+    'linux' => WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan,
+    'windows' =>
+      WorkspaceSearchWatcherOverflowStrategy.readDirectoryChangesFullRescan,
+    _ => WorkspaceSearchWatcherOverflowStrategy.providerFullRescan,
+  };
 }
 
 bool _workspaceSearchRefreshesForEvent(FileSystemManagerEvent event) {
