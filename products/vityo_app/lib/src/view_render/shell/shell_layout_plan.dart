@@ -424,6 +424,9 @@ List<ShellPanelContribution> _defaultBottomPanelContributions() {
           title: _bottomTabTitle(tab),
           surfaceId: _bottomTabSurfaceId(tab),
           capabilities: _bottomTabCapabilities(tab),
+          status: tab == BottomSurfaceTab.extensions
+              ? ShellPanelContributionStatus.production
+              : ShellPanelContributionStatus.wired,
           metadata: metadata,
           todo: _bottomTabPanelTodo(tab),
         );
@@ -850,8 +853,7 @@ String _bottomTabPanelTodo(BottomSurfaceTab tab) {
       'TODO: add virtualized multi-file diagnostics diff expansion.',
     BottomSurfaceTab.settings =>
       'TODO: bind all recovery and credential configuration routes.',
-    BottomSurfaceTab.extensions =>
-      'TODO: render marketplace IO progress and lifecycle policy persistence.',
+    BottomSurfaceTab.extensions => '',
     BottomSurfaceTab.debug =>
       'TODO: expose launch configuration editing and adapter process controls.',
     BottomSurfaceTab.agent =>

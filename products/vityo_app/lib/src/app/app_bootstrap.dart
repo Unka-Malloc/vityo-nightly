@@ -265,6 +265,7 @@ class AppBootstrap {
     this.workspaceTextSearchProvider,
     this.lspGateway,
     this.extensionStartupPlan,
+    this.extensionMarketplaceRuntime,
     this.platformManagers,
     this.credentialStorage,
     this.hostedControlPlaneClient,
@@ -317,6 +318,7 @@ class AppBootstrap {
   final WorkspaceTextSearchProvider? workspaceTextSearchProvider;
   final VityodLspGateway? lspGateway;
   final AppExtensionStartupPlan? extensionStartupPlan;
+  final ExtensionMarketplaceRuntimeServices? extensionMarketplaceRuntime;
   final PlatformManagerBundle? platformManagers;
   final PlatformCredentialDataStoreBootstrap? credentialStorage;
   final HostedControlPlaneClient? hostedControlPlaneClient;
@@ -730,6 +732,11 @@ class AppBootstrap {
       workspaceRoot: projectSnapshot.workspaceRoot,
     );
     final foundationDataStore = _createFoundationDataStore(platformManagers);
+    final extensionMarketplaceRuntime =
+        ExtensionMarketplaceRuntimeServices.fromFoundation(
+          dataStore: foundationDataStore,
+          platformManagers: platformManagers,
+        );
     final extensionHostLaunchers =
         createPlatformExtensionHostSandboxLauncherRegistry(
           platformTarget: platformTarget,
@@ -1013,6 +1020,7 @@ class AppBootstrap {
           ? null
           : VityodLspGateway(client: vityodClient),
       extensionStartupPlan: extensionStartupPlan,
+      extensionMarketplaceRuntime: extensionMarketplaceRuntime,
       platformManagers: platformManagers,
       credentialStorage: credentialStorage,
       hostedControlPlaneClient: hostedControlPlaneClient,

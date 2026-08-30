@@ -6,6 +6,7 @@ import 'package:vityo_app/src/view_ide/environment/system_compatibility/system_c
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
 import 'package:vityo_app/src/view_ide/interaction/interaction.dart';
+import 'package:vityo_app/src/view_ide/module_host/module_host.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_configuration_store.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_manager.dart';
@@ -782,6 +783,74 @@ void main() {
     await tester.pumpAndSettle();
     expect(executionCount, 1);
   });
+
+  testWidgets(
+    'extension marketplace settings save lifecycle policy and refresh index',
+    (tester) async {
+      ExtensionMarketplacePreferences? saved;
+      var refreshCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SettingsSurface(
+              viewportProfile: resolveViewportProfile(
+                platformTarget: PlatformTarget.macos,
+                width: 1200,
+                height: 900,
+              ),
+              toolchainStatus: const ToolchainStatusSurface(
+                source: 'test',
+                severity: ToolchainStatusSeverity.ready,
+                title: 'Toolchain ready',
+                message: 'Ready.',
+                recoveryActions: <ToolchainRecoveryAction>[],
+              ),
+              extensionMarketplacePreferences:
+                  const ExtensionMarketplacePreferences(
+                    workspaceId: 'settings-marketplace',
+                  ),
+              extensionMarketplaceMessage: 'Marketplace settings loaded.',
+              onSaveExtensionMarketplacePreferences: (preferences) async {
+                saved = preferences;
+              },
+              onRefreshExtensionMarketplace: () async {
+                refreshCount += 1;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('settings-extension-marketplace')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('settings-extension-marketplace-index-url')),
+        'https://extensions.example/index.json',
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey('settings-extension-marketplace-activate-trusted'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-extension-marketplace-save')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-extension-marketplace-refresh')),
+      );
+      await tester.pump();
+
+      expect(saved?.indexUrl, 'https://extensions.example/index.json');
+      expect(saved?.enableAfterInstall, isTrue);
+      expect(saved?.trustVerifiedListings, isTrue);
+      expect(saved?.activateTrustedAfterInstall, isTrue);
+      expect(refreshCount, 1);
+    },
+  );
 }
 
 Color _swatchColor(WidgetTester tester, String keyName) {

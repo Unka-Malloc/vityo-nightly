@@ -19,6 +19,7 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleProjectLanguageContextChanged() => _notifyShellListeners();
   void _handleWorkspaceRenameChanged() => _notifyShellListeners();
   void _handleModuleChanged() => _notifyShellListeners();
+  void _handleExtensionMarketplaceChanged() => _notifyShellListeners();
   void _handleSourceControlChanged() => _notifyShellListeners();
   void _handleTestingChanged() => _notifyShellListeners();
   void _handleSemanticTelemetryChanged() => _notifyShellListeners();
@@ -113,6 +114,10 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _workspaceRenameController.dispose();
     _moduleController.removeListener(_handleModuleChanged);
     _moduleController.dispose();
+    _extensionMarketplaceController.removeListener(
+      _handleExtensionMarketplaceChanged,
+    );
+    _extensionMarketplaceController.dispose();
     _debugController.removeListener(_handleDebugChanged);
     _debugController.dispose();
     _sourceControlController.removeListener(_handleSourceControlChanged);

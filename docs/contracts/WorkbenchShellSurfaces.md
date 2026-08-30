@@ -166,7 +166,6 @@ The following are expressed as structured capability gaps or todo annotations wi
 | `bottom.search` | TODO: add production-scale virtualized search result rendering. |
 | `bottom.problems` | TODO: add virtualized multi-file diagnostics diff expansion. |
 | `bottom.settings` | TODO: bind all recovery and credential configuration routes. |
-| `bottom.extensions` | TODO: render marketplace IO progress and lifecycle policy persistence. |
 | `bottom.debug` | TODO: expose launch configuration editing and adapter process controls. |
 | `bottom.agent` | TODO: add long-running coding session timeline virtualization. |
 

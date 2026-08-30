@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../view_ide/commands/commands.dart';
 import '../../view_ide/interaction/interaction.dart';
+import '../../view_ide/module_host/module_host.dart';
 import '../../view_ide/foundation/foundation.dart';
 import '../../view_ide/environment/environment.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
@@ -31,6 +32,11 @@ class SettingsSurface extends StatelessWidget {
     this.onExecuteToolchainInstallPlan,
     this.platformManagerSettings,
     this.credentialStorageSettings,
+    this.extensionMarketplacePreferences,
+    this.extensionMarketplaceMessage = '',
+    this.extensionMarketplaceBusy = false,
+    this.onSaveExtensionMarketplacePreferences,
+    this.onRefreshExtensionMarketplace,
     this.hostedBackendConnector,
     this.hostedBackendActionResult,
     this.hostedBackendActionRunning = false,
@@ -66,6 +72,12 @@ class SettingsSurface extends StatelessWidget {
   final Future<void> Function()? onExecuteToolchainInstallPlan;
   final PlatformManagerSettingsSurface? platformManagerSettings;
   final CredentialStorageSettingsSurface? credentialStorageSettings;
+  final ExtensionMarketplacePreferences? extensionMarketplacePreferences;
+  final String extensionMarketplaceMessage;
+  final bool extensionMarketplaceBusy;
+  final Future<void> Function(ExtensionMarketplacePreferences preferences)?
+  onSaveExtensionMarketplacePreferences;
+  final Future<void> Function()? onRefreshExtensionMarketplace;
   final HostedBackendConnectorParityReport? hostedBackendConnector;
   final HostedBackendRetryActionExecutionResult? hostedBackendActionResult;
   final bool hostedBackendActionRunning;
@@ -122,6 +134,17 @@ class SettingsSurface extends StatelessWidget {
                 _CredentialStorageSettingsCard(settings: credentialSettings),
                 const SizedBox(height: 14),
               ],
+              if (extensionMarketplacePreferences
+                  case final marketplacePreferences?) ...[
+                _ExtensionMarketplaceSettingsCard(
+                  preferences: marketplacePreferences,
+                  message: extensionMarketplaceMessage,
+                  busy: extensionMarketplaceBusy,
+                  onSave: onSaveExtensionMarketplacePreferences,
+                  onRefresh: onRefreshExtensionMarketplace,
+                ),
+                const SizedBox(height: 14),
+              ],
               if (hostedBackendConnector case final connector?) ...[
                 _HostedBackendSettingsCard(
                   connector: connector,
@@ -159,6 +182,216 @@ class SettingsSurface extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ExtensionMarketplaceSettingsCard extends StatefulWidget {
+  const _ExtensionMarketplaceSettingsCard({
+    required this.preferences,
+    required this.message,
+    required this.busy,
+    required this.onSave,
+    required this.onRefresh,
+  });
+
+  final ExtensionMarketplacePreferences preferences;
+  final String message;
+  final bool busy;
+  final Future<void> Function(ExtensionMarketplacePreferences preferences)?
+  onSave;
+  final Future<void> Function()? onRefresh;
+
+  @override
+  State<_ExtensionMarketplaceSettingsCard> createState() =>
+      _ExtensionMarketplaceSettingsCardState();
+}
+
+class _ExtensionMarketplaceSettingsCardState
+    extends State<_ExtensionMarketplaceSettingsCard> {
+  late final TextEditingController _indexUrlController;
+  late bool _enableAfterInstall;
+  late bool _trustVerifiedListings;
+  late bool _activateTrustedAfterInstall;
+
+  @override
+  void initState() {
+    super.initState();
+    _indexUrlController = TextEditingController(
+      text: widget.preferences.indexUrl,
+    );
+    _applyPreferences(widget.preferences, updateText: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExtensionMarketplaceSettingsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.preferences.toJson().toString() !=
+        widget.preferences.toJson().toString()) {
+      _applyPreferences(widget.preferences, updateText: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _indexUrlController.dispose();
+    super.dispose();
+  }
+
+  void _applyPreferences(
+    ExtensionMarketplacePreferences preferences, {
+    required bool updateText,
+  }) {
+    if (updateText) {
+      _indexUrlController.text = preferences.indexUrl;
+    }
+    _enableAfterInstall = preferences.enableAfterInstall;
+    _trustVerifiedListings = preferences.trustVerifiedListings;
+    _activateTrustedAfterInstall = preferences.activateTrustedAfterInstall;
+  }
+
+  ExtensionMarketplacePreferences get _draft {
+    return widget.preferences.copyWith(
+      indexUrl: _indexUrlController.text.trim(),
+      enableAfterInstall: _enableAfterInstall,
+      trustVerifiedListings: _trustVerifiedListings,
+      activateTrustedAfterInstall: _activateTrustedAfterInstall,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      key: const ValueKey('settings-extension-marketplace'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.extension_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Extension Marketplace',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (widget.busy)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Choose the trusted index endpoint and what Vityo should do after a verified package is installed.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('settings-extension-marketplace-index-url'),
+            controller: _indexUrlController,
+            enabled: !widget.busy,
+            decoration: const InputDecoration(
+              labelText: 'Marketplace index URL',
+              hintText: 'https://extensions.example/index.json',
+              prefixIcon: Icon(Icons.link_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-enable-after-install',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable after install'),
+              subtitle: const Text(
+                'Register the extension immediately after package verification.',
+              ),
+              value: _enableAfterInstall,
+              onChanged: widget.busy
+                  ? null
+                  : (value) => setState(() => _enableAfterInstall = value),
+            ),
+          ),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-trust-verified',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Trust verified publishers'),
+              subtitle: const Text(
+                'Grant trust only when marketplace verification and SHA-256 integrity both pass.',
+              ),
+              value: _trustVerifiedListings,
+              onChanged: widget.busy
+                  ? null
+                  : (value) => setState(() => _trustVerifiedListings = value),
+            ),
+          ),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-activate-trusted',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Activate trusted installs'),
+              subtitle: const Text(
+                'Start a trusted extension host after install instead of waiting for restart.',
+              ),
+              value: _activateTrustedAfterInstall,
+              onChanged: widget.busy
+                  ? null
+                  : (value) =>
+                        setState(() => _activateTrustedAfterInstall = value),
+            ),
+          ),
+          if (widget.message.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.message,
+              key: const ValueKey('settings-extension-marketplace-message'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('settings-extension-marketplace-save'),
+                onPressed: widget.busy || widget.onSave == null
+                    ? null
+                    : () => widget.onSave!(_draft),
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save Marketplace Settings'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-extension-marketplace-refresh'),
+                onPressed: widget.busy ? null : widget.onRefresh,
+                icon: const Icon(Icons.sync_rounded),
+                label: const Text('Refresh Index'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

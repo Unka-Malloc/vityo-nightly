@@ -164,11 +164,21 @@ Activation events (modeled after Theia/VS Code concepts but Styio-native):
 
 The `ExtensionMarketplace` (at `products/vityo_app/lib/src/view_ide/module_host/extension_marketplace.dart`) provides:
 
-- Discovery of available extensions
-- Installation with dependency resolution
-- Version management and staged updates
-- Extension health monitoring
-- Uninstall with cleanup
+- Workspace-scoped index discovery through an explicitly configured HTTPS URL
+  (loopback HTTP is accepted only for local development and native tests).
+- Verified-publisher gating plus mandatory SHA-256 comparison against the
+  downloaded bytes before any cache write or manifest registration.
+- Atomic package caching inside Foundation workspace resources, with failed IO
+  batches stopping before lifecycle state can be persisted.
+- Install and update confirmation, searchable results, IO progress, and
+  receipts in the Extensions surface.
+- Persisted index, installation manifest registry, and lifecycle preferences
+  shared with the product Settings surface.
+
+`ExtensionMarketplaceController` is the production coordinator. App bootstrap
+constructs its platform IO catalog from `NetworkManager`, `FileSystemManager`,
+`FoundationResourceCoordinator`, and `FoundationDataStore`; no marketplace
+request is made at startup unless the user has configured an index URL.
 
 ## 7. Capability Matrix Integration
 

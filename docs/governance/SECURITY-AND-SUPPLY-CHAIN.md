@@ -236,6 +236,14 @@ Before activation, extensions are checked for:
 - License compatibility
 - Permission reasonableness (e.g., a theme extension requesting `network` is suspicious)
 
+Marketplace installation additionally requires:
+- An explicitly configured HTTPS index endpoint; cleartext HTTP is accepted
+  only for loopback development traffic.
+- Marketplace publisher verification metadata and a valid SHA-256 digest.
+- A byte-for-byte digest match before atomic workspace-cache persistence.
+- Short-circuiting on download, integrity, cache, or lifecycle persistence
+  failure so an unverified manifest is never registered.
+
 ### 5.3 Module Manifest Security Baseline
 
 `products/vityo_app/lib/src/view_ide/module_host/module_manifest_security.dart` owns trust checks for module manifests. Manifest security changes must preserve:

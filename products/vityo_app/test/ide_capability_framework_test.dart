@@ -669,12 +669,17 @@ void main() {
     );
     expect(
       entriesById['extension.marketplace']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['extension.marketplace']?.summary,
       contains('enable/disable/trust actions'),
     );
+    expect(
+      entriesById['extension.marketplace']?.summary,
+      contains('matching SHA-256 integrity'),
+    );
+    expect(entriesById['extension.marketplace']?.todo, isEmpty);
     expect(
       entriesById['interaction.command-palette']?.status,
       IdeCapabilityStatus.wired,

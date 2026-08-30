@@ -167,9 +167,10 @@ void main() {
       plan.panelById('bottom.problems')?.metadata['surfaceId'],
       'workspace.problems',
     );
+    expect(plan.panelById('bottom.extensions')?.todo, isEmpty);
     expect(
-      plan.panelById('bottom.extensions')?.todo,
-      contains('marketplace IO progress'),
+      registry.panelById('bottom.extensions')?.status,
+      ShellPanelContributionStatus.production,
     );
     expect(registry.toJson()['coreIdeCoverage'], isA<Map<String, Object?>>());
   });

@@ -16,12 +16,19 @@ class ExtensionsSurface extends StatelessWidget {
     this.launchResults = const <ExtensionHostSandboxLaunchResult>[],
     this.telemetryEvents = const <ExtensionHostSupervisorTelemetryEvent>[],
     this.marketplaceIndex,
+    this.installedExtensionRegistry,
     this.marketplaceQuery = '',
+    this.marketplaceMessage = '',
+    this.marketplaceBusy = false,
+    this.lastMarketplaceInstallResult,
     this.onRefreshModules,
+    this.onRefreshMarketplace,
+    this.onMarketplaceQueryChanged,
     this.onEnableModule,
     this.onDisableModule,
     this.onTrustModule,
     this.onInstallExtension,
+    this.onUpdateExtension,
   });
 
   final ViewportProfile viewportProfile;
@@ -33,12 +40,21 @@ class ExtensionsSurface extends StatelessWidget {
   final List<ExtensionHostSandboxLaunchResult> launchResults;
   final List<ExtensionHostSupervisorTelemetryEvent> telemetryEvents;
   final ExtensionMarketplaceIndex? marketplaceIndex;
+  final ExtensionManifestRegistry? installedExtensionRegistry;
   final String marketplaceQuery;
+  final String marketplaceMessage;
+  final bool marketplaceBusy;
+  final ExtensionMarketplaceInstallExecutionResult?
+  lastMarketplaceInstallResult;
   final Future<void> Function()? onRefreshModules;
+  final Future<void> Function()? onRefreshMarketplace;
+  final ValueChanged<String>? onMarketplaceQueryChanged;
   final Future<void> Function(String moduleId)? onEnableModule;
   final Future<void> Function(String moduleId)? onDisableModule;
   final Future<void> Function(String moduleId)? onTrustModule;
   final Future<void> Function(ExtensionInstallPlan plan)? onInstallExtension;
+  final Future<void> Function(ExtensionMarketplaceUpdatePlan plan)?
+  onUpdateExtension;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +66,9 @@ class ExtensionsSurface extends StatelessWidget {
     final statesById = <String, ModuleLifecycleState>{
       for (final state in moduleStates) state.moduleId: state,
     };
-    final installedRegistry = _installedExtensionRegistry(visibleModules);
+    final installedRegistry =
+        installedExtensionRegistry ??
+        _installedExtensionRegistry(visibleModules);
     final marketplaceListings =
         marketplaceIndex?.search(marketplaceQuery) ??
         const <ExtensionMarketplaceListing>[];
@@ -116,11 +134,47 @@ class ExtensionsSurface extends StatelessWidget {
                 const SizedBox(height: 12),
               ],
               if (marketplaceIndex != null) ...[
-                Text('Marketplace', style: theme.textTheme.titleSmall),
+                _MarketplaceStatus(
+                  message: marketplaceMessage,
+                  busy: marketplaceBusy,
+                  configured: onRefreshMarketplace != null,
+                  lastResult: lastMarketplaceInstallResult,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Marketplace',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      key: const ValueKey('extensions-marketplace-refresh'),
+                      tooltip: 'Refresh marketplace index',
+                      onPressed: marketplaceBusy ? null : onRefreshMarketplace,
+                      icon: const Icon(Icons.sync_rounded),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
+                TextFormField(
+                  key: const ValueKey('extensions-marketplace-search'),
+                  initialValue: marketplaceQuery,
+                  onChanged: onMarketplaceQueryChanged,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search_rounded),
+                    hintText: 'Search extensions',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 if (marketplaceListings.isEmpty)
                   Text(
-                    'No marketplace extensions match this query.',
+                    marketplaceMessage.isEmpty
+                        ? 'No marketplace extensions match this query.'
+                        : marketplaceMessage,
                     style: theme.textTheme.bodySmall,
                   )
                 else
@@ -134,7 +188,14 @@ class ExtensionsSurface extends StatelessWidget {
                             installedRegistry: installedRegistry,
                             extensionId: listing.extensionId,
                           ),
+                          updatePlan:
+                              ExtensionMarketplaceUpdatePlan.fromListing(
+                                listing: listing,
+                                installedRegistry: installedRegistry,
+                              ),
+                          busy: marketplaceBusy,
                           onInstallExtension: onInstallExtension,
+                          onUpdateExtension: onUpdateExtension,
                         ),
                     ],
                   ),
@@ -403,16 +464,88 @@ ExtensionManifestRegistry _installedExtensionRegistry(
   return ExtensionManifestRegistry(manifests);
 }
 
+class _MarketplaceStatus extends StatelessWidget {
+  const _MarketplaceStatus({
+    required this.message,
+    required this.busy,
+    required this.configured,
+    required this.lastResult,
+  });
+
+  final String message;
+  final bool busy;
+  final bool configured;
+  final ExtensionMarketplaceInstallExecutionResult? lastResult;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final result = lastResult;
+    final succeeded = result?.installed == true;
+    return Container(
+      key: const ValueKey('extensions-marketplace-status'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: succeeded
+            ? theme.colorScheme.primaryContainer
+            : theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (busy)
+            const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Icon(
+              succeeded
+                  ? Icons.verified_rounded
+                  : configured
+                  ? Icons.cloud_outlined
+                  : Icons.settings_outlined,
+              size: 19,
+              color: succeeded
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              result?.message ??
+                  (message.isEmpty
+                      ? 'Marketplace is ready for configuration.'
+                      : message),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ExtensionMarketplaceCard extends StatelessWidget {
   const _ExtensionMarketplaceCard({
     required this.listing,
     required this.installPlan,
+    required this.updatePlan,
+    required this.busy,
     required this.onInstallExtension,
+    required this.onUpdateExtension,
   });
 
   final ExtensionMarketplaceListing listing;
   final ExtensionInstallPlan installPlan;
+  final ExtensionMarketplaceUpdatePlan updatePlan;
+  final bool busy;
   final Future<void> Function(ExtensionInstallPlan plan)? onInstallExtension;
+  final Future<void> Function(ExtensionMarketplaceUpdatePlan plan)?
+  onUpdateExtension;
 
   @override
   Widget build(BuildContext context) {
@@ -460,27 +593,45 @@ class _ExtensionMarketplaceCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               Chip(label: Text(listing.verified ? 'verified' : 'unverified')),
-              Chip(label: Text(installPlan.status.wireValue)),
-              Chip(label: Text('execution ${executionPlan.status.wireValue}')),
-              Chip(label: Text('steps ${executionPlan.steps.length}')),
-              for (final category in listing.categories.take(3))
-                Chip(label: Text(category)),
-              FilledButton.tonal(
-                key: ValueKey('extensions-install-${listing.extensionId}'),
-                onPressed: installPlan.ready && onInstallExtension != null
-                    ? () {
-                        onInstallExtension!(installPlan);
-                      }
-                    : null,
-                child: Text(
-                  installPlan.ready
-                      ? 'Install'
-                      : installPlan.status ==
-                            ExtensionInstallPlanStatus.alreadyInstalled
-                      ? 'Installed'
-                      : 'Blocked',
+              Chip(
+                label: Text(
+                  listing.hasPackageIntegrity ? 'SHA-256' : 'no digest',
                 ),
               ),
+              Chip(label: Text(installPlan.status.wireValue)),
+              if (installPlan.ready)
+                Chip(
+                  label: Text('execution ${executionPlan.status.wireValue}'),
+                ),
+              if (installPlan.ready)
+                Chip(label: Text('steps ${executionPlan.steps.length}')),
+              for (final category in listing.categories.take(3))
+                Chip(label: Text(category)),
+              if (!updatePlan.canUpdate)
+                FilledButton.tonal(
+                  key: ValueKey('extensions-install-${listing.extensionId}'),
+                  onPressed:
+                      !busy && installPlan.ready && onInstallExtension != null
+                      ? () => _confirmInstall(context)
+                      : null,
+                  child: Text(
+                    installPlan.ready
+                        ? 'Install'
+                        : installPlan.status ==
+                              ExtensionInstallPlanStatus.alreadyInstalled
+                        ? 'Installed'
+                        : 'Blocked',
+                  ),
+                ),
+              if (updatePlan.canUpdate)
+                FilledButton.tonalIcon(
+                  key: ValueKey('extensions-update-${listing.extensionId}'),
+                  onPressed: !busy && onUpdateExtension != null
+                      ? () => _confirmUpdate(context)
+                      : null,
+                  icon: const Icon(Icons.system_update_alt_rounded),
+                  label: Text('Update to ${listing.manifest.version}'),
+                ),
             ],
           ),
           if (executionPlan.steps.isNotEmpty) ...[
@@ -504,6 +655,80 @@ class _ExtensionMarketplaceCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmInstall(BuildContext context) async {
+    final confirmed = await _confirmPackageOperation(
+      context,
+      title: 'Install ${listing.manifest.displayName}?',
+      actionLabel: 'Install verified package',
+    );
+    if (confirmed && context.mounted) {
+      await onInstallExtension?.call(installPlan);
+    }
+  }
+
+  Future<void> _confirmUpdate(BuildContext context) async {
+    final confirmed = await _confirmPackageOperation(
+      context,
+      title: 'Update ${listing.manifest.displayName}?',
+      actionLabel: 'Update verified package',
+    );
+    if (confirmed && context.mounted) {
+      await onUpdateExtension?.call(updatePlan);
+    }
+  }
+
+  Future<bool> _confirmPackageOperation(
+    BuildContext context, {
+    required String title,
+    required String actionLabel,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            key: const ValueKey('extensions-marketplace-confirmation'),
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${listing.manifest.publisher} · ${listing.manifest.version}',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  listing.installVerified
+                      ? 'Publisher verification and SHA-256 integrity metadata are present.'
+                      : 'This package does not satisfy install verification.',
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  listing.expectedSha256.isEmpty
+                      ? 'SHA-256 unavailable'
+                      : listing.expectedSha256,
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const ValueKey(
+                  'extensions-marketplace-confirmation-confirm',
+                ),
+                onPressed: listing.installVerified
+                    ? () => Navigator.of(dialogContext).pop(true)
+                    : null,
+                child: Text(actionLabel),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }
 
@@ -569,7 +794,9 @@ class _ExtensionModuleCard extends StatelessWidget {
               Chip(label: Text(state.enabled ? 'enabled' : 'disabled')),
               Chip(label: Text(state.trustState.wireValue)),
               if (state.updateAvailable) const Chip(label: Text('update')),
-              if (state.enabled)
+              if (manifest.kind == ModuleKind.core)
+                const Chip(label: Text('product managed'))
+              else if (state.enabled)
                 TextButton(
                   key: ValueKey('extensions-disable-${manifest.moduleId}'),
                   onPressed: onDisableModule == null

@@ -5,6 +5,9 @@ import 'package:vityo_app/src/view_ide/module_host/module_host.dart';
 import 'package:vityo_app/src/view_render/extensions/extensions.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+const _fixtureSha256 =
+    '0000000000000000000000000000000000000000000000000000000000000000';
+
 void main() {
   testWidgets(
     'extensions surface renders module inventory and refresh action',
@@ -57,6 +60,7 @@ void main() {
                     summary: 'Language support for Styio projects.',
                     categories: <String>['language', 'styio'],
                     verified: true,
+                    metadata: <String, Object?>{'sha256': _fixtureSha256},
                   ),
                 ],
               ),
@@ -113,7 +117,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('download-package ready'), findsOneWidget);
-      expect(find.text('verify-signature ready'), findsOneWidget);
+      expect(find.text('verify-package-integrity ready'), findsOneWidget);
       expect(find.text('Runtime Panel'), findsOneWidget);
       expect(find.text('update'), findsOneWidget);
 
@@ -133,6 +137,16 @@ void main() {
       await tester.pump();
       await tester.tap(
         find.byKey(const ValueKey('extensions-install-styio.language')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('extensions-marketplace-confirmation')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey('extensions-marketplace-confirmation-confirm'),
+        ),
       );
       await tester.ensureVisible(
         find.byKey(const ValueKey('extensions-enable-agent.panel')),
@@ -159,6 +173,76 @@ void main() {
       expect(trustedModuleId, 'agent.panel');
     },
   );
+
+  testWidgets('extensions surface confirms a verified marketplace update', (
+    tester,
+  ) async {
+    ExtensionMarketplaceUpdatePlan? selectedUpdate;
+    final installed = ExtensionManifestRegistry(<ExtensionManifest>[
+      const ExtensionManifest(
+        extensionId: 'theme.fixture',
+        displayName: 'Fixture Theme',
+        version: '1.0.0',
+        publisher: 'vityo',
+        entrypoint: 'theme.dart',
+      ),
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ExtensionsSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 800,
+            ),
+            visibleModules: const <ModuleDefinition>[],
+            mountedModules: const <ModuleDefinition>[],
+            installedExtensionRegistry: installed,
+            marketplaceIndex: const ExtensionMarketplaceIndex(
+              workspaceId: 'demo',
+              listings: <ExtensionMarketplaceListing>[
+                ExtensionMarketplaceListing(
+                  manifest: ExtensionManifest(
+                    extensionId: 'theme.fixture',
+                    displayName: 'Fixture Theme',
+                    version: '2.0.0',
+                    publisher: 'vityo',
+                    entrypoint: 'theme.dart',
+                    trustedByDefault: true,
+                  ),
+                  sourceUri:
+                      'https://marketplace.vityo.invalid/theme.fixture.bin',
+                  verified: true,
+                  metadata: <String, Object?>{'sha256': _fixtureSha256},
+                ),
+              ],
+            ),
+            onUpdateExtension: (plan) async {
+              selectedUpdate = plan;
+            },
+          ),
+        ),
+      ),
+    );
+
+    final update = find.byKey(
+      const ValueKey('extensions-update-theme.fixture'),
+    );
+    expect(update, findsOneWidget);
+    await tester.ensureVisible(update);
+    await tester.pump();
+    await tester.tap(update);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('extensions-marketplace-confirmation-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(selectedUpdate?.canUpdate, isTrue);
+    expect(selectedUpdate?.installedVersion, '1.0.0');
+    expect(selectedUpdate?.availableVersion, '2.0.0');
+  });
 
   testWidgets('extensions surface expands activation host telemetry', (
     tester,

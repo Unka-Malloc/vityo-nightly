@@ -454,13 +454,28 @@ class VityoShellScaffold extends StatelessWidget {
           viewportProfile: viewportProfile,
           visibleModules: shell.visibleModules,
           mountedModules: shell.mountedModules,
+          moduleStates: shell.moduleStates,
           activationSession: shell.extensionActivationSession,
           supervisorSnapshot: shell.extensionHostSupervisorSnapshot,
           launchResults: shell.extensionHostLaunchResults,
           telemetryEvents: shell.extensionHostTelemetryEvents,
+          marketplaceIndex: shell.extensionMarketplaceIndex,
+          installedExtensionRegistry: shell.installedExtensionRegistry,
+          marketplaceQuery: shell.extensionMarketplaceQuery,
+          marketplaceMessage: shell.extensionMarketplaceMessage,
+          marketplaceBusy: shell.extensionMarketplaceBusy,
+          lastMarketplaceInstallResult:
+              shell.lastExtensionMarketplaceInstallResult,
           onRefreshModules: () {
             return shell.executeCommand(AppCommandId.refreshModules);
           },
+          onRefreshMarketplace: shell.refreshExtensionMarketplace,
+          onMarketplaceQueryChanged: shell.setExtensionMarketplaceQuery,
+          onEnableModule: shell.enableModule,
+          onDisableModule: shell.disableModule,
+          onTrustModule: shell.trustModule,
+          onInstallExtension: shell.installMarketplaceExtension,
+          onUpdateExtension: shell.updateMarketplaceExtension,
         );
       case BottomSurfaceTab.debug:
         return DebugConsoleSurface(
@@ -512,6 +527,10 @@ class VityoShellScaffold extends StatelessWidget {
               shell.lastToolchainBootstrapActionDispatch,
           platformManagerSettings: shell.platformManagerSettingsSurface,
           credentialStorageSettings: shell.credentialStorageSettingsSurface,
+          extensionMarketplacePreferences:
+              shell.extensionMarketplacePreferences,
+          extensionMarketplaceMessage: shell.extensionMarketplaceMessage,
+          extensionMarketplaceBusy: shell.extensionMarketplaceBusy,
           hostedBackendConnector: shell.hostedBackendConnectorReport,
           hostedBackendActionResult: shell.lastHostedBackendActionResult,
           hostedBackendActionRunning: shell.hostedBackendActionRunning,
@@ -533,6 +552,9 @@ class VityoShellScaffold extends StatelessWidget {
           onRefreshPlatformManagers: shell.refreshPlatformManagerHealth,
           onPlatformRecoveryRoute: shell.handlePlatformRecoveryRoute,
           onSelectPlatformSettingsSection: shell.selectPlatformSettingsSection,
+          onSaveExtensionMarketplacePreferences:
+              shell.saveExtensionMarketplacePreferences,
+          onRefreshExtensionMarketplace: shell.refreshExtensionMarketplace,
           onHostedBackendAction: (action) async {
             await shell.executeHostedBackendAction(action);
           },

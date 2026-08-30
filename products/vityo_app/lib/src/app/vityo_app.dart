@@ -43,6 +43,9 @@ class _VityoAppState extends State<VityoApp> {
           widget.bootstrap.extensionStartupPlan?.launchResults ?? const [],
       extensionHostTelemetryEvents:
           widget.bootstrap.extensionStartupPlan?.telemetryEvents ?? const [],
+      extensionMarketplaceRuntime: widget.bootstrap.extensionMarketplaceRuntime,
+      installedExtensionRegistry:
+          widget.bootstrap.extensionStartupPlan?.manifestRegistry,
       editorController: widget.bootstrap.editorController,
       executionAdapter: widget.bootstrap.executionAdapter,
       executionAdapterFactory: widget.bootstrap.executionAdapterFactory,
@@ -93,6 +96,7 @@ class _VityoAppState extends State<VityoApp> {
         workspaceId: widget.bootstrap.workspaceController.activeProject.id,
       ),
     );
+    unawaited(_shellModel.loadExtensionMarketplace());
   }
 
   @override

@@ -1,11 +1,17 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/module_host/module_host.dart';
+import 'package:vityo_app/src/view_ide/shell_runtime/controllers/extension_marketplace_controller.dart';
 
 import 'support/test_file_system_manager.dart';
+
+const _fixtureSha256 =
+    '0000000000000000000000000000000000000000000000000000000000000000';
 
 void main() {
   test('extension marketplace index searches and plans installs', () {
@@ -22,6 +28,7 @@ void main() {
       summary: 'Language support for Styio projects.',
       categories: <String>['language', 'styio'],
       verified: true,
+      metadata: <String, Object?>{'sha256': _fixtureSha256},
     );
     const invalidListing = ExtensionMarketplaceListing(
       manifest: ExtensionManifest(
@@ -95,6 +102,7 @@ void main() {
         ),
         sourceUri: 'https://marketplace.vityo.invalid/styio.language-1.1.0.zip',
         verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
       );
       final registry = ExtensionManifestRegistry()..register(installed);
 
@@ -124,6 +132,7 @@ void main() {
       ),
       sourceUri: 'https://marketplace.vityo.invalid/styio.language-1.0.0.zip',
       verified: true,
+      metadata: <String, Object?>{'sha256': _fixtureSha256},
     );
     const index = ExtensionMarketplaceIndex(
       workspaceId: 'demo',
@@ -144,7 +153,7 @@ void main() {
       executionPlan.steps.map((step) => step.kind).toList(growable: false),
       <ExtensionInstallExecutionStepKind>[
         ExtensionInstallExecutionStepKind.downloadPackage,
-        ExtensionInstallExecutionStepKind.verifySignature,
+        ExtensionInstallExecutionStepKind.verifyPackageIntegrity,
         ExtensionInstallExecutionStepKind.registerManifest,
         ExtensionInstallExecutionStepKind.applyLifecyclePolicy,
         ExtensionInstallExecutionStepKind.planHostIsolation,
@@ -192,7 +201,8 @@ void main() {
       executionPlan.steps
           .singleWhere(
             (step) =>
-                step.kind == ExtensionInstallExecutionStepKind.verifySignature,
+                step.kind ==
+                ExtensionInstallExecutionStepKind.verifyPackageIntegrity,
           )
           .ready,
       isFalse,
@@ -213,6 +223,7 @@ void main() {
         ),
         sourceUri: 'https://marketplace.vityo.invalid/styio.language-1.0.0.zip',
         verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
       );
       const index = ExtensionMarketplaceIndex(
         workspaceId: 'demo',
@@ -264,6 +275,7 @@ void main() {
         ),
         sourceUri: 'https://marketplace.vityo.invalid/external.theme.zip',
         verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
       );
       const index = ExtensionMarketplaceIndex(
         workspaceId: 'demo',
@@ -311,6 +323,7 @@ void main() {
         ),
         sourceUri: 'https://marketplace.vityo.invalid/styio.language.zip',
         verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
       );
       const lifecycleDecision = ExtensionInstallLifecyclePolicyDecision(
         extensionId: 'styio.language',
@@ -383,6 +396,7 @@ void main() {
         ),
         sourceUri: 'https://marketplace.vityo.invalid/styio.language-1.1.0.zip',
         verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
       );
       final updatePlan = ExtensionMarketplaceUpdatePlan.fromListing(
         listing: listing,
@@ -449,6 +463,7 @@ void main() {
       ),
       sourceUri: 'https://marketplace.vityo.invalid/styio.language.zip',
       verified: true,
+      metadata: <String, Object?>{'sha256': _fixtureSha256},
     );
     const lifecycleDecision = ExtensionInstallLifecyclePolicyDecision(
       extensionId: 'styio.language',
@@ -532,6 +547,386 @@ void main() {
       expect((await store.readIndex(workspaceId: 'demo')).listings, isEmpty);
     },
   );
+
+  test(
+    'Linux concrete marketplace IO fetches verifies caches and persists policy',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_extension_marketplace_linux_',
+      );
+      addTearDown(() async {
+        if (await tempRoot.exists()) {
+          await tempRoot.delete(recursive: true);
+        }
+      });
+      final packageBytes = utf8.encode('verified-vityo-extension-package');
+      final packageSha256 = sha256.convert(packageBytes).toString();
+      final listing = ExtensionMarketplaceListing(
+        manifest: const ExtensionManifest(
+          extensionId: 'fixture.linux-theme',
+          displayName: 'Linux Theme',
+          version: '2.0.0',
+          publisher: 'vityo',
+          entrypoint: 'theme.dart',
+          trustedByDefault: true,
+        ),
+        sourceUri: 'https://marketplace.vityo.invalid/linux-theme.bin',
+        verified: true,
+        metadata: <String, Object?>{'sha256': packageSha256},
+      );
+      final indexUri = Uri.parse(
+        'https://marketplace.vityo.invalid/index.json',
+      );
+      final network = _FixtureNetworkManager(
+        facts: NetworkFacts.linuxDebianArm(targetId: 'linux-marketplace'),
+        textResponses: <Uri, String>{
+          indexUri: jsonEncode(
+            ExtensionMarketplaceIndex(
+              workspaceId: 'remote',
+              listings: <ExtensionMarketplaceListing>[listing],
+            ).toJson(),
+          ),
+        },
+        binaryResponses: <Uri, List<int>>{
+          Uri.parse(listing.sourceUri): packageBytes,
+        },
+      );
+      final fileSystem = TestFileSystemManager.linuxDebianArm();
+      final resource = LocalResourceManager(
+        facts: ResourceFacts.linuxDebianArm(
+          targetId: 'linux-marketplace',
+          systemTempPath: tempRoot.path,
+          homePath: tempRoot.path,
+        ),
+      );
+      final coordinator = FoundationResourceCoordinator(
+        resourceManager: resource,
+        fileSystemManager: fileSystem,
+      );
+      final dataStore = FoundationDataStore(
+        resourceCoordinator: coordinator,
+        fileSystemManager: fileSystem,
+      );
+      final indexStore = ExtensionMarketplaceIndexStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final settingsStore = ExtensionMarketplaceSettingsStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final platformIo = ExtensionMarketplacePlatformIo(
+        networkManager: network,
+        fileSystemManager: fileSystem,
+        resourceCoordinator: coordinator,
+        indexStore: indexStore,
+        settingsStore: settingsStore,
+      );
+      final bridge = ExtensionMarketplaceIoBridge(
+        registry: ExtensionMarketplaceIoOperationRegistry(
+          handlers: platformIo.registrations,
+        ),
+      );
+
+      final indexResult = await bridge.registry.execute(
+        ExtensionMarketplaceIoOperationRequest(
+          kind: ExtensionMarketplaceIoOperationKind.fetchIndex,
+          timestamp: DateTime.utc(2026, 8, 31),
+          indexUri: indexUri,
+          workspaceId: 'linux-workspace',
+        ),
+      );
+      const lifecycleDecision = ExtensionInstallLifecyclePolicyDecision(
+        extensionId: 'fixture.linux-theme',
+        enabledAfterInstall: true,
+        trustedAfterInstall: true,
+        activateAfterInstall: false,
+        message: 'Persist verified lifecycle choice.',
+      );
+      final installResult = await bridge.executeInstallIo(
+        listing: listing,
+        lifecycleDecision: lifecycleDecision,
+        timestamp: DateTime.utc(2026, 8, 31),
+        metadata: const <String, Object?>{'workspaceId': 'linux-workspace'},
+      );
+
+      expect(indexResult.completed, isTrue);
+      expect(
+        (await indexStore.readIndex(
+          workspaceId: 'linux-workspace',
+        )).lookup(listing.extensionId),
+        isNotNull,
+      );
+      expect(installResult.completed, isTrue);
+      expect(installResult.results, hasLength(3));
+      final cache = installResult.results[1];
+      expect(cache.metadata['sha256'], packageSha256);
+      expect(
+        await fileSystem.exists(Uri.parse(cache.artifactUri).toFilePath()),
+        isTrue,
+      );
+      final restoredDecision = await settingsStore.readLifecycleDecision(
+        workspaceId: 'linux-workspace',
+        extensionId: listing.extensionId,
+      );
+      expect(restoredDecision?.trustedAfterInstall, isTrue);
+
+      final preferences = ExtensionMarketplacePreferences(
+        workspaceId: 'linux-workspace',
+        indexUrl: indexUri.toString(),
+        enableAfterInstall: false,
+        trustVerifiedListings: true,
+        activateTrustedAfterInstall: true,
+      );
+      await settingsStore.savePreferences(preferences);
+      expect(
+        (await settingsStore.readPreferences(
+          workspaceId: 'linux-workspace',
+        )).toJson(),
+        preferences.toJson(),
+      );
+    },
+  );
+
+  test(
+    'Windows marketplace matrix blocks mismatched packages before cache IO',
+    () async {
+      final packageUri = Uri.parse(
+        'https://marketplace.vityo.invalid/windows-theme.bin',
+      );
+      final network = _FixtureNetworkManager(
+        facts: const NetworkFacts(
+          targetId: 'windows-marketplace',
+          operatingSystem: 'windows',
+          distributionId: 'windows',
+          architecture: 'x64',
+          providerKind: NetworkProviderKind.local,
+          supportsHttpClient: true,
+          supportsLoopback: true,
+          proxyEnvironment: <String, String>{},
+        ),
+        binaryResponses: <Uri, List<int>>{
+          packageUri: utf8.encode('tampered-windows-package'),
+        },
+      );
+      final fileSystem = UnsupportedFileSystemManager(
+        facts: FileSystemFacts.windowsX64(targetId: 'windows-marketplace'),
+      );
+      final resource = UnsupportedResourceManager(
+        facts: const ResourceFacts(
+          targetId: 'windows-marketplace',
+          operatingSystem: 'windows',
+          distributionId: 'windows',
+          architecture: 'x64',
+          providerKind: ResourceProviderKind.local,
+          processorCount: 8,
+          systemTempPath: r'C:\Temp',
+          homePath: r'C:\Users\fixture',
+          supportsTempDirectory: true,
+          supportsHomeDirectory: true,
+          supportsStorageProbe: true,
+        ),
+      );
+      final coordinator = FoundationResourceCoordinator(
+        resourceManager: resource,
+        fileSystemManager: fileSystem,
+      );
+      final dataStore = FoundationDataStore(
+        resourceCoordinator: coordinator,
+        fileSystemManager: fileSystem,
+      );
+      final platformIo = ExtensionMarketplacePlatformIo(
+        networkManager: network,
+        fileSystemManager: fileSystem,
+        resourceCoordinator: coordinator,
+        indexStore: ExtensionMarketplaceIndexStore.fromDataStore(
+          dataStore: dataStore,
+        ),
+        settingsStore: ExtensionMarketplaceSettingsStore.fromDataStore(
+          dataStore: dataStore,
+        ),
+      );
+      final bridge = ExtensionMarketplaceIoBridge(
+        registry: ExtensionMarketplaceIoOperationRegistry(
+          handlers: platformIo.registrations,
+        ),
+      );
+      final result = await bridge.executeInstallIo(
+        listing: ExtensionMarketplaceListing(
+          manifest: const ExtensionManifest(
+            extensionId: 'fixture.windows-theme',
+            displayName: 'Windows Theme',
+            version: '1.0.0',
+            publisher: 'vityo',
+            entrypoint: 'theme.dart',
+          ),
+          sourceUri: packageUri.toString(),
+          verified: true,
+          metadata: const <String, Object?>{'sha256': _fixtureSha256},
+        ),
+        lifecycleDecision: const ExtensionInstallLifecyclePolicyDecision(
+          extensionId: 'fixture.windows-theme',
+          enabledAfterInstall: true,
+          trustedAfterInstall: true,
+          activateAfterInstall: false,
+          message: 'Should not persist.',
+        ),
+        timestamp: DateTime.utc(2026, 8, 31),
+        metadata: const <String, Object?>{'workspaceId': 'windows-workspace'},
+      );
+
+      expect(fileSystem.compatibility.compatibilityTarget, 'windows-x64');
+      expect(result.completed, isFalse);
+      expect(result.results, hasLength(2));
+      expect(
+        result.results.last.status,
+        ExtensionMarketplaceIoOperationStatus.blocked,
+      );
+      expect(result.results.last.message, contains('SHA-256'));
+    },
+  );
+
+  test(
+    'marketplace controller restores installs and persists extension registry',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_extension_marketplace_controller_',
+      );
+      addTearDown(() async {
+        if (await tempRoot.exists()) {
+          await tempRoot.delete(recursive: true);
+        }
+      });
+      final fileSystem = TestFileSystemManager.linuxDebianArm();
+      final resource = LocalResourceManager(
+        facts: ResourceFacts.linuxDebianArm(
+          systemTempPath: tempRoot.path,
+          homePath: tempRoot.path,
+        ),
+      );
+      final dataStore = FoundationDataStore(
+        resourceCoordinator: FoundationResourceCoordinator(
+          resourceManager: resource,
+          fileSystemManager: fileSystem,
+        ),
+        fileSystemManager: fileSystem,
+      );
+      final indexStore = ExtensionMarketplaceIndexStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final settingsStore = ExtensionMarketplaceSettingsStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final registryStore = ExtensionManifestRegistryStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      const listing = ExtensionMarketplaceListing(
+        manifest: ExtensionManifest(
+          extensionId: 'fixture.controller',
+          displayName: 'Controller Fixture',
+          version: '1.0.0',
+          publisher: 'vityo',
+          entrypoint: 'fixture.dart',
+          trustedByDefault: true,
+        ),
+        sourceUri: 'https://marketplace.vityo.invalid/controller.bin',
+        verified: true,
+        metadata: <String, Object?>{'sha256': _fixtureSha256},
+      );
+      await indexStore.saveIndex(
+        const ExtensionMarketplaceIndex(
+          workspaceId: 'controller-workspace',
+          listings: <ExtensionMarketplaceListing>[listing],
+        ),
+      );
+      await settingsStore.savePreferences(
+        const ExtensionMarketplacePreferences(
+          workspaceId: 'controller-workspace',
+          indexUrl: 'https://marketplace.vityo.invalid/index.json',
+        ),
+      );
+      final handlers = <ExtensionMarketplaceIoOperationRegistration>[
+        for (final kind in <ExtensionMarketplaceIoOperationKind>[
+          ExtensionMarketplaceIoOperationKind.downloadPackage,
+          ExtensionMarketplaceIoOperationKind.writePackageCache,
+          ExtensionMarketplaceIoOperationKind.persistLifecyclePolicy,
+        ])
+          ExtensionMarketplaceIoOperationRegistration(
+            handlerId: 'controller.${kind.wireValue}',
+            label: 'Controller ${kind.wireValue}',
+            kind: kind,
+            handler: (request) async {
+              return ExtensionMarketplaceIoOperationResult.completed(
+                request: request,
+                message: '${kind.wireValue} completed.',
+                artifactUri:
+                    kind ==
+                        ExtensionMarketplaceIoOperationKind.writePackageCache
+                    ? 'file:///cache/controller/package.bin'
+                    : listing.sourceUri,
+                cacheKey: 'fixture.controller/1.0.0/package.bin',
+                metadata: const <String, Object?>{
+                  'sha256': _fixtureSha256,
+                  'sizeBytes': 64,
+                },
+              );
+            },
+          ),
+      ];
+      final installedRegistry = ExtensionManifestRegistry();
+      final controller = ExtensionMarketplaceController(
+        workspaceId: () => 'controller-workspace',
+        installedRegistry: installedRegistry,
+        log: (_) {},
+        runtime: ExtensionMarketplaceRuntimeServices(
+          indexStore: indexStore,
+          settingsStore: settingsStore,
+          manifestRegistryStore: registryStore,
+          ioBridge: ExtensionMarketplaceIoBridge(
+            registry: ExtensionMarketplaceIoOperationRegistry(
+              handlers: handlers,
+            ),
+          ),
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load();
+      final plan = controller.index.installPlan(
+        installedRegistry: installedRegistry,
+        extensionId: listing.extensionId,
+      );
+      await controller.install(plan);
+
+      expect(controller.lastInstallResult?.installed, isTrue);
+      expect(installedRegistry.lookup(listing.extensionId), isNotNull);
+      expect(
+        (await registryStore.readRegistry(
+          workspaceId: 'controller-workspace',
+        )).lookup(listing.extensionId),
+        isNotNull,
+      );
+    },
+  );
+
+  test('marketplace network policy rejects non-loopback cleartext URLs', () {
+    expect(
+      ExtensionMarketplacePlatformIo.allowsRemoteUri(
+        Uri.parse('http://marketplace.example/index.json'),
+      ),
+      isFalse,
+    );
+    expect(
+      ExtensionMarketplacePlatformIo.allowsRemoteUri(
+        Uri.parse('http://127.0.0.1:8080/index.json'),
+      ),
+      isTrue,
+    );
+    expect(
+      ExtensionMarketplacePlatformIo.allowsRemoteUri(
+        Uri.parse('https://marketplace.example/index.json'),
+      ),
+      isTrue,
+    );
+  });
 }
 
 class _FakePackageDownloader implements ExtensionPackageDownloader {
@@ -547,7 +942,7 @@ class _FakePackageDownloader implements ExtensionPackageDownloader {
         sourceUri: listing.sourceUri,
         cacheKey: 'cache/${listing.extensionId}.zip',
         sizeBytes: listing.downloadSizeBytes ?? 42,
-        checksum: 'sha256:test-${listing.extensionId}',
+        checksum: _fixtureSha256,
       ),
       message: 'Downloaded ${listing.extensionId}.',
     );
@@ -571,7 +966,7 @@ ExtensionMarketplaceIoOperationRegistration _marketplaceIoHandler({
         request: request,
         handler: self(),
         message: '${request.kind.wireValue} completed.',
-        artifactUri: request.listing.sourceUri,
+        artifactUri: request.listing?.sourceUri ?? '',
         cacheKey: cacheKey,
       );
     },
@@ -590,6 +985,107 @@ class _RejectingPackageVerifier implements ExtensionPackageVerifier {
       verified: false,
       checksum: artifact.checksum,
       message: 'Rejected ${listing.extensionId}.',
+    );
+  }
+}
+
+class _FixtureNetworkManager implements NetworkManager {
+  _FixtureNetworkManager({
+    required this.facts,
+    this.textResponses = const <Uri, String>{},
+    this.binaryResponses = const <Uri, List<int>>{},
+  }) : compatibility = NetworkAdapter(facts).adapt();
+
+  @override
+  final NetworkFacts facts;
+  @override
+  final NetworkCompatibility compatibility;
+  final Map<Uri, String> textResponses;
+  final Map<Uri, List<int>> binaryResponses;
+
+  @override
+  Future<NetworkTextResponse> getText(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final body = textResponses[uri];
+    return NetworkTextResponse(
+      status: body == null
+          ? NetworkRequestStatus.failed
+          : NetworkRequestStatus.succeeded,
+      uri: uri,
+      statusCode: body == null ? 404 : 200,
+      body: body ?? '',
+      message: body == null ? 'Fixture response not found.' : null,
+    );
+  }
+
+  @override
+  Future<NetworkBinaryResponse> getBytes(
+    Uri uri, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final bytes = binaryResponses[uri];
+    return NetworkBinaryResponse(
+      status: bytes == null
+          ? NetworkRequestStatus.failed
+          : NetworkRequestStatus.succeeded,
+      uri: uri,
+      statusCode: bytes == null ? 404 : 200,
+      bytes: bytes ?? const <int>[],
+      message: bytes == null ? 'Fixture response not found.' : null,
+    );
+  }
+
+  @override
+  Future<NetworkTextResponse> postJson(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    return NetworkTextResponse(
+      status: NetworkRequestStatus.blocked,
+      uri: uri,
+      statusCode: null,
+      body: '',
+      message: 'POST is not used by this fixture.',
+    );
+  }
+
+  @override
+  NetworkOperationFailure? failureForText(
+    NetworkTextResponse response, {
+    String operation = 'network.getText',
+    String? recoveryHint,
+  }) {
+    return const NetworkFailureClassifier(
+      sourceManager: '_FixtureNetworkManager',
+    ).classify(
+      status: response.status,
+      uri: response.uri,
+      statusCode: response.statusCode,
+      message: response.message,
+      operation: operation,
+      recoveryHint: recoveryHint,
+    );
+  }
+
+  @override
+  NetworkOperationFailure? failureForBytes(
+    NetworkBinaryResponse response, {
+    String operation = 'network.getBytes',
+    String? recoveryHint,
+  }) {
+    return const NetworkFailureClassifier(
+      sourceManager: '_FixtureNetworkManager',
+    ).classify(
+      status: response.status,
+      uri: response.uri,
+      statusCode: response.statusCode,
+      message: response.message,
+      operation: operation,
+      recoveryHint: recoveryHint,
     );
   }
 }

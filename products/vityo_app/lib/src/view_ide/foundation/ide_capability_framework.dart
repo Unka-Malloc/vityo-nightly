@@ -595,12 +595,10 @@ class VityoIdeCapabilityFramework {
           id: 'extension.marketplace',
           layer: IdeCapabilityLayer.extension,
           title: 'Extension lifecycle and marketplace',
-          status: IdeCapabilityStatus.scaffolded,
+          status: IdeCapabilityStatus.ready,
           ownerPath: 'lib/src/view_ide/module_host',
           summary:
-              'Extensions surface is wired to visible and mounted module manifests, lifecycle state, enable/disable/trust actions, update flags, ExtensionMarketplaceUpdatePlan version comparison, refreshModules handoff, rendered marketplace index search results, install-plan controls, install execution steps, package download/verification executor contracts, ExtensionMarketplaceIoBridge install/update IO operation routing, manifest registration after verified install, signature verification policy gates, lifecycle policy decisions, host-isolation planning, and Foundation DataStore-backed marketplace cache.',
-          todo:
-              'TODO: register concrete marketplace network/cache IO handlers and persist lifecycle policy choices through the product settings flow.',
+              'Extensions and Settings surfaces share a production ExtensionMarketplaceController for search, refresh, install/update confirmation, ExtensionMarketplaceUpdatePlan version changes, progress, module enable/disable/trust actions, and persisted lifecycle choices. Concrete platform IO handlers fetch HTTPS indexes, permit loopback HTTP only for local development, download binary packages, require verified-publisher metadata plus matching SHA-256 integrity, atomically cache artifacts inside Foundation workspace resources, persist install decisions and manifest registries, and short-circuit failed operation batches. Native macOS UI clicks exercise a real loopback download/cache/install flow; hermetic Linux and Windows matrices cover storage, policy, path, and tamper boundaries.',
           runtimeMaturityBlocking: false,
           references: <String>[
             'VS Code extension gallery',

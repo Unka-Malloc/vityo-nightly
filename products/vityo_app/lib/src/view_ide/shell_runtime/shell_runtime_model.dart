@@ -37,6 +37,7 @@ import 'controllers/hosted_backend_controller.dart';
 import 'controllers/deployment_controller.dart';
 import 'controllers/dependency_source_controller.dart';
 import 'controllers/execution_controller.dart';
+import 'controllers/extension_marketplace_controller.dart';
 import 'controllers/editor_workspace_state_controller.dart';
 import 'controllers/editor_navigation_command_controller.dart';
 import 'controllers/editor_quick_fix_command_controller.dart';
@@ -111,6 +112,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
         const <ExtensionHostSandboxLaunchResult>[],
     this.extensionHostTelemetryEvents =
         const <ExtensionHostSupervisorTelemetryEvent>[],
+    ExtensionMarketplaceRuntimeServices? extensionMarketplaceRuntime,
+    ExtensionManifestRegistry? installedExtensionRegistry,
     required this.editorController,
     required ExecutionAdapter executionAdapter,
     required ExecutionAdapterFactory executionAdapterFactory,
@@ -401,6 +404,24 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       refreshLanguageService: _languageController.refresh,
       log: appendLog,
     );
+    final marketplaceRegistry =
+        installedExtensionRegistry ??
+        ExtensionManifestRegistry(
+          moduleRegistry.visibleModules
+              .map(
+                (module) => ExtensionManifest.fromModuleManifest(
+                  module: module.manifest,
+                  publisher: 'vityo',
+                ),
+              )
+              .where((manifest) => manifest.valid),
+        );
+    _extensionMarketplaceController = ExtensionMarketplaceController(
+      workspaceId: () => workspaceController.activeProject.id,
+      installedRegistry: marketplaceRegistry,
+      runtime: extensionMarketplaceRuntime,
+      log: appendLog,
+    )..addListener(_handleExtensionMarketplaceChanged);
     _moduleController = ModuleController(
       registry: moduleRegistry,
       nativeModuleLoader: nativeModuleLoader,
@@ -650,6 +671,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final ShellInputCommandController _shellInputCommandController;
   late final ShellCommandFallbackController _shellCommandFallbackController;
   late final ModuleController _moduleController;
+  late final ExtensionMarketplaceController _extensionMarketplaceController;
   late final NativeToolRuntimeController _nativeToolRuntimeController;
   late final DebugController _debugController;
   late final BackendCommandPolicyController _backendCommandPolicyController;

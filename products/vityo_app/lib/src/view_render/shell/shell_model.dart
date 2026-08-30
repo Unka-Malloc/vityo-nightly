@@ -51,6 +51,8 @@ class ShellModel extends ShellRuntimeModel {
     super.extensionHostSupervisorSnapshot,
     super.extensionHostLaunchResults,
     super.extensionHostTelemetryEvents,
+    super.extensionMarketplaceRuntime,
+    super.installedExtensionRegistry,
     required super.editorController,
     required super.executionAdapter,
     required super.executionAdapterFactory,
