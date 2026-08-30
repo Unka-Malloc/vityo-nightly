@@ -48,7 +48,13 @@ final class VityodSourceControlCommandRunner {
         final exitCode = output.params['exitCode'];
         final stdout = output.params['stdout'];
         final stderr = output.params['stderr'];
-        if (exitCode is! int || stdout is! String || stderr is! String) {
+        final stdoutTruncated = output.params['stdoutTruncated'];
+        final stderrTruncated = output.params['stderrTruncated'];
+        if (exitCode is! int ||
+            stdout is! String ||
+            stderr is! String ||
+            stdoutTruncated is! bool ||
+            stderrTruncated is! bool) {
           throw const VityodGitFailure('invalid_git_receipt');
         }
         await _close(taskId);
@@ -56,6 +62,8 @@ final class VityodSourceControlCommandRunner {
           exitCode: exitCode,
           stdout: stdout,
           stderr: stderr,
+          stdoutTruncated: stdoutTruncated,
+          stderrTruncated: stderrTruncated,
         );
       }
     } on VityodGitFailure catch (error) {
@@ -104,6 +112,17 @@ Map<String, Object?>? _gitLaunchFor(SourceControlCommandRequest request) {
   }
   if (arguments.length == 3 && arguments[0] == 'diff' && arguments[1] == '--') {
     return <String, Object?>{'operation': 'diff', 'path': arguments[2]};
+  }
+  if (arguments.length == 2 && arguments[0] == 'show') {
+    final match = RegExp(r'^:([123]):(.+)$').firstMatch(arguments[1]);
+    final stage = match == null ? null : int.tryParse(match.group(1)!);
+    final path = match?.group(2);
+    if (stage == null || path == null || path.trim().isEmpty) return null;
+    return <String, Object?>{
+      'operation': 'conflictStage',
+      'stage': stage,
+      'path': path,
+    };
   }
   if (arguments.length >= 3 && arguments[0] == 'add' && arguments[1] == '--') {
     return <String, Object?>{

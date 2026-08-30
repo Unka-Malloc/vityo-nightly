@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child as OsChild, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -454,6 +455,8 @@ struct ManagedTask {
     #[cfg(windows)]
     job: WindowsJob,
     output: Arc<Mutex<TaskOutput>>,
+    stdout_complete: Arc<AtomicBool>,
+    stderr_complete: Arc<AtomicBool>,
     started: std::time::Instant,
     timeout: std::time::Duration,
     exit_code: Option<i32>,
@@ -505,13 +508,7 @@ impl ManagedTaskRegistry {
         {
             return Err(TaskRuntimeError::InvalidRequest);
         }
-        if self
-            .tasks
-            .values()
-            .filter(|task| task.exit_code.is_none())
-            .count()
-            >= self.maximum_active_tasks
-        {
+        if self.tasks.values().filter(|task| task.running()).count() >= self.maximum_active_tasks {
             return Err(TaskRuntimeError::CapacityExceeded);
         }
         let executable = launch
@@ -563,6 +560,10 @@ impl ManagedTaskRegistry {
         let output = Arc::new(Mutex::new(TaskOutput::default()));
         let stdout_output = Arc::clone(&output);
         let stderr_output = Arc::clone(&output);
+        let stdout_complete = Arc::new(AtomicBool::new(false));
+        let stderr_complete = Arc::new(AtomicBool::new(false));
+        let stdout_completion = Arc::clone(&stdout_complete);
+        let stderr_completion = Arc::clone(&stderr_complete);
         let maximum_output_bytes = self.maximum_output_bytes;
         std::thread::spawn(move || {
             let mut buffer = [0_u8; 8192];
@@ -583,6 +584,7 @@ impl ManagedTaskRegistry {
                     Err(_) => break,
                 }
             }
+            stdout_completion.store(true, Ordering::Release);
         });
         std::thread::spawn(move || {
             let mut buffer = [0_u8; 8192];
@@ -603,6 +605,7 @@ impl ManagedTaskRegistry {
                     Err(_) => break,
                 }
             }
+            stderr_completion.store(true, Ordering::Release);
         });
         self.tasks.insert(
             launch.id,
@@ -613,6 +616,8 @@ impl ManagedTaskRegistry {
                 #[cfg(windows)]
                 job,
                 output,
+                stdout_complete,
+                stderr_complete,
                 started: std::time::Instant::now(),
                 timeout: launch.timeout,
                 exit_code: None,
@@ -645,14 +650,26 @@ impl ManagedTaskRegistry {
                 .map_err(|_| TaskRuntimeError::PollFailed)?
                 .map(|status| status.code().unwrap_or(1));
         }
+        if task.exit_code.is_some()
+            && !task.output_complete()
+            && !task.timed_out
+            && task.started.elapsed() >= task.timeout
+        {
+            task.timed_out = true;
+            #[cfg(windows)]
+            task.job.terminate();
+            #[cfg(not(windows))]
+            terminate_process_tree(&mut task.child, task.process_group_id);
+        }
         let output = task
             .output
             .lock()
             .map_err(|_| TaskRuntimeError::PollFailed)?;
+        let output_complete = task.output_complete();
         Ok(TaskSnapshot {
-            running: task.exit_code.is_none(),
+            running: task.exit_code.is_none() || !output_complete,
             timed_out: task.timed_out,
-            exit_code: task.exit_code,
+            exit_code: output_complete.then_some(task.exit_code).flatten(),
             stdout: output.stdout.clone(),
             stderr: output.stderr.clone(),
             stdout_truncated: output.stdout_truncated,
@@ -689,7 +706,7 @@ impl ManagedTaskRegistry {
 
     pub fn remove(&mut self, id: &str) -> Result<(), TaskRuntimeError> {
         let task = self.tasks.get(id).ok_or(TaskRuntimeError::UnknownTask)?;
-        if task.exit_code.is_none() {
+        if task.running() {
             return Err(TaskRuntimeError::TaskRunning);
         }
         self.tasks.remove(id);
@@ -700,11 +717,21 @@ impl ManagedTaskRegistry {
         let mut ids = self
             .tasks
             .iter()
-            .filter(|(_, task)| task.exit_code.is_none())
+            .filter(|(_, task)| task.running())
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         ids.sort_unstable();
         ids
+    }
+}
+
+impl ManagedTask {
+    fn output_complete(&self) -> bool {
+        self.stdout_complete.load(Ordering::Acquire) && self.stderr_complete.load(Ordering::Acquire)
+    }
+
+    fn running(&self) -> bool {
+        self.exit_code.is_none() || !self.output_complete()
     }
 }
 
@@ -1168,5 +1195,37 @@ mod tests {
         assert_eq!(snapshot.stdout, b"abcd");
         assert!(snapshot.stdout_truncated);
         tasks.remove("task").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_task_reports_completion_only_after_both_output_streams_reach_eof() {
+        let mut tasks = ManagedTaskRegistry::new(2, 1024);
+        tasks
+            .start(TaskLaunch {
+                id: "drain".into(),
+                executable: PathBuf::from("/bin/sh"),
+                arguments: vec![
+                    "-c".into(),
+                    "printf stdout-value; printf stderr-value >&2".into(),
+                ],
+                working_directory: None,
+                environment: HashMap::new(),
+                standard_input: None,
+                timeout: std::time::Duration::from_secs(3),
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let snapshot = loop {
+            let snapshot = tasks.snapshot("drain").unwrap();
+            if !snapshot.running || std::time::Instant::now() >= deadline {
+                break snapshot;
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(snapshot.exit_code, Some(0));
+        assert_eq!(snapshot.stdout, b"stdout-value");
+        assert_eq!(snapshot.stderr, b"stderr-value");
+        tasks.remove("drain").unwrap();
     }
 }

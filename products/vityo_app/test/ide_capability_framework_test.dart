@@ -125,9 +125,10 @@ void main() {
       entriesById['interaction.source-control']?.summary,
       contains('SourceControlConflictResolutionProviderRegistry'),
     );
+    expect(entriesById['interaction.source-control']?.todo, isEmpty);
     expect(
-      entriesById['interaction.source-control']?.todo,
-      contains('merge editor UI'),
+      entriesById['interaction.source-control']?.summary,
+      contains('three-way Merge Editor'),
     );
     expect(
       entriesById['interaction.source-control']?.runtimeMaturityBlocking,
@@ -605,7 +606,7 @@ void main() {
     );
     expect(
       entriesById['interaction.source-control']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.source-control']?.summary,

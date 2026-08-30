@@ -3806,6 +3806,15 @@ fn git_launch_params(request: &ControlEnvelope) -> Option<(Vec<String>, Option<V
             let path = required_git_path_param(request, "path")?;
             (vec!["diff".to_owned(), "--".to_owned(), path], None)
         }
+        "conflictStage" if paths.is_empty() => {
+            let path = required_git_path_param(request, "path")?;
+            let stage = request
+                .params
+                .get("stage")
+                .and_then(Value::as_u64)
+                .filter(|stage| (1..=3).contains(stage))?;
+            (vec!["show".to_owned(), format!(":{stage}:{path}")], None)
+        }
         "stage" if !paths.is_empty() => {
             let mut arguments = vec!["add".to_owned(), "--".to_owned()];
             arguments.extend(paths);

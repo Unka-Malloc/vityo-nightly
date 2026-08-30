@@ -176,6 +176,28 @@ final class WorkspaceDocumentController {
     return fileBinding.snapshot;
   }
 
+  Future<void> refreshAfterSourceControlResolution(String path) async {
+    state.removeDocument(path);
+    state.clearDirty(path);
+    if (!await documentStore.documentExists(path)) {
+      if (path == _activeDocumentPath) {
+        fileBinding.markDeletedOnDisk();
+      }
+      log('Source control resolved $path as a deletion.');
+      notify();
+      return;
+    }
+    final document = await documentStore.loadDocument(path);
+    cacheDocument(path, document);
+    if (path == _activeDocumentPath) {
+      fileBinding.bindLoadedDocument(document);
+      editorController.loadDocument(document);
+      restoreSelection(path);
+    }
+    log('Source control loaded the resolved document for $path.');
+    notify();
+  }
+
   WorkspaceFileCloseRequestResult requestClose(String filePath) {
     if (pathHasUnsavedChanges(filePath)) {
       final result = WorkspaceFileCloseRequestResult.blockedUnsavedChanges(

@@ -660,6 +660,8 @@ class SourceControlConflictResolutionRequest {
     required this.requiresHumanConfirmation,
     required this.message,
     this.blockedReason = '',
+    this.resultText,
+    this.expectedWorkingRevision,
     this.metadata = const <String, Object?>{},
   });
 
@@ -667,6 +669,8 @@ class SourceControlConflictResolutionRequest {
     required SourceControlMergeWorkflowPlan workflowPlan,
     required SourceControlConflictResolutionPlan conflictPlan,
     required SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
     Map<String, Object?> metadata = const <String, Object?>{},
   }) {
     final supportedKind = conflictPlan.resolutionKinds.contains(kind);
@@ -684,6 +688,8 @@ class SourceControlConflictResolutionRequest {
       canRun: blockedReason.isEmpty,
       requiresHumanConfirmation: conflictPlan.requiresHumanConfirmation,
       blockedReason: blockedReason,
+      resultText: resultText,
+      expectedWorkingRevision: expectedWorkingRevision,
       message: blockedReason.isEmpty
           ? 'Resolve ${conflictPlan.path} with ${kind.wireValue}.'
           : blockedReason,
@@ -698,6 +704,8 @@ class SourceControlConflictResolutionRequest {
   final bool requiresHumanConfirmation;
   final String message;
   final String blockedReason;
+  final String? resultText;
+  final int? expectedWorkingRevision;
   final Map<String, Object?> metadata;
 
   Map<String, Object?> toJson() {
@@ -709,6 +717,9 @@ class SourceControlConflictResolutionRequest {
       'requiresHumanConfirmation': requiresHumanConfirmation,
       'message': message,
       if (blockedReason.isNotEmpty) 'blockedReason': blockedReason,
+      if (resultText != null) 'resultTextLength': resultText!.length,
+      if (expectedWorkingRevision != null)
+        'expectedWorkingRevision': expectedWorkingRevision,
       if (metadata.isNotEmpty) 'metadata': metadata,
     };
   }
@@ -834,11 +845,11 @@ class SourceControlConflictResolutionProviderRegistry {
     }
     try {
       return await provider.resolve(request);
-    } on Object catch (error) {
+    } on Object {
       return SourceControlConflictResolutionResult.rejected(
         path: request.path,
         kind: request.kind,
-        message: 'Source control conflict resolution failed: $error.',
+        message: 'Source control conflict resolution provider failed.',
         metadata: const <String, Object?>{'reason': 'provider-error'},
       );
     }
@@ -1699,11 +1710,15 @@ class SourceControlCommandResult {
     required this.exitCode,
     this.stdout = '',
     this.stderr = '',
+    this.stdoutTruncated = false,
+    this.stderrTruncated = false,
   });
 
   final int exitCode;
   final String stdout;
   final String stderr;
+  final bool stdoutTruncated;
+  final bool stderrTruncated;
 }
 
 typedef SourceControlCommandRunner =

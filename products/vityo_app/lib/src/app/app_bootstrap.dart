@@ -46,6 +46,7 @@ import '../view_ide/testing/testing.dart';
 import '../ide/workspace/workspace_diagnostics.dart';
 import '../ide/workspace/workspace_diagnostics_controller.dart';
 import '../ide/workspace/source_control_status.dart';
+import '../ide/workspace/source_control_merge_editor.dart';
 import '../ide/workspace/source_control_status_controller.dart';
 import '../view_ide/platform/native_module_loader.dart';
 import '../view_ide/platform/platform_target.dart';
@@ -819,6 +820,7 @@ class AppBootstrap {
           workspaceRoot: projectSnapshot.workspaceRoot,
           workspaceId: daemonWorkspaceId,
           vityodClient: vityodClient,
+          workspaceDocumentStore: workspaceDocumentStore,
         );
     unawaited(sourceControlStatusController.refresh());
     Future<void> refreshActiveLanguageService() async {
@@ -1001,6 +1003,7 @@ class AppBootstrap {
     required String workspaceRoot,
     required String workspaceId,
     required VityodClient? vityodClient,
+    required WorkspaceDocumentStore workspaceDocumentStore,
   }) {
     final SourceControlCommandRunner runner = vityodClient == null
         ? const BlockedSourceControlCommandRunner().call
@@ -1008,6 +1011,11 @@ class AppBootstrap {
             client: vityodClient,
             workspaceId: workspaceId,
           ).call;
+    final mergeProvider = GitSourceControlMergeProvider(
+      runner: runner,
+      documentStore: workspaceDocumentStore,
+      workspaceRoot: workspaceRoot,
+    );
     return SourceControlStatusController(
       provider: GitPorcelainStatusProvider(runner: runner),
       diffProvider: GitSourceControlDiffProvider(runner: runner),
@@ -1020,6 +1028,11 @@ class AppBootstrap {
         runner: runner,
       ),
       historyProvider: GitSourceControlHistoryProvider(runner: runner),
+      mergeEditorProvider: mergeProvider,
+      conflictResolutionProviderRegistry:
+          SourceControlConflictResolutionProviderRegistry(
+            providers: <SourceControlConflictResolutionProvider>[mergeProvider],
+          ),
       workspaceRoot: workspaceRoot,
     );
   }

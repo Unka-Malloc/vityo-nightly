@@ -274,6 +274,10 @@ class VityoShellScaffold extends StatelessWidget {
             branchSnapshot: shell.sourceControlBranchSnapshot,
             historySnapshot: shell.sourceControlHistorySnapshot,
             lastHunkActionResult: shell.sourceControlHunkActionResult,
+            mergeWorkflowPlan: shell.sourceControlMergeWorkflowPlan,
+            mergeEditorSnapshot: shell.sourceControlMergeEditorSnapshot,
+            lastConflictResolutionResult:
+                shell.sourceControlConflictResolutionResult,
             onOpenFile: shell.openWorkspaceFile,
             onSaveAll: () {
               return shell.executeCommand(AppCommandId.saveAll);
@@ -297,6 +301,19 @@ class VityoShellScaffold extends StatelessWidget {
             onConfirmHunkDiscard: () async {
               await shell.confirmPendingSourceControlHunkDiscard();
             },
+            onOpenMergeEditor: (plan) async {
+              await shell.openSourceControlMergeEditor(plan);
+            },
+            onApplyConflictResolution:
+                (plan, kind, resultText, expectedWorkingRevision) async {
+                  await shell.resolveSourceControlConflict(
+                    plan: plan,
+                    kind: kind,
+                    resultText: resultText,
+                    expectedWorkingRevision: expectedWorkingRevision,
+                  );
+                },
+            onCloseMergeEditor: shell.closeSourceControlMergeEditor,
           );
         }
 

@@ -8,15 +8,18 @@ class SourceControlController extends ChangeNotifier {
     required this.workspaceId,
     required this.dirtyDocumentPaths,
     required this.log,
+    this.refreshResolvedDocument,
   });
 
   final SourceControlStatusController? statusController;
   final String Function() workspaceId;
   final List<String> Function() dirtyDocumentPaths;
   final void Function(String message) log;
+  final Future<void> Function(String path)? refreshResolvedDocument;
 
   SourceControlCommitDraft? _commitDraft;
   bool _commitDialogOpen = false;
+  SourceControlConflictResolutionResult? _lastConflictResolutionResult;
 
   SourceControlStatusSnapshot get statusSnapshot =>
       statusController?.snapshot ?? _localDirtyStatusSnapshot();
@@ -27,6 +30,14 @@ class SourceControlController extends ChangeNotifier {
       statusController?.historySnapshot;
   SourceControlPartialPatchResult? get hunkActionResult =>
       statusController?.lastPartialPatchResult;
+  SourceControlMergeWorkflowPlan get mergeWorkflowPlan =>
+      statusController?.mergeWorkflowPlan ??
+      SourceControlMergeWorkflowPlan.fromStatus(statusSnapshot);
+  SourceControlMergeEditorSnapshot? get mergeEditorSnapshot =>
+      statusController?.mergeEditorSnapshot;
+  SourceControlConflictResolutionResult? get lastConflictResolutionResult =>
+      _lastConflictResolutionResult ??
+      statusController?.lastConflictResolutionResult;
   SourceControlCommitDraft? get commitDraft => _commitDraft;
   SourceControlCommitDialogState? get commitDialogState {
     final draft = _commitDraft;
@@ -96,6 +107,81 @@ class SourceControlController extends ChangeNotifier {
     log(branchSnapshotMessage(snapshot));
     notifyListeners();
     return snapshot;
+  }
+
+  Future<SourceControlMergeEditorSnapshot> openMergeEditor(
+    SourceControlConflictResolutionPlan plan,
+  ) async {
+    final controller = statusController;
+    final snapshot = controller == null
+        ? SourceControlMergeEditorSnapshot.unavailable(
+            providerKind: statusSnapshot.providerKind,
+            path: plan.path,
+            message:
+                'Source control merge editor skipped: no source control controller is configured.',
+          )
+        : await controller.openMergeEditor(plan);
+    log(
+      snapshot.available
+          ? 'Source control merge editor opened for ${snapshot.path}.'
+          : 'Source control merge editor unavailable for ${snapshot.path}: ${snapshot.message}',
+    );
+    notifyListeners();
+    return snapshot;
+  }
+
+  Future<SourceControlConflictResolutionResult> resolveConflict({
+    required SourceControlConflictResolutionPlan plan,
+    required SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
+  }) async {
+    final dirtyPaths = dirtyDocumentPaths().toSet();
+    if (dirtyPaths.contains(plan.path)) {
+      final result = SourceControlConflictResolutionResult.rejected(
+        path: plan.path,
+        kind: kind,
+        message:
+            'Save or discard the unsaved editor buffer for ${plan.path} before applying a merge resolution.',
+        metadata: const <String, Object?>{'reason': 'dirty-editor-buffer'},
+      );
+      _lastConflictResolutionResult = result;
+      log(conflictResolutionMessage(result));
+      notifyListeners();
+      return result;
+    }
+    final controller = statusController;
+    final result = controller == null
+        ? SourceControlConflictResolutionResult.rejected(
+            path: plan.path,
+            kind: kind,
+            message:
+                'Source control conflict resolution skipped: no source control controller is configured.',
+          )
+        : await controller.resolveConflict(
+            conflictPlan: plan,
+            kind: kind,
+            resultText: resultText,
+            expectedWorkingRevision: expectedWorkingRevision,
+          );
+    _lastConflictResolutionResult = result;
+    if (result.accepted) {
+      try {
+        await refreshResolvedDocument?.call(plan.path);
+      } on Object {
+        log(
+          'Source control resolved ${plan.path}, but the editor view could not be refreshed.',
+        );
+      }
+    }
+    log(conflictResolutionMessage(result));
+    notifyListeners();
+    return result;
+  }
+
+  void closeMergeEditor() {
+    statusController?.closeMergeEditor();
+    notifyListeners();
   }
 
   Future<SourceControlBranchSwitchPlan> planBranchSwitch(
@@ -280,6 +366,15 @@ class SourceControlController extends ChangeNotifier {
     return result.applied
         ? 'Source control hunk action applied: ${result.kind.wireValue} ${result.selectedHunkIndexes.length} hunk(s).'
         : 'Source control hunk action failed: ${result.kind.wireValue} ${result.selectedHunkIndexes.length} hunk(s).';
+  }
+
+  String conflictResolutionMessage(
+    SourceControlConflictResolutionResult result,
+  ) {
+    if (result.message.isNotEmpty) return result.message;
+    return result.accepted
+        ? 'Source control conflict resolved for ${result.path}.'
+        : 'Source control conflict resolution failed for ${result.path}.';
   }
 
   SourceControlStatusSnapshot _localDirtyStatusSnapshot() {

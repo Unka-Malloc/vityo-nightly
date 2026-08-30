@@ -526,6 +526,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       workspaceId: () => workspaceController.activeProject.workspaceRoot,
       dirtyDocumentPaths: () => dirtyDocumentPaths,
       log: appendLog,
+      refreshResolvedDocument:
+          _workspaceDocumentController.refreshAfterSourceControlResolution,
     )..addListener(_handleSourceControlChanged);
     _testingController = ShellTestingController(
       sessionController: testingSessionController,
