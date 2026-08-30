@@ -88,6 +88,7 @@ class ToolchainRuntime {
     String? workingDirectory,
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final resolution = _resolver.resolve(
       _catalog,
@@ -114,6 +115,7 @@ class ToolchainRuntime {
         workingDirectory: workingDirectory,
         timeout: timeout,
         standardInput: standardInput,
+        onStarted: onProcessStarted,
         serviceKind: kind == ToolchainKind.languageService
             ? ProcessServiceKind.styio
             : ProcessServiceKind.generic,

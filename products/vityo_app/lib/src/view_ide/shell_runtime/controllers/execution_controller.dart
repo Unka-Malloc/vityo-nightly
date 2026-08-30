@@ -6,6 +6,7 @@ import '../../../ide/editor/editor.dart';
 import '../../interaction/interaction.dart';
 import '../../language/language_contract.dart';
 import '../../platform/platform.dart';
+import '../../environment/system_compatibility/process/process_manager.dart';
 import '../../runtime/runtime.dart';
 import '../../toolchain/toolchain.dart';
 import '../../../ide/workspace/workspace.dart';
@@ -498,6 +499,7 @@ final class ExecutionController extends ChangeNotifier {
     required ToolchainManager manager,
     required NativeBuildWorkspaceLayout workspaceLayout,
     required String workspaceRoot,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final testDirectory = workspaceLayout.ctestDirectory;
     if (testDirectory == '.' &&
@@ -531,6 +533,7 @@ final class ExecutionController extends ChangeNotifier {
       arguments: arguments,
       workingDirectory: workspaceRoot,
       timeout: const Duration(seconds: 120),
+      onProcessStarted: onProcessStarted,
     );
     final testResult = <String, Object?>{
       ...ctestResultFromOutput(

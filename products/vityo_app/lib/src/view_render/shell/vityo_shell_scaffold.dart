@@ -411,6 +411,7 @@ class VityoShellScaffold extends StatelessWidget {
             failedRetryHistory: shell.failedTestRetryHistory,
             configurationSet: shell.testRunConfigurationSet,
             failedDebugCancellationRoute: shell.failedDebugCancellationRoute,
+            testRunActive: shell.testRunActive,
             onRunTests: () {
               return shell.executeCommand(AppCommandId.runTests);
             },

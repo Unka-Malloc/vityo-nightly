@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../environment/configuration/environment_variable_configuration.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
+import '../environment/system_compatibility/process/process_manager.dart';
 import '../runtime/runtime.dart';
 import 'clang_cpp_version_configuration.dart';
 import 'toolchain_catalog.dart';
@@ -217,9 +218,7 @@ class ToolchainManagerBootstrapSummary {
   factory ToolchainManagerBootstrapSummary.fromReport({
     required ToolchainManagerStatusReport managerReport,
   }) {
-    final settingsActions = <String>{
-      ...managerReport.recoveryState.actionIds,
-    };
+    final settingsActions = <String>{...managerReport.recoveryState.actionIds};
     final installerActions = <String>{
       if (managerReport.recoveryState.kind ==
           ToolchainRecoveryStateKind.needsInstall)
@@ -1774,6 +1773,7 @@ class ToolchainManager {
     String? workingDirectory,
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final catalog = await loadCatalog();
     return runtimeFor(catalog).run(
@@ -1785,6 +1785,7 @@ class ToolchainManager {
       workingDirectory: workingDirectory,
       timeout: timeout,
       standardInput: standardInput,
+      onProcessStarted: onProcessStarted,
     );
   }
 

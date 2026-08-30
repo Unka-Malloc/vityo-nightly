@@ -814,7 +814,22 @@ class AppBootstrap {
         projectService: projectLanguageService,
       ),
     );
-    final testingSessionController = TestingSessionController();
+    final testingSessionController = TestingSessionController(
+      providerCatalog: TestingProviderCatalog(),
+      failedTestDebugCancellationHandleRegistry:
+          FailedTestDebugCancellationHandleRegistry(),
+      runtimeTaskLifecycleController: RuntimeTaskLifecycleController(),
+      runtimeTaskHistoryStore: RuntimeTaskHistoryStore.fromDataStore(
+        dataStore: foundationDataStore,
+      ),
+      testRunHistoryStore: TestRunHistoryStore.fromDataStore(
+        dataStore: foundationDataStore,
+      ),
+      runtimeOutputBuffer: runtimeOutputBuffer,
+      runtimeTaskHistoryWorkspaceId: projectSnapshot.id,
+      testRunHistoryWorkspaceId: projectSnapshot.id,
+    );
+    await testingSessionController.loadRunHistory();
     final sourceControlStatusController =
         AppBootstrap.createSourceControlStatusController(
           workspaceRoot: projectSnapshot.workspaceRoot,

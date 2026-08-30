@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'debug_adapter_protocol.dart';
 import 'debug_adapter_session.dart';
+import '../runtime/runtime.dart';
 
 abstract class DapByteTransport {
   Stream<List<int>> get incomingBytes;
@@ -9,6 +10,14 @@ abstract class DapByteTransport {
   Future<void> send(List<int> bytes);
 
   Future<void> close();
+}
+
+abstract interface class DapProcessIdentitySource {
+  RuntimeProcessHandleIdentity? get processHandle;
+}
+
+abstract interface class DapProcessLifecycleSource {
+  Future<int> get processExitCode;
 }
 
 class DapSessionTransportBridge {

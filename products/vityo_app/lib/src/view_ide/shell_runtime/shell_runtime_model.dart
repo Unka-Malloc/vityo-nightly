@@ -532,9 +532,16 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     _testingController = ShellTestingController(
       sessionController: testingSessionController,
       workspaceRoot: () => workspaceController.activeProject.workspaceRoot,
-      runTestsFallback: () => executeCommand(AppCommandId.runTests),
+      runNativeTests: ({onProcessStarted, required recordTestingResult}) =>
+          _nativeToolRuntimeController.run(
+            NativeToolCommand.tests,
+            onProcessStarted: onProcessStarted,
+            recordTestingResult: recordTestingResult,
+          ),
+      processManager: platformManagers?.process,
       runtimeOutputBuffer: this.runtimeOutputBuffer,
       log: appendLog,
+      debugAdapterLauncher: debugAdapterLauncher,
     )..addListener(_handleTestingChanged);
     _nativeToolRuntimeController = NativeToolRuntimeController(
       executionController: _executionController,

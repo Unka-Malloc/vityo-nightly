@@ -94,8 +94,6 @@ class FailedTestDebugCancellationRoute {
       'routeKind': routeKind,
       'processHandleBound': processHandleBound,
       if (processHandleId.isNotEmpty) 'processHandleId': processHandleId,
-      'todo':
-          'TODO: ensure concrete debug adapter and test runner runtime snapshots expose processHandleId/pid metadata.',
     };
   }
 }
@@ -675,6 +673,7 @@ class TestingSessionController extends ChangeNotifier {
       <FailedTestRetryRecord>[];
   int _discoveryGeneration = 0;
   int _runGeneration = 0;
+  bool _disposed = false;
 
   TestDiscoveryResult? get discovery => _discovery;
   TestRunResult? get lastRun => _lastRun;
@@ -689,6 +688,9 @@ class TestingSessionController extends ChangeNotifier {
       List<FailedTestRetryRecord>.unmodifiable(_failedRetryHistory);
   bool get hasDiscovery => _discovery != null;
   bool get hasLastRun => _lastRun != null;
+  TestRunProvider? get activeRunProvider =>
+      runProvider ?? providerCatalog?.runProvider();
+  bool get hasActiveRunProvider => activeRunProvider != null;
 
   String providerRetryPlanMessage(String surface) {
     final retryPlan = providerCatalog?.retryPlan();
@@ -772,11 +774,14 @@ class TestingSessionController extends ChangeNotifier {
     }
   }
 
-  Future<TestRunResult> run(TestRunRequest request) async {
-    final provider = runProvider ?? providerCatalog?.runProvider();
+  Future<TestRunResult> run(
+    TestRunRequest request, {
+    TestRunConfiguration? configuration,
+  }) async {
+    final provider = activeRunProvider;
     final generation = ++_runGeneration;
     _lastRunRequest = request;
-    _lastRunConfiguration = null;
+    _lastRunConfiguration = configuration;
     final runtimeTask = _startRuntimeTask(
       request: request,
       providerId: provider?.providerId ?? 'unavailable',
@@ -804,7 +809,20 @@ class TestingSessionController extends ChangeNotifier {
     }
 
     try {
-      final providerResult = await provider.run(request);
+      final providerResult = provider is ProcessAwareTestRunProvider
+          ? await provider.runWithProcessObserver(
+              request,
+              onProcessStarted: (processHandle) {
+                _recordRuntimeProcessStarted(
+                  runtimeTask: runtimeTask,
+                  provider: provider,
+                  request: request,
+                  processHandle: processHandle,
+                  configuration: configuration,
+                );
+              },
+            )
+          : await provider.run(request);
       if (_isRuntimeTaskCancelled(runtimeTask)) {
         final result = await _storeCancelledRun(
           providerId: provider.providerId,
@@ -817,6 +835,7 @@ class TestingSessionController extends ChangeNotifier {
         runtimeTask,
         status: providerResult.status,
         message: providerResult.message,
+        metadata: providerResult.metadata,
       );
       await _persistRuntimeTask(finishedTask);
       final result = _attachRuntimeTask(providerResult, finishedTask);
@@ -865,8 +884,7 @@ class TestingSessionController extends ChangeNotifier {
               : configuration.providerId,
           status: TestRunStatus.error,
           message:
-              'Test run configuration is not ready. '
-              'TODO: surface configuration repair actions.',
+              'Test run configuration is not ready. Set a configuration ID and workspace root before retrying.',
           metadata: <String, Object?>{'configuration': configuration.toJson()},
         ),
         runtimeTask,
@@ -876,9 +894,7 @@ class TestingSessionController extends ChangeNotifier {
       notifyListeners();
       return result;
     }
-    final result = await run(configuration.toRunRequest());
-    _lastRunConfiguration = configuration;
-    return result;
+    return run(configuration.toRunRequest(), configuration: configuration);
   }
 
   Future<TestRunResult> debugConfiguration(TestRunConfiguration configuration) {
@@ -913,15 +929,22 @@ class TestingSessionController extends ChangeNotifier {
         'Cancelled failed-test debug task ${route.taskId} for ${route.failedTestName}.';
     final adapter = _failedTestDebugCancellationAdapterFor();
     FailedTestDebugCancellationResult? adapterResult;
+    _cancelledRuntimeTaskIds.add(route.taskId);
     if (adapter != null) {
-      adapterResult = await adapter.cancel(
-        route: route,
-        runtimeTask: runtimeTask,
-        configuration: _lastRunConfiguration,
-        failedTest: failedTest,
-        reason: cancellationMessage,
-      );
+      try {
+        adapterResult = await adapter.cancel(
+          route: route,
+          runtimeTask: runtimeTask,
+          configuration: _lastRunConfiguration,
+          failedTest: failedTest,
+          reason: cancellationMessage,
+        );
+      } on Object {
+        _cancelledRuntimeTaskIds.remove(route.taskId);
+        rethrow;
+      }
       if (!adapterResult.accepted) {
+        _cancelledRuntimeTaskIds.remove(route.taskId);
         final rejectedRoute = FailedTestDebugCancellationRoute.fromState(
           runtimeTask: runtimeTask,
           configuration: _lastRunConfiguration,
@@ -943,7 +966,6 @@ class TestingSessionController extends ChangeNotifier {
               'failedTestDebugCancellation': adapterResult.toJson(),
             },
     );
-    _cancelledRuntimeTaskIds.add(route.taskId);
     _lastRuntimeTask = cancelled;
     await _persistRuntimeTask(cancelled);
     final cancelledRoute = FailedTestDebugCancellationRoute.fromState(
@@ -985,9 +1007,7 @@ class TestingSessionController extends ChangeNotifier {
       final result = const TestRunResult(
         providerId: 'unavailable',
         status: TestRunStatus.notRun,
-        message:
-            'Rerun failed skipped: no failed test cases are available. '
-            'TODO: preserve provider-specific failed test identifiers.',
+        message: 'Rerun failed skipped: no failed test cases are available.',
       );
       _storeRunResult(result);
       await _persistTestRunResult(result);
@@ -1074,7 +1094,7 @@ class TestingSessionController extends ChangeNotifier {
         'request': request.toJson(),
         'providerId': providerId,
         'source': 'TestingSessionController',
-        'todo': 'TODO: attach test task output streams to runtime history.',
+        'outputMode': 'result-snapshot',
       },
     );
     controller.register(definition);
@@ -1129,10 +1149,66 @@ class TestingSessionController extends ChangeNotifier {
     return result;
   }
 
+  void _recordRuntimeProcessStarted({
+    required RuntimeTaskSnapshot? runtimeTask,
+    required ProcessAwareTestRunProvider provider,
+    required TestRunRequest request,
+    required RuntimeProcessHandleIdentity processHandle,
+    required TestRunConfiguration? configuration,
+  }) {
+    final controller = _runtimeTaskLifecycleController;
+    if (controller == null || runtimeTask == null || !processHandle.available) {
+      return;
+    }
+    final taskId = runtimeTask.definition.id;
+    final metadata = <String, Object?>{
+      ...processHandle.toJson(),
+      'processHandleSource': processHandle.source,
+      'providerId': provider.providerId,
+      if (configuration != null) 'configurationId': configuration.id,
+    };
+    final snapshot = controller.recordProgress(
+      taskId,
+      message: 'Test process ${processHandle.processHandleId} started.',
+      metadata: metadata,
+    );
+    _lastRuntimeTask = snapshot;
+    final registry = failedTestDebugCancellationHandleRegistry;
+    if (registry != null) {
+      const FailedTestDebugProcessHandleBinder().bind(
+        runtimeTask: snapshot,
+        registry: registry,
+        providerId: provider.providerId,
+        configurationId: configuration?.id ?? '',
+        kind: switch (provider.processKind(request)) {
+          TestRunProcessKind.testRunner =>
+            FailedTestDebugCancellationHandleKind.testRunner,
+          TestRunProcessKind.debugAdapter =>
+            FailedTestDebugCancellationHandleKind.debugAdapter,
+        },
+        terminate: (request) async {
+          final result = await provider.cancelProcess(request.processHandleId);
+          return FailedTestDebugCancellationResult(
+            accepted: result.accepted,
+            processTerminated: result.processTerminated,
+            message: result.message,
+            metadata: result.metadata,
+          );
+        },
+        metadata: <String, Object?>{
+          'source': 'process-aware-test-run-provider',
+          'processHandle': processHandle.toJson(),
+        },
+      );
+    }
+    notifyListeners();
+  }
+
   RuntimeTaskSnapshot? _finishRuntimeTask(
     RuntimeTaskSnapshot? snapshot, {
     required TestRunStatus status,
     required String message,
+    Map<String, Object?> metadata = const <String, Object?>{},
   }) {
     final controller = _runtimeTaskLifecycleController;
     if (controller == null || snapshot == null) {
@@ -1144,15 +1220,18 @@ class TestingSessionController extends ChangeNotifier {
       TestRunStatus.passed || TestRunStatus.skipped => controller.complete(
         taskId,
         message: message.isEmpty ? 'Test task $taskId completed.' : message,
+        metadata: metadata,
       ),
       TestRunStatus.failed || TestRunStatus.error => controller.fail(
         taskId,
         message: message.isEmpty ? 'Test task $taskId failed.' : message,
         exitCode: 1,
+        metadata: metadata,
       ),
       TestRunStatus.notRun => controller.block(
         taskId,
         message: message.isEmpty ? 'Test task $taskId was not run.' : message,
+        metadata: metadata,
       ),
     };
     _lastRuntimeTask = finished;
@@ -1262,5 +1341,21 @@ class TestingSessionController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) {
+      super.notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    super.dispose();
   }
 }

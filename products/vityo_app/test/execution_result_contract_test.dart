@@ -3,6 +3,7 @@ import 'package:vityo_app/src/view_ide/backend_toolchain/backend_toolchain.dart'
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
 import 'package:vityo_app/src/ide/editor/editor.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/configuration.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
 import 'package:vityo_app/src/view_ide/language/language.dart';
 import 'package:vityo_app/src/view_ide/platform/platform.dart';
 import 'package:vityo_app/src/view_ide/shell_runtime/shell_runtime.dart';
@@ -501,6 +502,7 @@ class _RecordingToolchainManager implements ToolchainManager {
     String? workingDirectory,
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     this.arguments.add(List<String>.of(arguments));
     return _results.removeAt(0);

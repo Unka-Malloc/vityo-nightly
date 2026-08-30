@@ -125,10 +125,12 @@ mixin ShellRuntimeCommandDispatchFacade on ShellRuntimeFacadeHost {
       case AppCommandId.runBuild:
       case AppCommandId.formatActiveDocument:
       case AppCommandId.runStaticAnalysis:
-      case AppCommandId.runTests:
         await _nativeToolRuntimeController.run(
           NativeToolCommand.fromAppCommandId(commandId),
         );
+        return;
+      case AppCommandId.runTests:
+        await _testingController.runAllTests();
         return;
       case AppCommandId.rerunFailedTests:
         await _testingController.rerunFailed();

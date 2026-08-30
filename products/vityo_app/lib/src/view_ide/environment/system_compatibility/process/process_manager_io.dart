@@ -30,7 +30,7 @@ Future<ProcessManager> createPlatformProcessManager({
   );
 }
 
-class LocalProcessManager implements ProcessManager {
+class LocalProcessManager implements ProcessManager, CancellableProcessManager {
   LocalProcessManager({
     required this.facts,
     required VityodClient client,
@@ -114,6 +114,22 @@ class LocalProcessManager implements ProcessManager {
         },
       );
       _throwIfError(start);
+      final onStarted = request.onStarted;
+      if (onStarted != null) {
+        try {
+          onStarted(
+            ProcessCommandHandle(
+              processHandleId: taskId,
+              sourceManager: 'vityod',
+              metadata: <String, Object?>{
+                'serviceKind': request.serviceKind.name,
+              },
+            ),
+          );
+        } on Object {
+          // Observers must not interrupt daemon task supervision.
+        }
+      }
       var pollSequence = 0;
       while (true) {
         final output = await _client.request(
@@ -185,6 +201,56 @@ class LocalProcessManager implements ProcessManager {
         stderr: '',
         duration: stopwatch.elapsed,
         message: 'vityod process supervision failed: $error',
+      );
+    }
+  }
+
+  @override
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  ) async {
+    final taskId = processHandleId.trim();
+    if (taskId.isEmpty) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'Process cancellation requires a process handle.',
+      );
+    }
+    if (!_client.state.canDispatch) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message:
+            'Process cancellation is unavailable while vityod is disconnected.',
+      );
+    }
+    try {
+      final response = await _client.request(
+        method: 'task.cancel',
+        idempotencyKey: 'task-cancel-$taskId',
+        params: <String, Object?>{'taskId': taskId},
+      );
+      _throwIfError(response);
+      final cancelled = response.params['state'] == 'cancelled';
+      final exitCode = response.params['exitCode'];
+      return ProcessCommandCancellationResult(
+        accepted: cancelled,
+        processTerminated: cancelled,
+        message: cancelled
+            ? 'Process $taskId was cancelled by vityod.'
+            : 'Process $taskId cancellation was not accepted by vityod.',
+        exitCode: exitCode is int ? exitCode : null,
+        metadata: <String, Object?>{
+          'processHandleId': taskId,
+          'processHandleSource': 'vityod',
+        },
+      );
+    } on Object catch (error) {
+      return ProcessCommandCancellationResult(
+        accepted: false,
+        processTerminated: false,
+        message: 'Process $taskId cancellation failed: $error',
+        metadata: <String, Object?>{
+          'processHandleId': taskId,
+          'processHandleSource': 'vityod',
+        },
       );
     }
   }

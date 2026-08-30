@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +184,36 @@ void main() {
 
       expect(result.succeeded, isTrue);
       expect(result.stdout, 'process-stdin');
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'process manager exposes and cancels a live vityod process handle',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final started = Completer<ProcessCommandHandle>();
+      final running = manager.run(
+        ProcessCommandRequest(
+          executablePath: '/bin/sleep',
+          arguments: const <String>['30'],
+          timeout: const Duration(seconds: 60),
+          onStarted: started.complete,
+        ),
+      );
+
+      final handle = await started.future.timeout(const Duration(seconds: 5));
+      final cancellation = await manager.cancelProcess(handle.processHandleId);
+      final result = await running.timeout(const Duration(seconds: 5));
+
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.sourceManager, 'vityod');
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(result.succeeded, isFalse);
+      expect(result.metadata['processHandleId'], handle.processHandleId);
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );

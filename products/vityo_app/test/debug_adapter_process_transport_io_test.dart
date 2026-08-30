@@ -24,6 +24,8 @@ void main() {
         client: vityod!.client,
       );
       await transport.start();
+      expect(transport.processHandle?.processHandleId, startsWith('dap-'));
+      expect(transport.processHandle?.source, 'vityod-dap');
       final echoed = transport.incomingBytes.first;
       await transport.send(<int>[100, 97, 112, 45, 111, 107, 10]);
 
@@ -52,6 +54,8 @@ void main() {
       killGrace: const Duration(seconds: 1),
     );
     await transport.start();
+
+    expect(transport.processHandle?.processHandleId, 'fixture-dap-4242');
 
     final result = await transport.shutdown();
 
@@ -114,6 +118,8 @@ final class _FakeManagedProcess implements DapManagedProcess {
   int killCalls = 0;
   int closeInputCalls = 0;
 
+  @override
+  String get processHandleId => 'fixture-dap-4242';
   @override
   int get pid => 4242;
   @override

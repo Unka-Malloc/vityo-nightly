@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../ide/local_service/vityod_client.dart';
+import '../runtime/runtime.dart';
 import 'debug_adapter_launcher.dart';
 import 'debug_adapter_transport.dart';
 import 'debug_launch_contract.dart';
@@ -61,6 +62,7 @@ class DapProcessStartRequest {
 }
 
 abstract interface class DapManagedProcess {
+  String get processHandleId;
   int get pid;
   Stream<List<int>> get stdoutBytes;
   Stream<List<int>> get stderrBytes;
@@ -120,6 +122,9 @@ final class _VityodDapManagedProcess implements DapManagedProcess {
 
   @override
   final int pid;
+
+  @override
+  String get processHandleId => _processId;
 
   @override
   Stream<List<int>> get stdoutBytes => _stdout.stream;
@@ -236,7 +241,11 @@ void _throwIfError(dynamic response) {
   throw StateError(code is String ? code : 'dap_service_error');
 }
 
-class DapProcessTransport implements DapByteTransport {
+class DapProcessTransport
+    implements
+        DapByteTransport,
+        DapProcessIdentitySource,
+        DapProcessLifecycleSource {
   DapProcessTransport({
     required this.executable,
     this.arguments = const <String>[],
@@ -270,6 +279,19 @@ class DapProcessTransport implements DapByteTransport {
   bool get started => _process != null;
   DapProcessShutdownResult? get lastShutdownResult => _lastShutdownResult;
 
+  @override
+  RuntimeProcessHandleIdentity? get processHandle {
+    final process = _process;
+    if (process == null || process.processHandleId.trim().isEmpty) {
+      return null;
+    }
+    return RuntimeProcessHandleIdentity(
+      managerId: 'debug-adapter',
+      processHandleId: process.processHandleId.trim(),
+      source: 'vityod-dap',
+    );
+  }
+
   Future<int> get exitCode {
     final exitCode = _exitCode;
     if (exitCode == null) {
@@ -277,6 +299,9 @@ class DapProcessTransport implements DapByteTransport {
     }
     return exitCode;
   }
+
+  @override
+  Future<int> get processExitCode => exitCode;
 
   @override
   Stream<List<int>> get incomingBytes => _incoming.stream;

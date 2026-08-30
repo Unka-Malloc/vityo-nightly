@@ -509,7 +509,7 @@ void main() {
     );
     expect(
       entriesById['interaction.testing']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.testing']?.summary,
@@ -551,10 +551,7 @@ void main() {
       entriesById['interaction.testing']?.summary,
       contains('FailedTestDebugProcessHandleBinder'),
     );
-    expect(
-      entriesById['interaction.testing']?.todo,
-      contains('processHandleId/pid metadata'),
-    );
+    expect(entriesById['interaction.testing']?.todo, isEmpty);
     expect(
       entriesById['interaction.testing']?.runtimeMaturityBlocking,
       isFalse,

@@ -364,6 +364,8 @@ class DebugRuntimeExecutionResult {
   final DapDebugSessionHandle? handle;
   final DebugSessionTerminationExecutionResult? terminationExecution;
 
+  RuntimeProcessHandleIdentity? get processHandle => handle?.processHandle;
+
   bool get launched => status == DebugRuntimeExecutionStatus.launched;
   bool get failed => status == DebugRuntimeExecutionStatus.failed;
   bool get blocked =>
@@ -383,6 +385,7 @@ class DebugRuntimeExecutionResult {
           .map((event) => event.toJson())
           .toList(growable: false),
       if (handle != null) 'session': handle!.snapshot.toJson(),
+      if (processHandle != null) 'processHandle': processHandle!.toJson(),
       if (terminationExecution != null)
         'terminationExecution': terminationExecution!.toJson(),
     };
@@ -454,6 +457,7 @@ class DebugRuntimeExecutionAdapter {
         status: DebugLaunchTelemetryStatus.launched,
         message: 'Debug adapter launched through runtime execution route.',
         timestamp: _clock(),
+        metadata: _debugProcessHandleMetadata(handle.processHandle),
       );
       final telemetry = DebugLaunchTelemetrySnapshot(
         workspaceId: workspaceId,
@@ -524,6 +528,7 @@ class DebugRuntimeExecutionAdapter {
       message: reason,
       timestamp: _clock(),
       metadata: <String, Object?>{
+        ..._debugProcessHandleMetadata(handle.processHandle),
         'debugRuntimeExecutionStatus':
             DebugRuntimeExecutionStatus.cancelled.wireValue,
         'cancelledBy': 'DebugRuntimeExecutionAdapter',
@@ -608,6 +613,22 @@ class DebugRuntimeExecutionAdapter {
     }
     return List<RuntimeOutputEvent>.unmodifiable(outputEvents);
   }
+}
+
+Map<String, Object?> _debugProcessHandleMetadata(
+  RuntimeProcessHandleIdentity? processHandle,
+) {
+  if (processHandle == null) {
+    return const <String, Object?>{};
+  }
+  return <String, Object?>{
+    if (processHandle.processHandleId.isNotEmpty)
+      'processHandleId': processHandle.processHandleId,
+    if (processHandle.pid != null) 'pid': processHandle.pid,
+    'managerId': processHandle.managerId,
+    if (processHandle.source.isNotEmpty)
+      'processHandleSource': processHandle.source,
+  };
 }
 
 class DebugLaunchTelemetryStore {

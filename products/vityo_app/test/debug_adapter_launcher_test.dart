@@ -262,6 +262,15 @@ void main() {
         RuntimeExecutionDispatchStatus.dispatched,
       );
       expect(result.handle, isNotNull);
+      expect(result.processHandle?.processHandleId, 'fixture-dap-process');
+      expect(
+        result.toJson()['processHandle'],
+        containsPair('processHandleId', 'fixture-dap-process'),
+      );
+      expect(
+        result.telemetry.records.single.metadata['processHandleId'],
+        'fixture-dap-process',
+      );
       expect(
         result.telemetry.records.single.status,
         DebugLaunchTelemetryStatus.launched,
@@ -400,10 +409,19 @@ Future<FoundationDataStore> _createDataStore() async {
   );
 }
 
-class _FakeDapByteTransport implements DapByteTransport {
+class _FakeDapByteTransport
+    implements DapByteTransport, DapProcessIdentitySource {
   final StreamController<List<int>> _incoming =
       StreamController<List<int>>.broadcast();
   final List<List<int>> sentBytes = <List<int>>[];
+
+  @override
+  RuntimeProcessHandleIdentity get processHandle =>
+      const RuntimeProcessHandleIdentity(
+        managerId: 'debug-adapter',
+        processHandleId: 'fixture-dap-process',
+        source: 'fixture',
+      );
 
   @override
   Stream<List<int>> get incomingBytes => _incoming.stream;
