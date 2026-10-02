@@ -1,1 +1,7 @@
-//! Standard ACP host-operation module mount; implementation is owned by NODE-RUST-CORE.
+//! Standard ACP host and operation adapters.
+
+mod acp;
+mod operations;
+mod terminal;
+
+pub use acp::AcpHost;
