@@ -616,9 +616,15 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
                 tuple(_python("scripts/vityo_quality.py", "--product", "ide", "--suite", suite)),
             )
         )
-    commands.extend(
+    code = run_commands(commands, runner=runner)
+    if code != 0:
+        return code
+    code = _run_language_fixture_gate(options)
+    if code != 0:
+        return code
+
+    commands = list(
         (
-            Command("pinned Styio language fixtures", ("<language-fixtures>",)),
             Command("prototype governance", ("npm", "run", "governance"), ROOT / "prototype"),
             Command(
                 "prototype editor self-test",
@@ -648,10 +654,6 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
     code = run_commands(commands, runner=runner)
     if code != 0:
         return code
-    code = _run_language_fixture_gate(options)
-    if code != 0:
-        return code
-
     product_gate_required = options.mode == "ci" or any(
         value in {"1", "true", "yes", "on"}
         for value in (os.environ.get("CI", "").lower(), os.environ.get("GITHUB_ACTIONS", "").lower(), os.environ.get("VITYO_PRODUCT_GATE", "").lower())
@@ -1000,7 +1002,11 @@ def run_launch_stage(options: DeliveryOptions) -> int:
             opener = shutil.which("open")
             if opener is None:
                 raise ValueError("macOS open is unavailable")
-            subprocess.Popen([opener, "-a", str(install_root.expanduser())], cwd=ROOT)
+            code = run_command(
+                [opener, "-n", "-a", str(install_root.expanduser())], ROOT, None
+            )
+            if code != 0:
+                return code
         else:
             subprocess.Popen([str(executable)], cwd=app_root)
     except (OSError, ValueError) as error:

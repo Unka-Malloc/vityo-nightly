@@ -87,6 +87,21 @@ Device verification stays host-driven:
 8. `python3 scripts/vityo.py test` prepares the selected Rust toolchain's `llvm-tools-preview` component and verifies `cargo-llvm-cov` `0.9.0`, installing the locked version when it is missing or different. Direct calls to `scripts/rust-coverage-gate.py` require those tools to be present already. If the selected toolchain or pinned tool cannot be installed or verified, the test stage fails; it does not skip Rust coverage.
 9. On Windows, native desktop builds require Visual Studio 2022 Build Tools with the C++ desktop workload. `bootstrap-dev-env-windows.ps1` installs this through `winget`; hosted `windows-latest` CI already includes the required build environment.
 
+Python test collection also requires `coverage.py`. Prepare a repository-local virtual
+environment once; use its activated `python3` for the delivery command. Do not install
+the coverage dependency into the host's global Python environment.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install coverage
+python3 scripts/vityo.py deliver
+```
+
+On Windows, activate the same environment with `.venv\Scripts\Activate.ps1` and use
+`python` where the host does not provide `python3`. The ignored `.venv/` contains only
+developer dependencies; it is not packaged with the client.
+
 ## Typical Build And Test Commands
 
 Shared workspace bootstrap after the toolchain is present:

@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Mission
 
@@ -78,6 +78,12 @@ claims.
 16. `已实现决策摘要 -> ../adr/IMPLEMENTED-DECISIONS.md`
 
 ## Daily Workflow
+
+The shared test stage runs actual pinned language fixtures between the portable IDE
+suites and prototype checks, and stops on failure. Python coverage dependencies belong
+in the isolated environment documented in `docs/BUILD-AND-DEV-ENV.md`. Local macOS
+launch opens a new instance of the installed candidate and checks LaunchServices' exit
+status; it does not inspect the running interface or claim live acceptance.
 
 1. 先判断当前变化属于 owner 文档变化，还是目录/索引/交付接线变化。
 2. 任何结构性文档变更，都要同步更新对应目录的 `README.md` 和 `INDEX.md`。

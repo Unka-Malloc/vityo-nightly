@@ -64,7 +64,7 @@ def run_command(command: list[str]) -> int:
 def collect_coverage() -> int:
     if not coverage_available():
         print(
-            "coverage.py is required. Install it with: python3 -m pip install coverage",
+            "coverage.py is required. Activate a project virtual environment and install coverage; see docs/BUILD-AND-DEV-ENV.md.",
             file=sys.stderr,
         )
         return 2
@@ -116,7 +116,7 @@ def collect_coverage() -> int:
 def report_coverage(fail_under: int) -> int:
     if not coverage_available():
         print(
-            "coverage.py is required. Install it with: python3 -m pip install coverage",
+            "coverage.py is required. Activate a project virtual environment and install coverage; see docs/BUILD-AND-DEV-ENV.md.",
             file=sys.stderr,
         )
         return 2

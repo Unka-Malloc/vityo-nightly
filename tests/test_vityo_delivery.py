@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -65,7 +66,10 @@ class VityoDeliveryTest(unittest.TestCase):
             self.delivery.shutil, "which", return_value="/tools/flutter"
         ), mock.patch.object(
             self.delivery, "_project_coverage_command", return_value=("python3", "project-coverage-gate.py", "--collect-only")
-        ), mock.patch.object(self.delivery, "_run_language_fixture_gate", return_value=0), mock.patch.object(
+        ), mock.patch.object(
+            self.delivery, "_run_language_fixture_gate",
+            side_effect=lambda _options: runner(("language-fixtures",), None, None),
+        ), mock.patch.object(
             self.delivery, "run_command", return_value=0
         ):
             self.assertEqual(self.delivery.run_test_stage(options, runner=runner), 0)
@@ -117,6 +121,15 @@ class VityoDeliveryTest(unittest.TestCase):
             min(commands.index(command) for command in suite_runs),
         )
         self.assertFalse(any(command[:2] == ("cargo", "test") for command in commands))
+        self.assertLess(
+            max(commands.index(command) for command in suite_runs),
+            commands.index(("language-fixtures",)),
+        )
+        self.assertLess(
+            commands.index(("language-fixtures",)),
+            commands.index(("npm", "run", "governance")),
+        )
+        self.assertFalse(any(command[0].startswith("<") for command in commands))
         self.assertFalse(
             any(
                 "vityo_quality.py" in command and "coding-agent" in command
@@ -124,6 +137,37 @@ class VityoDeliveryTest(unittest.TestCase):
             )
         )
         coverage_tools.assert_called_once_with(runner=runner)
+
+    def test_language_fixture_failure_stops_before_prototype_checks(self) -> None:
+        runner = mock.Mock(return_value=0)
+        with mock.patch.object(self.delivery, "resolve_pinned_cli", return_value=Path("/pinned/styio")), mock.patch.object(
+            self.delivery, "require_rust_toolchain", return_value=True
+        ), mock.patch.object(self.delivery, "ensure_rust_coverage_tools", return_value=True), mock.patch.object(
+            self.delivery.shutil, "which", return_value="/tools/flutter"
+        ), mock.patch.object(self.delivery, "_run_language_fixture_gate", return_value=19):
+            self.assertEqual(
+                self.delivery.run_test_stage(self.delivery.DeliveryOptions(platform="macos"), runner=runner),
+                19,
+            )
+        self.assertFalse(any(call.args[0][0] == "npm" for call in runner.call_args_list))
+
+    def test_macos_launch_opens_new_candidate_and_propagates_launch_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            install_root = Path(temporary) / "Vityo.app"
+            executable = install_root / self.delivery.PACKAGE_EXECUTABLES["macos"]
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            options = self.delivery.DeliveryOptions(platform="macos", install_root=install_root)
+            for code in (0, 11):
+                with self.subTest(exit_code=code), mock.patch.object(
+                    self.delivery, "host_platform", return_value="macos"
+                ), mock.patch.object(self.delivery, "_load_package_candidate"), mock.patch.object(
+                    self.delivery.shutil, "which", return_value="/usr/bin/open"
+                ), mock.patch.object(self.delivery, "run_command", return_value=code) as runner:
+                    self.assertEqual(self.delivery.run_launch_stage(options), code)
+                runner.assert_called_once_with(
+                    ["/usr/bin/open", "-n", "-a", str(install_root)], ROOT, None
+                )
 
     def test_coverage_scope_collects_only_through_project_gate(self) -> None:
         options = self.delivery.DeliveryOptions(platform="linux", scope="coverage")
