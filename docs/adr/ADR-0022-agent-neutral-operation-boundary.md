@@ -2,7 +2,7 @@
 
 **Purpose:** Define how the Flutter IDE, first-party Coding Agent, compatible Agents, and local daemon share authorized IDE operations and state.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Status:** Accepted
 
@@ -20,22 +20,22 @@ provides local workspace and process services; it is neither the IDE nor the Cod
 
 The first-party and compatible Agents use the same advertised capabilities and authorization.
 
-The current Flutter entry wraps `FlowHeroApp` in an isolated first-frame delivery probe; its normal
-launch still uses that route directly. The `WorkbenchController` contains
-path-bound `BufferFile` values as well as built-in demonstration buffers, and its editor-only file
-path does not by itself provide the daemon's durable document revision and transaction authority.
-The selected operation dispatcher must resolve an actual active workspace path and reject
-pathless demo buffers. Full Flow Hero source/graph editing remains a later feature: the current
-restricted graph parser does not replace Styio's syntax, semantic facts, or legal rewrites.
+The normal Flutter entry still launches `FlowHeroApp` directly. For an explicit, nonempty
+`VITYO_WORKSPACE`, `AgentBridge.attach` resolves the independently installed Rust Agent descriptor,
+connects the selected workspace to vityod, and composes `FlowHeroAgentOperationPort`. The operation
+port reads the active path-bound `WorkbenchController` buffer, carries its source and persisted
+workspace/document observations, and persists through the existing atomic workspace transaction
+store. Built-in pathless demonstration buffers are unavailable as workspace resources. Full Flow
+Hero source/graph editing remains a separate deferred feature: the restricted graph parser does not
+replace Styio syntax, semantic facts, or legal rewrites.
 
-The repository already contains an ACP-compatible Agent process host and durable vityod workspace
-and PTY services. Those lower-level components alone do not prove that standard ACP filesystem or
-terminal operations are advertised, dispatched to the real IDE owners, permission-checked, and
-reflected in the frontend. ACP requests may be surfaced through the host poll, but the completed
-dispatcher-to-owner route is the required acceptance boundary. The client also has session
-reducers and collaboration projections, so
-received state can be presented without making the Flutter view the Agent's runtime or durable
-authority.
+The standard ACP filesystem and terminal route is implemented through the client, vityod session
+poll and correlated response, neutral operation dispatcher, live buffer/workspace owners, and PTY
+registry. Deterministic operation and proposal tests cover the actual path. A fresh Rust executable
+process has negotiated ACP, initialized a session, and created a session through the client without
+issuing a provider prompt. Exact permission option IDs and proposal outcomes are correlated through
+the protocol. These checks establish the local process/operation join, not a live model conversation,
+a real development task, or production MCP server attachment.
 
 ## Decision
 
@@ -52,23 +52,32 @@ authority.
    `terminal/output`, `terminal/wait_for_exit`, `terminal/kill`, and `terminal/release` where
    supported. Agents must negotiate and observe the client capability set before using them. Vityo
    advertises only operations that have a real authorized route.
-4. **Keep source-aware edits revision-bound.** The existing namespaced Vityo workspace-change
-   proposal extension remains the path for previewed, atomic, source-aware edits. Flow Hero
-   operations resolve to the active path-bound `WorkbenchController` buffer; durable reads and
-   commits go through the existing workspace document and transaction owners, and terminal work
-   goes through vityod PTY services. Pathless demonstration buffers cannot be addressed as
-   workspace resources.
-5. **Project authoritative state and events.** The IDE owns canonical document/workspace
+4. **Keep source-aware edits revision-bound.** The negotiated
+   `_vityo.dev/workspace-change-proposal` extension carries a workspace revision and per-document
+   base revisions to the host review surface. Flow Hero operations resolve to the active path-bound
+   `WorkbenchController` buffer; durable reads and commits go through the existing workspace
+   document and atomic transaction owners, and terminal work goes through vityod PTY services.
+   Pathless demonstration buffers cannot be addressed as workspace resources. A missing-file read
+   returns known absence and its observed workspace revision, not a fabricated document revision.
+5. **Keep path and permission authority in their owners.** Standard ACP filesystem requests use the
+   host-established session/root scope. Vityod and the IDE validate the actual filesystem target,
+   workspace binding, symlink/root constraints, and caller-observed revisions at the effect
+   boundary. Standard authorized file writes use the Agent runtime's normal grants and atomic CAS.
+   A source-aware proposal has one explicit host-reviewed Apply/Reject decision for that pending
+   transaction; do not add a duplicate generic permission prompt. The exact supplied permission
+   option is returned to the correlated ACP request. Persistent `AllowAlways` is Agent journal
+   state; `AllowOnce` is not persisted.
+6. **Project authoritative state and events.** The IDE owns canonical document/workspace
    revisions, unsaved buffer identity, transaction outcomes, permission decisions, and presentation
    state. The connected Agent owns model/provider activity and durable Agent task state. The
    frontend projects actual ordered operation, status, terminal-output, proposal, commit/reject,
    and validation facts with their session/execution identity and relevant revision. It does not
    expose raw hidden reasoning or timer-generated success.
-6. **Keep Flow Hero language semantics upstream-owned.** A node drag or source edit is not proof of
+7. **Keep Flow Hero language semantics upstream-owned.** A node drag or source edit is not proof of
    a valid Styio graph change. Full semantic graph display, legal edge rewiring, source rewrites,
    and compile/runtime correspondence remain blocked until Styio exposes revision-bound typed facts
    and supported edits. Pafio metadata is not a substitute.
-7. **Use ReAct as the default Coding Agent loop.** The Agent observes current authorized facts,
+8. **Use ReAct as the default Coding Agent loop.** The Agent observes current authorized facts,
    chooses a permitted action, receives an actual typed result, updates task state, and continues,
    requests input, or finishes with evidence. A concise revisable plan is optional state within the
    same loop. The pattern and deterministic acceptance remain in [ADR-0021](./ADR-0021-react-agent-runtime-loop.md).
@@ -82,19 +91,26 @@ ACP's separate [filesystem API](https://agentclientprotocol.com/protocol/v1/file
 operations used at the Agent process boundary. A future measured need for an in-process pure Rust
 library may be evaluated separately without changing these independent-process links.
 
+The Rust executable accepts an empty ACP `mcpServers` configuration but rejects a non-empty value
+on session creation/loading with `-32003 MCP capability unavailable`. The migrated RMCP library
+and tool-source modules do not provide a production MCP server attachment lifecycle; the client
+does not silently ignore the requested servers.
+
 ## Consequences
 
-1. A protocol capability flag is not production evidence. Deterministic tests must exercise the
-   actual ACP request, authorization, buffer/service dispatch, result, and Workbench projection
-   paths, including stale revisions, rejected permissions, cancellation, and unsupported targets.
+1. A protocol capability flag is not production evidence. Deterministic tests exercise the actual
+   ACP request, authorization, buffer/service dispatch, result, and Workbench projection paths,
+   including stale revisions, rejected permissions, cancellation, and unsupported targets. The
+   process test verifies the selected installed Rust executable through initialize and session/new
+   without depending on a live provider.
 2. Agent session events and workspace state have distinct authorities. A frontend projection does
    not become the Agent journal; an Agent proposal does not become an IDE commit before the
    workspace transaction reports success.
-3. The current ACP host and low-level daemon services remain incomplete until standard filesystem/
-   terminal requests traverse the dispatcher and reach their real owner services.
-4. The current Rust executable scaffold does not establish a production provider/tool loop. A
-   compile or `--version` check cannot substitute for deterministic ReAct, policy, transaction,
-   recovery, and protocol tests.
+3. The selected Rust executable and production client descriptor are joined through the independent
+   process boundary. The fresh-binary process test covers protocol and session startup without
+   claiming provider completion. Session/event/journal behavior is tested by the Rust runtime suites.
+4. Production MCP server attachment remains unavailable: non-empty `mcpServers` is rejected rather
+   than accepted and ignored.
 5. First-party and compatible Agents share the same externally advertised operations. A provider
    conversation or real development task is separate live acceptance by the user's designated
    Agent.

@@ -2,7 +2,7 @@
 
 **Purpose:** Define Vityo's maintained system boundaries, application composition, language/runtime adapters, and source-authoritative Flow Hero target. Product commitments remain in [Vityo-Product-Spec.md](./Vityo-Product-Spec.md).
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Status:** Current system architecture
 
@@ -21,13 +21,13 @@ Generated from [`system-architecture.json`](./architecture-views/system-architec
 flowchart LR
   subgraph agents["Agent processes"]
     direction TB
-    rust_agent["Rust Coding Agent · TARGET"]
+    rust_agent["Rust Coding Agent · CURRENT"]
     compatible_agents["Compatible Agents · TARGET"]
   end
   subgraph protocol["Protocol and local daemon"]
     direction TB
     agent_protocol["ACP v1 + Vityo proposal extension · CURRENT"]
-    standard_operations_gap["ACP operations gateway · GAP"]
+    acp_operations_gateway["ACP operations gateway · CURRENT"]
     vityod["vityod daemon · CURRENT"]
   end
   subgraph client["Flutter IDE"]
@@ -35,9 +35,9 @@ flowchart LR
     workbench_projection["Workbench projection · CURRENT"]
     flutter_ide["Flutter IDE · CURRENT"]
     local_daemon_client["vityod client · CURRENT"]
-    neutral_operation_dispatcher["IDE operation dispatcher · TARGET"]
+    neutral_operation_dispatcher["IDE operation dispatcher · CURRENT"]
     flow_hero_buffers["Flow Hero path-bound buffer · CURRENT"]
-    flow_hero["Flow Hero source + graph · GAP"]
+    flow_hero["Flow Hero live file route · CURRENT"]
   end
   subgraph authorities["Language and project authorities"]
     direction TB
@@ -47,27 +47,27 @@ flowchart LR
   end
   subgraph delivery["Build and verification"]
     direction TB
-    python_delivery["Python delivery pipeline · TARGET"]
+    python_delivery["Python delivery pipeline · CURRENT"]
     quality_engines["Test and package engines · CURRENT"]
   end
   flutter_ide -->|"route typed local requests"| local_daemon_client
   local_daemon_client -->|"local daemon IPC"| vityod
   vityod -->|"workspace and process facts"| workbench_projection
   workbench_projection -->|"ordered state and event projection"| flutter_ide
-  rust_agent -->|"independent ACP session · TARGET"| agent_protocol
+  rust_agent -->|"independent ACP session"| agent_protocol
   compatible_agents -->|"same authorized capabilities · TARGET"| agent_protocol
-  agent_protocol -->|"filesystem and terminal requests · GAP"| standard_operations_gap
-  standard_operations_gap -->|"session poll and correlated result · TARGET"| neutral_operation_dispatcher
-  neutral_operation_dispatcher -->|"read or edit the active file · TARGET"| flow_hero_buffers
-  flow_hero_buffers -->|"restricted parser is not Styio flow semantics · GAP"| flow_hero
-  neutral_operation_dispatcher -->|"workspace transaction and PTY · TARGET"| vityod
-  rust_agent -->|"revision-bound proposal; IDE reviews and commits · TARGET"| flutter_ide
+  agent_protocol -->|"negotiated file and terminal operations"| acp_operations_gateway
+  acp_operations_gateway -->|"session poll and correlated result"| neutral_operation_dispatcher
+  neutral_operation_dispatcher -->|"read or edit the active path-bound file"| flow_hero_buffers
+  flow_hero_buffers -->|"live path-bound source and proposal projection"| flow_hero
+  neutral_operation_dispatcher -->|"workspace CAS transaction and PTY"| vityod
+  rust_agent -->|"revision-bound proposal; IDE reviews and commits"| flutter_ide
   flutter_ide -->|"analyze current document revision"| styio
   styio -->|"typed flow and supported rewrites · GAP"| flow_semantics_gap
   pafio -->|"project/package/target metadata"| flutter_ide
-  python_delivery -->|"run deterministic validation · TARGET"| quality_engines
+  python_delivery -->|"run deterministic validation"| quality_engines
   quality_engines -->|"deterministic product checks"| flutter_ide
-  quality_engines -->|"deterministic Agent/protocol fixtures · TARGET"| rust_agent
+  quality_engines -->|"deterministic Agent/protocol fixtures"| rust_agent
 ```
 <!-- VITYO_ARCHITECTURE:END -->
 
@@ -82,7 +82,7 @@ The repository has three product-facing roots and one separate local service pro
 | Root | Ownership |
 |---|---|
 | `products/vityo_app/` | Flutter IDE, editor and workspace state, language/runtime adapters, Agent Client and IDE-side review/transaction policy, and presentation. |
-| `products/vityo_coding_agent/` | First-party Agent product. Its selected implementation is an independent Rust executable with provider/model access, tool policy and execution, task/session orchestration, and its protocol producer. The current Rust scaffold is not production-composed. |
+| `products/vityo_coding_agent/` | First-party Agent product. Its independent Rust executable composes the ReAct loop, OpenAI-compatible streaming provider, authorized ACP tools, proposal protocol, and durable session/effect journal. `--stdio-agent` is its GUI-independent control surface; a separate headless CLI is not required. |
 | `packages/vityo_agent_protocol/` | Versioned, implementation-independent IDE-to-Agent wire contract. |
 
 `products/vityo_app/native/vityod/` is the separately executable Rust daemon for local workspace and
@@ -128,19 +128,19 @@ path-bound `BufferFile` values. Those local buffer and file paths do not by them
 the shared daemon document revision and transaction authority; in particular, pathless demo
 buffers are not workspace resources.
 
-Flow Hero still builds a sample graph from a restricted parser and uses demonstration runtime and
-Agent presentation. Its open-file editor state is not a Styio semantic graph, and a transport alone
-does not establish model inference, authorized tools, or committed source changes. The selected
-Agent-neutral operation dispatcher resolves requests against actual path-bound open buffers,
-uses the daemon's workspace read/transaction path for durable changes, and uses vityod PTY for
-terminal operations. Unsupported pathless buffers stay unavailable. The typed Styio graph and
-rewire contract remains an explicit upstream gap.
+Flow Hero still renders a sample graph from a restricted parser and uses demonstration runtime
+presentation. Its graph is not Styio semantic truth. For an explicitly configured workspace, the
+selected client launches the packaged Rust Agent through vityod, and `FlowHeroAgentOperationPort`
+routes standard ACP filesystem/terminal operations through the real path-bound `WorkbenchController`
+buffer, workspace document read/atomic transaction service, and vityod PTY. Revision-bound source
+proposals receive a correlated Apply/Reject decision. Pathless demonstration buffers remain
+unavailable. These operation paths do not make the canvas a semantic graph editor.
 
-The immediate integration target is one Agent-neutral operation path from ACP through the local
-daemon and shared dispatcher to open-buffer and owner services. The later full Flow Hero source/graph
-feature must converge on the canonical document, transaction, and Styio semantic owners; it must not
-make the canvas a second program store. `AppBootstrap` capability entries and protocol negotiation
-describe available wiring; they do not prove a user-facing feature is connected.
+The standard Agent-neutral process and operation route is implemented and has a fresh-binary
+initialize/session process check. The remaining Flow Hero feature milestone is full source/dock
+synchronization and Styio-backed graph semantics, supported rewires, and runtime mapping. The route
+must converge on canonical document, transaction, and Styio semantic owners; it must not make the
+canvas a second program store. Capability negotiation alone does not prove untested behavior.
 
 ## 1.4 Source Of Language And Project Truth
 
@@ -322,7 +322,11 @@ messages and all UI projections must be redacted and must never contain raw cred
 
 These IDE-owned components exist as reusable application and presentation surfaces. The vityod
 Agent host owns ACP processes and permission requests; standard ACP filesystem/terminal routing
-through the real Flow Hero buffers and vityod workspace/PTY owners remains in progress. See
+through the real Flow Hero buffers and vityod workspace/PTY owners is implemented and covered by
+deterministic integration tests. The Rust Agent process descriptor is selected only when the user
+has explicitly supplied a nonempty `VITYO_WORKSPACE`. Nonempty ACP `mcpServers` attachments remain
+unavailable and are explicitly rejected by the Rust Agent; migrated library modules do not imply a
+production attachment lifecycle. See
 [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) and
 [ADR-0022](../adr/ADR-0022-agent-neutral-operation-boundary.md) for the selected boundary and gaps.
 
@@ -338,7 +342,7 @@ Flow Hero remains an editor view over the shared Styio document. It does not own
 6. **Execution is a separate state.** Run effects are driven only by ordered runtime evidence for an execution and source revision. A graph overlay requires a source/semantic identity supplied by the owner. Replay and live stream must be distinguished; editing transitions are not runtime pulses.
 7. **Incremental rendering.** Preserve stable semantic identities, update only affected keyed nodes/edges, preserve manual positions, and animate those real projection deltas. Arrange the graph only at explicit/initial layout boundaries; do not relayout the whole graph on each keystroke. Preserve reduced-motion preferences and the Flow Hero visual baseline.
 
-This is the target architecture, not a claim that Flow Hero is already wired. The detailed semantic handoff remains owned by [Styio-Language-Service-Adapter-Contract.md](../external/for-styio/Styio-Language-Service-Adapter-Contract.md). Vyuh Node Flow is the current canvas candidate, subject to its reconnection cancellation/lock lifecycle and a visual/interaction parity proof. GraphView is limited to layout coordinates, not a second canvas renderer. Neither is adopted as a production dependency by this architecture/CI foundation. Preserve the independent `prototype/` asset.
+The path-bound file and Agent proposal operation route is current; the full source dock/full editor convergence, semantic graph, source rewrites, runtime mapping, and view-only graph editing remain target features. The detailed semantic handoff remains owned by [Styio-Language-Service-Adapter-Contract.md](../external/for-styio/Styio-Language-Service-Adapter-Contract.md). Vyuh Node Flow is the current canvas candidate, subject to its reconnection cancellation/lock lifecycle and a visual/interaction parity proof. GraphView is limited to layout coordinates, not a second canvas renderer. Neither is adopted as a production dependency by this architecture/CI foundation. Preserve the independent `prototype/` asset.
 
 ## 3. Platform Execution Matrix
 
@@ -367,7 +371,7 @@ The following implementation roots exist in the current checkout:
 5. `products/vityo_app/lib/src/view_ide/backend_toolchain/` and `view_ide/language/` — active backend/toolchain and language adapter/service implementations.
 6. `products/vityo_app/lib/src/view_render/` — Flutter presentation, including current isolated `flow_hero/` and the reusable IDE shell.
 7. `products/vityo_app/native/vityod/` — independent local workspace and process daemon.
-8. `products/vityo_coding_agent/` — selected independent Rust companion executable; runtime composition remains a delivery gap until its ReAct/tool/protocol path is exercised.
+8. `products/vityo_coding_agent/` — independent Rust companion executable with composed ReAct/provider/session/ACP runtime; the separate local process and Flow Hero operation join is exercised by deterministic tests.
 9. `packages/vityo_agent_protocol/` — shared Agent protocol.
 
 ## 6. Architecture Model And Generated Views

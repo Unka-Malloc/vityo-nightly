@@ -2,7 +2,7 @@
 
 **Purpose:** Select the default interaction pattern for the Vityo Coding Agent runtime.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Status:** Accepted
 
@@ -16,22 +16,30 @@ The IDE and its companion Agent have separate owners. The IDE owns source/worksp
 
 ReAct is an established Agent pattern that interleaves actions with observations from tools or the environment, allowing the next action to respond to current evidence. Plan-and-Execute makes a complete plan first, delegates steps to an executor, and replans when needed. The latter can reduce large-model calls for suitable multi-step work; the former is a simpler default when edits, diagnostics, permissions, and test results can change the next action.
 
-Current code is scaffolding, not a complete model-driven coding Agent:
+The production Rust runtime is composed in `products/vityo_coding_agent`: `main.rs` accepts the
+independent `--stdio-agent` entry plus explicit absolute provider and session paths, creates the
+application through `AgentApplication::from_paths`, and serves it through `AcpHost::run_stdio`.
+`orchestration::ReActRuntime::run_turn` carries assistant tool calls and their correlated results
+through subsequent turns. The runtime uses the concrete OpenAI-compatible streaming adapter,
+session event/effect journals, host-authorized ACP filesystem and terminal operations, explicit
+cancellation, and the revision-bound Vityo proposal extension. ACP stdio is also the GUI-independent
+control surface; there is no separate headless CLI.
 
-1. `AgentRuntime` delegates to `AgentSessionService`; that service asks `HostWorkspace.inspect` once and completes or rejects the host request.
-2. The CLI and stdio endpoint compose an `InMemoryHostWorkspace`. The configured session transport can therefore prove protocol connectivity without proving provider inference or real workspace tools.
-3. `CodingLoop` is a separate plan-first implementation. It requires `CodingPlanner.createPlan`, walks ready plan steps, proposes changes, and records validation/transaction facts. The repository contains no production `CodingPlanner` implementation connecting it to `AgentRuntime` or the stdio endpoint.
-4. The IDE can provide supervised sessions and revision-bound proposal/transaction surfaces, but the current Flow Hero route does not compose them.
+The provider adapter uses the pinned `async-openai` 0.42.1 chat-completion surface with native TLS and
+requires HTTPS in production. A nonsecret `provider.json` selects the compatible endpoint, model,
+limits, and a native credential-store reference; `--session-dir` is a separate required absolute
+path for the Agent-owned event/effect journals. The packaged client supplies both paths from the
+application-support directory. It does not put raw credentials in arguments, protocol messages, or
+durable session state.
 
-These are independent observations of current wiring. Selecting a target architecture does not make any of the missing runtime stages implemented.
-
-The current Rust Coding Agent package is a separate executable scaffold, not a composed provider/tool
-runtime. The selected implementation migrates the complete Coding Agent capability surface to Rust.
-It includes a real OpenAI-compatible streaming adapter configured by a nonsecret `--provider-config`
-file and native secret references. Deterministic verification uses the production adapter against a
-local HTTP/SSE fixture and exercises the actual executable; remote provider conversations remain
-separate live acceptance. The process and IDE operation boundary is recorded in
-[ADR-0022](./ADR-0022-agent-neutral-operation-boundary.md).
+The selected Rust runtime, packaged client descriptor, and client/daemon process join are now
+implemented. The fresh-binary process test reaches ACP initialize and session creation without a
+provider prompt; deterministic runtime/provider/operation tests exercise the product path without
+requiring a real conversation. Remote provider conversations and real development tasks remain
+separate live acceptance. Non-empty ACP `mcpServers` attachments are explicitly rejected with
+`-32003 MCP capability unavailable`; empty configuration is supported, and the presence of MCP
+library modules does not claim a production attachment lifecycle. The process and IDE operation
+boundary is recorded in [ADR-0022](./ADR-0022-agent-neutral-operation-boundary.md).
 
 ## Decision
 
@@ -66,21 +74,34 @@ The original ReAct work describes interleaving reasoning and actions to gather e
 
 ## Consequences
 
-1. Future production work connects an actual provider/model turn, authorized tool action, typed observation, task-state update, and the existing IDE proposal/transaction boundary in one deterministic-testable loop.
-2. Tests use fake model and tool ports, while exercising the real scheduler, permissions, cancellation, workspace revision handling, validation, and receipts. They do not call a real provider to claim deterministic engineering coverage.
-3. Plans and tool events are projections of runtime-owned task facts. A plan alone does not authorize a tool or workspace effect.
-4. The current plan-first `CodingLoop` may be changed when the approved runtime milestone implements this target. Its incomplete implementation does not create a compatibility obligation.
-5. Provider credentials and prompts remain inside the Agent runtime boundary; the Vityo IDE continues to communicate through the versioned Agent Protocol.
+1. The Rust runtime implements the provider/model turn, authorized tool action, typed observation,
+   task-state update, and IDE proposal/transaction boundary as one deterministic-testable loop.
+   Contract, cancellation, provider-transport, session-recovery, and executable-protocol tests
+   exercise these owners without a real provider conversation.
+2. The selected Flutter client descriptor launches the independently packaged Rust executable
+   through vityod. The fresh-binary process test covers initialize and session creation without a
+   provider request; it does not prove remote inference or a real development task.
+3. Plans and tool events are projections of runtime-owned task facts. A plan alone does not
+   authorize a tool or workspace effect.
+4. The former Dart inspect-once runtime and disconnected plan-first loop were removed in the Rust
+   cutover after their behavior and consumer coverage moved to Rust. They do not create a
+   compatibility obligation.
+5. Provider credentials and prompts remain inside the Agent runtime boundary; the Vityo IDE
+   continues to communicate through the versioned Agent Protocol.
 6. A real provider conversation remains separate live acceptance by the user's designated Agent.
 7. Rust owns the first-party executable and its provider/runtime implementation. The Flutter/Dart
    client and separate `vityod` daemon communicate through process protocols; this ADR does not
    select FRB or move Agent scheduling into the IDE.
+8. Production ACP MCP server attachment is unavailable while non-empty `mcpServers` are rejected;
+   this limitation is explicit and is not hidden by library support or an ignored configuration.
 
 ## Alternatives considered
 
 1. **Require Plan-and-Execute for every coding task:** rejected as the default because it adds a mandatory planning/execution split even for short interactive edits whose next step depends on new observations.
 2. **Build a new orchestration paradigm:** rejected because it would add new concepts without solving a requirement that the established ReAct loop, authorization boundaries, and revisable plan state do not already cover.
-3. **Treat current `CodingLoop` as completed Agent integration:** rejected because no production planner connects it to the runtime endpoint, and the endpoint's host inspection is not model-driven coding.
+3. **Treat the former Dart `CodingLoop` as completed Agent integration:** rejected because no
+   production planner connected it to the runtime endpoint, and the earlier endpoint's host
+   inspection was not model-driven coding.
 4. **Expose hidden reasoning as the user-visible trace:** rejected because workbench control needs actionable events, permissions, results, proposals, and validation evidence; it does not require raw private reasoning.
 
 ## Related records

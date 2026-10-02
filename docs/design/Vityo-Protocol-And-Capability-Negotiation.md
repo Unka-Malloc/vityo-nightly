@@ -3,7 +3,7 @@
 **Purpose:** Define versioning and capability-negotiation rules across Vityo adapter contracts and the IDE-to-Agent protocol without assigning model/provider ownership to the IDE.
 
 **Owner:** Adapter contracts owner (`CODEOWNERS` → adapter-contracts domain)
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ---
 
@@ -144,7 +144,9 @@ Compatible Agents use the same authorized capabilities. ACP v1 `fs/read_text_fil
 interaction. Vityo advertises these methods only when the IDE has a real scoped operation route.
 The client routes them through the typed local daemon session gateway and a neutral IDE dispatcher
 to the selected open-buffer, workspace transaction, and PTY owners. Source-aware atomic edits use
-the existing revision-bound Vityo proposal extension.
+the existing revision-bound Vityo proposal extension. The first-party runtime explicitly rejects
+nonempty ACP `mcpServers` on session creation/loading with `-32003 MCP capability unavailable`; the
+retained RMCP modules do not establish production server attachment.
 
 Ownership rules:
 

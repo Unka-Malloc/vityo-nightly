@@ -2,7 +2,7 @@
 
 **Purpose:** Define the stable ownership, state, process, and protocol boundaries between the Vityo IDE, compatible Agents, and the first-party Vityo Coding Agent companion runtime.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Status:** Current
 
@@ -12,10 +12,11 @@ Vityo is the user-facing Styio agent-native IDE. It remains a complete IDE when 
 and becomes agent-native by treating supervised Agent work as a first-class, reviewable workbench
 workflow.
 
-Vityo Coding Agent is the first-party companion runtime, with an independently executable Rust
-implementation selected for delivery. Its current Rust scaffold is not yet production-composed.
-Other compatible Agents use the same advertised operations and permission rules. The IDE never
-imports an Agent runtime implementation and never becomes a model-provider client.
+Vityo Coding Agent is the first-party companion runtime, implemented as an independently executable
+Rust ACP process. It composes the ReAct loop, concrete OpenAI-compatible streaming provider,
+authorized tools, effect/session journal, and cancellation. Other compatible Agents use the same
+advertised operations and permission rules. The IDE never imports an Agent runtime implementation
+and never becomes a model-provider client.
 
 The source-driven process diagram is maintained in [Vityo System Architecture](./Vityo-System-Architecture.md).
 This document owns the detailed Agent boundary and current implementation status.
@@ -87,8 +88,7 @@ Those responsibilities belong to the connected Agent runtime.
 
 ## 5. Context and Tool Flow
 
-The IDE exposes bounded context and capabilities through narrow protocol messages and an
-MCP-compatible host:
+The IDE exposes bounded context and capabilities through the versioned ACP operation boundary:
 
 1. Workspace roots are explicit, canonicalized, user-consented capabilities.
 2. Context items carry resource identity, revision, provenance, sensitivity, and truncation facts.
@@ -99,7 +99,9 @@ MCP-compatible host:
 6. Tool declarations and model text are requests to policy, never enforcement authority.
 
 An Agent runtime may decide which context and tools are relevant, but it cannot widen the IDE's
-exported roots, schemas, permissions, or capability set.
+exported roots, schemas, permissions, or capability set. The production first-party runtime does
+not yet attach configured MCP servers: nonempty ACP `mcpServers` on session creation/loading is
+rejected explicitly with `-32003 MCP capability unavailable`.
 
 ## 6. Change and Effect Flow
 
@@ -170,32 +172,36 @@ Platform transport differences do not move model/provider or Agent execution own
 
 ## 10. Current Implementation Status
 
-The ownership boundary is established in reusable components: Vityo has an Agent Client gateway
+The ownership boundary is composed through reusable components: Vityo has an Agent Client gateway
 (`products/vityo_app/lib/src/ide/agent_client`), daemon-owned ACP process supervision
 (`products/vityo_app/native/vityod/crates/vityod-agent-host`), collaboration projection
 (`products/vityo_app/lib/src/ide/workbench/agent_collaboration`), presentation Workbench
-(`products/vityo_app/lib/src/presentation/agent_workbench`), MCP/context export, and IDE-owned
-workspace transactions. Direct model-provider transport and Agent tool-loop ownership do not
-belong in the IDE. This component boundary does not prove every application route composes those
-services. In particular, `products/vityo_app/lib/main.dart` wraps the direct Flow Hero route in a
-first-frame delivery probe and still does not load `AppBootstrap` or `VityoApp`. Flow Hero's
-`WorkbenchController` has both pathless demo buffers and path-bound files; its local `File` open/save
-path does not equal the shared daemon document and transaction authority. ACP operations must
-resolve a real active workspace path and then use the matching buffer and owner services.
+(`products/vityo_app/lib/src/presentation/agent_workbench`), and IDE-owned workspace transactions.
+The normal `main.dart` route still starts `FlowHeroApp` directly rather than loading `AppBootstrap`
+or `VityoApp`. Its explicit-workspace Agent bridge now launches the packaged Rust executable through
+vityod and composes the real Flow Hero operation port. ACP filesystem requests read the active
+path-bound buffer and use daemon workspace/document CAS for persistence; terminal methods use the
+vityod PTY lifecycle. Pathless demo buffers remain unavailable. A fresh-binary process test covers
+ACP initialize and session creation without a provider prompt.
 
-The current Dart companion still has an inspect-once `AgentRuntime` and an uncomposed separate
-plan-first `CodingLoop`. The selected Rust executable scaffold is also not production-composed.
-The delivery target requires the complete ReAct/tool/policy/session path and a real
-OpenAI-compatible streaming adapter using nonsecret provider configuration and native secret
-references. Deterministic integration uses a local HTTP/SSE fixture; remote provider calls remain
-separate live acceptance. The interaction pattern is in
-[ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md), while the process and operation decision is
-in [ADR-0022](../adr/ADR-0022-agent-neutral-operation-boundary.md).
+The first-party runtime is implemented in Rust: `main.rs` composes `AgentApplication::from_paths`
+with `AcpHost::run_stdio`; `ReActRuntime::run_turn` runs the action/observation loop with the
+OpenAI-compatible streaming provider, typed tools, policy, cancellation, durable session/effect
+journal, and recovery. The application accepts only `--stdio-agent` with explicit absolute provider
+and session paths, plus help/version; ACP stdio is the headless interface. The former Dart
+inspect-once runtime and disconnected plan-first loop were removed by the Rust cutover and have no
+compatibility role. The interaction pattern is in [ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md),
+while the process and operation decision is in
+[ADR-0022](../adr/ADR-0022-agent-neutral-operation-boundary.md).
 
-The standard ACP filesystem/terminal owner path is incomplete until negotiated requests pass from
-the daemon poll through the neutral dispatcher to the actual buffer, transaction, and PTY owners and
-their results return to the Workbench. Full Styio graph semantics and source rewiring remain deferred
-because current language-service facts do not establish them.
+Standard ACP file and terminal operations, correlated permission choices, and revision-bound
+proposal Apply/Reject are implemented and deterministically covered. Standard file writes use
+runtime grants and workspace CAS; an explicit proposal uses its host-reviewed decision once and
+then returns the actual correlated transaction outcome. Full Styio graph semantics, supported
+rewires, and source/graph synchronization remain deferred because current language-service facts do
+not establish them. Nonempty production MCP server attachments are explicitly unavailable, despite
+the retained MCP library modules. Remote provider calls and real development tasks remain separate
+live acceptance.
 
 The remaining product-closure work is tracked in
 [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md): prove richer end-to-end Agent

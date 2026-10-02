@@ -2,7 +2,7 @@
 
 **Purpose:** Serve as the product-level source of truth for Vityo's positioning, hierarchy, users, invariants, capability domains, platform strategy, and acceptance boundary.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 **Status:** Current
 
@@ -197,14 +197,16 @@ and application of revisioned language edits.
 
 #### 8.1.1 Interactive Flow Hero
 
-Flow Hero is a visual editing surface over the same revisioned Styio document used by the full
-editor. Editing in its source dock updates that document immediately. Moving a node changes layout
-state; reconnecting a semantic edge requests a valid source edit from Styio and applies it through
-the IDE's revision-checked transaction path. Both views then render the accepted document revision.
-An Agent proposal follows the ordinary permission and review path. Transitions animate actual
-document, proposal, or runtime state changes, with their state identified accurately. The graph
-does not supply language semantics. Its visuals must preserve or improve the established Flow Hero
-baseline. The current entry point is not yet wired this way; see [ADR-0020](../adr/ADR-0020-source-authoritative-flow-hero.md).
+Flow Hero is intended to become a visual editing surface over the same revisioned Styio document
+used by the full editor. Its current direct route supports Agent-neutral standard file and terminal
+operations for an explicitly opened workspace: reads use the active path-bound buffer, writes use
+observed revisions and the workspace transaction, and source-aware proposals show a correlated
+Apply/Reject review. Pathless demonstration buffers remain unavailable. This does not yet provide
+full-editor/source-dock synchronization, semantic node movement, or edge rewiring: those require
+Styio-owned graph facts and valid rewire edits. The graph does not supply language semantics, and
+transitions must reflect actual proposal, document, or runtime events. The visuals must preserve or
+improve the established Flow Hero baseline; see
+[ADR-0020](../adr/ADR-0020-source-authoritative-flow-hero.md).
 
 Styio-owned services provide lexical, semantic, diagnostic, completion, hover, formatting,
 reference, refactor, compile, and runtime facts through explicit adapters. Unavailable facts produce
