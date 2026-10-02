@@ -172,32 +172,7 @@ jobs:
         id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}"
-            BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-              RANGE="HEAD^..HEAD"
-            else
-              BASE_REF="HEAD"
-              RANGE="HEAD"
-            fi
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-            else
-              BASE_REF="HEAD"
-            fi
-            RANGE="HEAD"
-          else
-            BASE_REF="${{ github.event.before }}"
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
 
       - name: Run Vityo nightly Windows CI gate
         working-directory: vityo-nightly

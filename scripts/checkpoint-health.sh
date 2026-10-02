@@ -69,11 +69,30 @@ done
 log "flutter analyze"
 (cd "$FLUTTER_DIR" && flutter analyze)
 
-log "repo hygiene policy tests"
-"$PYTHON_BIN" -m unittest tests.test_repo_hygiene_gate
-
 log "project coverage gate"
 "$PYTHON_BIN" scripts/project-coverage-gate.py --python-fail-under 95 --flutter-fail-under 85 --flutter-dir "$FLUTTER_DIR"
+
+log "deterministic IDE integration suites"
+IDE_SUITES=(
+  workspace-transactions
+  developer-loop
+  agent-client-protocol
+  mcp-host
+  ide-security
+  agent-workbench
+  quality-runtime
+  recovery-isolation
+)
+for suite in "${IDE_SUITES[@]}"; do
+  log "IDE suite: $suite"
+  "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite "$suite"
+done
+
+log "deterministic Coding Agent suite"
+"$PYTHON_BIN" scripts/vityo_quality.py \
+  --product coding-agent \
+  --suite full \
+  --receipt build/evidence/vityo-coding-agent-full.json
 
 log "release readiness static gate"
 "$PYTHON_BIN" scripts/release-readiness-gate.py --flutter-dir "$FLUTTER_DIR" --skip-build

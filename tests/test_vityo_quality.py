@@ -57,6 +57,10 @@ class VityoQualityTest(unittest.TestCase):
         "mcp_host",
         "ide_security",
         "agent_workbench",
+        "native_desktop",
+        "macos_native_ui",
+        "quality_runtime",
+        "recovery_isolation",
         "ide_quality",
     )
 
@@ -129,6 +133,89 @@ class VityoQualityTest(unittest.TestCase):
                     ) as run:
                         self.assertEqual(runner(), 9)
                 self.assertEqual(run.call_count, 1)
+
+    def test_suite_runner_command_paths_exist(self) -> None:
+        commands: list[tuple[list[str], Path]] = []
+        for name in self.suite_runners:
+            with mock.patch.object(
+                self.quality,
+                "tool",
+                side_effect=lambda tool_name: f"/tools/{tool_name}",
+            ):
+                with mock.patch.object(
+                    self.quality,
+                    "run",
+                    side_effect=lambda command, cwd, *_args: (
+                        commands.append((command, Path(cwd))) or 0
+                    ),
+                ):
+                    self.assertEqual(getattr(self.quality, name)(), 0)
+
+        for command, cwd in commands:
+            for argument in command:
+                if argument.startswith("-") or not argument.endswith(
+                    (".dart", ".py", ".toml")
+                ):
+                    continue
+                source_path = Path(argument)
+                if not source_path.is_absolute():
+                    source_path = cwd / source_path
+                with self.subTest(command=command, source=source_path.name):
+                    self.assertTrue(source_path.is_file(), str(source_path))
+
+    def test_app_integration_tests_are_mapped_to_executable_suites(self) -> None:
+        product = self.quality.ROOT / "products" / "vityo_app"
+        integration_dir = product / "integration_test"
+        runner_source = SCRIPT_PATH.read_text(encoding="utf-8")
+
+        for test_path in sorted(integration_dir.glob("*.dart")):
+            with self.subTest(integration_test=test_path.name):
+                if test_path.name.endswith("_native_ui_test.dart"):
+                    self.assertIn("*_native_ui_test.dart", runner_source)
+                else:
+                    self.assertIn(test_path.name, runner_source)
+
+        macos_paths = self.quality._macos_native_ui_test_paths(product)
+        self.assertEqual(len(macos_paths), 14)
+        self.assertTrue(all(path.is_file() for path in macos_paths))
+
+    def test_macos_native_ui_runner_targets_all_macos_integration_tests(self) -> None:
+        with mock.patch.object(
+            self.quality,
+            "_host_platform",
+            return_value="macos",
+        ):
+            with mock.patch.object(
+                self.quality,
+                "tool",
+                return_value="/tools/flutter",
+            ):
+                with mock.patch.object(
+                    self.quality,
+                    "run",
+                    return_value=0,
+                ) as run:
+                    self.assertEqual(self.quality.macos_native_ui(), 0)
+
+        product = self.quality.ROOT / "products" / "vityo_app"
+        expected_paths = self.quality._macos_native_ui_test_paths(product)
+        self.assertEqual(run.call_count, len(expected_paths))
+        for call, test_path in zip(run.call_args_list, expected_paths, strict=True):
+            command, cwd = call.args[:2]
+            self.assertEqual(
+                command[:5],
+                ["/tools/flutter", "test", "--no-pub", "-d", "macos"],
+            )
+            self.assertEqual(cwd, product)
+            self.assertEqual(command[5], str(test_path.relative_to(product)))
+
+        with mock.patch.object(
+            self.quality,
+            "_host_platform",
+            return_value="windows",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "require a macOS host"):
+                self.quality.macos_native_ui()
 
     def test_formal_quality_lane_owns_one_complete_flutter_test(self) -> None:
         with mock.patch.object(
@@ -1099,6 +1186,10 @@ class VityoQualityTest(unittest.TestCase):
             ("ide", "mcp-host", "mcp_host"),
             ("ide", "ide-security", "ide_security"),
             ("ide", "agent-workbench", "agent_workbench"),
+            ("ide", "native-desktop", "native_desktop"),
+            ("ide", "macos-native-ui", "macos_native_ui"),
+            ("ide", "quality-runtime", "quality_runtime"),
+            ("ide", "recovery-isolation", "recovery_isolation"),
             ("ide", "ide-quality", "ide_quality"),
             ("ide", "full", "ide_full"),
         )

@@ -33,30 +33,17 @@ COVERAGE_OMIT = [
     "scripts/supply-chain-governance-gate.py",
     "scripts/vityo-product-gate.py",
 ]
-TEST_MODULES = (
-    "tests.test_repo_hygiene_gate",
-    "tests.test_architecture_boundaries",
-    "tests.test_release_readiness_gate",
-    "tests.test_ecosystem_cli_doc_gate",
-    "tests.test_ecosystem_product_gate",
-    "tests.test_delivery_gate_product_policy",
-    "tests.test_web_preview_security",
-    "tests.test_record_product_matrix_evidence",
-    "tests.test_package_nightly",
-    "tests.test_docs_tooling_coverage",
-    "tests.test_repo_hygiene_coverage",
-    "tests.test_python_coverage_gate",
-    "tests.test_project_coverage_gate",
-    "tests.test_run_native_pty_matrix",
-    "tests.test_vityo_quality",
-    "tests.test_vityo_validation_receipt",
-    "tests.test_performance_budgets",
-    "tests.test_dependency_policy_gate",
-    "tests.test_supply_chain_governance_gate",
-    "tests.test_linux_host_readiness_gate",
-    "tests.test_linux_packaging_gate",
-    "tests.acceptance.vityo_app.vityod_packaging_acceptance_test",
-    "prototype.test_dev_server_security",
+UNIT_TEST_DISCOVERY = (
+    ("tests", "test_*.py"),
+    ("tests/acceptance/vityo_app", "*_test.py"),
+    ("prototype", "test_*.py"),
+)
+STANDALONE_TEST_SCRIPTS = (
+    "tests/acceptance/product_lines/cutover_acceptance_test.py",
+    "tests/acceptance/vityo_app/desktop_evidence_binding_acceptance_test.py",
+    "tests/acceptance/vityo_coding_agent/final_fingerprint_acceptance_test.py",
+    "tests/acceptance/vityo_coding_agent/full_runner_acceptance_test.py",
+    "tests/acceptance/vityo_coding_agent/pure_release_evaluation_acceptance_test.py",
 )
 
 
@@ -86,20 +73,42 @@ def run_gate(fail_under: int) -> int:
 
     omit_flag = ["--omit", ",".join(COVERAGE_OMIT)] if COVERAGE_OMIT else []
 
-    commands = (
-        [sys.executable, "-m", "coverage", "erase"],
-        [
-            sys.executable,
-            "-m",
-            "coverage",
-            "run",
+    def coverage_run(test_command: list[str], *, append: bool) -> list[str]:
+        command = [sys.executable, "-m", "coverage", "run"]
+        if append:
+            command.append("--append")
+        return [
+            *command,
             "--source",
             SOURCE_SCOPE,
             *omit_flag,
-            "-m",
-            "unittest",
-            *TEST_MODULES,
-        ],
+            *test_command,
+        ]
+
+    commands = [[sys.executable, "-m", "coverage", "erase"]]
+    for index, (start_directory, pattern) in enumerate(UNIT_TEST_DISCOVERY):
+        commands.append(
+            coverage_run(
+                [
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "--start-directory",
+                    start_directory,
+                    "--pattern",
+                    pattern,
+                ],
+                append=index > 0,
+            )
+        )
+    for script in STANDALONE_TEST_SCRIPTS:
+        commands.append(
+            coverage_run(
+                [script],
+                append=True,
+            )
+        )
+    commands.append(
         [
             sys.executable,
             "-m",
@@ -110,7 +119,7 @@ def run_gate(fail_under: int) -> int:
             *omit_flag,
             "--fail-under",
             str(fail_under),
-        ],
+        ]
     )
     for command in commands:
         code = run_command(command)

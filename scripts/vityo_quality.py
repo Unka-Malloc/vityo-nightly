@@ -723,6 +723,91 @@ def agent_workbench() -> int:
     return 0
 
 
+def _native_desktop_test_command(flutter: str) -> list[str]:
+    return [
+        flutter,
+        "test",
+        "--no-pub",
+        "-d",
+        _host_platform(),
+        "integration_test/vityod_reconnect_test.dart",
+    ]
+
+
+def native_desktop() -> int:
+    flutter = tool("flutter")
+    return run(
+        _native_desktop_test_command(flutter),
+        ROOT / "products" / "vityo_app",
+    )
+
+
+def _macos_native_ui_test_paths(product: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    integration_tests = product / "integration_test"
+    discovered = tuple(sorted(integration_tests.glob("*_native_ui_test.dart")))
+    platform_specific = (
+        integration_tests / "editor_native_input_test.dart",
+        integration_tests / "platform_secure_credential_storage_test.dart",
+        integration_tests / "workbench_visual_capture_test.dart",
+    )
+    return (*discovered, *platform_specific)
+
+
+def macos_native_ui() -> int:
+    if _host_platform() != "macos":
+        raise RuntimeError("macOS-native IDE integration tests require a macOS host")
+    flutter = tool("flutter")
+    product = ROOT / "products" / "vityo_app"
+    for test_path in _macos_native_ui_test_paths(product):
+        result = run(
+            [
+                flutter,
+                "test",
+                "--no-pub",
+                "-d",
+                "macos",
+                str(test_path.relative_to(product)),
+            ],
+            product,
+        )
+        if result:
+            return result
+    return 0
+
+
+def _quality_runtime_test_command(flutter: str) -> list[str]:
+    return [
+        flutter,
+        "test",
+        "--no-pub",
+        "../../tests/acceptance/vityo_app/quality_runtime_acceptance_test.dart",
+    ]
+
+
+def quality_runtime() -> int:
+    flutter = tool("flutter")
+    return run(
+        _quality_runtime_test_command(flutter),
+        ROOT / "products" / "vityo_app",
+    )
+
+
+def _recovery_isolation_command(dart: str) -> list[str]:
+    return [
+        dart,
+        "--packages=.dart_tool/package_config.json",
+        "integration_test/recovery_isolation_test.dart",
+    ]
+
+
+def recovery_isolation() -> int:
+    dart = tool("dart")
+    return run(
+        _recovery_isolation_command(dart),
+        ROOT / "products" / "vityo_app",
+    )
+
+
 def ide_quality() -> int:
     cargo = tool("cargo")
     dart = tool("dart")
@@ -730,7 +815,6 @@ def ide_quality() -> int:
     product = ROOT / "products" / "vityo_app"
     daemon = product / "native" / "vityod"
     daemon_protocol = ROOT / "packages" / "vityo_daemon_protocol"
-    desktop_target = _host_platform()
     commands = (
         (
             [
@@ -746,14 +830,7 @@ def ide_quality() -> int:
         ([dart, "analyze"], daemon_protocol),
         ([dart, "test"], daemon_protocol),
         (
-            [
-                flutter,
-                "test",
-                "--no-pub",
-                "-d",
-                desktop_target,
-                "integration_test/vityod_reconnect_test.dart",
-            ],
+            _native_desktop_test_command(flutter),
             product,
         ),
         (
@@ -783,11 +860,7 @@ def ide_quality() -> int:
             product,
         ),
         (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "integration_test/recovery_isolation_test.dart",
-            ],
+            _recovery_isolation_command(dart),
             product,
         ),
         (
@@ -800,13 +873,7 @@ def ide_quality() -> int:
             ROOT,
         ),
         (
-            [
-                flutter,
-                "test",
-                "--no-pub",
-                "../../tests/acceptance/vityo_app/"
-                "quality_runtime_acceptance_test.dart",
-            ],
+            _quality_runtime_test_command(flutter),
             product,
         ),
         (
@@ -1461,6 +1528,14 @@ def main() -> int:
         return ide_security()
     if (args.product, args.suite) == ("ide", "agent-workbench"):
         return agent_workbench()
+    if (args.product, args.suite) == ("ide", "native-desktop"):
+        return native_desktop()
+    if (args.product, args.suite) == ("ide", "macos-native-ui"):
+        return macos_native_ui()
+    if (args.product, args.suite) == ("ide", "quality-runtime"):
+        return quality_runtime()
+    if (args.product, args.suite) == ("ide", "recovery-isolation"):
+        return recovery_isolation()
     if (args.product, args.suite) == ("ide", "ide-quality"):
         return ide_quality()
     if (args.product, args.suite) == ("ide", "full"):

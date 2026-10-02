@@ -40,6 +40,72 @@ class ProjectCoverageGateTest(unittest.TestCase):
         )
         self.assertNotIn('(cd "$FLUTTER_DIR" && flutter test)', script)
 
+    def test_checkpoint_health_reaches_portable_product_suites(self) -> None:
+        script = (REPO_ROOT / "scripts/checkpoint-health.sh").read_text(
+            encoding="utf-8"
+        )
+        for suite in (
+            "workspace-transactions",
+            "developer-loop",
+            "agent-client-protocol",
+            "mcp-host",
+            "ide-security",
+            "agent-workbench",
+            "quality-runtime",
+            "recovery-isolation",
+        ):
+            self.assertIn(f"  {suite}\n", script)
+        self.assertIn(
+            '"$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite "$suite"',
+            script,
+        )
+        self.assertIn(
+            '--product coding-agent \\\n  --suite full \\\n  --receipt build/evidence/vityo-coding-agent-full.json',
+            script,
+        )
+        self.assertNotIn("native-desktop", script)
+
+    def test_native_integration_is_reachable_on_each_host_matrix(self) -> None:
+        workflow = (
+            REPO_ROOT / ".github/workflows/local-ci-gate.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(workflow.count("--product ide --suite native-desktop"), 2)
+        self.assertEqual(workflow.count("--product ide --suite macos-native-ui"), 1)
+        self.assertIn("runs-on: ubuntu-latest", workflow)
+        self.assertIn("runs-on: windows-latest", workflow)
+        self.assertIn("runs-on: macos-latest", workflow)
+        linux_job = workflow.split("  windows-native:", 1)[0]
+        windows_job = workflow.split("  windows-native:", 1)[1].split(
+            "  macos-native:", 1
+        )[0]
+        self.assertNotIn("ilammy/msvc-dev-cmd", linux_job)
+        self.assertNotIn("--suite native-desktop", windows_job)
+        self.assertNotIn("--suite macos-native-ui", windows_job)
+
+    def test_event_refs_are_resolved_for_every_declared_event(self) -> None:
+        workflow = (
+            REPO_ROOT / ".github/workflows/local-ci-gate.yml"
+        ).read_text(encoding="utf-8")
+        refs_script = "scripts/resolve-ci-refs.py"
+
+        self.assertEqual(workflow.count(refs_script), 3)
+        for event_name in (
+            "schedule",
+            "pull_request",
+            "push",
+            "merge_group",
+            "workflow_dispatch",
+        ):
+            self.assertIn(f"  {event_name}:", workflow.split("jobs:", 1)[0])
+
+        for path in ("windows-native.yml", "repo-hygiene.yml"):
+            source = (REPO_ROOT / ".github/workflows" / path).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(refs_script, source)
+            self.assertNotIn("github.event.before", source)
+
     def test_ci_installs_coverage_and_uploads_reports(self) -> None:
         workflow = (REPO_ROOT / ".github/workflows/local-ci-gate.yml").read_text(encoding="utf-8")
 

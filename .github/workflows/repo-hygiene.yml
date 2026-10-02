@@ -105,15 +105,12 @@ jobs:
         working-directory: vityo-nightly
         run: python3 scripts/ecosystem-cli-doc-gate.py --require-workspace --json --non-blocking
 
-      - name: Check incoming history range
+      - name: Resolve CI refs
+        id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            RANGE="HEAD"
-          else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-          python3 scripts/repo-hygiene-gate.py --mode push --range "$RANGE"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
+
+      - name: Check incoming history range
+        working-directory: vityo-nightly
+        run: python3 scripts/repo-hygiene-gate.py --mode push --range "${{ steps.ci_refs.outputs.range }}"

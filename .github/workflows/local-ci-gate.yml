@@ -79,11 +79,6 @@ jobs:
         with:
           flutter-version: ${{ env.VITYO_FLUTTER_VERSION }}
 
-      - name: Set up MSVC command environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756  # v1
-        with:
-          arch: x64
-
       - name: Install CI Chrome
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
@@ -161,33 +156,7 @@ jobs:
         id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}"
-            BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-              RANGE="HEAD^..HEAD"
-            else
-              BASE_REF="HEAD"
-              RANGE="HEAD"
-            fi
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-            else
-              BASE_REF="HEAD"
-            fi
-            RANGE="HEAD"
-          else
-            BASE_REF="${{ github.event.before }}"
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-
-          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
 
       - name: Run Vityo nightly Linux CI gate
         working-directory: vityo-nightly
@@ -207,6 +176,12 @@ jobs:
           --base "${{ steps.ci_refs.outputs.base_ref }}"
           --range "${{ steps.ci_refs.outputs.range }}"
           --skip-audit
+
+      - name: Run deterministic Linux IDE integration
+        working-directory: vityo-nightly
+        shell: bash
+        run: >-
+          "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite native-desktop
 
       - name: Validate pinned Linux developer-loop report
         working-directory: vityo-nightly
@@ -473,33 +448,7 @@ jobs:
         id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}"
-            BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-              RANGE="HEAD^..HEAD"
-            else
-              BASE_REF="HEAD"
-              RANGE="HEAD"
-            fi
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-            else
-              BASE_REF="HEAD"
-            fi
-            RANGE="HEAD"
-          else
-            BASE_REF="${{ github.event.before }}"
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-
-          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
 
       - name: Run Vityo nightly Windows CI gate
         shell: bash
@@ -740,33 +689,7 @@ jobs:
         id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}"
-            BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-              RANGE="HEAD^..HEAD"
-            else
-              BASE_REF="HEAD"
-              RANGE="HEAD"
-            fi
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-            else
-              BASE_REF="HEAD"
-            fi
-            RANGE="HEAD"
-          else
-            BASE_REF="${{ github.event.before }}"
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-
-          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
 
       - name: Run Vityo nightly macOS CI gate
         working-directory: vityo-nightly
@@ -786,6 +709,18 @@ jobs:
           --base "${{ steps.ci_refs.outputs.base_ref }}"
           --range "${{ steps.ci_refs.outputs.range }}"
           --skip-audit
+
+      - name: Run deterministic macOS IDE integration
+        working-directory: vityo-nightly
+        shell: bash
+        run: >-
+          "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite native-desktop
+
+      - name: Run macOS-native IDE integration tests
+        working-directory: vityo-nightly
+        shell: bash
+        run: >-
+          "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite macos-native-ui
 
       - name: Validate pinned macOS developer-loop report
         working-directory: vityo-nightly
