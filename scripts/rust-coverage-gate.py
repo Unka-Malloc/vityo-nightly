@@ -173,16 +173,28 @@ def parse_lcov(text: str, product: str) -> tuple[CoverageReport, str]:
         hit_value = record.get("hit")
         if not isinstance(found_value, int) or not isinstance(hit_value, int):
             raise ValueError(f"LCOV line summary is missing in source record {record_number}")
-        if found_value != len(line_hits):
-            raise ValueError(f"LCOV line data is incomplete in source record {record_number}")
-        actual_hits = sum(1 for hits in line_hits.values() if hits > 0)
-        if hit_value != actual_hits or hit_value > found_value:
-            raise ValueError(f"LCOV hit summary is inconsistent in source record {record_number}")
+        # The itemized DA records are the authority for line coverage: recent
+        # LLVM releases compute LF/LH over a different instrumented-line set, so
+        # the summaries are only validated as plausible and then rewritten.
+        itemized_found = len(line_hits)
+        itemized_hit = sum(1 for hits in line_hits.values() if hits > 0)
+        if hit_value > found_value:
+            raise ValueError(
+                f"LCOV line summary is inconsistent in source record {record_number}"
+            )
+        found_index = record.get("found_index")
+        if isinstance(found_index, int):
+            output_lines[found_index] = f"LF:{itemized_found}"
+        hit_index = record.get("hit_index")
+        if isinstance(hit_index, int):
+            output_lines[hit_index] = f"LH:{itemized_hit}"
         if source_path in seen_paths:
             raise ValueError("LCOV contains a duplicate first-party source record")
         seen_paths.add(source_path)
         uncovered = tuple(sorted(line for line, hits in line_hits.items() if hits == 0))
-        sources.append(SourceCoverage(source_path, found_value, hit_value, uncovered))
+        sources.append(
+            SourceCoverage(source_path, itemized_found, itemized_hit, uncovered)
+        )
         record = None
 
     for line in text.splitlines():
@@ -236,6 +248,7 @@ def parse_lcov(text: str, product: str) -> tuple[CoverageReport, str]:
             record[field] = _parse_nonnegative_int(
                 line[3:], field=field, record=record_number + 1
             )
+            record[f"{field}_index"] = len(output_lines)
             output_lines.append(line)
         else:
             output_lines.append(line)
@@ -398,8 +411,11 @@ def evaluate_product(
     source = report_path(product, output_dir)
     try:
         raw_report = source.read_text(encoding="utf-8")
-        parsed, normalized = parse_lcov(raw_report, product)
-        if raw_report != normalized:
+        parsed, _ = parse_lcov(raw_report, product)
+        raw_labels = [
+            line[3:] for line in raw_report.splitlines() if line.startswith("SF:")
+        ]
+        if raw_labels != [entry.path for entry in parsed.sources]:
             raise ValueError("LCOV source labels are not repository-relative")
         module_results = (
             validate_required_modules(parsed, required_modules)

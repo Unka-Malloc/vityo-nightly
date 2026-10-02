@@ -73,7 +73,10 @@ class RustCoverageGateTest(unittest.TestCase):
             output_path = command[command.index("--output-path") + 1]
             destination = self.root / output_path
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(lcov_record(source, [(1, 1), (2, 0)]), encoding="utf-8")
+            destination.write_text(
+                f"TN:\nSF:{source}\nDA:1,1\nDA:2,0\nLF:4\nLH:3\nend_of_record\n",
+                encoding="utf-8",
+            )
             return SimpleNamespace(returncode=0)
 
         with mock.patch.object(self.gate.shutil, "which", return_value="/tool/bin/tool"):
@@ -107,6 +110,7 @@ class RustCoverageGateTest(unittest.TestCase):
             written = self.gate.report_path(product, self.output_dir).read_text(encoding="utf-8")
             self.assertIn(f"SF:{self.gate.PRODUCTS[product]['workspace_root']}/", written)
             self.assertNotIn(str(self.root), written)
+            self.assertIn("LF:2\nLH:1\n", written)
 
     def test_collection_runs_only_the_selected_product_once(self) -> None:
         calls: list[list[str]] = []
@@ -314,7 +318,7 @@ class RustCoverageGateTest(unittest.TestCase):
 
         destination = self._write_report(
             "coding-agent",
-            "TN:\nSF:products/vityo_coding_agent/src/lib.rs\nDA:1,1\nLF:2\nLH:1\nend_of_record\n",
+            "TN:\nSF:products/vityo_coding_agent/src/lib.rs\nDA:1,1\nLF:1\nLH:2\nend_of_record\n",
         )
         with redirect_stderr(io.StringIO()):
             malformed = self.gate.evaluate_product(
@@ -347,6 +351,37 @@ class RustCoverageGateTest(unittest.TestCase):
                 "coding-agent", self.output_dir, fail_under=50, required_modules=[]
             )
         self.assertEqual(below, 1)
+
+    def test_summaries_that_exceed_the_itemized_lines_report_itemized_coverage(
+        self,
+    ) -> None:
+        # LLVM releases summarize instrumented lines in LF/LH without itemizing
+        # every one of them in DA records. The itemized lines stay authoritative,
+        # so such a report is valid and its written form stays self-consistent.
+        destination = self._write_report(
+            "coding-agent",
+            "TN:\n"
+            f"SF:{self._first_party_path('coding-agent', 'src/lib.rs')}\n"
+            "DA:1,1\nDA:2,0\nDA:5,3\n"
+            "LF:5\nLH:4\nend_of_record\n",
+        )
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            result = self.gate.evaluate_product(
+                "coding-agent", self.output_dir, fail_under=60, required_modules=[]
+            )
+        self.assertEqual(result, 0)
+        self.assertIn(
+            "coding-agent: 66.67% lines (2/3); 1 uncovered", stdout.getvalue()
+        )
+        # Verification reads the report; it never rewrites the collected file.
+        self.assertEqual(
+            destination.read_text(encoding="utf-8"),
+            "TN:\n"
+            f"SF:{self._first_party_path('coding-agent', 'src/lib.rs')}\n"
+            "DA:1,1\nDA:2,0\nDA:5,3\n"
+            "LF:5\nLH:4\nend_of_record\n",
+        )
 
     def test_optional_threshold_has_no_implicit_percentage_floor(self) -> None:
         self._write_report(
