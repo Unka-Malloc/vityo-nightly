@@ -35,6 +35,12 @@ REQUIRED_GATE_SCRIPTS = (
     Path("scripts/vityo_privacy.py"),
 )
 
+REQUIRED_POLICY_SOURCES = (
+    Path("scripts/vityo_rust_notices.py"),
+    Path("toolchain/licenses/about.toml"),
+    Path("toolchain/licenses/third-party-notices.txt.hbs"),
+)
+
 REQUIRED_WORKFLOW_COMMANDS = {
     Path(".github/workflows/audit.yml"): (
         "scripts/check_security_baseline.py",
@@ -392,6 +398,15 @@ def check_policy_surfaces(root: Path) -> list[CheckResult]:
         results.append(
             CheckResult(
                 f"governance gate script: {path}",
+                exists,
+                "present" if exists else "missing",
+            )
+        )
+    for path in REQUIRED_POLICY_SOURCES:
+        exists = (root / path).is_file()
+        results.append(
+            CheckResult(
+                f"policy source: {path}",
                 exists,
                 "present" if exists else "missing",
             )

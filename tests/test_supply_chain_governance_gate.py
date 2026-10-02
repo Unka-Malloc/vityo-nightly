@@ -122,6 +122,8 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
         self._write_file(root, "products/vityo_app/native/vityod/Cargo.toml")
         for script in self.gate.REQUIRED_GATE_SCRIPTS:
             self._write_file(root, script.as_posix(), "#!/usr/bin/env python3\n")
+        for source in self.gate.REQUIRED_POLICY_SOURCES:
+            self._write_file(root, source.as_posix(), "placeholder\n")
 
     def test_minimal_governance_tree_passes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="supply-chain-", dir=REPO_ROOT) as tmp_name:
@@ -132,6 +134,19 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
 
         failures = [result for result in results if not result.ok and result.severity == "error"]
         self.assertEqual(failures, [])
+
+    def test_rust_notice_generator_sources_are_required(self) -> None:
+        for source in self.gate.REQUIRED_POLICY_SOURCES:
+            with self.subTest(source=source):
+                with tempfile.TemporaryDirectory(prefix="supply-chain-notices-") as tmp_name:
+                    root = Path(tmp_name)
+                    self._write_minimal_tree(root)
+                    (root / source).unlink()
+
+                    results = self.gate.check_policy_surfaces(root)
+
+                failed_names = {result.name for result in results if not result.ok}
+                self.assertIn(f"policy source: {source}", failed_names)
 
     def test_workflow_security_rejects_write_permissions_and_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory(prefix="supply-chain-", dir=REPO_ROOT) as tmp_name:
