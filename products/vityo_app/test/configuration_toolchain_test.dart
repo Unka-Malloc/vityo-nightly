@@ -3418,7 +3418,14 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ),
       );
 
-      expect(health.healthy, isTrue);
+      expect(
+        health.healthy,
+        isTrue,
+        reason:
+            'status=${health.status} message=${health.message} '
+            'exit=${health.processResult?.exitCode} '
+            'stderr=${health.processResult?.stderr}',
+      );
       expect(health.processResult?.stdout, 'managed-health');
       expect(response.status, StyioServiceStatus.succeeded);
       expect(response.toolchainId, 'printf-styio');
