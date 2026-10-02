@@ -45,7 +45,7 @@ class VityoDeliveryTest(unittest.TestCase):
             "build/custom-evidence/vityo-coding-agent-full.json",
         )
 
-    def test_stage_builds_current_daemon_before_ide_suites(self) -> None:
+    def test_stage_builds_current_agent_and_daemon_before_ide_suites(self) -> None:
         options = self.delivery.DeliveryOptions(platform="macos")
         commands: list[tuple[str, ...]] = []
 
@@ -78,6 +78,17 @@ class VityoDeliveryTest(unittest.TestCase):
             set(self.delivery.PORTABLE_IDE_SUITES),
         )
         self.assertEqual(len(suite_runs), 9)
+        agent_build = (
+            "cargo",
+            "build",
+            "--locked",
+            "--manifest-path",
+            "products/vityo_coding_agent/Cargo.toml",
+            "--bin",
+            "vityo-coding-agent",
+            "--target-dir",
+            "products/vityo_coding_agent/target",
+        )
         daemon_build = (
             "cargo",
             "build",
@@ -86,13 +97,19 @@ class VityoDeliveryTest(unittest.TestCase):
             "products/vityo_app/native/vityod/crates/vityod/Cargo.toml",
             "--bin",
             "vityod",
+            "--target-dir",
+            "products/vityo_app/native/vityod/target",
         )
         self.assertEqual(
             [command for command in commands if command[:2] == ("cargo", "build")],
-            [daemon_build],
+            [agent_build, daemon_build],
         )
         self.assertLess(
             commands.index(coverage_runs[0]),
+            commands.index(agent_build),
+        )
+        self.assertLess(
+            commands.index(agent_build),
             commands.index(daemon_build),
         )
         self.assertLess(

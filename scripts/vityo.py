@@ -581,6 +581,20 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
         Command("Flutter analysis", (flutter, "analyze"), ROOT / options.flutter_dir),
         Command("Python, Flutter, Agent, and daemon test/coverage collection", _project_coverage_command(options, collect_only=True)),
         Command(
+            "Build current Coding Agent executable for process integration tests",
+            (
+                "cargo",
+                "build",
+                "--locked",
+                "--manifest-path",
+                "products/vityo_coding_agent/Cargo.toml",
+                "--bin",
+                "vityo-coding-agent",
+                "--target-dir",
+                "products/vityo_coding_agent/target",
+            ),
+        ),
+        Command(
             "Build current vityod executable for Dart integration tests",
             (
                 "cargo",
@@ -590,6 +604,8 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
                 "products/vityo_app/native/vityod/crates/vityod/Cargo.toml",
                 "--bin",
                 "vityod",
+                "--target-dir",
+                "products/vityo_app/native/vityod/target",
             ),
         ),
     ]
