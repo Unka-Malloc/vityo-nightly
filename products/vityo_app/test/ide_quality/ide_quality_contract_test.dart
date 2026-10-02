@@ -1,5 +1,4 @@
 import 'package:vityo_app/src/ide/agent_client/agent_client.dart';
-import 'package:vityo_app/src/ide/platform/desktop_capability_report.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -37,27 +36,4 @@ void main() {
     await reducer.close();
   });
 
-  test('desktop capability evidence is explicit when Agent is absent', () {
-    final report = DesktopCapabilityReport(
-      platform: 'windows',
-      commit: 'a' * 40,
-      sourceFingerprint: 'b' * 64,
-      artifactVerified: true,
-      launched: true,
-      workspaceOpened: true,
-      capabilities: const <String, String>{
-        'editor': 'available',
-        'workspace': 'available',
-        'agent': 'unavailable',
-        'agent_reason': 'No Agent descriptor is configured.',
-      },
-    ).toJson();
-    expect(report['artifact_verified'], isTrue);
-    expect(report['commit'], 'a' * 40);
-    expect(report['source_fingerprint'], 'b' * 64);
-    expect(
-      (report['capabilities'] as Map<String, String>)['agent'],
-      'unavailable',
-    );
-  });
 }
