@@ -11,7 +11,6 @@ import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 import '../../ide/editor/document/document_state.dart';
 import '../../ide/agent_client/agent_client_operations.dart';
 import '../../ide/local_service/vityod_client.dart';
-import '../../ide/workspace/workspace_document_store_io.dart';
 import '../../ide/workspace/workspace_document_store_types.dart';
 import 'engine/machine.dart';
 

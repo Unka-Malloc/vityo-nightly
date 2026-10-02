@@ -10,7 +10,6 @@ import 'package:vityo_app/src/ide/agent_client/agent_client_operations.dart';
 import 'package:vityo_app/src/ide/agent_client/agent_client_registry.dart';
 import 'package:vityo_app/src/ide/editor/document/document_state.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
-import 'package:vityo_app/src/ide/workspace/workspace_document_store_io.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_document_store_types.dart';
 import 'package:vityo_app/src/view_render/flow_hero/agent_bridge.dart';
 import 'package:vityo_app/src/view_render/flow_hero/agent_operations.dart';

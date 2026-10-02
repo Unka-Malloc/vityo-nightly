@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/ide/editor/document_state.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_workspace_search_provider.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_document_store_io.dart';
+import 'package:vityo_app/src/ide/workspace/workspace_document_store_types.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/file_system/file_system.dart';
 
 import '../support/vityod_test_harness.dart';

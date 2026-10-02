@@ -15,6 +15,15 @@ abstract class WorkspaceDocumentStore {
   String? filePathForDocumentId(String documentId);
 }
 
+final class VityodWorkspaceStoreFailure implements Exception {
+  const VityodWorkspaceStoreFailure(this.code);
+
+  final String code;
+
+  @override
+  String toString() => 'VityodWorkspaceStoreFailure($code)';
+}
+
 abstract interface class AtomicWorkspaceDocumentStore
     implements WorkspaceDocumentStore {
   /// Atomically commits the supplied source snapshots only when every current

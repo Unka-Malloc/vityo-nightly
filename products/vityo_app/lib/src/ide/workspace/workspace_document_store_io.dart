@@ -321,15 +321,6 @@ final class VityodWorkspaceDocumentStore
   String relativeDocumentPath(String path) => _relativePath(path);
 }
 
-final class VityodWorkspaceStoreFailure implements Exception {
-  const VityodWorkspaceStoreFailure(this.code);
-
-  final String code;
-
-  @override
-  String toString() => 'VityodWorkspaceStoreFailure($code)';
-}
-
 void _throwIfError(VityodControlEnvelope response) {
   if (!response.method.endsWith('.error')) return;
   final code = response.params['errorCode'];

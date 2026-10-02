@@ -56,6 +56,8 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "ide/editor/selection_state.dart",
     "ide/agent_client/agent_client_models.dart",
     "ide/agent_client/agent_client_registry.dart",
+    "ide/agent_client/agent_client_operations.dart",
+    "ide/agent_client/agent_launch_paths.dart",
     "view_ide/environment/configuration/configuration.dart",
     "view_ide/environment/configuration/vityo_theme_override.dart",
     "view_ide/environment/environment.dart",
@@ -81,6 +83,8 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "ide/workspace/source_control_merge_editor.dart",
     "ide/workspace/source_control_status.dart",
     "ide/workspace/workspace.dart",
+    "ide/workspace/workspace_document_store_types.dart",
+    "ide/workspace/workspace_document_store.dart",
     "view_ide/toolchain/toolchain_project_validation.dart",
 }
 

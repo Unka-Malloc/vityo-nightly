@@ -14,7 +14,7 @@ import '../../ide/agent_client/agent_launch_paths.dart';
 import '../../ide/agent_client/agent_client_models.dart';
 import '../../ide/agent_client/agent_client_registry.dart';
 import '../../ide/local_service/vityod_client.dart';
-import '../../ide/workspace/workspace_document_store_io.dart';
+import '../../ide/workspace/workspace_document_store.dart';
 import 'agent_operations.dart';
 import 'engine/machine.dart';
 
@@ -96,12 +96,14 @@ class AgentBridge extends ChangeNotifier {
         if (scope.method.endsWith('.error')) {
           throw StateError('workspace scope could not be opened');
         }
-        final store = VityodWorkspaceDocumentStore(
-          client: _client!,
+        final store = await createWorkspaceDocumentStore(
+          vityodClient: _client!,
           workspaceId: 'flow-hero',
           workspaceRoot: workspaceDir,
         );
-        await store.open();
+        if (store is! WorkspaceDocumentOperationStore) {
+          throw StateError('workspace operations are unavailable');
+        }
         await engine.attachWorkspaceDocumentStore(store);
         operationPort = FlowHeroAgentOperationPort(
           engine: engine,

@@ -6,6 +6,7 @@ import 'package:vityo_app/src/ide/editor/document/document_encoding.dart';
 import 'package:vityo_app/src/ide/editor/document/document_state.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_document_store_io.dart';
+import 'package:vityo_app/src/ide/workspace/workspace_document_store_types.dart';
 
 void main() {
   test(
