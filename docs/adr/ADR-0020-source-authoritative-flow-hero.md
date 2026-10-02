@@ -2,6 +2,8 @@
 
 **Purpose:** Establish the source, semantic, transaction, Agent, and execution ownership for the interactive Flow Hero editor.
 
+**Last updated:** 2026-10-02
+
 **Status:** Accepted
 
 **Date:** 2026-10-02

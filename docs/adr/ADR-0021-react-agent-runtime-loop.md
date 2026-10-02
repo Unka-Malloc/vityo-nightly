@@ -2,6 +2,8 @@
 
 **Purpose:** Select the default interaction pattern for the Vityo Coding Agent runtime.
 
+**Last updated:** 2026-10-02
+
 **Status:** Accepted
 
 **Date:** 2026-10-02
