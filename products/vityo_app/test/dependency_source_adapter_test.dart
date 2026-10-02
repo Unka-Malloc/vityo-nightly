@@ -68,7 +68,7 @@ raise SystemExit(64)
       offline: true,
     );
 
-    expect(result.succeeded, isTrue);
+    expect(result.succeeded, isTrue, reason: result.statusMessage);
     expect(result.command, 'sync');
     expect(result.payload?['packages'], 3);
     expect(result.payload?['offline'], isTrue);

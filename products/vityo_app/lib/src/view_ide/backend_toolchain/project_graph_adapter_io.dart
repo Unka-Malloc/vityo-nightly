@@ -314,7 +314,10 @@ Future<String?> _resolveManagedStyioBinary(
           executablePath: candidate,
           arguments: const <String>['--machine-info=json'],
           environment: environment,
-          timeout: const Duration(seconds: 5),
+          // Discovery starts a real process through the local service. A short
+          // budget kills a slow-but-healthy CLI and reports a missing toolchain,
+          // so probing uses the same request budget as other service calls.
+          timeout: const Duration(seconds: 30),
           serviceKind: ProcessServiceKind.styio,
         ),
       );

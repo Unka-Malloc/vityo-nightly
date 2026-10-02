@@ -45,7 +45,7 @@ void main() {
       packageName: 'demo/app',
     );
 
-    expect(result.succeeded, isTrue);
+    expect(result.succeeded, isTrue, reason: result.statusMessage);
     expect(result.command, 'publish');
     expect(result.payload?['package'], 'demo/app');
     expect(result.payload?['archive_path'], contains('dist'));
@@ -80,7 +80,7 @@ void main() {
         ),
       );
 
-      expect(result.succeeded, isTrue);
+      expect(result.succeeded, isTrue, reason: result.statusMessage);
       expect(result.payload?['package'], 'demo/app');
     },
   );
