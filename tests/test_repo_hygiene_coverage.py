@@ -87,6 +87,16 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                 self.assertTrue(self.gate.has_forbidden_path_part("build/generated.txt"))
                 self.assertTrue(self.gate.has_forbidden_file_suffix("bin.zip"))
                 self.assertTrue(self.gate.is_allowed_binary("docs/assets/logo.png"))
+                self.assertTrue(
+                    self.gate.is_allowed_binary(
+                        "products/vityo_app/assets/fonts/plex/Mono.ttf"
+                    )
+                )
+                self.assertFalse(
+                    self.gate.is_allowed_binary(
+                        "products/vityo_app/assets/images/logo.png"
+                    )
+                )
                 self.assertFalse(self.gate.is_binary_file("ok/empty.txt"))
                 self.assertTrue(self.gate.is_binary_file("ok/nul.txt"))
                 self.assertTrue(self.gate.is_binary_file("ok/invalid.txt"))
@@ -332,7 +342,7 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                 self.gate.VIEW_IDE_SHELL_RUNTIME_ROOT.mkdir()
                 self.gate.VIEW_RENDER_SHELL_ROOT.mkdir()
                 (self.gate.VIEW_IDE_SHELL_RUNTIME_ROOT / "shell_runtime_model.dart").write_text(
-                    "enum BottomSurfaceTab { terminal }\n",
+                    "enum WorkbenchRoute { terminal }\n",
                     encoding="utf-8",
                 )
                 (self.gate.VIEW_RENDER_SHELL_ROOT / "shell_model.dart").write_text(
@@ -345,8 +355,8 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                     setattr(self.gate, name, value)
 
         joined = "\n".join(errors)
-        self.assertIn("shell runtime must not own render tab state marker", joined)
-        self.assertIn("must preserve render shell marker: enum BottomSurfaceTab", joined)
+        self.assertIn("shell runtime must not own presentation route state marker", joined)
+        self.assertIn("must preserve render shell marker: enum WorkbenchRoute", joined)
         self.assertIn("must preserve render shell marker: class ShellModel extends ShellRuntimeModel", joined)
 
     def test_main_push_and_empty_policy_error_paths(self) -> None:

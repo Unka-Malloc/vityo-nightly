@@ -25,8 +25,10 @@ FORBIDDEN_VIEW_IDE_PRESENTATION_IMPORTS = {
 }
 
 # Registered public contract/model surfaces that view_render may consume from
-# view_ide. New view_render -> view_ide imports must be reviewed by updating
-# this list instead of importing arbitrary view_ide implementation modules.
+# view_ide and the shared IDE domain. New view_render -> domain imports must be
+# reviewed by updating this list instead of importing arbitrary implementation
+# modules. The IDE surfaces below are data/provider contracts consumed by
+# presentation; their presence does not grant ownership of runtime composition.
 VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "view_ide/backend_toolchain/adapter_contracts.dart",
     "view_ide/backend_toolchain/dependency_source_adapter.dart",
@@ -52,6 +54,8 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "ide/editor/editor_render_layers.dart",
     "ide/editor/render_plan/render_plan.dart",
     "ide/editor/selection_state.dart",
+    "ide/agent_client/agent_client_models.dart",
+    "ide/agent_client/agent_client_registry.dart",
     "view_ide/environment/configuration/configuration.dart",
     "view_ide/environment/configuration/vityo_theme_override.dart",
     "view_ide/environment/environment.dart",
@@ -74,8 +78,10 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "view_ide/toolchain/toolchain_catalog.dart",
     "view_ide/toolchain/toolchain_manager.dart",
     "ide/workspace/source_control_commit_draft_store.dart",
+    "ide/workspace/source_control_merge_editor.dart",
     "ide/workspace/source_control_status.dart",
     "ide/workspace/workspace.dart",
+    "view_ide/toolchain/toolchain_project_validation.dart",
 }
 
 DIRECTIVE_PATTERN = re.compile(r"^\s*(import|export)\s+['\"]([^'\"]+)['\"]")
@@ -203,7 +209,7 @@ def check_view_render_registered_view_ide_contracts() -> list[str]:
             errors.append(
                 format_violation(
                     directive,
-                    "view_render may only depend on registered view_ide contract surfaces",
+                    "view_render may only depend on registered IDE contract surfaces",
                 )
             )
     return errors

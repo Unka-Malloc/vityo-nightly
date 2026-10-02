@@ -62,6 +62,10 @@ FORBIDDEN_FILE_SUFFIXES = (
 )
 
 ALLOWED_BINARY_GLOBS = (
+    # Retained authored design references and review captures.
+    ".impeccable/mocks/*.png",
+    ".impeccable/review/*.png",
+    ".impeccable/worlds/*.webp",
     "docs/assets/*.gif",
     "docs/assets/*.jpeg",
     "docs/assets/*.jpg",
@@ -84,6 +88,10 @@ ALLOWED_BINARY_GLOBS = (
     "reference-images/*.JPG",
     "reference-images/*.png",
     "docs/review/interactive-editor-input/*.png",
+    "docs/review/interactive-editor-input/*.jpg",
+    # Bundled app typography. Keep this limited to the maintained font roots.
+    "products/vityo_app/assets/fonts/*.ttf",
+    "products/vityo_app/assets/fonts/plex/*.ttf",
 )
 
 REQUIRED_GITIGNORE_PATTERNS = (
@@ -503,15 +511,15 @@ def check_shell_runtime_boundary() -> list[str]:
 
     if runtime_model.exists():
         text = runtime_model.read_text(encoding="utf-8")
-        for needle in ("BottomSurfaceTab", "selectBottomTab("):
+        for needle in ("WorkbenchRoute", "selectWorkbenchRoute("):
             if needle in text:
                 errors.append(
-                    f"{runtime_model.relative_to(REPO_ROOT).as_posix()}: shell runtime must not own render tab state marker {needle}"
+                    f"{runtime_model.relative_to(REPO_ROOT).as_posix()}: shell runtime must not own presentation route state marker {needle}"
                 )
     if render_model.exists():
         text = render_model.read_text(encoding="utf-8")
         required_needles = (
-            "enum BottomSurfaceTab",
+            "enum WorkbenchRoute",
             "class ShellModel extends ShellRuntimeModel",
         )
         for needle in required_needles:
