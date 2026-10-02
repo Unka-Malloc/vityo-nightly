@@ -1,38 +1,61 @@
-# Checkpoint Health
+# Test and Coverage Stages
 
-**Purpose:** Document the canonical portable deterministic test and static-health entrypoint used by contributors and repository CI.
+**Purpose:** Describe deterministic test collection, native integration reach, and coverage evaluation in the canonical Vityo delivery pipeline.
 
 **Last updated:** 2026-10-02
 
-## Command
+## Commands
 
-Run from the repository root:
+From the repository root, collect tests and coverage inputs with:
 
 ```bash
-./scripts/checkpoint-health.sh
+python3 scripts/vityo.py test
 ```
 
-This is the integrated portable health entrypoint. Use a focused package command during implementation; run checkpoint health after source review, focused repairs, and ordinary test work are complete.
+After the test stage succeeds, evaluate the saved reports with:
 
-## Suites And Gates
+```bash
+python3 scripts/vityo.py coverage
+```
 
-1. `flutter analyze` in `products/vityo_app/`.
-2. Python tooling coverage. `scripts/python-coverage-gate.py` discovers `tests/test_*.py` under `tests/`, then runs the retained Prototype server-security test. The configured Python tooling coverage floor is 95%.
-3. Flutter app coverage. `scripts/project-coverage-gate.py` builds the local daemon prerequisite, runs `flutter test --coverage` under `products/vityo_app/`, and enforces the configured 85% Flutter line-coverage floor.
-4. Eight deterministic IDE suites through `scripts/vityo_quality.py`: `ide/workspace-transactions`, `ide/developer-loop`, `ide/agent-client-protocol`, `ide/mcp-host`, `ide/ide-security`, `ide/agent-workbench`, `ide/quality-runtime`, and `ide/recovery-isolation`.
-5. Deterministic Coding Agent suites through `scripts/vityo_quality.py --product coding-agent --suite full`. The health script writes its validation receipt under `build/evidence/`; receipt generation does not make a failed suite pass.
-6. `scripts/release-readiness-gate.py --skip-build` for static release rules. This proves no platform build.
-7. `scripts/language-fixture-gate.sh --flutter-dir products/vityo_app` for its declared parser-backed fixture roots. Optional `--fixture-root` arguments intentionally select additional roots.
-8. `npm run governance` and `npm run selftest:editor` under `prototype/`.
+The `test` stage collects Python and Flutter coverage and runs instrumented locked Cargo tests for
+the Coding Agent and `vityod` once. The separate `coverage` stage evaluates the Python, Flutter,
+Coding Agent, and daemon reports without rerunning the suites. Rust reports are kept separate by
+product; both require valid executed first-party source coverage, the Agent report additionally
+requires mapped requirement-module coverage, and neither has a default percentage floor.
+A full local delivery runs both stages in order through `python3 scripts/vityo.py deliver`.
+The Rust LCOV reports are `build/evidence/rust-coverage/coding-agent.lcov` and
+`build/evidence/rust-coverage/vityod.lcov`.
 
-The daemon-core suite runs the Rust daemon workspace tests with the lockfile enforced, then analyzes and tests `packages/vityo_daemon_protocol/`. This is separate from native desktop UI integration.
+## Test Stage Scope
 
-The test and suite registry implementation is `scripts/python-coverage-gate.py` plus `scripts/vityo_quality.py`. New ordinary Python tests in `tests/test_*.py` and Flutter tests under `products/vityo_app/test/` are discovered through their normal roots. A standalone suite must be added to the appropriate `vityo_quality.py` registry and invoked by this script or a documented native lane in the same change. The [test catalog](./TEST-CATALOG.md) records owners and future feature acceptance without duplicating suite commands.
+The current `test` implementation runs Flutter analysis; discovers Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; runs instrumented locked Cargo tests for the Coding Agent and `vityod`; invokes the registered Coding Agent and nine portable IDE selectors; runs retained Prototype governance and editor checks; and validates the declared language fixtures with the pinned Styio executable.
 
-This portable command does not run native desktop integration or require a host UI. The configured Linux and macOS jobs run `scripts/vityo_quality.py --product ide --suite native-desktop` for `vityod_reconnect_test.dart`; macOS additionally runs `scripts/vityo_quality.py --product ide --suite macos-native-ui`, covering 11 `*_native_ui_test.dart` files and explicitly registering `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 total). The current app integration root has no Windows-target native integration test, so Windows native app integration coverage is absent; Windows still runs its configured portable suites and platform delivery/build checks. The quality-runner tests compare every app integration file with the executable selector literals and globs, rejecting new unregistered tests until they are mapped. Configured but unobserved Actions runs are not test results.
+The test stage resolves Styio from an explicit `--styio-bin`, `VITYO_STYIO_BIN`/`STYIO`, or a
+built sibling executable at the exact product-matrix revision. If none is available, it fetches and
+builds that pinned revision under ignored `build/toolchains/`; it does not accept an unpinned PATH
+binary. An invalid explicit override or failed pinned build fails the stage. CI and a local run with
+`VITYO_PRODUCT_GATE=1` additionally require the real Styio/Pafio product matrix.
 
-## Tool And Artifact Notes
+The current Coding Agent runtime and deterministic behavior suite are still Dart. Rust unit/integration
+tests are instrumented for separate coverage, but that report does not establish that Rust is the
+current production runtime or that the Rust Agent is connected through the IDE consumer path. Do
+not present a `--version` identity probe or package file as behavioral coverage.
 
-`PYTHON_BIN` selects the Python executable and defaults to `python3`. `STYIO` may select the fixture parser executable. `--skip-language-fixtures` is a targeted investigation option; it does not establish that language fixtures passed.
+## Integration Test Mapping
 
-GitHub Actions is configured to upload Python and Flutter coverage reports for the platform jobs. The generated root `.coverage` database and app `coverage/` directory remain ignored local artifacts. A report exists only for a run that completed its coverage gate; uploads do not establish coverage for source outside the measured scope.
+The app's standalone integration-test root has 21 maintained files. A quality-runner test checks each source file against its executable literals and globs so a new file cannot silently miss the runner. The nine portable IDE selectors cover the current portable fixtures; the native selectors remain host-specific:
+
+| Host lane | Selector | Coverage |
+|---|---|---|
+| Linux and macOS CI | `ide/native-desktop` | The supported desktop reconnect integration. |
+| macOS CI | `ide/macos-native-ui` | Eleven `*_native_ui_test.dart` files plus `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 files). |
+| Windows CI | No native app integration selector | Windows currently has no Windows-target app integration test. Portable suites and Windows build/package/startup evidence are separate. |
+
+The test root and executable suite registry are authoritative. This document records their current reach; it does not replace the registration. A configured but unobserved CI job is not test evidence.
+
+## Evidence Boundary
+
+These suites exercise deterministic implementation and protocol fixtures. They do not call a real model provider or complete a user-assigned Agent task. Package installation and the CI startup probe belong to later delivery stages; startup evidence establishes only that the selected installed client launched and rendered its first frame. Live interface inspection and real provider/task acceptance remain separate user-authorized work.
+
+Future Flow Hero graph/source semantics, edge direction, transactional rewiring, revision handling, animation parity, and performance acceptance remain listed in the [test catalog](./TEST-CATALOG.md) as unimplemented requirements.

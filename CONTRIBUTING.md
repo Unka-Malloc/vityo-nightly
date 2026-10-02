@@ -22,7 +22,7 @@ Start with the [contributor and Agent workflow](docs/specs/CONTRIBUTOR-AND-AGENT
 
 The architecture gate protects these directions: `lib/src/view_ide/` owns presentation-independent IDE services and contracts; `lib/src/ide/` owns editor, document/workspace, Agent Client, and collaboration state; `lib/src/app/` composes shared services; and `lib/src/view_render/` owns Flutter presentation. Presentation may import only narrow registered public model, adapter, or projection files from their actual owners, not arbitrary implementation files. Removed top-level roots are not compatibility surfaces. See the release checklist and `scripts/check_architecture_boundaries.py` for current registrations.
 
-The shared product boundaries remain: `products/vityo_app/` is the IDE, `products/vityo_coding_agent/` is the companion runtime, and `packages/vityo_agent_protocol/` is the runtime-neutral shared protocol. The IDE does not import Agent runtime implementation or connect directly to a model provider.
+The shared product boundaries remain: `products/vityo_app/` is the IDE, `products/vityo_coding_agent/` is the companion runtime, and `packages/vityo_agent_protocol/` is the runtime-neutral shared protocol and Dart client binding. The Coding Agent's Rust migration is in progress; the Dart implementation remains current until the Rust runtime and IDE consumer path have complete deterministic coverage. The IDE does not import Agent runtime implementation or connect directly to a model provider.
 
 ## Implementation And Test Workflow
 
@@ -30,36 +30,47 @@ The shared product boundaries remain: `products/vityo_app/` is the IDE, `product
 2. Add deterministic unit, contract, or integration coverage for changed behavior. Test production parsers, transactions, scheduling, protocol adapters, persistence, and recovery; mock only external service boundaries.
 3. Place ordinary tests under an established auto-discovered root. A new standalone test suite must add a runnable command to the canonical CI suite registry in the same change. Do not leave an executable test as an unregistered script or duplicate its suite mapping in another document.
 4. Run focused checks for the changed owner while implementing. Then review the source and test diffs and repair ordinary in-scope issues.
-5. After all writers stop, source review and focused repairs finish, run the applicable full local regression once. If it finds an ordinary scoped defect, repair it and rerun the affected checks needed to establish the repaired revision. See [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md) for the current commands and CI evidence limits.
+5. After all writers stop, source review and focused repairs finish, run `python3 scripts/vityo.py deliver` once. If it finds an ordinary scoped defect, repair it and rerun the affected stage, then complete the reviewed delivery on the repaired candidate. See [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md) for the stage boundaries and CI evidence limits.
 6. Report the exact local checks and test suites run. Report configured but unobserved Actions or host lanes as unverified.
 
 Use the pinned toolchain from [Build And Development Environment](docs/BUILD-AND-DEV-ENV.md).
-The Python coverage gate also requires `coverage.py`. Install it in an ignored local environment
-and select that interpreter for the portable health entrypoint:
+The canonical local delivery path runs privacy, architecture and documentation checks, deterministic
+tests, coverage evaluation, release build/package, per-user installation, and client launch in order:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install coverage
-export PYTHON_BIN="$PWD/.venv/bin/python"
-./scripts/checkpoint-health.sh
+python3 scripts/vityo.py deliver
 ```
 
-On Windows, use `.venv/Scripts/python.exe` for the install command and `PYTHON_BIN` value in the
-repository's Bash-based gate. CI provisions coverage in its isolated runner environment.
-
-The delivery wrapper adds repository hygiene, documentation checks, audit, and delivery policy:
+The stages can be run independently for focused repair:
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint
+python3 scripts/vityo.py privacy
+python3 scripts/vityo.py architecture
+python3 scripts/vityo.py test
+python3 scripts/vityo.py coverage
+python3 scripts/vityo.py build
+python3 scripts/vityo.py install
+python3 scripts/vityo.py launch
 ```
 
-For documentation/process-only changes, the delivery script supports a health skip when the code and tests are genuinely out of scope:
+`test` collects Python and Flutter coverage and runs instrumented locked Cargo tests for the Coding
+Agent and `vityod`, along with the registered Agent/IDE fixture suites, retained Prototype checks,
+and pinned Styio language fixtures. The current Agent behavior suite still exercises the Dart
+runtime; Rust test coverage does not by itself establish production cutover or IDE consumer wiring.
+The test stage prepares the exact pinned Styio toolchain when no matching executable is available;
+an invalid explicit override or failed build fails the stage. It never uses an unpinned fallback.
+The optional real Pafio/Styio product matrix runs in CI and when `VITYO_PRODUCT_GATE=1` is set.
 
-```bash
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
-```
+`coverage` evaluates the Python, Flutter, Coding Agent, and daemon reports collected by `test`;
+it does not rerun tests. Rust reports remain separate by product and have no default percentage
+floor. For a documentation-only change, run `privacy` and `architecture`, then let the final repository delivery perform the full
+reviewed regression. Do not claim test or coverage evidence from those focused stages.
 
-`--skip-health` does not prove product tests, Flutter analysis, coverage, or prototype checks. Consult the test catalog and the CI spec for the lane contents and current standalone test registration. Do not use an optional product, security, or platform gate skip as evidence that it passed.
+Local `install` uses the platform's per-user destination and verifies that the package contains both
+the client and companion executable. `launch` opens the installed candidate and ends the engineering
+workflow. It does not authorize UI inspection, a real Agent/provider task, or live user acceptance.
+Consult the [test catalog](docs/assets/workflow/TEST-CATALOG.md) and
+[Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md) for suite reach and evidence limits.
 
 For focused checks, use the relevant package-native test runner and applicable checks below. These focused commands complement the canonical integrated entrypoints; they do not replace final regression for a code change.
 

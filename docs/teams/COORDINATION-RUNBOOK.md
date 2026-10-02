@@ -83,7 +83,7 @@ flowchart TB
 | Cutover | Minimum gate |
 |---------|--------------|
 | 手写 Web Editor 主线 | `cd prototype && npm run selftest:editor`，必要时更新手写 Web IDE handbook |
-| Flutter shell, shared UI state, or portable IDE integration | Focused owner tests during implementation; after source review, run `./scripts/checkpoint-health.sh` for the connected portable suites |
+| Flutter shell, shared UI state, or portable IDE integration | Run focused owner tests during implementation; after source review, the final integrated verification uses `python3 scripts/vityo.py deliver`. |
 | adapter / schema / handoff 合同 | 更新 `docs/contracts/`、`docs/external/for-styio/`、`docs/external/for-pafio/` 与 `TEST-CATALOG` 对应映射 |
 | module lifecycle / distribution / capability | 更新 manifest、capability matrix、分发 schema 与测试目录条目 |
 | 文档结构或交付边界 | 更新相关 `README.md` / `INDEX.md` 并运行 `python3 scripts/repo-hygiene-gate.py --mode tracked` |

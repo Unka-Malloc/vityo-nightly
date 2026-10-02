@@ -2,7 +2,7 @@
 
 **Purpose:** Define the current Vityo maintenance tool and skill inventory that release gates must verify before publishing.
 
-**Last updated:** 2026-06-19
+**Last updated:** 2026-10-02
 
 ## Source
 
@@ -13,6 +13,16 @@ toolchain/maintenance-tools.json
 ```
 
 `python3 scripts/release-readiness-gate.py --skip-build` validates this file during release readiness checks.
+
+The canonical local and CI delivery tool is `python3 scripts/vityo.py deliver`, with independently
+callable privacy, architecture, test, coverage, build, install, and launch stages. The Rust/Cargo
+toolchain is pinned to `1.88.0` in CI; Rust coverage uses `cargo-llvm-cov` `0.9.0` with
+`llvm-tools-preview`, and locked dependency notices use the project-local pinned `cargo-about`
+tool. The architecture stage checks the maintained model and generated views with
+`python3 scripts/vityo_architecture.py --check`. The registered Rust coverage helper collects or
+evaluates the separate Coding Agent and daemon reports; the notice helper checks the supported
+native-target locked Cargo graphs. Their installation and usage boundaries are recorded in
+[Dependency Usage](../../../DEPENDENCY-USAGE.md).
 
 ## Policy
 

@@ -2,7 +2,7 @@
 
 **Purpose:** Provide the repository-level entry point for bootstrapping a fresh machine, installing shared GUI toolchains, and routing contributors to the correct implementation surface.
 
-**Last updated:** 2026-07-11
+**Last updated:** 2026-10-02
 
 ## Who This Is For
 
@@ -72,7 +72,8 @@ Device verification stays host-driven:
 6. Chromium standard for web verification: `147.0.7727.116`.
 7. Android combo add-on standard is profile-driven on Linux, macOS, and Windows: command-line tools `14742923`, shared `platform-tools`, and the standardized profile set `android-35`, `android-36`, each with its own pinned platform/build-tools/NDK tuple from [../toolchain/android-sdk-profiles.csv](../toolchain/android-sdk-profiles.csv).
 8. Apple build profiles on macOS are standardized in [../toolchain/apple-platform-profiles.csv](../toolchain/apple-platform-profiles.csv). These profiles pin iOS/macOS deployment targets and optionally select a specific `DEVELOPER_DIR` / Xcode installation.
-9. CI mirror: GitHub Actions on `ubuntu-latest`, `windows-latest`, and `macos-latest` all run the repository delivery health floor with exact Python, Node.js, Flutter, and Chromium version pins, then prove the matching native Flutter debug build for Linux, Windows, or macOS.
+9. Rust/Cargo `1.88.0` is the pinned CI toolchain for the independent Coding Agent and `vityod` daemon. The Coding Agent manifest declares Rust `1.88` as its minimum; local builds need Rust/Cargo `1.88` or newer.
+10. CI mirror: GitHub Actions on `ubuntu-latest`, `windows-latest`, and `macos-latest` run the shared Python delivery stages with pinned Python, Node.js, Flutter, Chromium, and Rust versions, then collect host-specific package, install, startup, and native integration evidence.
 
 ## Required Toolchains
 
@@ -82,7 +83,9 @@ Device verification stays host-driven:
 4. Node.js `v24.15.0` LTS and npm for the handwritten prototype.
 5. Python `3.13.5` for docs and repository hygiene scripts.
 6. On macOS, full iOS add-on support also requires Xcode. The script can validate and wire it, but Apple-controlled Xcode installation may still require App Store or Apple developer authentication.
-7. On Windows, native desktop builds require Visual Studio 2022 Build Tools with the C++ desktop workload. `bootstrap-dev-env-windows.ps1` installs this through `winget`; hosted `windows-latest` CI already includes the required build environment.
+7. Rust/Cargo `1.88` or newer is required to build and test the Coding Agent and local daemon. The existing bootstrap scripts do not install Rust; install the toolchain separately before running those stages. CI pins `1.88.0`.
+8. Rust coverage collection requires the `llvm-tools-preview` component and `cargo-llvm-cov` `0.9.0`. Install the selected toolchain component with `rustup component add llvm-tools-preview` and the locked tool with `cargo install cargo-llvm-cov --version 0.9.0 --locked`. CI installs the matching component alongside Rust `1.88.0`.
+9. On Windows, native desktop builds require Visual Studio 2022 Build Tools with the C++ desktop workload. `bootstrap-dev-env-windows.ps1` installs this through `winget`; hosted `windows-latest` CI already includes the required build environment.
 
 ## Typical Build And Test Commands
 
@@ -216,14 +219,12 @@ cd prototype
 VITYO_EDITOR_URL=http://127.0.0.1:4180/editor npm run selftest:editor
 ```
 
-Repository docs and hygiene checks:
+Repository privacy and architecture/documentation checks:
 
 ```bash
-./scripts/docs-gate.sh
+python3 scripts/vityo.py privacy
+python3 scripts/vityo.py architecture
 python3 scripts/docs-index.py --write
-python3 -m pytest tests/test_docs_tooling_coverage.py
-python3 scripts/repo-hygiene-gate.py --mode tracked
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
 ```
 
 IDE architecture, import boundary, sandbox/security, and performance budget checks:
@@ -253,8 +254,11 @@ python3 scripts/check-linux-host-readiness-gate.py --check flutter
 
 This gate detects and reports blocked states for Python, Dart/Flutter, npm,
 Chrome/Chromium, Docker image Flutter availability, and CRLF shell-script
-line-ending blockers.  It never attempts to repair external SDKs or install
-packages.  Exit codes: 0 all clear, 1 blocked items found, 2 warnings only.
+line-ending blockers. It does not detect Rust/Cargo or `llvm-tools-preview`; verify Rust `1.88`
+or newer and install the coverage component separately before Coding Agent or daemon
+tests/builds/coverage. The gate never attempts to
+repair external SDKs or install packages. Exit codes: 0 all clear, 1 blocked
+items found, 2 warnings only.
 Unit tests:
 
 ```
@@ -275,21 +279,24 @@ Static release readiness without a release build:
 python3 scripts/release-readiness-gate.py --skip-build
 ```
 
-Full checkpoint delivery floor:
+Full local delivery, including tests, coverage, release package, per-user installation, and launch:
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint
+python3 scripts/vityo.py deliver
 ```
 
 ### Ecosystem product-gate environment
 
-The product gate consumes fixed Pafio and Styio executables through
-`VITYO_PAFIO_BIN` and `VITYO_STYIO_BIN` (or the matching command-line options).
-It creates the project through public `pafio new`, then composes
-`pafio metadata --json` with `styio --machine-info=json`. It does not import a
-Pafio repository script or fixture factory. Missing binaries are reported as
-`ok=false`, `skipped=true` locally and fail closed with
-`--require-real-matrix`.
+The required language-fixture stage resolves Styio in this order: explicit
+`--styio-bin`; `VITYO_STYIO_BIN` or `STYIO`; a built executable in the sibling checkout at the
+exact product-matrix revision; then a managed checkout under ignored
+`build/toolchains/styio-nightly/<sha>`. The managed resolver fetches and builds the exact public
+upstream commit without changing a sibling worktree. An explicitly selected executable that is
+missing or not from the pinned checkout fails `python3 scripts/vityo.py test`; the stage does not
+fall back to an unpinned `PATH` binary. Building the managed Styio tool requires CMake and LLVM 18
+CMake development files. CI uses the same resolver. Pafio is resolved or provisioned only when the
+real product matrix is enabled in CI or with `VITYO_PRODUCT_GATE=1`; that matrix creates its project
+through public `pafio new` and does not import a Pafio repository script or fixture factory.
 
 The scheduled Linux, Windows, and macOS jobs run independently and publish a
 platform-specific matrix evidence JSON containing the exact Vityo, Styio, and

@@ -12,50 +12,39 @@ Tests exercise the implementation at the layer that owns the behavior. Unit and 
 
 ## Canonical Local Entrypoints
 
-Run focused commands while implementing. After all source review, in-scope repairs, and focused checks are complete, run the applicable integrated local health regression:
+Run focused stage commands while implementing. After all writers stop, source review and scoped repairs finish, the single full local delivery command is:
 
 ```bash
-./scripts/checkpoint-health.sh
+python3 scripts/vityo.py deliver
 ```
 
-The repository delivery wrapper adds staged-tree hygiene, documentation validation, the configured audit/fallback, delivery policy, and checkpoint health:
+It runs privacy, architecture/documentation, test collection, coverage evaluation, host release build/package, per-user installation, and launch in order. For focused repair, the stages are independently callable as `privacy`, `architecture`, `test`, `coverage`, `build`, `install`, and `launch` subcommands of `scripts/vityo.py`. The first failed stage returns a nonzero result; there is no health-skip flag or alternate shell orchestration.
 
-```bash
-./scripts/delivery-gate.sh --mode checkpoint
-```
+### Test And Coverage Scope
 
-For a docs/process-only change where product tests and health checks are out of scope, the delivery wrapper supports:
+The `test` stage runs Flutter analysis; discovers Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; collects instrumented locked Cargo tests for the Coding Agent and `vityod`; invokes the registered Coding Agent and nine portable IDE selectors; runs Prototype governance and editor checks; and validates the declared language fixtures using a pinned Styio executable. `coverage` evaluates the Python, Flutter, Coding Agent, and daemon reports collected during `test` without rerunning those suites. Rust reports remain separate by product and require executed first-party source coverage; the Agent report also requires mapped requirement-module coverage. Neither has a default percentage floor.
 
-```bash
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
-```
+The current Coding Agent test registry still exercises the current Dart runtime. Rust runtime completion requires deterministic coverage for provider requests, tool behavior, policy, sessions, protocol, and the IDE consumer path; a Rust `--version` probe or wire-contract test alone is not runtime evidence.
 
-That skip does not establish Flutter, Agent, IDE integration, coverage, fixture, or prototype test success. Record those checks separately if the change claims their behavior.
-
-### Checkpoint Health Scope
-
-The health entrypoint calls the following owners using their existing test roots and runner:
-
-| Suite | Runner and owner | What a pass establishes |
+| Suite | Pipeline mapping | What a pass establishes |
 |---|---|---|
-| Flutter IDE tests and line coverage | `flutter analyze`; `flutter test --coverage` under `products/vityo_app/` via `scripts/project-coverage-gate.py` | The discovered app unit/widget/contract tests passed and the configured Flutter line-coverage floor was met. |
-| Python repository tests and line coverage | `unittest discover` under `tests/` plus the explicit Prototype security test via `scripts/python-coverage-gate.py` | Discovered repository-tool tests and the retained Prototype security test passed; the configured tooling coverage floor was met. |
-| Coding Agent runtime | `scripts/vityo_quality.py --product coding-agent --suite full --receipt build/evidence/vityo-coding-agent-full.json` | The nine registered deterministic Agent runtime and protocol fixture suites passed. It does not call an external model provider. |
-| Daemon core and daemon protocol | `scripts/vityo_quality.py --product ide --suite daemon-core` | Locked Rust workspace tests and daemon-protocol analysis/tests passed; no desktop UI is launched. |
-| Portable IDE integration | Registered `ide/workspace-transactions`, `ide/developer-loop`, `ide/agent-client-protocol`, `ide/mcp-host`, `ide/ide-security`, `ide/agent-workbench`, `ide/quality-runtime`, and `ide/recovery-isolation` suites | These local IDE integration contracts passed with the runner's configured fixtures. They do not prove a real Agent conversation. |
-| Native desktop reconnect | `scripts/vityo_quality.py --product ide --suite native-desktop` in the configured Linux and macOS jobs | Runs the supported `vityod_reconnect_test.dart` host integration on those platforms. It is not run on Windows. |
-| macOS native UI and credential integration | `scripts/vityo_quality.py --product ide --suite macos-native-ui` in the macOS job | Discovers 11 `*_native_ui_test.dart` files and explicitly includes `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 tests total). |
-| Release-readiness static checks | `scripts/release-readiness-gate.py --skip-build` | The static release metadata and evidence rules passed; no release build or package result is established. |
-| Styio parser-backed fixtures | `scripts/language-fixture-gate.sh` | The declared language fixture gate passed for its configured roots and available contract. It does not prove all upstream or product-matrix behavior. |
-| Permanent Prototype checks | `npm run governance` and `npm run selftest:editor` under `prototype/` | The preserved Prototype governance and editor smoke checks passed; they do not replace Vityo Flutter or release tests. |
+| Python repository and tooling tests | `test` stage; `tests/test_*.py` discovery with coverage collection | Discovered repository-tool tests passed. |
+| Flutter IDE unit/widget/contract tests | `test` stage; Flutter test discovery under `products/vityo_app/test/` with coverage collection | Discovered app tests passed; does not establish live provider or user behavior. |
+| Rust daemon and daemon protocol | `test` stage; instrumented locked `vityod` workspace tests plus registered `ide/daemon-core` suite | Daemon Rust and shared protocol behavior is exercised without launching the desktop UI. |
+| Coding Agent fixtures and Rust coverage | `test` stage; registered `coding-agent/full` suite with instrumented locked Rust workspace collection | The behavior registry still covers the current Dart runtime while the separate Rust report exercises Rust test paths; neither calls a real model provider or proves the Rust production cutover. |
+| Portable IDE integration | `test` stage; nine registered `ide/<suite>` selectors | Deterministic local IDE and protocol seams passed. |
+| Native desktop reconnect | `ide/native-desktop` on Linux and macOS CI | The supported `vityod_reconnect_test.dart` host integration passed. It is not run on Windows. |
+| macOS native UI and credential integration | `ide/macos-native-ui` on macOS CI | Eleven `*_native_ui_test.dart` files plus three explicitly registered tests passed (14 files total). |
+| Styio parser-backed language fixtures | `test` stage using the pinned Styio executable | The declared fixture roots passed. Missing tools trigger pinned provisioning; invalid explicit overrides or failed provisioning fail the stage. This does not prove every language feature or the real product matrix. |
+| Permanent Prototype checks | `test` stage; `npm run governance` and `npm run selftest:editor` | The permanent independent Prototype asset's checks passed; they do not replace Flutter behavior or release evidence. |
 
-The app's standalone integration-test root is inventoried against executable file literals and glob selectors by the quality-runner tests. The Linux and macOS jobs run the supported desktop reconnect test; the macOS job additionally runs the 14 native UI and credential tests. No Windows-target native app integration test exists in the current root, so Windows has no native app integration coverage; its portable suites and platform delivery/build checks are separate evidence. Portable IDE suites do not imply that every file in the integration root ran. Test-runner failures, missing files, unresolved commands, unregistered integration files, or nonzero suite results must fail their owning gate.
+The integration-runner tests inventory all 21 maintained app integration files against executable selectors and globs. Windows currently has no Windows-target app native integration suite; its portable test, package, install, startup, and build results are separate evidence. The real Pafio/Styio product matrix runs on every configured CI platform and on an explicit local `VITYO_PRODUCT_GATE=1` request; the shared resolver provisions Pafio only for this matrix and resolves Styio through the same pinned source workflow used by parser-backed fixtures.
 
-The standalone `project-coverage-gate` workflow runs the Python and Flutter project coverage gate directly. Coverage percentages show only the configured source scope; they do not prove behavior outside executed tests.
+The canonical CI workflow calls the same Python pipeline with its resolved event range, platform, and isolated installation root. The standalone coverage workflow may evaluate coverage directly; coverage percentages prove only their configured source scope.
 
 ## Final Regression And Repair
 
-Run the applicable full local regression after all writing, source review, in-scope repairs, and focused verification. Reuse earlier passing evidence only when all inputs to that check remain unchanged.
+Run `python3 scripts/vityo.py deliver` once after all writing, source review, in-scope repairs, and focused verification are complete. It ends after launch; do not add a duplicate full-regression run before or after it. Reuse earlier focused passing evidence only when all inputs to that check remain unchanged.
 
 If final regression finds an ordinary defect within the approved scope, diagnose it, fix it, run focused verification, and repeat the final checks needed for the repaired revision. A failed complete regression does not by itself require a user decision. Ask for a decision only when correction would change scope, a genuinely published contract, a risk boundary, or required authority; pause only work depending on that decision.
 

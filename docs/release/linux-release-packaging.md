@@ -6,21 +6,34 @@ AppStream metadata, update policy, release notes, and rollback/recovery
 evidence.
 
 **Owner:** Governance owner (CODEOWNERS -> governance domain)
-**Last updated:** 2026-06-29
-**Status:** Draft - connected to release gates
+**Last updated:** 2026-10-02
+**Status:** Formal distribution requirements; nightly candidate package is implemented
 
 ## 1. Scope
 
-This document covers the Linux desktop release artifact for Vityo as a native
-Flutter desktop app. It applies when a formal Linux release is claimed in the
-release record.
+This document covers Linux package requirements for Vityo as a native Flutter
+desktop app. It distinguishes the unsigned nightly candidate from a formal
+Linux release with distribution, signing, upgrade, and rollback evidence.
 
 The Linux release artifact is:
 
 - A native `flutter build linux --release` binary bundle.
-- Packaged as a `.deb` package for Debian/Ubuntu (amd64), with optional
-  Flatpak/AppImage coverage.
-- Verified by the CI `local-ci-gate` Linux job and the release-readiness gate.
+- The nightly pipeline packages a `.deb` containing the Flutter client, `vityod`,
+  and the `vityo-coding-agent` executable. Its signing status is an explicit gap
+  and automatic updates are disabled.
+- A formal product release additionally requires signed distribution and the
+  install/update/uninstall and rollback evidence in the release record.
+
+## 1.1 Current Engineering Candidate
+
+`python3 scripts/vityo.py build` runs the host Linux release build and
+`scripts/package-nightly.py`, which builds both Rust companions with locked Cargo
+dependencies and assembles the `.deb` candidate. `python3 scripts/vityo.py install`
+extracts the candidate under the per-user installation root (defaulting beneath
+`XDG_DATA_HOME` or the user's local data directory); it does not install a
+system-wide Debian package. `launch` opens the installed client. The CI probe
+checks only candidate identity, launch, and first-frame evidence; it does not
+prove Agent behavior or live UI acceptance.
 
 ## 2. Desktop Entry
 
@@ -108,11 +121,12 @@ Every formal Linux release requires:
 
 ## 8. Rollback And Recovery
 
-1. The previous `.deb` version is retained in GitHub Releases for downgrade.
-2. Uninstall: `dpkg -r vityo` removes the application and metadata.
-3. Data preservation: `dpkg -r` does NOT remove `~/.config/vityo/` or
-   `~/.local/share/vityo/` — user data survives uninstall.
-4. Purge: `dpkg --purge vityo` removes configuration and data directories.
+1. A formal release record must identify the prior signed package and supported
+   downgrade procedure.
+2. The nightly per-user install path replaces only the application candidate;
+   it is not a formal system package uninstall or purge operation.
+3. Any formal uninstall or purge behavior must preserve user workspaces and
+   clearly distinguish application files from user data.
 
 ## 9. Gate Integration
 
@@ -122,7 +136,9 @@ The release-readiness gate (`scripts/release-readiness-gate.py`) verifies:
 - `packaging/linux/io.vityo.metainfo.xml` exists.
 - `packaging/linux/DEBIAN/control` exists (for `.deb` release).
 
-The delivery gate (`scripts/delivery-gate.sh`) passes these checks:
+The canonical pipeline is `python3 scripts/vityo.py deliver`; its build stage
+creates and validates the nightly package candidate. Static package metadata can
+be checked separately with:
 
 ```bash
 python3 scripts/release-readiness-gate.py --skip-build  # static packaging check
@@ -134,7 +150,7 @@ desktop-file-validate packaging/linux/io.vityo.desktop   # if available
 | Gap | Priority | Owner |
 |-----|----------|-------|
 | Icon SVG/PNG assets not yet created | Medium | Design |
-| `.deb` packaging script not yet implemented | High | Release |
+| Signed repository distribution and formal install/update/uninstall/rollback workflow | High | Release |
 | `appstreamcli validate` not in CI gate | Low | Governance |
 | Flutter Linux release bundle size optimization | Low | Performance |
 | Formal release evidence still needs signed/distributed package, install/update/uninstall proof, and rollback proof | High | Release |

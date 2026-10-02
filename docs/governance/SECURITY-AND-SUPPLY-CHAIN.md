@@ -3,7 +3,7 @@
 **Purpose:** Define security and supply-chain rules across the Vityo IDE, the shared Agent protocol, and compatible Agent runtimes.
 
 **Owner:** Governance owner (`CODEOWNERS` → governance domain)
-**Last updated:** 2026-08-31
+**Last updated:** 2026-10-02
 
 ---
 
@@ -21,21 +21,32 @@
 
 ### 1.2 Credential References
 
-Instead of raw values, use **credential references**:
+Instead of raw values, use **credential references**. The Rust Coding Agent configuration
+stores only a native credential-service reference; it does not accept an environment-variable
+name or credential value:
 
-```dart
-class ProviderEndpoint {
-  final String credentialRef;  // ENV_VAR name: "STYIO_API_KEY"
-                                // or an opaque secret-store reference
-  // NEVER: final String apiKey; → FORBIDDEN
+```json
+{
+  "auth": {
+    "mode": "bearer_token",
+    "secretRef": {
+      "service": "vityo-coding-agent",
+      "account": "provider-profile"
+    }
+  }
 }
 ```
+
+The Agent resolves this service/account reference through the native credential store. Raw
+credentials MUST NOT appear in provider JSON, arguments, protocol messages, diagnostics, logs, or
+durable events. See [Agent Provider Configuration](../specs/AGENT-PROVIDER-ADAPTER-SCHEMA.md) for
+the complete non-secret contract.
 
 ### 1.3 Display Redaction
 
 All UI surfaces that display settings or context MUST redact:
-- Environment variable values → `[REDACTED]`
-- API key references → `[SECRET]`
+- Credential values → `[REDACTED]`
+- Credential references → `[SECRET]`
 - Home directory paths → `$HOME/...`
 - User-specific paths → `[USER_PATH]/...`
 
@@ -83,8 +94,11 @@ an explicit correlated decision; model text and tool declarations are never enfo
 ### 2.3 Network Safety
 
 - Agent-runtime provider connections must use TLS.
+- The selected Rust provider transport is `reqwest` with the native TLS backend; production provider
+  configuration rejects non-HTTPS endpoints.
 - Agent-runtime tool calls requiring network must declare `network` scope.
-- Network requests from Agent tools are subject to timeout and rate limiting.
+- Network requests from Agent tools require declared `network` scope and honor explicit task
+  budgets and cancellation; the runtime does not impose an arbitrary fixed task timeout.
 - Vityo must not make model-provider network requests.
 
 ### 2.4 Protocol Permission Boundary
@@ -121,9 +135,9 @@ Required invariants:
 
 ### 2.6 Agent Runtime Tool Policy
 
-Agent runtime policy and execution are owned by
-`products/vityo_coding_agent/lib/src/policy/` and
-`products/vityo_coding_agent/lib/src/tools/`.
+Agent runtime policy and execution are owned by the independent Coding Agent. Its Rust implementation
+is under `products/vityo_coding_agent/src/`. The Dart implementation remains current until the Rust
+behavior and IDE consumer path are covered by the completed cutover; see section 8.4.
 
 Required invariants:
 
@@ -137,8 +151,10 @@ Required invariants:
 
 ### 2.7 Durable Journals And Replay
 
-Durable Agent journals, redaction, recovery, and effect receipts are owned exclusively by
-`products/vityo_coding_agent/lib/src/sessions/`.
+Durable Agent journals, redaction, recovery, and effect receipts are owned by the independent
+Coding Agent. The Dart implementation under `products/vityo_coding_agent/lib/src/sessions/` remains
+current during the Rust migration; the corresponding Rust owner is
+`products/vityo_coding_agent/src/sessions/`.
 
 Required invariants:
 
@@ -172,6 +188,7 @@ Dependabot is configured in `.github/dependabot.yml` for:
 
 - GitHub Actions workflows at `/`
 - Flutter/Dart `pub` dependencies at `/products/vityo_app`
+- Cargo dependencies at `/products/vityo_coding_agent` and `/products/vityo_app/native/vityod`
 - npm prototype dependencies at `/prototype`
 
 Dependabot PRs are review inputs, not automatic policy approval. Dependency additions still require `DEPENDENCY-USAGE.md` license/source/usage evidence before merge.
@@ -193,9 +210,27 @@ Dependabot PRs are review inputs, not automatic policy approval. Dependency addi
 - Python scripts should use only stdlib or widely-trusted packages.
 - If third-party packages are needed, they must be declared with pinned versions.
 
-### 3.4 Dependency Registration Gate
+### 3.4 Rust Dependencies
 
-`scripts/dependency-policy-gate.py` enforces that every dependency declared in `pubspec.yaml` (dependencies and dev_dependencies) and `prototype/package.json` (dependencies, devDependencies, optionalDependencies, peerDependencies) is registered in `DEPENDENCY-USAGE.md`. SDK dependencies (`flutter`, `flutter_test`, `dart`, `meta`, etc.) are exempt without explicit registration. The gate exits non-zero when unregistered dependencies are found.
+- Commit and review each workspace's `Cargo.lock` with manifest changes; the Coding Agent and
+  `vityod` are separate Cargo workspaces.
+- Register every direct external Cargo dependency in `DEPENDENCY-USAGE.md`, including workspace
+  member, target-specific, development, and build dependencies. First-party path dependencies are
+  governed by repository ownership and licensing, not third-party registration.
+- Evaluate the union of locked dependency graphs reachable for supported desktop targets (Linux
+  x86_64 GNU, Windows x86_64 MSVC, and macOS x86_64/aarch64), including direct, transitive,
+  target-specific, development, and build dependencies. Direct registration does not waive
+  transitive license review; unsupported-only target edges do not expand the accepted license set.
+- Generate and package third-party notices from the locked graphs with the pinned `cargo-about`
+  tool. Preserve each dependency's applicable license text and attribution.
+
+### 3.5 Dependency Registration Gate
+
+`scripts/dependency-policy-gate.py` enforces direct dependency registration for every dependency
+declared in the maintained Flutter/Dart, prototype npm, and Cargo workspace manifests. Cargo
+metadata covers workspace members, target-specific, development, and build dependencies without
+expanding transitive packages. SDK dependencies are exempt without explicit registration. The
+gate exits non-zero when a direct dependency is unregistered.
 
 CI must wire this gate through `.github/workflows/audit.yml` or `.github/workflows/repo-hygiene.yml`.
 
@@ -205,17 +240,24 @@ CI must wire this gate through `.github/workflows/audit.yml` or `.github/workflo
 
 `DEPENDENCY-USAGE.md` is the lightweight SBOM evidence surface for the current repository. It records runtime, dev, prototype, CI/toolchain, license, source boundary, and usage boundary evidence. The release readiness gate (`scripts/release-readiness-gate.py`) and supply-chain governance gate (`scripts/supply-chain-governance-gate.py`) validate that this evidence remains present.
 
-- Dependency inventory (Flutter, Node, Python)
-- License inventory (all dependencies must have permissible licenses)
+- Dependency inventory (Flutter/Dart, Cargo, Node, Python)
+- License inventory (every dependency in the supported-target locked graphs must have a permissible license)
 - Generated artifact boundaries (what binary/image/asset is produced and from what source)
 
 ### 4.2 License Policy
 
-- Permissible licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense
+- Permissible licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense, Zlib, Unicode-3.0
 - Review-required: LGPL-2.1, LGPL-3.0, MPL-2.0
 - Prohibited: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0, SSPL, BUSL-1.1, and any other non-OSI or non-permissive license.
 
 Review-required and prohibited license checks are enforced by `scripts/check_license_policy.py`. License evidence for each dependency is recorded in `DEPENDENCY-USAGE.md`.
+`Zlib` and `Unicode-3.0` are reviewed permissive SPDX identifiers present in supported-target
+locked Rust dependency graphs; their notice and attribution obligations remain in force ([SPDX
+Zlib](https://spdx.org/licenses/Zlib.html), [SPDX Unicode-3.0](https://spdx.org/licenses/Unicode-3.0.html)).
+The direct dependency table is a registration inventory; the Rust license gate checks the supported
+target graphs and `cargo-about` generates complete notices for their dependencies.
+Unknown identifiers remain unapproved, and existing review-required and prohibited classes are
+unchanged.
 
 ## 5. Extension And Module Security
 
@@ -313,7 +355,8 @@ No change may move raw credential values into serialized settings, workspace fil
 CI must keep these checks wired through `.github/workflows/audit.yml` or `.github/workflows/repo-hygiene.yml`:
 
 - `scripts/supply-chain-governance-gate.py` — workflow permissions, Dependabot coverage, SBOM evidence, secret ignore baseline, high-signal secret scan.
-- `scripts/dependency-policy-gate.py` — Flutter/Dart and prototype npm dependency registration in `DEPENDENCY-USAGE.md`.
+- `scripts/dependency-policy-gate.py` — direct Flutter/Dart, Cargo, and prototype npm dependency registration in `DEPENDENCY-USAGE.md`.
+- `scripts/vityo_rust_notices.py` — full locked Cargo graph license evaluation and third-party notice generation.
 - `scripts/github-actions-pin-gate.py` — action SHA-pinning audit/enforcement.
 - `scripts/check_security_baseline.py` — security-critical implementation baseline (required file existence, forbidden pattern scan).
 - `scripts/check_license_policy.py` — package allowlist and forbidden license marker checks.
@@ -359,9 +402,9 @@ Every file below participates in the security, permission, audit, or supply-chai
 | File | Purpose | Boundary |
 |------|---------|----------|
 | `packages/vityo_agent_protocol/` | Versioned IDE/Agent messages | Requests, decisions, events, proposals, and receipts |
-| `products/vityo_coding_agent/lib/src/policy/` | Agent runtime policy and grant persistence | Tool authority, least privilege, grant lifecycle |
-| `products/vityo_coding_agent/lib/src/tools/` | Agent runtime tool catalog and executor | Tool validation, execution, bounds, and results |
-| `products/vityo_coding_agent/lib/src/sessions/` | Durable Agent sessions and effect receipts | Journal, replay/recovery, redacted evidence |
+| `products/vityo_coding_agent/lib/src/policy/` | Current Dart Agent policy and grant persistence; Rust replacement is in progress under `src/policy/` | Tool authority, least privilege, grant lifecycle |
+| `products/vityo_coding_agent/lib/src/tools/` | Current Dart Agent tool catalog and executor; Rust replacement is in progress under `src/tools/` | Tool validation, execution, bounds, and results |
+| `products/vityo_coding_agent/lib/src/sessions/` | Current Dart durable Agent sessions and effect receipts; Rust replacement is in progress under `src/sessions/` | Journal, replay/recovery, redacted evidence |
 | `products/vityo_app/lib/src/ide/agent_client/agent_client_registry.dart` | Thin IDE gateway and immutable projection | Typed daemon requests, permission presentation, reconnect coalescing, and bounded failure isolation |
 | `products/vityo_app/lib/src/ide/agent_client/mcp/vityod_mcp_gateway.dart` | Typed MCP security gateway | Revision-scoped grants, revocation, redacted reads, and preview-only edit proposals |
 | `products/vityo_app/native/vityod/crates/vityod-agent-host/src/acp.rs` | Daemon-owned ACP process and session authority | Minimal environment, bounded frames, correlation, capability revocation, and orphan-free shutdown |
@@ -373,7 +416,8 @@ Every file below participates in the security, permission, audit, or supply-chai
 | `products/vityo_app/lib/src/view_ide/module_host/module_manifest_security.dart` | Module manifest trust validation, quarantine, rollback | Schema validation, permission allowlist, signature/checksum verification, engine compatibility |
 | `scripts/check_security_baseline.py` | Security-critical file existence and forbidden-pattern scan | Required file list, forbidden pattern definitions |
 | `scripts/supply-chain-governance-gate.py` | CI/CD and supply-chain governance: workflow permissions, Dependabot, SBOM, secret scan | Workflow security, Dependabot coverage, SBOM markers, secret ignore, secret scan |
-| `scripts/dependency-policy-gate.py` | Dependency registration enforcement: every dependency in DEPENDENCY-USAGE.md | pubspec.yaml and package.json dependency registration |
+| `scripts/dependency-policy-gate.py` | Direct dependency registration enforcement in `DEPENDENCY-USAGE.md` | Flutter/Dart, Cargo workspace, and prototype npm manifests |
+| `scripts/vityo_rust_notices.py` | Locked Rust license evaluation and third-party notice generation | Coding Agent and `vityod` Cargo graphs |
 | `scripts/github-actions-pin-gate.py` | GitHub Actions SHA-pinning audit and enforcement | Action version pinning, mode (audit/enforce) |
 | `scripts/check_license_policy.py` | Package license allowlist and forbidden-license marker check | License policy, prohibited marker detection |
 | `DEPENDENCY-USAGE.md` | Lightweight SBOM: dependency inventory, license, source boundary, usage boundary | SBOM evidence surface |
@@ -407,12 +451,15 @@ The following plan nodes, components, and CI surfaces consume this security cont
 | CI workflow actions SHA-pinned | `github-actions-pin-gate.py` | Enforce mode |
 | High-signal secrets not committed | `supply-chain-governance-gate.py` | Secret scan over `.github/`, `scripts/`, `docs/governance/`, policy files |
 
-### 8.4 One Ownership Path
+### 8.4 Agent Runtime Cutover State
 
-The ownership cutover is complete: Agent-runtime policy/tools/sessions, shared protocol messages,
-and IDE-side process/client, MCP consent, Workbench projection, and workspace transactions each
-have one canonical implementation path. Removed provider/controller/tool-loop symbols and
-contribution kinds are not compatibility surfaces and must not be reintroduced.
+The Rust Coding Agent migration is in progress. The Dart implementation under `lib/src/` remains
+the current runtime until the Rust provider, tool, policy, session, protocol, and IDE-consumer paths
+have deterministic implementation and consumer coverage. The Rust binary's identity probe and
+wire-contract fixtures do not establish behavioral cutover. Remove the replaced Dart runtime and
+its active tests and tooling references in the same completed migration; do not preserve an
+unpublished intermediate implementation as a compatibility surface. Keep the shared Dart protocol
+client binding in `packages/vityo_agent_protocol`.
 
 There must be no debug-only, prototype-only, lab-only, or hidden switch that bypasses permission
 checks. Capability gaps must appear as structured blocked states with owner, reason, and recovery

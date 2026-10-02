@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "project": "Vityo",
-  "last_updated": "2026-06-25",
+  "last_updated": "2026-10-02",
   "release_gate": "scripts/release-readiness-gate.py",
   "policy": {
     "current_state": "current-only",
@@ -16,7 +16,10 @@
       "status": "current",
       "path": "scripts/release-readiness-gate.py",
       "command": "python3 scripts/release-readiness-gate.py --skip-build",
-      "scope": ["release", "tooling"]
+      "scope": [
+        "release",
+        "tooling"
+      ]
     },
     {
       "id": "vityo-ide-product-gate",
@@ -24,7 +27,11 @@
       "status": "current",
       "path": "scripts/vityo-product-gate.py",
       "command": "python3 scripts/vityo-product-gate.py",
-      "scope": ["product", "ide-quality", "checkpoint"]
+      "scope": [
+        "product",
+        "ide-quality",
+        "checkpoint"
+      ]
     },
     {
       "id": "ide-product-parity-gate",
@@ -32,7 +39,11 @@
       "status": "current",
       "path": "scripts/ide-product-parity-gate.py",
       "command": "python3 scripts/ide-product-parity-gate.py",
-      "scope": ["product", "ide-quality", "parity"]
+      "scope": [
+        "product",
+        "ide-quality",
+        "parity"
+      ]
     },
     {
       "id": "architecture-boundary-gate",
@@ -40,7 +51,11 @@
       "status": "current",
       "path": "scripts/architecture_boundary_gate_test.py",
       "command": "python3 scripts/architecture_boundary_gate_test.py",
-      "scope": ["architecture", "boundary", "dart-layers"]
+      "scope": [
+        "architecture",
+        "boundary",
+        "dart-layers"
+      ]
     },
     {
       "id": "public-contract-schema-gate",
@@ -48,23 +63,60 @@
       "status": "current",
       "path": "scripts/public-contract-schema-gate.py",
       "command": "python3 scripts/public-contract-schema-gate.py",
-      "scope": ["schema", "public-contract", "dart-models"]
+      "scope": [
+        "schema",
+        "public-contract",
+        "dart-models"
+      ]
     },
     {
-      "id": "delivery-gate",
+      "id": "vityo-delivery",
       "kind": "gate",
       "status": "current",
-      "path": "scripts/delivery-gate.sh",
-      "command": "./scripts/delivery-gate.sh --mode checkpoint",
-      "scope": ["delivery", "coordination"]
+      "path": "scripts/vityo.py",
+      "command": "python3 scripts/vityo.py deliver",
+      "scope": [
+        "delivery",
+        "testing",
+        "release"
+      ]
     },
     {
-      "id": "checkpoint-health",
+      "id": "vityo-rust-notices",
+      "kind": "maintenance",
+      "status": "current",
+      "path": "scripts/vityo_rust_notices.py",
+      "command": "python3 scripts/vityo_rust_notices.py --output build/evidence/rust-third-party-notices.txt",
+      "scope": [
+        "dependency",
+        "license",
+        "notices"
+      ]
+    },
+    {
+      "id": "rust-coverage-gate",
       "kind": "gate",
       "status": "current",
-      "path": "scripts/checkpoint-health.sh",
-      "command": "./scripts/checkpoint-health.sh",
-      "scope": ["health", "release"]
+      "path": "scripts/rust-coverage-gate.py",
+      "command": "python3 scripts/rust-coverage-gate.py --product all --report-only --output-dir build/evidence/rust-coverage",
+      "scope": [
+        "coverage",
+        "rust",
+        "coding-agent",
+        "vityod"
+      ]
+    },
+    {
+      "id": "vityo-architecture",
+      "kind": "gate",
+      "status": "current",
+      "path": "scripts/vityo_architecture.py",
+      "command": "python3 scripts/vityo_architecture.py --check",
+      "scope": [
+        "architecture",
+        "source-model",
+        "generated-views"
+      ]
     },
     {
       "id": "project-coverage-gate",
@@ -72,7 +124,11 @@
       "status": "current",
       "path": "scripts/project-coverage-gate.py",
       "command": "python3 scripts/project-coverage-gate.py --fail-under 95 --flutter-dir products/vityo_app",
-      "scope": ["coverage", "frontend", "tooling"]
+      "scope": [
+        "coverage",
+        "frontend",
+        "tooling"
+      ]
     },
     {
       "id": "project-coverage-workflow",
@@ -80,7 +136,11 @@
       "status": "current",
       "path": ".github/workflows/project-coverage-gate.yml",
       "command": "gh workflow run project-coverage-gate.yml",
-      "scope": ["coverage", "ci", "frontend"]
+      "scope": [
+        "coverage",
+        "ci",
+        "frontend"
+      ]
     },
     {
       "id": "python-coverage-gate",
@@ -88,7 +148,11 @@
       "status": "current",
       "path": "scripts/python-coverage-gate.py",
       "command": "python3 scripts/python-coverage-gate.py --fail-under 95",
-      "scope": ["coverage", "python", "tooling"]
+      "scope": [
+        "coverage",
+        "python",
+        "tooling"
+      ]
     },
     {
       "id": "repo-hygiene-gate",
@@ -96,7 +160,10 @@
       "status": "current",
       "path": "scripts/repo-hygiene-gate.py",
       "command": "python3 scripts/repo-hygiene-gate.py --mode tracked",
-      "scope": ["repository", "source-layout"]
+      "scope": [
+        "repository",
+        "source-layout"
+      ]
     },
     {
       "id": "docs-gate",
@@ -104,7 +171,10 @@
       "status": "current",
       "path": "scripts/docs-gate.sh",
       "command": "./scripts/docs-gate.sh --mode worktree",
-      "scope": ["docs", "delivery"]
+      "scope": [
+        "docs",
+        "delivery"
+      ]
     },
     {
       "id": "team-docs-gate",
@@ -112,7 +182,10 @@
       "status": "current",
       "path": "scripts/team-docs-gate.py",
       "command": "python3 scripts/team-docs-gate.py",
-      "scope": ["docs", "ownership"]
+      "scope": [
+        "docs",
+        "ownership"
+      ]
     },
     {
       "id": "docs-index",
@@ -120,7 +193,10 @@
       "status": "current",
       "path": "scripts/docs-index.py",
       "command": "python3 scripts/docs-index.py --write",
-      "scope": ["docs", "index"]
+      "scope": [
+        "docs",
+        "index"
+      ]
     },
     {
       "id": "docs-lifecycle",
@@ -128,7 +204,10 @@
       "status": "current",
       "path": "scripts/docs-lifecycle.py",
       "command": "python3 scripts/docs-lifecycle.py",
-      "scope": ["docs", "lifecycle"]
+      "scope": [
+        "docs",
+        "lifecycle"
+      ]
     },
     {
       "id": "docs-audit",
@@ -136,7 +215,10 @@
       "status": "current",
       "path": "scripts/docs-audit.py",
       "command": "python3 scripts/docs-audit.py",
-      "scope": ["docs", "audit"]
+      "scope": [
+        "docs",
+        "audit"
+      ]
     },
     {
       "id": "ecosystem-cli-doc-gate",
@@ -144,7 +226,10 @@
       "status": "current",
       "path": "scripts/ecosystem-cli-doc-gate.py",
       "command": "python3 scripts/ecosystem-cli-doc-gate.py",
-      "scope": ["ecosystem", "contract-docs"]
+      "scope": [
+        "ecosystem",
+        "contract-docs"
+      ]
     },
     {
       "id": "language-fixture-gate",
@@ -152,7 +237,10 @@
       "status": "current",
       "path": "scripts/language-fixture-gate.sh",
       "command": "./scripts/language-fixture-gate.sh --flutter-dir products/vityo_app",
-      "scope": ["language", "fixture"]
+      "scope": [
+        "language",
+        "fixture"
+      ]
     },
     {
       "id": "flutter-analyze",
@@ -160,7 +248,10 @@
       "status": "current",
       "path": "products/vityo_app/analysis_options.yaml",
       "command": "cd products/vityo_app && flutter analyze",
-      "scope": ["frontend", "static-analysis"]
+      "scope": [
+        "frontend",
+        "static-analysis"
+      ]
     },
     {
       "id": "flutter-test",
@@ -168,7 +259,10 @@
       "status": "current",
       "path": "products/vityo_app/pubspec.yaml",
       "command": "cd products/vityo_app && flutter test",
-      "scope": ["frontend", "test"]
+      "scope": [
+        "frontend",
+        "test"
+      ]
     },
     {
       "id": "prototype-governance",
@@ -176,7 +270,10 @@
       "status": "current",
       "path": "prototype/scripts/check-prototype-governance.mjs",
       "command": "cd prototype && npm run governance",
-      "scope": ["prototype", "manifest"]
+      "scope": [
+        "prototype",
+        "manifest"
+      ]
     },
     {
       "id": "prototype-editor-selftest",
@@ -184,7 +281,10 @@
       "status": "current",
       "path": "prototype/scripts/check-editor-load.mjs",
       "command": "cd prototype && npm run selftest:editor",
-      "scope": ["prototype", "editor"]
+      "scope": [
+        "prototype",
+        "editor"
+      ]
     },
     {
       "id": "flutter-web-preview",
@@ -192,7 +292,10 @@
       "status": "current",
       "path": "scripts/serve-flutter-web-preview.sh",
       "command": "./scripts/serve-flutter-web-preview.sh",
-      "scope": ["frontend", "preview"]
+      "scope": [
+        "frontend",
+        "preview"
+      ]
     },
     {
       "id": "bootstrap-workspace",
@@ -200,7 +303,10 @@
       "status": "current",
       "path": "scripts/bootstrap-workspace.sh",
       "command": "./scripts/bootstrap-workspace.sh",
-      "scope": ["workspace", "setup"]
+      "scope": [
+        "workspace",
+        "setup"
+      ]
     },
     {
       "id": "bootstrap-dev-env-linux",
@@ -208,7 +314,10 @@
       "status": "current",
       "path": "scripts/bootstrap-dev-env.sh",
       "command": "./scripts/bootstrap-dev-env.sh",
-      "scope": ["linux", "setup"]
+      "scope": [
+        "linux",
+        "setup"
+      ]
     },
     {
       "id": "bootstrap-dev-env-macos",
@@ -216,7 +325,10 @@
       "status": "current",
       "path": "scripts/bootstrap-dev-env-macos.sh",
       "command": "./scripts/bootstrap-dev-env-macos.sh",
-      "scope": ["macos", "setup"]
+      "scope": [
+        "macos",
+        "setup"
+      ]
     },
     {
       "id": "bootstrap-dev-env-windows",
@@ -224,7 +336,10 @@
       "status": "current",
       "path": "scripts/bootstrap-dev-env-windows.ps1",
       "command": "pwsh scripts/bootstrap-dev-env-windows.ps1",
-      "scope": ["windows", "setup"]
+      "scope": [
+        "windows",
+        "setup"
+      ]
     },
     {
       "id": "android-sdk-profile",
@@ -232,7 +347,10 @@
       "status": "current",
       "path": "scripts/android-sdk-profile.sh",
       "command": "./scripts/android-sdk-profile.sh list",
-      "scope": ["android", "toolchain"]
+      "scope": [
+        "android",
+        "toolchain"
+      ]
     },
     {
       "id": "apple-platform-profile",
@@ -240,7 +358,11 @@
       "status": "current",
       "path": "scripts/apple-platform-profile.sh",
       "command": "./scripts/apple-platform-profile.sh list",
-      "scope": ["macos", "ios", "toolchain"]
+      "scope": [
+        "macos",
+        "ios",
+        "toolchain"
+      ]
     },
     {
       "id": "verify-android-device",
@@ -248,7 +370,10 @@
       "status": "current",
       "path": "scripts/verify-android-device.sh",
       "command": "./scripts/verify-android-device.sh",
-      "scope": ["android", "device"]
+      "scope": [
+        "android",
+        "device"
+      ]
     },
     {
       "id": "verify-apple-device",
@@ -256,7 +381,11 @@
       "status": "current",
       "path": "scripts/verify-apple-device.sh",
       "command": "./scripts/verify-apple-device.sh",
-      "scope": ["ios", "macos", "device"]
+      "scope": [
+        "ios",
+        "macos",
+        "device"
+      ]
     },
     {
       "id": "dependency-policy-gate",
@@ -264,7 +393,11 @@
       "status": "current",
       "path": "scripts/dependency-policy-gate.py",
       "command": "python3 scripts/dependency-policy-gate.py",
-      "scope": ["dependency", "security", "policy"]
+      "scope": [
+        "dependency",
+        "security",
+        "policy"
+      ]
     },
     {
       "id": "github-actions-pin-gate",
@@ -272,7 +405,11 @@
       "status": "current",
       "path": "scripts/github-actions-pin-gate.py",
       "command": "python3 scripts/github-actions-pin-gate.py --mode audit",
-      "scope": ["ci", "security", "supply-chain"]
+      "scope": [
+        "ci",
+        "security",
+        "supply-chain"
+      ]
     },
     {
       "id": "import-boundary-gate",
@@ -280,7 +417,11 @@
       "status": "current",
       "path": "scripts/import-boundary-gate.py",
       "command": "python3 scripts/import-boundary-gate.py",
-      "scope": ["architecture", "boundary", "imports"]
+      "scope": [
+        "architecture",
+        "boundary",
+        "imports"
+      ]
     },
     {
       "id": "performance-gate",
@@ -288,7 +429,11 @@
       "status": "current",
       "path": "scripts/performance-gate.py",
       "command": "python3 scripts/performance-gate.py",
-      "scope": ["performance", "benchmark", "regression"]
+      "scope": [
+        "performance",
+        "benchmark",
+        "regression"
+      ]
     }
   ],
   "skills": [
@@ -296,8 +441,7 @@
       "id": "release-operations",
       "status": "current",
       "backing_tools": [
-        "delivery-gate",
-        "checkpoint-health",
+        "vityo-delivery",
         "project-coverage-gate",
         "project-coverage-workflow",
         "release-readiness-gate",
@@ -307,7 +451,10 @@
         "import-boundary-gate",
         "public-contract-schema-gate",
         "dependency-policy-gate",
-        "github-actions-pin-gate"
+        "github-actions-pin-gate",
+        "vityo-architecture",
+        "rust-coverage-gate",
+        "vityo-rust-notices"
       ]
     },
     {
@@ -320,7 +467,10 @@
         "docs-lifecycle",
         "docs-audit",
         "ecosystem-cli-doc-gate",
-        "python-coverage-gate"
+        "python-coverage-gate",
+        "vityo-architecture",
+        "rust-coverage-gate",
+        "vityo-rust-notices"
       ]
     },
     {
@@ -379,7 +529,9 @@
         "release-readiness-gate",
         "dependency-policy-gate",
         "github-actions-pin-gate",
-        "performance-gate"
+        "performance-gate",
+        "rust-coverage-gate",
+        "vityo-rust-notices"
       ]
     }
   ],
@@ -388,15 +540,26 @@
       "id": "coordination",
       "status": "current",
       "runbook": "docs/teams/COORDINATION-RUNBOOK.md",
-      "owned_paths": ["docs/teams/"],
-      "maintenance_tools": ["delivery-gate", "checkpoint-health"],
-      "skills": ["release-operations", "repository-policy-maintenance"]
+      "owned_paths": [
+        "docs/teams/"
+      ],
+      "maintenance_tools": [
+        "vityo-delivery"
+      ],
+      "skills": [
+        "release-operations",
+        "repository-policy-maintenance"
+      ]
     },
     {
       "id": "docs-delivery",
       "status": "current",
       "runbook": "docs/teams/DOCS-DELIVERY-RUNBOOK.md",
-      "owned_paths": ["docs/", "scripts/", "toolchain/"],
+      "owned_paths": [
+        "docs/",
+        "scripts/",
+        "toolchain/"
+      ],
       "maintenance_tools": [
         "docs-gate",
         "team-docs-gate",
@@ -410,9 +573,15 @@
         "dependency-policy-gate",
         "github-actions-pin-gate",
         "import-boundary-gate",
-        "performance-gate"
+        "performance-gate",
+        "vityo-architecture",
+        "rust-coverage-gate",
+        "vityo-rust-notices"
       ],
-      "skills": ["docs-delivery-maintenance", "repository-policy-maintenance"]
+      "skills": [
+        "docs-delivery-maintenance",
+        "repository-policy-maintenance"
+      ]
     },
     {
       "id": "shell-editor",
@@ -447,10 +616,21 @@
         "products/vityo_app/lib/src/ide/workbench/agent_collaboration/",
         "products/vityo_app/lib/src/view_render/runtime/",
         "products/vityo_app/lib/src/presentation/agent_workbench/",
-        "packages/vityo_agent_protocol/"
+        "packages/vityo_agent_protocol/",
+        "products/vityo_coding_agent/",
+        "products/vityo_app/native/vityod/"
       ],
-      "maintenance_tools": ["flutter-analyze", "flutter-test", "checkpoint-health"],
-      "skills": ["frontend-shell-maintenance", "release-operations"]
+      "maintenance_tools": [
+        "flutter-analyze",
+        "flutter-test",
+        "vityo-delivery",
+        "rust-coverage-gate",
+        "vityo-rust-notices"
+      ],
+      "skills": [
+        "frontend-shell-maintenance",
+        "release-operations"
+      ]
     },
     {
       "id": "module-platform",
@@ -475,7 +655,10 @@
         "verify-apple-device",
         "flutter-test"
       ],
-      "skills": ["platform-toolchain-maintenance", "frontend-shell-maintenance"]
+      "skills": [
+        "platform-toolchain-maintenance",
+        "frontend-shell-maintenance"
+      ]
     },
     {
       "id": "adapter-contracts",
@@ -493,7 +676,10 @@
         "flutter-test",
         "import-boundary-gate"
       ],
-      "skills": ["docs-delivery-maintenance", "repository-policy-maintenance"]
+      "skills": [
+        "docs-delivery-maintenance",
+        "repository-policy-maintenance"
+      ]
     },
     {
       "id": "theme-ux",
@@ -511,7 +697,10 @@
         "prototype-governance",
         "prototype-editor-selftest"
       ],
-      "skills": ["frontend-shell-maintenance", "prototype-experience-maintenance"]
+      "skills": [
+        "frontend-shell-maintenance",
+        "prototype-experience-maintenance"
+      ]
     },
     {
       "id": "foundation-environment",
@@ -528,7 +717,7 @@
         "bootstrap-dev-env-linux",
         "bootstrap-dev-env-macos",
         "bootstrap-dev-env-windows",
-        "checkpoint-health"
+        "vityo-delivery"
       ],
       "skills": [
         "environment-bootstrap-maintenance",

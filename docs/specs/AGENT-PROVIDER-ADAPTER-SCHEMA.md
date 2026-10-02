@@ -1,137 +1,106 @@
-# Agent Provider Adapter Schema
+# Agent Provider Configuration
 
-**Purpose:** Preserve the minimum provider-adapter contract for compatible Agent runtimes; this is not an IDE adapter or Vityo product boundary.
+**Purpose:** Define the non-secret configuration contract for the first-party Coding Agent's
+OpenAI-compatible chat provider.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-02
 
-**Status:** Agent-runtime schema baseline
+**Status:** Selected contract; Rust provider implementation is in progress. A config parser or
+provider adapter does not establish that the CLI, packaged client, or a live provider is connected.
 
-**Ownership:** Model/provider adapters belong to Vityo Coding Agent or another compatible Agent.
-Vityo connects to the Agent through `packages/vityo_agent_protocol` and does not consume this
-provider contract directly. The retired IDE provider implementation is not a schema consumer or a
-compatibility surface.
+## Ownership And Scope
 
-## 1. 适用范围
+The provider, model, limits, and credential lookup belong to the independent Coding Agent runtime.
+The IDE communicates with the Agent through the shared protocol and never parses this file or
+connects directly to a model provider. This contract selects one provider adapter,
+`openai_compatible_chat`; it does not define a provider registry, adapter-module format, local
+bridge, fallback chain, or provider-specific IDE settings.
 
-本 schema 覆盖：
+The selected runtime interface accepts `--provider-config ABSOLUTE_PATH`. The first-party packaged
+descriptor supplies the file under the application's support directory at
+`vityo-coding-agent/provider.json`; standalone callers supply an explicit absolute path. The Rust
+binary's argument and package composition are still in progress, so these paths describe the
+selected interface, not a completed production startup route.
 
-1. OpenAI-compatible providers used inside an Agent runtime.
-2. Local model/provider bridges used inside an Agent runtime.
-3. Provider adapters mounted into an Agent runtime.
+## JSON Shape
 
-本 schema 不覆盖：
+The file is non-secret JSON. Its exact field names follow the Rust deserializer's camel-case
+contract:
 
-1. 具体模型权重格式
-2. provider 内部计费逻辑
-3. Vityo Agent Workbench presentation
-4. IDE/Agent protocol messages
+```json
+{
+  "adapter": "openai_compatible_chat",
+  "endpointBase": "https://provider.example/v1",
+  "model": "example-model",
+  "capabilities": {
+    "contextTokens": 64000,
+    "outputTokens": 8192,
+    "supportsTools": true,
+    "maxConcurrency": 1
+  },
+  "limits": {
+    "maxTotalTokens": 8192,
+    "maxCostMicros": null,
+    "maxBufferedOutputBytes": 262144,
+    "maxToolArgumentBytes": 65536,
+    "maxBufferedToolBytes": 262144,
+    "maxPendingToolCalls": 16,
+    "maxToolCalls": 64,
+    "maxToolSchemaBytes": 262144
+  },
+  "auth": {
+    "mode": "bearer_token",
+    "secretRef": {
+      "service": "vityo-coding-agent",
+      "account": "example-provider-account"
+    }
+  }
+}
+```
 
-## 2. 枚举
+For an endpoint that requires no authentication, use `"auth": { "mode": "none" }` and omit
+`secretRef`. For bearer authentication, provide a non-empty `secretRef.service` and
+`secretRef.account`; the runtime resolves that reference from the native credential store. The
+reference identifies a credential and never contains its value.
 
-### 2.1 `kind`
+## Validation And Safety
 
-- `cloud_openai_compatible`
-- `local_bridge`
+1. The runtime reads an absolute config path. The JSON file is bounded to 64 KiB and rejects unknown
+   fields.
+2. `adapter` must equal `openai_compatible_chat`; `model` and `endpointBase` must be valid and
+   non-empty. Endpoint URLs cannot embed user information, query parameters, or fragments.
+3. Capability counts and limits must be positive, and `outputTokens` cannot exceed
+   `maxTotalTokens`.
+4. `limits.maxCostMicros` is optional. The optional buffered-output, tool-argument, buffered-tool,
+   pending-tool, tool-call, and tool-schema limits default respectively to 262144, 65536, 262144,
+   16, 64, and 262144 when omitted.
+5. Provider configuration may contain an endpoint, model, declared limits, and a credential
+   reference, but never a raw key or bearer value. Raw credentials must not appear in argv, ACP
+   messages, diagnostics, logs, or durable journals.
+6. Provider request lifetime follows the explicit task budget and cancellation token. There is no
+   arbitrary mandatory wall-clock timeout default.
+7. Provider network requests use TLS. A local HTTP fixture is test-only and cannot authorize a
+   plaintext production endpoint.
 
-### 2.2 `authMode`
+Missing configuration and unavailable native credentials return typed configuration or
+credential-store failures; they never produce a fabricated Agent completion. The Linux launcher
+may pass only the explicitly approved session variables needed to reach the native secret service;
+it must not forward arbitrary environment values or credential contents.
 
-- `none`
-- `bearer_token`
-- `api_key_header`
-- `local_session`
+## Deterministic Verification And Live Acceptance
 
-### 2.3 `requestFormat`
+The production configuration parser accepts HTTPS endpoints only. Rust unit tests use a private
+`cfg(test)` loopback transport seam to exercise the same provider request, stream reducer, and Agent
+continuation code against deterministic local HTTP/SSE fixtures. That seam bypasses only production
+endpoint validation while injecting the test client; there is no production HTTP flag and no
+certificate-trust override. Synthetic credentials keep fixture values out of the native credential
+store. The cases cover multi-turn tool-call/result history, streamed frame assembly, cancellation,
+malformed responses, provider errors, and configuration/credential failures.
 
-- `openai_compatible_chat`
-- `local_bridge_rpc`
+The real executable's configuration/ACP-readiness check uses a valid HTTPS configuration with
+`auth.mode: none` and makes no provider request. No deterministic engineering test contacts an
+external provider.
 
-## 3. Canonical Shape
-
-`AgentProviderAdapterSpec` 必须包含：
-
-1. `adapterId: string`
-2. `schemaVersion: string`
-3. `kind: enum`
-4. `displayName: string`
-5. `moduleId: string`
-6. `distributionPolicyRef: string`
-7. `enabledByDefault: boolean`
-8. `capabilityFlags: object`
-9. `routing: object`
-10. `auth: object`
-11. `limits: object`
-12. `uiHints: object`
-
-## 4. 字段细化
-
-### 4.1 `capabilityFlags`
-
-1. `chat: boolean`
-2. `codePatch: boolean`
-3. `stream: boolean`
-4. `attachments: boolean`
-5. `workspaceContext: boolean`
-6. `runtimeContext: boolean`
-
-### 4.2 `routing`
-
-1. `endpointBase?: string`
-2. `defaultModel?: string`
-3. `modelAliases?: map<string, string>`
-4. `localSocketPath?: string`
-5. `localBinaryRef?: string`
-6. `timeoutMs: integer`
-7. `fallbackOrder?: string[]`
-
-### 4.3 `auth`
-
-1. `authMode: enum`
-2. `headerName?: string`
-3. `secretRef?: string`
-
-### 4.4 `limits`
-
-1. `maxInputBytes: integer`
-2. `maxOutputTokens: integer`
-3. `maxAttachmentBytes: integer`
-
-### 4.5 `uiHints`
-
-1. `settingsSection: string`
-2. `badgeLabel?: string`
-3. `requiresNetwork: boolean`
-4. `userVisibleName: string`
-
-## 5. 校验规则
-
-1. `adapterId` must be unique within one Agent runtime installation.
-2. `distributionPolicyRef` 必须引用 [DISTRIBUTION-CHANNEL-POLICY-SCHEMA.md](./DISTRIBUTION-CHANNEL-POLICY-SCHEMA.md) 中存在的 policy。
-3. `kind=cloud_openai_compatible` 时，`routing.endpointBase` 必填，且 `requestFormat` 必须为 `openai_compatible_chat`。
-4. `kind=local_bridge` 时，`routing.localSocketPath` 或 `routing.localBinaryRef` 至少存在一个，且 `requestFormat` 必须为 `local_bridge_rpc`。
-5. `auth.secretRef` 只允许引用本地安全存储或云端 secret handle，不得在 profile sync 中明文同步。
-6. `fallbackOrder` 中的 adapter id 必须已安装且不能包含自己。
-
-## 6. 默认行为
-
-1. When no provider adapter is mounted, the Agent runtime reports a structured unavailable or
-   configuration-required state to its client.
-2. When a local bridge is unavailable, the Agent runtime may follow its configured fallback order.
-3. Unknown capability flags must not crash the Agent runtime or its protocol client.
-
-## 7. 最小响应 envelope
-
-`AgentProviderResponseEnvelope` 至少包含：
-
-1. `requestId: string`
-2. `providerMessageId?: string`
-3. `role: string`
-4. `contentParts: object[]`
-5. `finishReason: string`
-6. `usage?: object`
-
-## 8. 首发建议默认值
-
-1. `timeoutMs = 30000`
-2. `maxInputBytes = 262144`
-3. `maxOutputTokens = 8192`
-4. `maxAttachmentBytes = 10485760`
+Real provider conversations and real development tasks remain a separate user-authorized workflow.
+This configuration contract, an adapter test, a package, or a successful client startup probe does
+not establish live endpoint availability, account authorization, model behavior, or user acceptance.

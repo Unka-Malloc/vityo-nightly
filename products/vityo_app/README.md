@@ -20,14 +20,21 @@
 
 ## Release readiness gate
 
-正式发布前需要从仓库根目录执行：
+仓库级统一交付流程从仓库根目录执行：
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint
+python3 scripts/vityo.py deliver
+```
+
+该流程依次运行隐私、架构与文档、测试、coverage、release build/package、per-user install 和 launch 阶段。阶段可单独运行以定位并修复故障；coverage 只评估 test 阶段生成的报告，不重复收集测试。
+
+`scripts/release-readiness-gate.py` 仍提供发布元数据和证据规则的静态检查，由 `architecture` 阶段调用：
+
+```bash
 python3 scripts/release-readiness-gate.py
 ```
 
-`delivery-gate` 负责仓库卫生、文档、完整 Flutter 测试、语言 fixture、prototype governance 和 editor selftest。`release-readiness-gate.py` 负责发布级证据：
+静态检查负责发布级元数据和测试入口证据：
 
 1. 检查 `products/vityo_app/pubspec.yaml` 的 Vityo editor 元数据。
 2. 检查关键 IDE 能力是否都有测试入口，包括 editor binding、language service、runtime/toolchain、environment/data persistence。

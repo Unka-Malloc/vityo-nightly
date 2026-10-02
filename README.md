@@ -19,7 +19,7 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
 1. `Vityo` 先冻结产品合同与 adapter 边界
 2. Flutter 主壳与编辑器核心继续独立推进
 3. 上游 `styio` / `pafio` 按 `Vityo` 的合同补齐机器接口
-4. Flutter 应用（`products/vityo_app`）是默认打开的客户端；手写的 `prototype/` JavaScript 原型已归档为 Draft，仅作历史参考，不再维护
+4. Flutter 应用（`products/vityo_app`）是默认生产客户端；手写的 `prototype/` JavaScript 原型是永久保留的独立源码资产，保留其入口、依赖治理和测试，状态与 Flutter 产品分别维护
 
 文档入口见 [docs/README.md](docs/README.md)。
 
@@ -27,7 +27,7 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
 
 贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-功能测试根目录、CI 实际接入范围和未来画布验收要求见 [Test Catalog](docs/assets/workflow/TEST-CATALOG.md)。仓库级本地健康检查使用 [checkpoint-health](docs/assets/workflow/CHECKPOINT-HEALTH.md)，交付门禁见 [Delivery Gate](docs/assets/workflow/DELIVERY-GATE.md)；详细改动与回归流程见 [Contributor And Agent Workflow](docs/specs/CONTRIBUTOR-AND-AGENT-SPEC.md) 和 [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md)。
+功能测试根目录、CI 实际接入范围和未来画布验收要求见 [Test Catalog](docs/assets/workflow/TEST-CATALOG.md)。本地和 CI 共用入口是 `python3 scripts/vityo.py deliver`；阶段说明见 [Test and Coverage](docs/assets/workflow/CHECKPOINT-HEALTH.md) 与 [Delivery Pipeline](docs/assets/workflow/DELIVERY-GATE.md)，详细改动与回归流程见 [Contributor And Agent Workflow](docs/specs/CONTRIBUTOR-AND-AGENT-SPEC.md) 和 [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md)。
 
 安全报告与安全基线见 [SECURITY.md](SECURITY.md) 和 [docs/governance/SECURITY-AND-SUPPLY-CHAIN.md](docs/governance/SECURITY-AND-SUPPLY-CHAIN.md)。
 
@@ -35,7 +35,7 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
 
 默认客户端入口见 [products/vityo_app/README.md](products/vityo_app/README.md)（Flutter，跨平台，可用浏览器打开）。
 
-已归档的 Draft 原型入口见 [prototype/index.html](prototype/index.html) 与 [prototype/editor.html](prototype/editor.html)（不再维护，仅作参考）。
+独立 prototype 源码入口见 [prototype/index.html](prototype/index.html) 与 [prototype/editor.html](prototype/editor.html)。它不是默认生产客户端，仍按自己的入口、依赖与测试维护。
 
 ## Product And Runtime Boundary
 
@@ -43,12 +43,15 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
   语言/编译/运行事实、Agent Workbench、权限呈现、变更审查和 workspace transaction。
 - `products/vityo_coding_agent/` 是第一方配套 Agent 运行时：拥有模型/provider、上下文选择、
   工具与策略、coding loop、持久会话和 multi-Agent 编排。
+- Coding Agent 的 Rust 运行时迁移仍在进行；当前 Dart 实现保留为现行运行时，直至 Rust 实现
+  具备完整行为、协议和消费者覆盖。Rust 二进制的身份探针不代表 Agent 已完成接线；现状与
+  切换证据见 [Agent Runtime Runbook](docs/teams/AGENT-RUNTIME-RUNBOOK.md)。
 - `packages/vityo_agent_protocol/` 是双方及其它兼容 Agent 使用的纯版本化协议，不是第三个产品。
 - IDE 不直接连接模型 provider，也不导入 Agent 运行时实现；无 Agent 时仍保持完整 IDE 能力。
 
 ## Frontend / Backend Split
 
-- 前端是面向用户的编辑器、运行视窗、Agent Workbench 和产品交互界面；默认客户端入口在 `products/vityo_app/`（Flutter），`prototype/` 为已归档的 Draft 原型。
+- 前端是面向用户的编辑器、运行视窗、Agent Workbench 和产品交互界面；默认客户端入口在 `products/vityo_app/`（Flutter），`prototype/` 是持续维护的独立源码资产。
 - 后端不是单一服务，而是 `Vityo` 背后的整条工具链面：adapter layer、local CLI/FFI、hosted control plane，以及上游 `pafio` / `styio` 合同。
 - 前端只编排和展示 machine contract；工具链解析、依赖/发布/执行语义、仓库与云平台行为都留在后端。模型/provider 与 Agent 执行编排留在兼容 Agent 运行时。
 

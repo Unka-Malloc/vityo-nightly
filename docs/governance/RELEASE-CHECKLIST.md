@@ -30,7 +30,7 @@ A formal product release candidate must additionally prove that the launch artif
 
 ## CI Gate Classification
 
-The workflow files define configured lanes and triggers. They are configuration evidence only; a result must be observed for the exact candidate revision. The `delivery-gate.sh` product gate is optional during an ordinary local run, while GitHub Actions automatically requires the configured real Styio/Pafio matrix.
+The workflow files define configured lanes and triggers. They are configuration evidence only; a result must be observed for the exact candidate revision. The canonical Python pipeline requires pinned Styio language fixtures in every `test` stage; CI and an explicit local `VITYO_PRODUCT_GATE=1` request also require the real Styio/Pafio product matrix.
 
 ### Configured CI Workflows
 
@@ -39,13 +39,13 @@ The workflow files define configured lanes and triggers. They are configuration 
 | `repo-hygiene.yml` | Tracked-tree governance, dependency policy, supply chain, GitHub Actions pin, architecture and product-line boundaries, security baseline, performance budget, license policy, import boundary, ecosystem CLI doc, incoming history range | Repository hygiene and policy compliance is maintained |
 | `audit.yml` | Supply chain governance, dependency policy, GitHub Actions pin audit, security baseline, license policy, architecture and product-line boundaries | Security, supply-chain, and architecture policy gates pass |
 | `styio-audit.yml` | External styio-audit gate against released policy | Cross-repository audit policy is satisfied |
-| `project-coverage-gate.yml` | Discovered Python tooling tests and Flutter app tests with 95% and 85% coverage floors | Configured Python and Flutter coverage scopes pass |
-| `local-ci-gate.yml` (Linux, Windows, macOS jobs) | Full `delivery-gate.sh --mode push`, deterministic portable health suites, required real Styio/Pafio matrix, and host-specific native checks: desktop reconnect on Linux/macOS and the 14-test native UI/credential suite on macOS (11 glob-discovered plus three explicit tests) | The configured platform delivery and package smoke evidence passes for the host; the current app integration root has no Windows-target native integration suite |
-| `windows-native.yml` | `delivery-gate.sh --mode push --skip-audit`, Flutter analysis, native Windows build, and coverage/build artifacts | The additional Windows delivery lane passes; this is build and portable-test evidence, not Windows app integration evidence; audit evidence is supplied by the separate required audit workflow |
+| `project-coverage-gate.yml` | Discovered Python tooling tests (95% floor), Flutter app tests (85% floor), and separate instrumented Rust Coding Agent and daemon reports | Configured Python/Flutter floors and Rust report/module requirements pass; Rust has no default percentage floor |
+| `local-ci-gate.yml` (Linux, Windows, macOS jobs) | The Python delivery stages, deterministic portable suites, required pinned Styio/Pafio product matrix, and host-specific native suites: desktop reconnect on Linux/macOS and the 14-file native UI/credential suite on macOS | The configured platform delivery and package/startup evidence passes for the host; the current app integration root has no Windows-target native integration suite |
+| `windows-native.yml` | Windows delivery stages, Flutter analysis/build and its configured coverage/artifact lane | Windows build and package/startup evidence only; this is not Windows app integration evidence |
 
 ### Real Product Matrix
 
-The real local product matrix requires the configured Styio and Pafio executables. A local contributor opts in with `VITYO_PRODUCT_GATE=1`; GitHub Actions requires the matrix automatically and provisions the pinned executables.
+The real product matrix uses the exact Styio and Pafio revisions in `toolchain/product-matrix.json`. A local contributor opts in with `VITYO_PRODUCT_GATE=1`; GitHub Actions requires the matrix, and the shared resolver provisions pinned executables as needed. Independently, every `test` stage runs parser-backed Styio fixtures using the same pinned resolver.
 
 | Gate Script | What It Proves | Trigger |
 |-------------|----------------|---------|
@@ -58,18 +58,13 @@ Green required checks for a specific CI revision mean the configured repository 
 
 Passing CI does **not** mean platform signing, distribution, installer/update/uninstall, or production release readiness has been verified. It also does not establish a live model-provider conversation or real user acceptance.
 
-## Skip Flags And Closure Evidence
+## Stage Evidence
 
-The delivery gate supports several `--skip-*` flags. Each has a narrow legitimate use. Using one in CI does not prove the skipped step passed; it proves only that CI chose not to run it.
-
-| Flag | Legitimate Use | Cannot Claim |
-|------|----------------|--------------|
-| `--skip-build` | Metadata, docs, governance-only changes; non-release checkpoints where Flutter release build is not part of claimed evidence | Release build evidence for any platform being launched |
-| `--skip-health` | Docs/process-only deliveries where checkpoint health (Flutter analyze, tests, coverage, selftest) is verified separately or is out of scope | That Flutter analyze, tests, coverage, or selftest passed |
-| `--skip-audit` | Checkpoints where external styio-audit is enforced by the separate required `styio-audit` check; explicitly scoped docs/process recovery | That external audit policy is satisfied (use the separate styio-audit check for that) |
-| `--skip-ecosystem` | Targeted recovery, not normal CI | That ecosystem CLI doc consistency was checked |
-
-**Rule:** A PR or checkpoint claiming product closure must show positive evidence for every gate relevant to the claimed scope. Relying on `--skip-*` flags as evidence of passing is invalid. The evidence record must include the actual gate output or a reference to the CI run that executed that gate without the skip flag.
+The canonical delivery command does not expose skip flags. Stages can be invoked independently to
+diagnose and repair a specific failure, but starting at a later stage does not establish that earlier
+stages passed. Product closure requires positive evidence for every relevant stage and host lane.
+`release-readiness-gate.py --skip-build` remains a separate static metadata check; it is not a
+release build or package result.
 
 This checklist defines release evidence; it does not create an active planning checkpoint or grant release authority. Record evidence against the current authorized delivery and the exact candidate revision.
 
@@ -91,7 +86,7 @@ git diff --check
 For a full release candidate, also run:
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint
+python3 scripts/vityo.py deliver
 python3 scripts/release-readiness-gate.py
 python3 scripts/performance-gate.py --threshold 1.10
 flutter build linux --release

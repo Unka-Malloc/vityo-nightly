@@ -2,7 +2,7 @@
 
 **Purpose:** Define the Coding Agent runtime owner's responsibilities, owned paths, review checklist, and required gates. Enforce credential safety, permission audit, patch workflow, and journal/audit compliance.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
 ## Mission
 
@@ -11,14 +11,21 @@ policy, coding loops, durable sessions, and multi-agent scheduling. The IDE owns
 client and collaboration workbench. The Agent never stores raw API keys, directly mutates IDE files,
 or bypasses host transactions.
 
+The target runtime is implemented in Rust as an independent executable. The migration is in
+progress: Dart remains the current Agent behavior until provider, tool, policy, session, protocol,
+and IDE-consumer behavior are covered through the Rust implementation. An executable identity
+probe or wire-contract-only test does not establish that cutover.
+
 ## Owned Surface
 
 Primary paths:
-1. `products/vityo_coding_agent/lib/src/`
-2. `products/vityo_coding_agent/bin/`
-3. `packages/vityo_agent_protocol/`
-4. `docs/design/Vityo-Agent-Native-IDE-Architecture.md`
+1. `products/vityo_coding_agent/src/` — Rust target runtime.
+2. `products/vityo_coding_agent/lib/src/`, `products/vityo_coding_agent/bin/`, `products/vityo_coding_agent/test/`, and `products/vityo_coding_agent/integration_test/` — current Dart runtime and tests during migration; remove the replaced implementation and active checks when Rust cutover is complete.
+3. `products/vityo_coding_agent/Cargo.toml` and `Cargo.lock` — Rust runtime dependency boundary.
+4. `packages/vityo_agent_protocol/` — shared wire contract and Dart client binding, not Agent implementation.
 5. `docs/teams/AGENT-RUNTIME-RUNBOOK.md`
+
+Architecture decisions remain owned by [the Agent architecture SSOT](../design/Vityo-Agent-Native-IDE-Architecture.md).
 
 IDE Agent Client and Workbench paths are review dependencies, not Agent-runtime-owned surfaces:
 
@@ -56,6 +63,14 @@ cd products/vityo_coding_agent && dart analyze && dart test
 cd packages/vityo_agent_protocol && dart analyze && dart test
 python3 scripts/check_security_baseline.py
 ```
+
+The Dart commands above still verify the current runtime behavior. Rust changes also require the
+locked Cargo workspace tests and the Coding Agent suite registered through
+`python3 scripts/vityo_quality.py --product coding-agent --suite full`. The canonical pipeline
+collects instrumented Rust coverage for both Rust workspaces and runs the registered IDE consumer
+suites. Its current Coding Agent behavior suite still exercises Dart, so Rust coverage and wire
+contracts alone do not establish a production cutover. Do not claim cutover until the Rust behavior
+suite and real IDE-consumer path are registered and pass.
 
 ## Cross-Team Dependencies
 

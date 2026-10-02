@@ -21,7 +21,7 @@ Primary paths:
 7. `scripts/docs-audit.py`
 8. `scripts/team-docs-gate.py`
 9. `scripts/docs-gate.sh`
-10. `scripts/delivery-gate.sh`
+10. `scripts/vityo.py` — canonical privacy, architecture, test, coverage, build, install, and launch pipeline
 11. `.github/workflows/project-coverage-gate.yml`
 12. `scripts/project-coverage-gate.py`
 13. `scripts/python-coverage-gate.py`
@@ -99,8 +99,8 @@ claims.
 17. Keep [../specs/TECHNOLOGY-COMPONENT-INVENTORY.md](../specs/TECHNOLOGY-COMPONENT-INVENTORY.md) aligned with `styio-audit` whenever the technology stack, internal components, open-source components, dependency manifests, Apache-2.0 evidence, commercial-risk boundaries, or UI asset-source evidence changes.
 18. Maintain GitHub merge gates through Rulesets rather than legacy classic branch protection; audit effective branch rules when required status-check governance changes.
 19. External audit shard updates must name the remediated finding, the changed security boundary, and the exact validation command; if code and audit evidence move together, update the owning team runbook in the same change.
-20. The ecosystem CLI doc gate (`scripts/ecosystem-cli-doc-gate.py`) is marked non-blocking for cross-repo contract issues; sibling-repo doc failures do not block vityo-nightly PRs. Normal CI must run it for evidence, while `--skip-ecosystem` on `delivery-gate.sh` and `docs-gate.sh` is reserved for targeted recovery.
-20. Checkpoint health documentation must list every command run by `scripts/checkpoint-health.sh`; when project coverage, language fixture gate roots, shell-wrapper line-ending policy, prototype governance, or selftest routing changes, update `docs/assets/workflow/CHECKPOINT-HEALTH.md` and the affected owner runbook in the same change.
+20. The ecosystem CLI doc gate (`scripts/ecosystem-cli-doc-gate.py`) remains part of the documented architecture stage; its cross-repository severity is defined by the docs gate, not by an alternate delivery mode.
+21. Keep [the delivery pipeline](../assets/workflow/DELIVERY-GATE.md), [test and coverage map](../assets/workflow/CHECKPOINT-HEALTH.md), and [test catalog](../assets/workflow/TEST-CATALOG.md) aligned with the actual `scripts/vityo.py` stage registry. `test` collects Python and Flutter reports and instrumented Rust reports for both workspaces once; `coverage` evaluates them without rerunning suites. Rust reports require executed source coverage, with mapped requirement-module coverage for the Agent report, and have no default percentage floor. Styio fixtures are required; the resolver provisions the pinned tool when needed, while invalid explicit overrides or failed provisioning fail the stage.
 21. Language-service ADR or contract updates must refresh both the owning contract runbook and generated docs indexes in the same worktree pass; do not rely on passing Flutter tests as evidence that docs ownership is closed.
 22. Docs tree structure, milestone files, prototype manifest entries, and fixture paths must be organized by content or functional effect. Version strings, dates, and stage numbers may appear as state metadata or external wire values, but must not define repository directories, entry files, task identities, or implementation routing.
 23. Governance docs are part of docs delivery. API compatibility, security, release checklist, CODEOWNERS policy, root contribution/security entries, and PR template changes must keep generated docs indexes current.
@@ -129,17 +129,20 @@ claims.
 
 ## Required Gates
 
-Minimum:
+For a documentation-only focused pass, run the two stages that include privacy/repository hygiene and documentation/architecture validation:
 
 ```bash
-./scripts/docs-gate.sh
-python3 scripts/docs-index.py --write
-python3 -m pytest tests/test_docs_tooling_coverage.py
-python3 scripts/repo-hygiene-gate.py --mode tracked
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
+python3 scripts/vityo.py privacy
+python3 scripts/vityo.py architecture
 ```
 
-`scripts/delivery-gate.sh` 会在交付时统一组合 repo hygiene、docs gate、external styio-audit 和 checkpoint health。
+After all source review and focused repairs are complete, the integrated local delivery is:
+
+```bash
+python3 scripts/vityo.py deliver
+```
+
+This command stops at the first failing stage. A targeted repair reruns the affected public stage; it does not mark prior failed or unrun stages as passed. The full command ends after launching the installed candidate and does not include live UI inspection or a real Agent task.
 
 ## Cross-Team Dependencies
 
