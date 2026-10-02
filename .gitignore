@@ -34,6 +34,7 @@ node_modules/
 
 # Local upstream source checkouts
 /sources/
+/prototype/.workspace-root
 
 # Generated artifacts and build outputs
 **/.artifacts/
