@@ -11,9 +11,14 @@
     "privileged_service": false,
     "discovery": "application-relative-manifest-only"
   },
+  "coding_agent": {
+    "name": "vityo-coding-agent",
+    "lifecycle": "independent-on-demand-process",
+    "discovery": "application-relative-executable-only"
+  },
   "state_policy": {
     "compatible_schema_step": 1,
-    "upgrade": "checkpoint-health-rollback",
+    "upgrade": "candidate-health-rollback",
     "uninstall": "retain-user-state",
     "reclamation": "separate-explicit-confirmation"
   }

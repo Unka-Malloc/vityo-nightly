@@ -130,6 +130,80 @@ esac
   );
 
   test(
+    'standalone command reads fixtures and runs the child without vityod',
+    () async {
+      final tempDirectory = await Directory.systemTemp.createTemp(
+        'vityo-language-fixture-standalone-',
+      );
+      try {
+        final fixtureRoot = '${tempDirectory.path}/fixtures';
+        final rootDirectory = Directory(fixtureRoot)
+          ..createSync(recursive: true);
+        File('${rootDirectory.path}/valid.true.styio').writeAsStringSync(
+          '#valid := () => {}',
+        );
+        File('${rootDirectory.path}/invalid.false.styio').writeAsStringSync(
+          '#invalid := () => {',
+        );
+        final fakeStyio = File('${tempDirectory.path}/fake-styio')
+          ..writeAsStringSync(r'''#!/bin/sh
+case "$*" in
+  *invalid.false.styio*)
+    printf '%s\n' '{"severity":"error","code":"styio.syntax","message":"invalid fixture","range":{"start":0,"end":1}}'
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+''');
+        final chmod = await Process.run('chmod', <String>[
+          '+x',
+          fakeStyio.path,
+        ]);
+        expect(chmod.exitCode, 0);
+
+        final output = StringBuffer();
+        final errors = StringBuffer();
+        final result = await language_fixture_gate
+            .runLanguageFixtureGateCommand(
+              <String>['--styio', fakeStyio.path, '--root', fixtureRoot],
+              out: output,
+              err: errors,
+            );
+
+        expect(result, 0);
+        expect(errors.toString(), contains('Language fixture gate: passed'));
+        expect(errors.toString(), contains('TP=1'));
+        expect(errors.toString(), contains('TN=1'));
+        expect(output.toString(), contains('"truePositive": 1'));
+        expect(output.toString(), contains('"trueNegative": 1'));
+      } finally {
+        await tempDirectory.delete(recursive: true);
+      }
+    },
+    skip: Platform.isWindows ? 'POSIX shell fixture.' : false,
+  );
+
+  test('standalone command rejects an empty fixture root', () async {
+    final tempDirectory = await Directory.systemTemp.createTemp(
+      'vityo-language-fixture-empty-',
+    );
+    try {
+      final errors = StringBuffer();
+      final result = await language_fixture_gate.runLanguageFixtureGateCommand(
+        <String>['--root', tempDirectory.path],
+        out: StringBuffer(),
+        err: errors,
+      );
+      expect(result, 1);
+      expect(errors.toString(), contains('No .styio fixtures found.'));
+    } finally {
+      await tempDirectory.delete(recursive: true);
+    }
+  });
+
+  test(
     'styio service fixture gate can use persisted toolchain manager',
     () async {
       final tempDirectory = await Directory.systemTemp.createTemp(

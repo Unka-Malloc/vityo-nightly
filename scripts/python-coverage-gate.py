@@ -62,7 +62,7 @@ def run_command(command: list[str]) -> int:
     return proc.returncode
 
 
-def run_gate(fail_under: int) -> int:
+def collect_coverage() -> int:
     if not coverage_available():
         print(
             "coverage.py is required. Install it with: python3 -m pip install coverage",
@@ -107,7 +107,22 @@ def run_gate(fail_under: int) -> int:
                 append=True,
             )
         )
-    commands.append(
+    for command in commands:
+        code = run_command(command)
+        if code != 0:
+            return code
+    return 0
+
+
+def report_coverage(fail_under: int) -> int:
+    if not coverage_available():
+        print(
+            "coverage.py is required. Install it with: python3 -m pip install coverage",
+            file=sys.stderr,
+        )
+        return 2
+    omit_flag = ["--omit", ",".join(COVERAGE_OMIT)] if COVERAGE_OMIT else []
+    return run_command(
         [
             sys.executable,
             "-m",
@@ -120,18 +135,46 @@ def run_gate(fail_under: int) -> int:
             str(fail_under),
         ]
     )
-    for command in commands:
-        code = run_command(command)
+
+
+def run_gate(
+    fail_under: int,
+    *,
+    collect: bool = True,
+    report: bool = True,
+) -> int:
+    if not collect and not report:
+        print("coverage collection or reporting must be selected", file=sys.stderr)
+        return 2
+    if collect:
+        code = collect_coverage()
         if code != 0:
             return code
+    if report:
+        return report_coverage(fail_under)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Python coverage gate for Vityo tooling.")
     parser.add_argument("--fail-under", type=int, default=DEFAULT_FAIL_UNDER)
+    phase = parser.add_mutually_exclusive_group()
+    phase.add_argument(
+        "--collect-only",
+        action="store_true",
+        help="Run the discovered tests and save coverage without evaluating the threshold.",
+    )
+    phase.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Evaluate the existing coverage data without rerunning tests.",
+    )
     args = parser.parse_args(argv)
-    return run_gate(args.fail_under)
+    return run_gate(
+        args.fail_under,
+        collect=not args.report_only,
+        report=not args.collect_only,
+    )
 
 
 if __name__ == "__main__":

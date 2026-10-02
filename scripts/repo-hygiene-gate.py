@@ -139,12 +139,12 @@ REQUIRED_DOC_REFERENCES = {
     ),
     Path("docs/assets/workflow/REPO-HYGIENE.md"): (
         "scripts/repo-hygiene-gate.py",
-        "scripts/delivery-gate.sh",
+        "python3 scripts/vityo.py deliver",
     ),
     Path("docs/teams/DOCS-DELIVERY-RUNBOOK.md"): (
         "scripts/repo-hygiene-gate.py",
         "scripts/docs-gate.sh",
-        "scripts/delivery-gate.sh",
+        "python3 scripts/vityo.py deliver",
     ),
 }
 

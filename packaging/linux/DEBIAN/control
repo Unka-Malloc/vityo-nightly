@@ -3,7 +3,7 @@ Version: 0.1.0
 Section: devel
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0 (>= 3.24), liblzma5 (>= 5.4), libblkid1 (>= 2.38)
+Depends: libgtk-3-0 (>= 3.24), liblzma5 (>= 5.4), libblkid1 (>= 2.38), libssl3 | libssl3t64
 Recommends: chromium, clang, cmake, ninja-build, pkg-config
 Maintainer: Vityo Team
 Description: Vityo -- Language-first development environment

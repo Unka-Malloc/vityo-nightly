@@ -697,17 +697,22 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
             config = {
                 "build_relative_path": "Vityo.app",
                 "installer_definition": "package.sh",
+                "coding_agent": {"package_relative_path": "Contents/Helpers/vityo-coding-agent"},
             }
             output = root / "Vityo.dmg"
             with (
                 mock.patch.object(packaging, "ROOT", root),
                 mock.patch.object(packaging.subprocess, "run") as run,
+                mock.patch.object(packaging, "stage_coding_agent") as stage_agent,
+                mock.patch.object(packaging, "stage_rust_notices") as stage_notices,
             ):
                 self.assertEqual(packaging.package_macos(config, output), output)
                 config["vityod"] = {"component": "vityod"}
                 with mock.patch.object(packaging, "stage_vityod") as stage:
                     self.assertEqual(packaging.package_macos(config, output), output)
                 stage.assert_called_once()
+            self.assertEqual(stage_agent.call_count, 2)
+            self.assertEqual(stage_notices.call_count, 2)
             self.assertEqual(run.call_count, 2)
 
     def test_packaging_main_writes_component_bound_evidence(self) -> None:
@@ -721,6 +726,12 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
             binary.write_bytes(b"binary")
             config = {
                 "vityod": {"package_relative_path": "components/vityod"},
+                "coding_agent": {
+                    "package_relative_path": "components/vityo-coding-agent",
+                    "target": "native-linux",
+                    "required_runtime_libraries": ["libssl.so.3"],
+                },
+                "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
                 "signing": {"status": "configured"},
                 "automatic_updates": True,
             }
@@ -745,6 +756,8 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
                     packaging, "validate_release_inputs", return_value="1.2.3"
                 ),
                 mock.patch.object(packaging, "build_vityod", return_value=binary),
+                mock.patch.object(packaging, "build_coding_agent") as build_agent,
+                mock.patch.object(packaging, "coding_agent_version", return_value="0.1.0"),
                 mock.patch.object(packaging, "package_linux") as package_linux,
                 mock.patch.object(
                     packaging,
@@ -758,6 +771,7 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
                 redirect_stdout(stdout),
             ):
                 self.assertEqual(packaging.main(), 0)
+            build_agent.assert_called_once_with(config)
             package_linux.assert_called_once_with(config, expected, "1.2.3")
             evidence = json.loads(
                 expected.with_suffix(".deb.json").read_text(encoding="utf-8")

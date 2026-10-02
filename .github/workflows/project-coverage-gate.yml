@@ -15,7 +15,7 @@ jobs:
   project-coverage-gate:
     name: project-coverage-gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       VITYO_PYTHON_VERSION: "3.13.5"
       VITYO_FLUTTER_VERSION: "3.41.7"
@@ -29,18 +29,31 @@ jobs:
         with:
           python-version: ${{ env.VITYO_PYTHON_VERSION }}
 
+      - name: Set up Rust 1.88 toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0, community-maintained
+        with:
+          toolchain: "1.88.0"
+
       - name: Set up standardized Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           flutter-version: ${{ env.VITYO_FLUTTER_VERSION }}
+
+      - name: Install Linux Rust coverage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
 
       - name: Restore coverage dependencies
         run: |
           python3 -m pip install coverage
           cd products/vityo_app && flutter pub get
 
-      - name: Run project coverage gate
-        run: python3 scripts/project-coverage-gate.py --python-fail-under 95 --flutter-fail-under 85
+      - name: Collect project tests and coverage once
+        run: python3 scripts/vityo.py test --scope coverage --mode ci --platform linux
+
+      - name: Evaluate collected coverage
+        run: python3 scripts/vityo.py coverage --scope coverage --mode ci --platform linux
 
       - name: Upload coverage reports
         if: always()
@@ -50,4 +63,6 @@ jobs:
           path: |
             .coverage
             products/vityo_app/coverage/lcov.info
+            build/evidence/rust-coverage
+            build/evidence/vityo-coding-agent-full.json
           if-no-files-found: ignore

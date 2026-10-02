@@ -37,6 +37,7 @@ class FullSuiteEntry:
     requirement: str
     suite: str
     runner_name: str
+    rust_source_roots: tuple[str, ...] = ()
 
 
 FULL_IDE_PLAN = (
@@ -59,20 +60,33 @@ FULL_IDE_PLAN = (
 )
 
 FULL_AGENT_PLAN = (
-    FullSuiteEntry("REQ-AGENT-001", "headless-runtime", "headless_runtime"),
-    FullSuiteEntry("REQ-AGENT-002", "providers", "providers"),
-    FullSuiteEntry("REQ-AGENT-003", "context", "context_engine"),
-    FullSuiteEntry("REQ-AGENT-004", "tools-mcp", "tools_mcp"),
-    FullSuiteEntry("REQ-AGENT-005", "agent-security", "agent_security"),
-    FullSuiteEntry("REQ-AGENT-006", "coding-loop", "coding_loop"),
-    FullSuiteEntry("REQ-AGENT-007", "session-recovery", "session_recovery"),
-    FullSuiteEntry("REQ-AGENT-008", "multi-agent", "multi_agent"),
+    FullSuiteEntry(
+        "REQ-AGENT-001",
+        "headless-runtime",
+        "headless_runtime",
+        ("src/main.rs", "src/application/"),
+    ),
+    FullSuiteEntry("REQ-AGENT-002", "providers", "providers", ("src/providers/",)),
+    FullSuiteEntry("REQ-AGENT-003", "context", "context_engine", ("src/context/",)),
+    FullSuiteEntry(
+        "REQ-AGENT-004",
+        "tools-mcp",
+        "tools_mcp",
+        ("src/tools/", "src/policy/"),
+    ),
+    FullSuiteEntry("REQ-AGENT-005", "agent-security", "agent_security", ("src/policy/",)),
+    FullSuiteEntry("REQ-AGENT-006", "coding-loop", "coding_loop", ("src/orchestration/",)),
+    FullSuiteEntry("REQ-AGENT-007", "session-recovery", "session_recovery", ("src/sessions/",)),
+    FullSuiteEntry("REQ-AGENT-008", "multi-agent", "multi_agent", ("src/multi_agent/",)),
     FullSuiteEntry(
         "REQ-AGENT-009",
         "protocol-integration",
         "protocol_integration",
+        ("src/protocol/", "src/hosts/"),
     ),
 )
+RUST_COVERAGE_OUTPUT = "build/evidence/rust-coverage"
+RUST_COVERAGE_GATE = "scripts/rust-coverage-gate.py"
 
 _FINGERPRINT_ROOTS = (
     "products/vityo_app/lib",
@@ -811,23 +825,9 @@ def recovery_isolation() -> int:
 
 
 def daemon_core() -> int:
-    cargo = tool("cargo")
     dart = tool("dart")
-    daemon = ROOT / "products" / "vityo_app" / "native" / "vityod"
     daemon_protocol = ROOT / "packages" / "vityo_daemon_protocol"
     commands = (
-        (
-            [
-                cargo,
-                "test",
-                "--locked",
-                "--manifest-path",
-                str(daemon / "Cargo.toml"),
-                "--workspace",
-                "--all-targets",
-            ],
-            ROOT,
-        ),
         ([dart, "analyze"], daemon_protocol),
         ([dart, "test"], daemon_protocol),
     )
@@ -1402,9 +1402,49 @@ def ide_full(
     return _ide_full_formal(receipt_path)
 
 
-def coding_agent_full(*, receipt_path: pathlib.Path) -> int:
+def agent_rust_coverage_command(
+    phase: str,
+    *,
+    output_dir: str = RUST_COVERAGE_OUTPUT,
+) -> list[str]:
+    if phase not in {"collect-only", "report-only"}:
+        raise ValueError("Rust coverage phase must be collect-only or report-only")
+    command = [
+        sys.executable,
+        RUST_COVERAGE_GATE,
+        "--product",
+        "coding-agent",
+        f"--{phase}",
+        "--output-dir",
+        output_dir,
+    ]
+    for entry in FULL_AGENT_PLAN:
+        if not entry.rust_source_roots:
+            raise ValidationReceiptError(
+                "rust_coverage_mapping_missing",
+                f"{entry.requirement} has no Rust source mapping",
+            )
+        for source_root in entry.rust_source_roots:
+            command.extend(("--require-module", f"{entry.requirement}={source_root}"))
+    return command
+
+
+def agent_rust_coverage_report(*, output_dir: str = RUST_COVERAGE_OUTPUT) -> int:
+    return run(agent_rust_coverage_command("report-only", output_dir=output_dir))
+
+
+def coding_agent_full(
+    *,
+    receipt_path: pathlib.Path,
+    collect_coverage: bool = False,
+    coverage_output_dir: str = RUST_COVERAGE_OUTPUT,
+) -> int:
     try:
-        return _coding_agent_full_inner(receipt_path=receipt_path)
+        return _coding_agent_full_inner(
+            receipt_path=receipt_path,
+            collect_coverage=collect_coverage,
+            coverage_output_dir=coverage_output_dir,
+        )
     except Exception:
         payload = {
             "schema_version": 1,
@@ -1425,7 +1465,12 @@ def coding_agent_full(*, receipt_path: pathlib.Path) -> int:
         return 1
 
 
-def _coding_agent_full_inner(*, receipt_path: pathlib.Path) -> int:
+def _coding_agent_full_inner(
+    *,
+    receipt_path: pathlib.Path,
+    collect_coverage: bool = False,
+    coverage_output_dir: str = RUST_COVERAGE_OUTPUT,
+) -> int:
     start_fingerprint = _source_fingerprint(_AGENT_FINGERPRINT_ROOTS)
     commit = _head_commit()
     outcomes: dict[str, dict[str, object]] = {}
@@ -1450,11 +1495,31 @@ def _coding_agent_full_inner(*, receipt_path: pathlib.Path) -> int:
     all_passed = all(
         outcome["status"] == "passed" for outcome in outcomes.values()
     )
+    rust_coverage: dict[str, object] | None = None
+    coverage_passed = True
+    if collect_coverage and all_passed and stable:
+        coverage_code = run(agent_rust_coverage_command(
+            "collect-only",
+            output_dir=coverage_output_dir,
+        ))
+        coverage_passed = coverage_code == 0
+        rust_coverage = {
+            "status": "passed" if coverage_passed else "failed",
+            "product": "coding-agent",
+            "exit_code": coverage_code,
+        }
+    elif collect_coverage:
+        coverage_passed = False
+        rust_coverage = {
+            "status": "not-run",
+            "product": "coding-agent",
+            "reason": "the legacy Agent suites or source stability check failed",
+        }
     payload = {
         "schema_version": 1,
         "product": "vityo_coding_agent",
         "suite": "full",
-        "status": "passed" if all_passed and stable else "failed",
+        "status": "passed" if all_passed and stable and coverage_passed else "failed",
         "commit": commit,
         "platform": _host_platform(),
         "start_fingerprint": start_fingerprint,
@@ -1480,6 +1545,8 @@ def _coding_agent_full_inner(*, receipt_path: pathlib.Path) -> int:
             ).read_bytes()
         ).hexdigest(),
     }
+    if rust_coverage is not None:
+        payload["rust_coverage"] = rust_coverage
     write_receipt_atomic(receipt_path, payload)
     return 0 if payload["status"] == "passed" else 1
 
@@ -1495,6 +1562,8 @@ def main() -> int:
         type=pathlib.Path,
         default=None,
     )
+    parser.add_argument("--coverage", action="store_true")
+    parser.add_argument("--coverage-output-dir", default=RUST_COVERAGE_OUTPUT)
     args = parser.parse_args()
     if args.plan_only and args.preflight:
         parser.error("--plan-only and --preflight are mutually exclusive")
@@ -1502,6 +1571,8 @@ def main() -> int:
         parser.error("--plan-only is supported only for ide/full")
     if args.preflight and (args.product, args.suite) != ("ide", "full"):
         parser.error("--preflight is supported only for ide/full")
+    if args.coverage and (args.product, args.suite) != ("coding-agent", "full"):
+        parser.error("--coverage is supported only for coding-agent/full")
     if (args.product, args.suite) == ("ide", "source-fingerprint"):
         print(_source_fingerprint())
         return 0
@@ -1532,7 +1603,13 @@ def main() -> int:
             / "validation"
             / "vityo-coding-agent-full.json"
         )
-        return coding_agent_full(receipt_path=receipt.resolve())
+        return coding_agent_full(
+            receipt_path=receipt.resolve(),
+            collect_coverage=args.coverage,
+            coverage_output_dir=args.coverage_output_dir,
+        )
+    if (args.product, args.suite) == ("coding-agent", "coverage-report"):
+        return agent_rust_coverage_report(output_dir=args.coverage_output_dir)
     if (args.product, args.suite) == ("ide", "workspace-transactions"):
         return workspace_transactions()
     if (args.product, args.suite) == ("ide", "developer-loop"):

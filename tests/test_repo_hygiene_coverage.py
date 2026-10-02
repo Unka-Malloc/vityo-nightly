@@ -30,6 +30,16 @@ class RepoHygieneCoverageTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
 
+    def test_delivery_documentation_requires_the_canonical_python_entrypoint(self) -> None:
+        required = {
+            marker
+            for markers in self.gate.REQUIRED_DOC_REFERENCES.values()
+            for marker in markers
+        }
+
+        self.assertIn("python3 scripts/vityo.py deliver", required)
+        self.assertEqual(self.gate.check_doc_references(), [])
+
     def test_run_git_invokes_git_in_repository_root(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
         with mock.patch.object(self.gate.subprocess, "run", return_value=completed) as run:

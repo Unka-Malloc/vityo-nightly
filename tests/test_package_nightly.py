@@ -44,6 +44,13 @@ class PackageNightlyTest(unittest.TestCase):
             "platform": "windows",
             "package_format": "zip-powershell",
             "build_relative_path": "build/windows/release",
+            "coding_agent": {
+                "target": "x86_64-pc-windows-msvc",
+                "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent.exe",
+                "package_relative_path": "components/vityo-coding-agent.exe",
+                "required_runtime_libraries": ["vcruntime140.dll"],
+            },
+            "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
             "signing": {"status": "explicit-gap", "reason": "No test credential."},
             "automatic_updates": False,
         }
@@ -65,10 +72,17 @@ class PackageNightlyTest(unittest.TestCase):
             packaging.mkdir(parents=True)
             (packaging / "install.ps1").write_text("# installer\n", encoding="utf-8")
             (packaging / "uninstall.ps1").write_text("# uninstaller\n", encoding="utf-8")
+            agent = root / "products/vityo_coding_agent/target/release/vityo-coding-agent.exe"
+            agent.parent.mkdir(parents=True)
+            agent.write_bytes(b"coding agent")
+            notices = root / "build/evidence/rust-third-party-notices.txt"
+            notices.parent.mkdir(parents=True)
+            notices.write_text("Rust notices\n", encoding="utf-8")
             output = root / "vityo-nightly-windows.zip"
             self.packager.ROOT = root
 
-            self.packager.package_windows(self._windows_config(), output)
+            with mock.patch.object(self.packager.subprocess, "run"):
+                self.packager.package_windows(self._windows_config(), output)
 
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
@@ -78,6 +92,8 @@ class PackageNightlyTest(unittest.TestCase):
                 "Vityo-Nightly/install.ps1",
                 "Vityo-Nightly/uninstall.ps1",
                 "Vityo-Nightly/vityo_app.exe",
+                "Vityo-Nightly/components/vityo-coding-agent.exe",
+                "Vityo-Nightly/licenses/RUST-THIRD-PARTY-NOTICES.txt",
             },
         )
 
@@ -95,6 +111,12 @@ class PackageNightlyTest(unittest.TestCase):
             (versions, {**valid, "signing": {"status": "unknown"}}),
             (versions, {**valid, "signing": {"status": "explicit-gap", "reason": ""}}),
             (versions, {**valid, "automatic_updates": "false"}),
+            (versions, {**valid, "coding_agent": None}),
+            (versions, {**valid, "coding_agent": {**valid["coding_agent"], "target": "wrong"}}),
+            (versions, {**valid, "coding_agent": {**valid["coding_agent"], "required_runtime_libraries": []}}),
+            (versions, {**valid, "coding_agent": {**valid["coding_agent"], "source_relative_path": "wrong"}}),
+            (versions, {**valid, "coding_agent": {**valid["coding_agent"], "package_relative_path": "../agent"}}),
+            (versions, {**valid, "rust_notices_path": "wrong"}),
             ({**versions, "core_version": "latest"}, valid),
             ({**versions, "platform_adapters": {}}, valid),
         )
@@ -104,6 +126,124 @@ class PackageNightlyTest(unittest.TestCase):
                     self.packager.validate_release_inputs(
                         "windows", changed_config, changed_versions
                     )
+
+    def test_coding_agent_version_reads_and_validates_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            manifest = root / "products/vityo_coding_agent/Cargo.toml"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('[package]\nversion = "0.1.0"\n', encoding="utf-8")
+            self.packager.ROOT = root
+            self.assertEqual(self.packager.coding_agent_version(), "0.1.0")
+
+            manifest.write_text('[package]\nversion = "latest"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "version is invalid"):
+                self.packager.coding_agent_version()
+
+    def test_build_coding_agent_uses_locked_release_manifest_and_checks_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            manifest = root / "products/vityo_coding_agent/Cargo.toml"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('[package]\nversion = "0.1.0"\n', encoding="utf-8")
+            binary = root / "products/vityo_coding_agent/target/release/vityo-coding-agent.exe"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"agent")
+            config = {
+                "coding_agent": {
+                    "target": "fixture-target",
+                    "source_relative_path": binary.relative_to(root).as_posix(),
+                }
+            }
+            self.packager.ROOT = root
+            with (
+                mock.patch.object(
+                    self.packager,
+                    "vityod_build_identity",
+                    return_value={"target": "fixture-target"},
+                ),
+                mock.patch.object(self.packager, "vityod_target_matches", return_value=True),
+                mock.patch.object(self.packager.subprocess, "run") as run,
+            ):
+                self.assertEqual(self.packager.build_coding_agent(config), binary)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(
+                run.call_args_list[0].args[0],
+                [
+                    "cargo",
+                    "build",
+                    "--locked",
+                    "--release",
+                    "--manifest-path",
+                    manifest,
+                    "--bin",
+                    "vityo-coding-agent",
+                ],
+            )
+            self.assertEqual(run.call_args_list[1].args[0], [binary, "--version"])
+
+        with self.assertRaisesRegex(ValueError, "contract is missing"):
+            self.packager.build_coding_agent({})
+        with (
+            mock.patch.object(
+                self.packager,
+                "vityod_build_identity",
+                return_value={"target": "different-target"},
+            ),
+            mock.patch.object(self.packager, "vityod_target_matches", return_value=False),
+            self.assertRaisesRegex(ValueError, "does not match"),
+        ):
+            self.packager.build_coding_agent(
+                {"coding_agent": {"target": "fixture-target"}}
+            )
+
+    def test_stage_coding_agent_copies_executable_and_rejects_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            source = root / "source/vityo-coding-agent"
+            source.parent.mkdir()
+            source.write_bytes(b"agent")
+            destination_root = root / "application"
+            config = {
+                "coding_agent": {
+                    "source_relative_path": source.relative_to(root).as_posix(),
+                    "package_relative_path": "components/vityo-coding-agent",
+                }
+            }
+            self.packager.ROOT = root
+            with mock.patch.object(self.packager.subprocess, "run") as run:
+                staged = self.packager.stage_coding_agent(config, destination_root)
+            self.assertEqual(staged.read_bytes(), b"agent")
+            self.assertTrue(staged.stat().st_mode & 0o111)
+            run.assert_called_once_with([staged, "--version"], cwd=destination_root, check=True)
+
+            config["coding_agent"]["package_relative_path"] = "../outside"
+            with self.assertRaisesRegex(ValueError, "must stay inside"):
+                self.packager.stage_coding_agent(config, destination_root)
+        with self.assertRaisesRegex(ValueError, "contract is missing"):
+            self.packager.stage_coding_agent({}, Path("application"))
+
+    def test_stage_rust_notices_requires_nonempty_generated_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            destination_root = root / "application"
+            self.packager.ROOT = root
+            with self.assertRaisesRegex(ValueError, "missing or empty"):
+                self.packager.stage_rust_notices("windows", destination_root)
+
+            source = root / self.packager.RUST_NOTICE_SOURCE
+            source.parent.mkdir(parents=True)
+            source.write_text("   \n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "missing or empty"):
+                self.packager.stage_rust_notices("windows", destination_root)
+
+            source.write_text("Rust notices\n", encoding="utf-8")
+            destination = self.packager.stage_rust_notices("windows", destination_root)
+            self.assertEqual(destination.read_text(encoding="utf-8"), "Rust notices\n")
+
+    def test_vityod_component_must_be_an_object(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be an object"):
+            self.packager.stage_vityod({"vityod": "invalid"}, Path("application"))
 
     def test_file_directory_json_and_copy_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temp_name:
@@ -142,10 +282,23 @@ class PackageNightlyTest(unittest.TestCase):
             (packaging / "io.vityo.desktop").write_text("desktop", encoding="utf-8")
             (packaging / "io.vityo.metainfo.xml").write_text("meta", encoding="utf-8")
             (packaging / "icon.png").write_bytes(b"png")
+            agent = root / "products/vityo_coding_agent/target/release/vityo-coding-agent"
+            agent.parent.mkdir(parents=True)
+            agent.write_bytes(b"coding agent")
+            notices = root / "build/evidence/rust-third-party-notices.txt"
+            notices.parent.mkdir(parents=True)
+            notices.write_text("Rust notices\n", encoding="utf-8")
             config = {
                 "build_relative_path": "build/linux",
                 "installer_definition": "packaging/linux/control",
                 "icon_relative_path": "packaging/linux/icon.png",
+                "coding_agent": {
+                    "target": "x86_64-unknown-linux-gnu",
+                    "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+                    "package_relative_path": "components/vityo-coding-agent",
+                    "required_runtime_libraries": ["glibc", "libssl.so.3"],
+                },
+                "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
             }
             output = root / "vityo.deb"
             with mock.patch.object(self.packager.subprocess, "run") as run:
@@ -160,17 +313,28 @@ class PackageNightlyTest(unittest.TestCase):
             script = root / "packaging/macos/create-dmg.sh"
             script.parent.mkdir(parents=True)
             script.write_text("#!/bin/sh\n", encoding="utf-8")
+            mac_config = {
+                "build_relative_path": "build/macos/Vityo.app",
+                "installer_definition": "packaging/macos/create-dmg.sh",
+                "coding_agent": {
+                    "target": "native-apple-darwin",
+                    "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+                    "package_relative_path": "Contents/Helpers/vityo-coding-agent",
+                    "required_runtime_libraries": [],
+                },
+                "rust_notices_path": "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt",
+            }
             mac_output = root / "vityo.dmg"
             with mock.patch.object(self.packager.subprocess, "run") as run:
                 result = self.packager.package_macos(
-                    {
-                        "build_relative_path": "build/macos/Vityo.app",
-                        "installer_definition": "packaging/macos/create-dmg.sh",
-                    },
+                    mac_config,
                     mac_output,
                 )
             self.assertEqual(result, mac_output)
-            run.assert_called_once_with(["bash", script, app, mac_output], check=True)
+            self.assertEqual(run.call_args.args[0][:2], ["bash", script])
+            staged_app = run.call_args.args[0][2]
+            self.assertEqual(staged_app.name, app.name)
+            self.assertEqual(run.call_args.args[0][3], mac_output)
 
     def test_main_builds_independent_windows_artifact_and_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temp_name:
@@ -191,6 +355,8 @@ class PackageNightlyTest(unittest.TestCase):
                     "argv",
                     ["package-nightly.py", "--platform", "windows", "--output-dir", str(output_dir)],
                 ),
+                mock.patch.object(self.packager, "build_coding_agent", return_value=Path("agent")),
+                mock.patch.object(self.packager, "coding_agent_version", return_value="0.1.0"),
                 mock.patch.object(self.packager, "package_windows", side_effect=lambda _, path: path.touch() or path),
                 mock.patch("builtins.print"),
             ):

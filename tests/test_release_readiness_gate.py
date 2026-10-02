@@ -139,9 +139,19 @@ class ReleaseReadinessGateTest(unittest.TestCase):
                 for marker in markers
             )
             + "\n  local-ci-gate:\n  windows-native:\n  macos-native:\n"
-            + "steps.product-matrix.outputs.styio\n"
-            + "steps.product-matrix.outputs.pafio\n"
             + "\n",
+            encoding="utf-8",
+        )
+        resolver_path = root / "scripts/vityo_toolchains.py"
+        resolver_path.write_text(
+            '"toolchain/product-matrix.json"\n'
+            '"build" / "toolchains"\n'
+            '"git", "clone"\n'
+            '"git", "fetch"\n'
+            '"git", "checkout", "--detach"\n'
+            "def ensure_pinned_checkout(\n"
+            "def provision(\n"
+            "def validate_executable(\n",
             encoding="utf-8",
         )
         matrix_path = root / "toolchain/product-matrix.json"
@@ -168,6 +178,16 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         versions_path.parent.mkdir(parents=True, exist_ok=True)
         versions_path.write_text(json.dumps(versions), encoding="utf-8")
         formats = self.gate.NIGHTLY_PACKAGE_FORMATS
+        agent_targets = {
+            "linux": "x86_64-unknown-linux-gnu",
+            "windows": "x86_64-pc-windows-msvc",
+            "macos": "native-apple-darwin",
+        }
+        agent_paths = {
+            "linux": "components/vityo-coding-agent",
+            "windows": "components/vityo-coding-agent.exe",
+            "macos": "Contents/Helpers/vityo-coding-agent",
+        }
         for platform in self.gate.NIGHTLY_PLATFORMS:
             platform_root = root / "packaging" / platform
             platform_root.mkdir(parents=True, exist_ok=True)
@@ -187,6 +207,37 @@ class ReleaseReadinessGateTest(unittest.TestCase):
                     "reason": "Test signing credentials are intentionally absent.",
                 },
                 "automatic_updates": False,
+                "coding_agent": {
+                    "target": agent_targets[platform],
+                    "source_relative_path": (
+                        "products/vityo_coding_agent/target/release/vityo-coding-agent.exe"
+                        if platform == "windows"
+                        else "products/vityo_coding_agent/target/release/vityo-coding-agent"
+                    ),
+                    "package_relative_path": agent_paths[platform],
+                    "required_runtime_libraries": {
+                        "linux": ["glibc", "libssl.so.3"],
+                        "windows": ["vcruntime140.dll"],
+                        "macos": [],
+                    }[platform],
+                },
+                "vityod": {
+                    "source_relative_path": (
+                        "products/vityo_app/native/vityod/target/release/vityod.exe"
+                        if platform == "windows"
+                        else "products/vityo_app/native/vityod/target/release/vityod"
+                    ),
+                    "package_relative_path": {
+                        "linux": "components/vityod",
+                        "windows": "components/vityod.exe",
+                        "macos": "Contents/Helpers/vityod",
+                    }[platform],
+                },
+                "rust_notices_path": (
+                    "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt"
+                    if platform == "macos"
+                    else "licenses/RUST-THIRD-PARTY-NOTICES.txt"
+                ),
             }
             if platform == "windows":
                 uninstaller = platform_root / "uninstaller.txt"
@@ -312,6 +363,23 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         by_name = {result.name: result for result in results}
         self.assertFalse(by_name["Product matrix fixed upstream commits"].ok)
         self.assertFalse(by_name["Independent platform jobs"].ok)
+
+    def test_static_checks_require_pinned_product_source_provisioning(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="release-gate-", dir=REPO_ROOT) as tmp_name:
+            tmp_root = Path(tmp_name)
+            self._write_minimal_release_tree(tmp_root)
+            resolver_path = tmp_root / "scripts/vityo_toolchains.py"
+            resolver_path.write_text(
+                resolver_path.read_text(encoding="utf-8").replace('"git", "fetch"', ""),
+                encoding="utf-8",
+            )
+            results = self.gate.collect_static_checks(
+                tmp_root,
+                Path("products/vityo_app"),
+            )
+
+        by_name = {result.name: result for result in results}
+        self.assertFalse(by_name["Product matrix pinned source provisioning"].ok)
 
     def test_static_checks_reject_stale_tool_status(self) -> None:
         with tempfile.TemporaryDirectory(prefix="release-gate-", dir=REPO_ROOT) as tmp_name:

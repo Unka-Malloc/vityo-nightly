@@ -6,20 +6,11 @@ import argparse
 import dataclasses
 import json
 import pathlib
-import re
-import shutil
 import sys
-from collections.abc import Mapping, Set
+from collections.abc import Mapping
 
 
 PLATFORMS = ("windows", "macos", "linux")
-REQUIRED_TOOLS = {
-    "windows": frozenset({"flutter", "python", "powershell"}),
-    "macos": frozenset({"flutter", "python", "hdiutil"}),
-    "linux": frozenset({"flutter", "python", "dpkg-deb", "xvfb-run"}),
-}
-COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40,64}$")
-SOURCE_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 VITYOD_TARGETS = {
     "windows": "x86_64-pc-windows-msvc",
     "macos": "native-apple-darwin",
@@ -34,6 +25,26 @@ VITYOD_SOURCE_PATHS = {
     "windows": "products/vityo_app/native/vityod/target/release/vityod.exe",
     "macos": "products/vityo_app/native/vityod/target/release/vityod",
     "linux": "products/vityo_app/native/vityod/target/release/vityod",
+}
+CODING_AGENT_TARGETS = {
+    "windows": "x86_64-pc-windows-msvc",
+    "macos": "native-apple-darwin",
+    "linux": "x86_64-unknown-linux-gnu",
+}
+CODING_AGENT_PACKAGE_PATHS = {
+    "windows": "components/vityo-coding-agent.exe",
+    "macos": "Contents/Helpers/vityo-coding-agent",
+    "linux": "components/vityo-coding-agent",
+}
+CODING_AGENT_SOURCE_PATHS = {
+    "windows": "products/vityo_coding_agent/target/release/vityo-coding-agent.exe",
+    "macos": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+    "linux": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+}
+CODING_AGENT_RUNTIME_LIBRARIES = {
+    "windows": ["vcruntime140.dll"],
+    "macos": [],
+    "linux": ["glibc", "libssl.so.3"],
 }
 
 
@@ -59,7 +70,7 @@ def evaluate_lane(
     *,
     platform: str,
     host_platform: str,
-    available_tools: Set[str],
+    expected_candidate: str,
     evidence: Mapping[str, object] | None,
 ) -> DeliveryLaneResult:
     if platform not in PLATFORMS:
@@ -70,40 +81,27 @@ def evaluate_lane(
             "blocked",
             f"{platform} delivery requires a matching host platform",
         )
-    missing_tools = sorted(REQUIRED_TOOLS[platform].difference(available_tools))
-    if missing_tools:
-        return DeliveryLaneResult(
-            platform,
-            "blocked",
-            "required host tools are unavailable: " + ", ".join(missing_tools),
-        )
     if evidence is None:
         return DeliveryLaneResult(platform, "failed", "launch evidence is missing")
-    if evidence.get("schema_version") != 1 or evidence.get("platform") != platform:
-        return DeliveryLaneResult(platform, "failed", "evidence schema or platform is invalid")
-    if not COMMIT_PATTERN.fullmatch(str(evidence.get("commit", ""))):
-        return DeliveryLaneResult(platform, "failed", "evidence source commit is invalid")
-    if not SOURCE_FINGERPRINT_PATTERN.fullmatch(
-        str(evidence.get("source_fingerprint", ""))
-    ):
-        return DeliveryLaneResult(platform, "failed", "evidence source fingerprint is invalid")
-    if evidence.get("artifact_verified") is not True:
-        return DeliveryLaneResult(platform, "failed", "package artifact was not verified")
+    if set(evidence) != {
+        "schema_version",
+        "candidate",
+        "platform",
+        "launched",
+        "first_frame",
+    }:
+        return DeliveryLaneResult(platform, "failed", "startup evidence fields are invalid")
+    if type(evidence.get("schema_version")) is not int or evidence.get("schema_version") != 1:
+        return DeliveryLaneResult(platform, "failed", "startup evidence schema is invalid")
+    if evidence.get("platform") != platform:
+        return DeliveryLaneResult(platform, "failed", "startup evidence platform is invalid")
+    if not expected_candidate or evidence.get("candidate") != expected_candidate:
+        return DeliveryLaneResult(platform, "failed", "startup evidence candidate is invalid")
     if evidence.get("launched") is not True:
         return DeliveryLaneResult(platform, "failed", "packaged Vityo did not launch")
-    if evidence.get("workspace_opened") is not True:
-        return DeliveryLaneResult(platform, "failed", "workspace open smoke did not complete")
-    capabilities = evidence.get("capabilities")
-    if not isinstance(capabilities, Mapping):
-        return DeliveryLaneResult(platform, "failed", "capability evidence is missing")
-    if capabilities.get("editor") != "available" or capabilities.get("workspace") != "available":
-        return DeliveryLaneResult(platform, "failed", "required IDE capabilities are unavailable")
-    agent = capabilities.get("agent")
-    if agent not in {"available", "unavailable"}:
-        return DeliveryLaneResult(platform, "failed", "Agent capability state is not truthful")
-    if agent == "unavailable" and not str(capabilities.get("agent_reason", "")).strip():
-        return DeliveryLaneResult(platform, "failed", "unavailable Agent capability lacks a reason")
-    return DeliveryLaneResult(platform, "passed", "complete launch and capability evidence")
+    if evidence.get("first_frame") is not True:
+        return DeliveryLaneResult(platform, "failed", "client did not complete its first frame")
+    return DeliveryLaneResult(platform, "passed", "installed candidate reached its first frame")
 
 
 def validate_repository(root: pathlib.Path) -> list[str]:
@@ -130,10 +128,17 @@ def validate_repository(root: pathlib.Path) -> list[str]:
         or component.get("discovery") != "application-relative-manifest-only"
     ):
         errors.append("vityod component lifecycle or protocol contract is invalid")
+    coding_agent = contract.get("coding_agent")
+    if not isinstance(coding_agent, dict) or coding_agent != {
+        "name": "vityo-coding-agent",
+        "lifecycle": "independent-on-demand-process",
+        "discovery": "application-relative-executable-only",
+    }:
+        errors.append("Coding Agent component lifecycle or discovery contract is invalid")
     state_policy = contract.get("state_policy")
     if not isinstance(state_policy, dict) or state_policy != {
         "compatible_schema_step": 1,
-        "upgrade": "checkpoint-health-rollback",
+        "upgrade": "candidate-health-rollback",
         "uninstall": "retain-user-state",
         "reclamation": "separate-explicit-confirmation",
     }:
@@ -184,6 +189,21 @@ def validate_repository(root: pathlib.Path) -> list[str]:
                 errors.append(
                     f"{manifest_path.relative_to(root)}: vityod runtime library contract is invalid"
                 )
+        coding_agent = manifest.get("coding_agent")
+        if not isinstance(coding_agent, dict):
+            errors.append(f"{manifest_path.relative_to(root)}: Coding Agent component is missing")
+        else:
+            source_path = str(coding_agent.get("source_relative_path", ""))
+            package_path = str(coding_agent.get("package_relative_path", ""))
+            target = str(coding_agent.get("target", ""))
+            if source_path != CODING_AGENT_SOURCE_PATHS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: Coding Agent source path is invalid")
+            if package_path != CODING_AGENT_PACKAGE_PATHS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: Coding Agent package path is invalid")
+            if target != CODING_AGENT_TARGETS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: Coding Agent target is mismatched")
+            if coding_agent.get("required_runtime_libraries") != CODING_AGENT_RUNTIME_LIBRARIES[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: Coding Agent runtime libraries are mismatched")
 
     workflow_path = root / ".github" / "workflows" / "local-ci-gate.yml"
     try:
@@ -192,10 +212,11 @@ def validate_repository(root: pathlib.Path) -> list[str]:
         errors.append(f".github/workflows/local-ci-gate.yml: {error}")
     else:
         for platform in PLATFORMS:
-            if f"scripts/package-nightly.py --platform {platform}" not in workflow:
-                errors.append(f"local-ci-gate.yml: missing {platform} package lane")
-            if f"vityo-{platform}-package-smoke" not in workflow:
-                errors.append(f"local-ci-gate.yml: missing {platform} truthful smoke marker")
+            if f"scripts/vityo.py deliver --mode ci --platform {platform}" not in workflow:
+                errors.append(f"local-ci-gate.yml: missing {platform} unified delivery lane")
+        runner_path = root / "scripts" / "vityo.py"
+        if not runner_path.is_file() or "--vityo-startup-probe" not in runner_path.read_text(encoding="utf-8"):
+            errors.append("scripts/vityo.py: installed-client startup probe is missing")
     return errors
 
 
@@ -204,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=pathlib.Path, required=True)
     parser.add_argument("--platform", choices=PLATFORMS)
     parser.add_argument("--evidence", type=pathlib.Path)
+    parser.add_argument("--expected-candidate")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     errors = validate_repository(args.repo_root.resolve())
@@ -211,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
     if not errors and args.platform is not None:
         if args.evidence is None or not args.evidence.is_file():
             errors.append("desktop delivery evidence file is missing")
+        elif not args.expected_candidate:
+            errors.append("expected installed candidate is missing")
         else:
             evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
             host_platform = {
@@ -218,15 +242,10 @@ def main(argv: list[str] | None = None) -> int:
                 "darwin": "macos",
                 "linux": "linux",
             }.get(sys.platform, sys.platform)
-            available_tools = {
-                tool
-                for tool in REQUIRED_TOOLS[args.platform]
-                if shutil.which(tool) is not None
-            }
             lane = evaluate_lane(
                 platform=args.platform,
                 host_platform=host_platform,
-                available_tools=available_tools,
+                expected_candidate=args.expected_candidate,
                 evidence=evidence,
             )
             if lane.status != "passed":

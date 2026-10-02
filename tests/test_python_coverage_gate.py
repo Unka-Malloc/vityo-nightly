@@ -151,7 +151,7 @@ class PythonCoverageGateTest(unittest.TestCase):
         with mock.patch.object(self.gate, "run_gate", return_value=0) as run_gate:
             self.assertEqual(self.gate.main(["--fail-under", "96"]), 0)
 
-        run_gate.assert_called_once_with(96)
+        run_gate.assert_called_once_with(96, collect=True, report=True)
 
     def test_script_entrypoint_exits_with_main_result(self) -> None:
         with mock.patch.object(sys, "argv", [str(GATE_PATH), "--fail-under", "99"]):

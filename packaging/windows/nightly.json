@@ -13,6 +13,13 @@
     "package_relative_path": "components/vityod.exe",
     "required_runtime_libraries": ["vcruntime140.dll"]
   },
+  "coding_agent": {
+    "target": "x86_64-pc-windows-msvc",
+    "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent.exe",
+    "package_relative_path": "components/vityo-coding-agent.exe",
+    "required_runtime_libraries": ["vcruntime140.dll"]
+  },
+  "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
   "signing": {"status": "explicit-gap", "reason": "Nightly Authenticode signing credentials are not configured."},
   "automatic_updates": false
 }

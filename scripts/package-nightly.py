@@ -15,6 +15,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_FORMATS = {"linux": "deb", "windows": "zip-powershell", "macos": "dmg"}
+CODING_AGENT_TARGETS = {
+    "linux": "x86_64-unknown-linux-gnu",
+    "windows": "x86_64-pc-windows-msvc",
+    "macos": "native-apple-darwin",
+}
+CODING_AGENT_RUNTIME_LIBRARIES = {
+    "linux": ["glibc", "libssl.so.3"],
+    "windows": ["vcruntime140.dll"],
+    "macos": [],
+}
+RUST_NOTICE_SOURCE = Path("build/evidence/rust-third-party-notices.txt")
+RUST_NOTICE_DESTINATIONS = {
+    "linux": Path("licenses/RUST-THIRD-PARTY-NOTICES.txt"),
+    "windows": Path("licenses/RUST-THIRD-PARTY-NOTICES.txt"),
+    "macos": Path("Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt"),
+}
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 
@@ -157,6 +173,69 @@ def stage_vityod(config: dict[str, object], destination_root: Path) -> Path | No
     return destination
 
 
+def coding_agent_version() -> str:
+    manifest = require_file(ROOT / "products/vityo_coding_agent/Cargo.toml")
+    payload = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    package = payload.get("package")
+    version = package.get("version") if isinstance(package, dict) else None
+    if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
+        raise ValueError("Coding Agent Cargo version is invalid")
+    return version
+
+
+def build_coding_agent(config: dict[str, object]) -> Path:
+    component = config.get("coding_agent")
+    if not isinstance(component, dict):
+        raise ValueError("Coding Agent package contract is missing")
+    identity = vityod_build_identity()
+    if not vityod_target_matches(component.get("target"), identity.get("target")):
+        raise ValueError("Coding Agent build host does not match the package target")
+    manifest = require_file(ROOT / "products/vityo_coding_agent/Cargo.toml")
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            manifest,
+            "--bin",
+            "vityo-coding-agent",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    binary = require_file(ROOT / str(component.get("source_relative_path", "")))
+    subprocess.run([binary, "--version"], cwd=ROOT, check=True)
+    return binary
+
+
+def stage_coding_agent(config: dict[str, object], destination_root: Path) -> Path:
+    component = config.get("coding_agent")
+    if not isinstance(component, dict):
+        raise ValueError("Coding Agent package contract is missing")
+    source = require_file(ROOT / str(component.get("source_relative_path", "")))
+    relative = Path(str(component.get("package_relative_path", "")))
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        raise ValueError("Coding Agent package path must stay inside the application")
+    destination = destination_root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    subprocess.run([destination, "--version"], cwd=destination_root, check=True)
+    return destination
+
+
+def stage_rust_notices(platform: str, destination_root: Path) -> Path:
+    source = ROOT / RUST_NOTICE_SOURCE
+    if not source.is_file() or not source.read_text(encoding="utf-8").strip():
+        raise ValueError("the generated Rust third-party notices are missing or empty")
+    destination = destination_root / RUST_NOTICE_DESTINATIONS[platform]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return destination
+
+
 def validate_release_inputs(platform: str, config: dict[str, object], versions: dict[str, object]) -> str:
     if versions.get("schema_version") != 1:
         raise ValueError("invalid release versions schema")
@@ -169,6 +248,24 @@ def validate_release_inputs(platform: str, config: dict[str, object], versions: 
         raise ValueError(f"invalid {platform} signing policy")
     if signing.get("status") == "explicit-gap" and not str(signing.get("reason", "")).strip():
         raise ValueError(f"missing {platform} signing gap reason")
+    coding_agent = config.get("coding_agent")
+    if not isinstance(coding_agent, dict):
+        raise ValueError(f"missing {platform} Coding Agent package component")
+    if coding_agent.get("target") != CODING_AGENT_TARGETS[platform]:
+        raise ValueError(f"{platform} Coding Agent target is mismatched")
+    if coding_agent.get("required_runtime_libraries") != CODING_AGENT_RUNTIME_LIBRARIES[platform]:
+        raise ValueError(f"{platform} Coding Agent runtime libraries are mismatched")
+    if coding_agent.get("source_relative_path") != (
+        "products/vityo_coding_agent/target/release/vityo-coding-agent.exe"
+        if platform == "windows"
+        else "products/vityo_coding_agent/target/release/vityo-coding-agent"
+    ):
+        raise ValueError(f"{platform} Coding Agent source path is invalid")
+    relative = Path(str(coding_agent.get("package_relative_path", "")))
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        raise ValueError(f"{platform} Coding Agent package path is invalid")
+    if config.get("rust_notices_path") != RUST_NOTICE_DESTINATIONS[platform].as_posix():
+        raise ValueError(f"{platform} Rust notices destination is invalid")
     automatic_updates = config.get("automatic_updates")
     if not isinstance(automatic_updates, bool):
         raise ValueError(f"invalid {platform} automatic update policy")
@@ -191,6 +288,8 @@ def package_linux(config: dict[str, object], output: Path, version: str) -> Path
         app_root = stage / "opt/vityo"
         copy_tree_contents(build, app_root)
         stage_vityod(config, app_root)
+        stage_coding_agent(config, app_root)
+        stage_rust_notices("linux", app_root)
         control_root = stage / "DEBIAN"
         control_root.mkdir(parents=True)
         control = require_file(ROOT / str(config["installer_definition"])).read_text(encoding="utf-8")
@@ -230,6 +329,8 @@ def package_windows(config: dict[str, object], output: Path) -> Path:
         stage = Path(raw_stage) / "Vityo-Nightly"
         copy_tree_contents(build, stage)
         stage_vityod(config, stage)
+        stage_coding_agent(config, stage)
+        stage_rust_notices("windows", stage)
         shutil.copy2(ROOT / "packaging/windows/install.ps1", stage / "install.ps1")
         shutil.copy2(ROOT / "packaging/windows/uninstall.ps1", stage / "uninstall.ps1")
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -242,13 +343,12 @@ def package_windows(config: dict[str, object], output: Path) -> Path:
 def package_macos(config: dict[str, object], output: Path) -> Path:
     app = require_dir(ROOT / str(config["build_relative_path"]))
     script = require_file(ROOT / str(config["installer_definition"]))
-    if config.get("vityod") is None:
-        subprocess.run(["bash", script, app, output], check=True)
-        return output
     with tempfile.TemporaryDirectory(prefix="vityo-macos-") as raw_stage:
         staged_app = Path(raw_stage) / app.name
         shutil.copytree(app, staged_app)
         stage_vityod(config, staged_app)
+        stage_coding_agent(config, staged_app)
+        stage_rust_notices("macos", staged_app)
         subprocess.run(["bash", script, staged_app, output], check=True)
     return output
 
@@ -262,6 +362,7 @@ def main() -> int:
     versions = load_json(ROOT / "packaging/release-versions.json")
     version = validate_release_inputs(args.platform, config, versions)
     vityod_binary = build_vityod(config)
+    build_coding_agent(config)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     suffix = {"linux": ".deb", "windows": ".zip", "macos": ".dmg"}[args.platform]
     output = args.output_dir / f"vityo-nightly-{args.platform}-{version}{suffix}"
@@ -289,6 +390,15 @@ def main() -> int:
             "executable_sha256": hashlib.sha256(vityod_binary.read_bytes()).hexdigest(),
             "package_relative_path": component["package_relative_path"],
         }
+    component = config["coding_agent"]
+    assert isinstance(component, dict)
+    evidence["coding_agent"] = {
+        "version": coding_agent_version(),
+        "package_relative_path": component["package_relative_path"],
+        "target": component["target"],
+        "required_runtime_libraries": component["required_runtime_libraries"],
+    }
+    evidence["rust_notices"] = config["rust_notices_path"]
     output.with_suffix(output.suffix + ".json").write_text(
         json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
