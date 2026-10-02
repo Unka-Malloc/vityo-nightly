@@ -14,7 +14,7 @@
 
 The Flow Hero interface is a presentation and interaction direction for a Styio editor. Users need to edit real program text, move visual nodes, reconnect supported flows, and see changes reflected in both views. Agent-originated changes must appear as they are actually proposed or applied. The canvas must retain the current visual baseline, and adopting an established canvas package is preferred where its public APIs support the required lifecycle.
 
-The current package entry point starts `FlowHeroApp` directly. Flow Hero currently has a local sample graph, demonstration source and parser, timer-driven run presentation, and a scripted Agent transcript. `AppBootstrap.load()` and `VityoApp` exist but are not called from `lib/main.dart`. The separate Agent Client and IDE transaction services are not connected to this route. See [Vityo-System-Architecture.md](../design/Vityo-System-Architecture.md#13-application-composition-and-current-flow-hero-entry) and [Vityo-Implementation-Gaps.md](../design/Vityo-Implementation-Gaps.md).
+The normal package entry still starts `FlowHeroApp` directly, and does not call `AppBootstrap.load()` or construct `VityoApp`. Flow Hero contains a restricted demonstration graph and parser, demonstration runtime presentation, and scripted Agent content. Its path-bound `BufferFile` values are distinct from pathless demo buffers; local editor storage alone is not canonical workspace revision or transaction authority. Agent-neutral ACP operations may be composed into this route through the actual open buffer and workspace owners without making the canvas a semantic graph editor. See [Vityo-System-Architecture.md](../design/Vityo-System-Architecture.md#13-application-composition-and-current-flow-hero-entry) and [Vityo-Implementation-Gaps.md](../design/Vityo-Implementation-Gaps.md).
 
 Styio owns source syntax, language meaning, and valid rewrites. Pafio's project graph is workspace/package metadata and cannot stand in for program data flow. A visual graph must therefore remain a revisioned projection of source semantics, not an independent program representation.
 
@@ -33,7 +33,7 @@ The required semantic handoff belongs to the existing [Styio Language Service Ad
 
 ## Consequences
 
-1. `AppBootstrap` becomes the single source of shared IDE service instances for Flow Hero. The current direct `FlowHeroApp` package entry is not evidence of that wiring.
+1. Flow Hero remains the current direct presentation route. Agent-neutral operations are injected at its Workbench boundary and must delegate to path-bound open-buffer, workspace transaction, and daemon process owners; `AppBootstrap` remains a reusable composition surface, not a prerequisite or proof of this route.
 2. Source syntax, typed flow snapshots, stable semantic identities, source locations, and semantic rewire edit proposals are Styio capabilities. Vityo must expose a capability gap if the selected Styio service cannot provide them.
 3. Stale analysis cannot replace facts for a newer document revision. An incomplete parse may keep the last known layout visible only with its stale/incomplete state identified.
 4. Node placement may be persisted as view state independently from the source file. It cannot change edge endpoints.

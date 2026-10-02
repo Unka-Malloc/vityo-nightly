@@ -12,45 +12,31 @@ Vityo is the user-facing Styio agent-native IDE. It remains a complete IDE when 
 and becomes agent-native by treating supervised Agent work as a first-class, reviewable workbench
 workflow.
 
-Vityo Coding Agent is the first-party companion runtime. It is independently executable and can be
-launched by Vityo or another compatible client. Other compatible Agents may also connect to Vityo.
-The IDE never imports an Agent runtime implementation and never becomes a model-provider client.
+Vityo Coding Agent is the first-party companion runtime, with an independently executable Rust
+implementation selected for delivery. Its current Rust scaffold is not yet production-composed.
+Other compatible Agents use the same advertised operations and permission rules. The IDE never
+imports an Agent runtime implementation and never becomes a model-provider client.
 
-```mermaid
-flowchart LR
-    User["User"] --> Workbench["Vityo Agent Workbench"]
-    Workbench --> Client["IDE-owned Agent Client"]
-    Client <--> Protocol["Versioned Vityo Agent Protocol\nACP-compatible session boundary"]
-    Protocol <--> FirstParty["Vityo Coding Agent\nfirst-party companion"]
-    Protocol <--> Compatible["Other compatible Agent"]
-
-    Workbench --> Facts["Revisioned IDE facts"]
-    Facts --> Mcp["IDE-owned MCP host"]
-    Mcp <--> FirstParty
-    Mcp <--> Compatible
-
-    FirstParty --> Proposal["Revision-bound change proposal"]
-    Compatible --> Proposal
-    Proposal --> Review["Permission and diff review"]
-    Review --> Transaction["IDE workspace transaction"]
-    Transaction --> Facts
-```
+The source-driven process diagram is maintained in [Vityo System Architecture](./Vityo-System-Architecture.md).
+This document owns the detailed Agent boundary and current implementation status.
 
 ## 2. Ownership
 
 | Owner | Owns | Does not own |
 |---|---|---|
-| Vityo IDE | Source Buffers, document/workspace revisions, language/compiler/runtime facts, workbench projections, Agent process supervision, protocol client state, permission presentation, change review, and transaction commit/rollback | Model request shapes, provider credentials, prompt/tool orchestration, Agent tool execution, durable Agent truth, or multi-Agent scheduling |
+| Vityo IDE | Source Buffers, document/workspace revisions, language/compiler/runtime facts, workbench projections, Agent operation routing, protocol client state, permission presentation, change review, and transaction commit/rollback | Model request shapes, provider credentials, prompt/tool orchestration, Agent tool execution, durable Agent truth, or multi-Agent scheduling |
 | Compatible Agent runtime | Model/provider routing, context selection, coding plan and loop, tool/MCP consumption, effect policy, durable sessions, validation orchestration, and optional multi-Agent coordination | IDE buffers, Flutter widgets, implicit machine access, or direct mutation of IDE-owned files |
 | Vityo Agent Protocol | Versioned session DTOs, capability negotiation, correlated requests/events, permission and elicitation messages, artifacts, change proposals, receipts, cancellation, and structured errors | Product orchestration, UI state, provider implementation, or shared mutable objects |
 | Styio ecosystem | Language, compiler, language-service, project/toolchain, package, execution, and runtime truth | Vityo workbench behavior or Agent orchestration |
+| `vityod` local daemon | Durable desktop workspace/process services and supervised ACP Agent processes | Flutter presentation, Agent model/provider loop, Styio semantics, or first-party Agent authority |
 
 The physical owners are:
 
 ```text
 products/vityo_app/                 # Vityo IDE
-products/vityo_coding_agent/        # first-party companion Agent runtime
+products/vityo_coding_agent/        # selected independent Rust companion Agent executable
 packages/vityo_agent_protocol/      # pure shared wire contract
+products/vityo_app/native/vityod/   # separate local daemon executable
 ```
 
 ## 3. IDE State Model
@@ -59,7 +45,7 @@ The IDE is authoritative for the state a user can edit, review, or commit.
 
 | State owner | Canonical state | Required behavior |
 |---|---|---|
-| Document/workspace store | Source text, resource identity, document and workspace revisions | Monotonic revisions and source-fidelity preservation |
+| IDE document/workspace owners and vityod | Source text, resource identity, document and workspace revisions | Monotonic revisions, source-fidelity preservation, and durable transactions |
 | Workspace transaction service | Proposed edits, base revisions, preview, conflicts, commit/rollback receipts | Serialized commit lane; stale or overlapping edits fail without partial mutation |
 | Capability registry | Language, toolchain, execution, debug, SCM, terminal, MCP, and Agent capabilities | Immutable snapshots with explicit unavailable/degraded reasons |
 | Agent Client registry | Agent descriptors, processes, negotiated versions/capabilities, session correlation | Supervised lifecycle, bounded state, reconnect/cancel/terminate |
@@ -71,19 +57,23 @@ permission, change, or execution truth.
 
 ## 4. Agent Client Boundary
 
-The IDE-owned Agent Client:
+The IDE-owned Agent Client and local daemon:
 
-1. discovers a configured Agent command or remote transport;
-2. launches or connects to it without exposing unrelated environment or credentials;
+1. resolves a configured Agent command or remote transport while the daemon supervises local ACP processes;
+2. launches or connects to an Agent without exposing unrelated environment or credentials;
 3. negotiates protocol version and capabilities;
 4. creates, loads, streams, cancels, reconnects to, and terminates sessions;
 5. correlates concurrent sessions, requests, permissions, artifacts, and change proposals;
 6. projects durable protocol events into bounded workbench state;
 7. rejects malformed, oversized, unsupported, or stale messages with structured diagnostics.
 
-The preferred local transport is a supervised stdio process. Alternate transports may be added
-behind the same session semantics. Styio-specific additions are namespaced and capability-negotiated;
-they do not fork or silently reinterpret standard protocol messages.
+The local Agent transport is a daemon-supervised ACP stdio process. Flutter communicates with
+vityod through its typed local service protocol and does not embed or directly supervise the Rust
+Agent. Standard ACP filesystem and terminal operations route through one Agent-neutral dispatcher
+to the real path-bound buffer, workspace document/transaction, or PTY owner. The existing
+revision-bound Vityo proposal extension remains for source-aware atomic changes. Capability
+advertisement follows implemented owner routes. Styio-specific additions are namespaced and
+negotiated; they do not reinterpret standard ACP methods.
 
 The IDE does not:
 
@@ -91,7 +81,7 @@ The IDE does not:
 2. select model-provider fallback routes;
 3. execute an Agent's tool loop;
 4. persist the Agent's authoritative reasoning/session journal;
-5. schedule subagents or worktrees.
+5. schedule subagents or worktrees; the connected Agent runtime owns multi-Agent scheduling.
 
 Those responsibilities belong to the connected Agent runtime.
 
@@ -180,21 +170,32 @@ Platform transport differences do not move model/provider or Agent execution own
 
 ## 10. Current Implementation Status
 
-The ownership boundary is established in reusable components: Vityo has a supervised Agent Client
-(`products/vityo_app/lib/src/ide/agent_client`), collaboration projection
+The ownership boundary is established in reusable components: Vityo has an Agent Client gateway
+(`products/vityo_app/lib/src/ide/agent_client`), daemon-owned ACP process supervision
+(`products/vityo_app/native/vityod/crates/vityod-agent-host`), collaboration projection
 (`products/vityo_app/lib/src/ide/workbench/agent_collaboration`), presentation Workbench
 (`products/vityo_app/lib/src/presentation/agent_workbench`), MCP/context export, and IDE-owned
 workspace transactions. Direct model-provider transport and Agent tool-loop ownership do not
 belong in the IDE. This component boundary does not prove every application route composes those
-services. In particular, `products/vityo_app/lib/main.dart` currently starts the isolated Flow Hero
-route directly and does not load `AppBootstrap` or `VityoApp`.
+services. In particular, `products/vityo_app/lib/main.dart` wraps the direct Flow Hero route in a
+first-frame delivery probe and still does not load `AppBootstrap` or `VityoApp`. Flow Hero's
+`WorkbenchController` has both pathless demo buffers and path-bound files; its local `File` open/save
+path does not equal the shared daemon document and transaction authority. ACP operations must
+resolve a real active workspace path and then use the matching buffer and owner services.
 
-The companion Agent's current runtime also does not yet implement a model-driven ReAct loop.
-`AgentRuntime` delegates to `AgentSessionService`, which currently performs one host inspection;
-the CLI/stdio endpoint uses `InMemoryHostWorkspace`. The separate plan-first `CodingLoop` has no
-production `CodingPlanner` connected to that endpoint. The selected runtime target and these open
-gaps are recorded in [ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md) and
-[Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md).
+The current Dart companion still has an inspect-once `AgentRuntime` and an uncomposed separate
+plan-first `CodingLoop`. The selected Rust executable scaffold is also not production-composed.
+The delivery target requires the complete ReAct/tool/policy/session path and a real
+OpenAI-compatible streaming adapter using nonsecret provider configuration and native secret
+references. Deterministic integration uses a local HTTP/SSE fixture; remote provider calls remain
+separate live acceptance. The interaction pattern is in
+[ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md), while the process and operation decision is
+in [ADR-0022](../adr/ADR-0022-agent-neutral-operation-boundary.md).
+
+The standard ACP filesystem/terminal owner path is incomplete until negotiated requests pass from
+the daemon poll through the neutral dispatcher to the actual buffer, transaction, and PTY owners and
+their results return to the Workbench. Full Styio graph semantics and source rewiring remain deferred
+because current language-service facts do not establish them.
 
 The remaining product-closure work is tracked in
 [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md): prove richer end-to-end Agent
@@ -209,3 +210,4 @@ ownership back into the IDE.
 4. [Repository execution workflow](../plan/EXECUTION-RUNBOOK.md)
 5. [ADR-0019](../adr/ADR-0019-vityo-is-the-styio-agent-native-ide.md)
 6. [ADR-0021: ReAct Agent Runtime Loop](../adr/ADR-0021-react-agent-runtime-loop.md)
+7. [ADR-0022: Agent-Neutral Operations](../adr/ADR-0022-agent-neutral-operation-boundary.md)

@@ -8,35 +8,68 @@
 
 ## 1. 总体架构
 
-Vityo is the agent-native IDE for Styio. Its core is a complete IDE that operates without an Agent;
-its Agent Workbench connects to the first-party Vityo Coding Agent or another compatible Agent only
-through the versioned Vityo Agent Protocol.
+Vityo is the agent-native IDE for Styio. Its core is a complete IDE that operates without an Agent.
+The Flutter/Dart client, the selected Rust Vityo Coding Agent executable, and the existing Rust
+`vityod` local daemon have independent process lifecycles. The local daemon supervises compatible
+Agent processes and owns durable desktop workspace/process services. Agents use the same advertised
+operations and user authorization; they do not control Flutter widgets.
+
+<!-- VITYO_ARCHITECTURE:START -->
+Generated from [`system-architecture.json`](./architecture-views/system-architecture.json).
 
 ```mermaid
-flowchart TB
-  UI["Flutter UI Runtime"] --> Editor["Custom Editor Engine"]
-  UI --> Surfaces["Language / Runtime / Theme Surfaces"]
-  UI --> Workbench["Agent Workbench"]
-  UI --> Host["Module Host Runtime"]
-  Host --> Registry["Module Registry + Capability Matrix"]
-  Editor --> Lang["Language Workspace Service"]
-  Lang --> Adapters["Product-Owned Adapters"]
-  Adapters --> LS["LanguageServiceAdapter"]
-  Adapters --> Graph["ProjectGraphAdapter"]
-  Adapters --> Exec["ExecutionAdapter"]
-  Adapters --> Events["RuntimeEventAdapter"]
-  LS --> Upstream["styio / pafio / Hosted Services"]
-  Graph --> Upstream
-  Exec --> Upstream
-  Events --> Upstream
-  Events --> Surfaces
-  Workbench --> Client["Vityo Agent Client"]
-  Client --> Protocol["Versioned Vityo Agent Protocol"]
-  Protocol --> FirstParty["Vityo Coding Agent"]
-  Protocol --> Compatible["Compatible Agent"]
-  FirstParty --> Models["Model / Provider + Tool Loop"]
-  Compatible --> Models
+flowchart LR
+  subgraph agents["Agent processes"]
+    direction TB
+    rust_agent["Rust Coding Agent · TARGET"]
+    compatible_agents["Compatible Agents · TARGET"]
+  end
+  subgraph protocol["Protocol and local daemon"]
+    direction TB
+    agent_protocol["ACP v1 + Vityo proposal extension · CURRENT"]
+    standard_operations_gap["ACP operations gateway · GAP"]
+    vityod["vityod daemon · CURRENT"]
+  end
+  subgraph client["Flutter IDE"]
+    direction TB
+    workbench_projection["Workbench projection · CURRENT"]
+    flutter_ide["Flutter IDE · CURRENT"]
+    local_daemon_client["vityod client · CURRENT"]
+    neutral_operation_dispatcher["IDE operation dispatcher · TARGET"]
+    flow_hero_buffers["Flow Hero path-bound buffer · CURRENT"]
+    flow_hero["Flow Hero source + graph · GAP"]
+  end
+  subgraph authorities["Language and project authorities"]
+    direction TB
+    styio["Styio language service · CURRENT"]
+    flow_semantics_gap["Styio graph / rewire · GAP"]
+    pafio["Pafio project metadata · CURRENT"]
+  end
+  subgraph delivery["Build and verification"]
+    direction TB
+    python_delivery["Python delivery pipeline · TARGET"]
+    quality_engines["Test and package engines · CURRENT"]
+  end
+  flutter_ide -->|"route typed local requests"| local_daemon_client
+  local_daemon_client -->|"local daemon IPC"| vityod
+  vityod -->|"workspace and process facts"| workbench_projection
+  workbench_projection -->|"ordered state and event projection"| flutter_ide
+  rust_agent -->|"independent ACP session · TARGET"| agent_protocol
+  compatible_agents -->|"same authorized capabilities · TARGET"| agent_protocol
+  agent_protocol -->|"filesystem and terminal requests · GAP"| standard_operations_gap
+  standard_operations_gap -->|"session poll and correlated result · TARGET"| neutral_operation_dispatcher
+  neutral_operation_dispatcher -->|"read or edit the active file · TARGET"| flow_hero_buffers
+  flow_hero_buffers -->|"restricted parser is not Styio flow semantics · GAP"| flow_hero
+  neutral_operation_dispatcher -->|"workspace transaction and PTY · TARGET"| vityod
+  rust_agent -->|"revision-bound proposal; IDE reviews and commits · TARGET"| flutter_ide
+  flutter_ide -->|"analyze current document revision"| styio
+  styio -->|"typed flow and supported rewrites · GAP"| flow_semantics_gap
+  pafio -->|"project/package/target metadata"| flutter_ide
+  python_delivery -->|"run deterministic validation · TARGET"| quality_engines
+  quality_engines -->|"deterministic product checks"| flutter_ide
+  quality_engines -->|"deterministic Agent/protocol fixtures · TARGET"| rust_agent
 ```
+<!-- VITYO_ARCHITECTURE:END -->
 
 The IDE owns source buffers, document and workspace revisions, Styio compiler/runtime facts, and
 workspace transactions. Agent runtimes own model/provider access, context selection, the tool loop,
@@ -44,13 +77,16 @@ Agent policy, durable sessions, and multi-Agent orchestration.
 
 ## 1.1 Product And Repository Ownership
 
-The repository has three product-facing roots:
+The repository has three product-facing roots and one separate local service process:
 
 | Root | Ownership |
 |---|---|
 | `products/vityo_app/` | Flutter IDE, editor and workspace state, language/runtime adapters, Agent Client and IDE-side review/transaction policy, and presentation. |
-| `products/vityo_coding_agent/` | First-party Agent runtime, including provider/model access, tool policy and execution, task/session orchestration, and its protocol producer. |
+| `products/vityo_coding_agent/` | First-party Agent product. Its selected implementation is an independent Rust executable with provider/model access, tool policy and execution, task/session orchestration, and its protocol producer. The current Rust scaffold is not production-composed. |
 | `packages/vityo_agent_protocol/` | Versioned, implementation-independent IDE-to-Agent wire contract. |
+
+`products/vityo_app/native/vityod/` is the separately executable Rust daemon for local workspace and
+process services. It is not the Coding Agent and is not an in-process Flutter bridge.
 
 Within the Flutter application, responsibilities follow the actual source roots:
 
@@ -84,11 +120,27 @@ python3 scripts/import-boundary-gate.py
 
 ## 1.3 Application Composition And Current Flow Hero Entry
 
-`AppBootstrap.load()` is the existing Flutter composition mechanism and `VityoApp` consumes its result. The current `products/vityo_app/lib/main.dart`, however, calls `runApp(const FlowHeroApp())`; it does not load `AppBootstrap` or construct `VityoApp`. The Flow Hero route therefore does not currently consume the shared bootstrap-owned workspace, language, execution, or collaboration services.
+`AppBootstrap.load()` and `VityoApp` are reusable composition surfaces, but the current
+`products/vityo_app/lib/main.dart` passes `const FlowHeroApp()` to the desktop startup probe; the
+normal launch still uses Flow Hero directly and does not load `AppBootstrap` or construct
+`VityoApp`. Flow Hero's `WorkbenchController` owns built-in demonstration buffers and can open
+path-bound `BufferFile` values. Those local buffer and file paths do not by themselves establish
+the shared daemon document revision and transaction authority; in particular, pathless demo
+buffers are not workspace resources.
 
-Flow Hero presently builds a local sample graph and demonstration source, uses a small regex-based parser for that sample, simulates run progress with timers, and seeds a scripted Agent transcript. Its `AgentBridge` can establish an Agent Client transport when explicitly configured, but transport connectivity alone does not mean the first-party runtime can call a model, run coding tools, or apply source-bound proposals. Preserve these differences in implementation status and user-facing state.
+Flow Hero still builds a sample graph from a restricted parser and uses demonstration runtime and
+Agent presentation. Its open-file editor state is not a Styio semantic graph, and a transport alone
+does not establish model inference, authorized tools, or committed source changes. The selected
+Agent-neutral operation dispatcher resolves requests against actual path-bound open buffers,
+uses the daemon's workspace read/transaction path for durable changes, and uses vityod PTY for
+terminal operations. Unsupported pathless buffers stay unavailable. The typed Styio graph and
+rewire contract remains an explicit upstream gap.
 
-The integration target is one composition path: load the actual workspace once, inject its document/editor/language/execution/Agent services into Flow Hero, and use the existing shell for other IDE routes. Flow Hero must not independently discover a second workspace or become a separate data owner. `AppBootstrap` capability entries and protocol negotiation describe available wiring; they do not prove a user-facing feature is connected.
+The immediate integration target is one Agent-neutral operation path from ACP through the local
+daemon and shared dispatcher to open-buffer and owner services. The later full Flow Hero source/graph
+feature must converge on the canonical document, transaction, and Styio semantic owners; it must not
+make the canvas a second program store. `AppBootstrap` capability entries and protocol negotiation
+describe available wiring; they do not prove a user-facing feature is connected.
 
 ## 1.4 Source Of Language And Project Truth
 
@@ -254,17 +306,25 @@ Vityo is an open Agent Client, not a model host:
    verification receipt presentation. `Agent Panel` may remain the name of one view inside this
    workbench.
 3. `products/vityo_coding_agent/` or another compatible Agent owns provider credentials,
-   model/provider routing, context selection, tool execution loops, Agent policy, durable sessions,
-   and multi-Agent orchestration.
-4. The IDE never grants an Agent direct ownership of files. Proposed edits are revision-bound and
-   are applied only through IDE-owned workspace transactions.
-5. Vityo's edit, analyze, test, run, and observe paths remain available when no Agent is connected.
+   model/provider routing, context selection, the ReAct action/observation loop, Agent policy,
+   durable sessions, and multi-Agent scheduling. A concise task plan is optional state inside that
+   loop; the IDE does not schedule subagents.
+4. Standard ACP filesystem and terminal requests are routed through the same advertised,
+   authorized IDE operations. Source-aware atomic proposals use the existing revision-bound Vityo
+   extension and IDE transaction review; neither Agent receives direct file authority.
+5. The frontend renders authoritative document/workspace revisions, actual operation/session
+   events, results, proposals, and transaction receipts. Raw hidden reasoning is not a UI event.
+6. Vityo's edit, analyze, test, run, and observe paths remain available when no Agent is connected.
 
 Execution sandboxing, IDE secret storage, log redaction, and module trust remain IDE concerns for
 IDE-owned operations. Agent-runtime secrets and tool policy remain Agent-runtime concerns. Protocol
 messages and all UI projections must be redacted and must never contain raw credentials.
 
-These IDE-owned components exist as reusable application and presentation surfaces. They are not all connected to the current Flow Hero entry point; see [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) for the open production wiring and Agent-runtime gaps.
+These IDE-owned components exist as reusable application and presentation surfaces. The vityod
+Agent host owns ACP processes and permission requests; standard ACP filesystem/terminal routing
+through the real Flow Hero buffers and vityod workspace/PTY owners remains in progress. See
+[Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) and
+[ADR-0022](../adr/ADR-0022-agent-neutral-operation-boundary.md) for the selected boundary and gaps.
 
 ### 2.10 Source-Authoritative Flow Hero
 
@@ -300,11 +360,34 @@ This is the target architecture, not a claim that Flow Hero is already wired. Th
 
 The following implementation roots exist in the current checkout:
 
-1. `products/vityo_app/lib/main.dart` — current Flutter package entry; presently starts Flow Hero directly.
+1. `products/vityo_app/lib/main.dart` — current Flutter package entry; the normal path still starts the Flow Hero route directly, with a separate first-frame delivery probe.
 2. `products/vityo_app/lib/src/app/app_bootstrap.dart` and `vityo_app.dart` — reusable service composition and shell application.
 3. `products/vityo_app/lib/src/ide/editor/` and `ide/workspace/` — source/editor and workspace application state.
 4. `products/vityo_app/lib/src/ide/agent_client/` and `ide/workbench/agent_collaboration/` — Agent protocol client and IDE-owned collaboration projection/transactions.
 5. `products/vityo_app/lib/src/view_ide/backend_toolchain/` and `view_ide/language/` — active backend/toolchain and language adapter/service implementations.
 6. `products/vityo_app/lib/src/view_render/` — Flutter presentation, including current isolated `flow_hero/` and the reusable IDE shell.
-7. `products/vityo_coding_agent/` — companion runtime.
-8. `packages/vityo_agent_protocol/` — shared Agent protocol.
+7. `products/vityo_app/native/vityod/` — independent local workspace and process daemon.
+8. `products/vityo_coding_agent/` — selected independent Rust companion executable; runtime composition remains a delivery gap until its ReAct/tool/protocol path is exercised.
+9. `packages/vityo_agent_protocol/` — shared Agent protocol.
+
+## 6. Architecture Model And Generated Views
+
+The source for the current/target/gap process view is
+[`architecture-views/system-architecture.json`](./architecture-views/system-architecture.json).
+It generates the Mermaid block above, the standalone HTML view, and the no-fetch HTML fragment
+used by the local inline viewer. Keep architecture decisions and semantic requirements in this
+document and the linked ADRs; source anchors and import checks keep evidence and dependency
+direction current but do not prove runtime behavior.
+
+Regenerate the outputs after changing the model or its owned source facts:
+
+```bash
+python3 scripts/vityo_architecture.py --write
+```
+
+The selected delivery entry point is `python3 scripts/vityo.py deliver`.
+The delivery pipeline invokes `python3 scripts/vityo_architecture.py --check` as its architecture
+stage. For review, `python3 scripts/vityo_architecture.py --serve --watch` serves only the page and
+model JSON on loopback, refreshes on model changes, and regenerates the checked-in outputs. The
+fragment mode is `python3 scripts/vityo_architecture.py --fragment`; it reads the same model without
+fetching or making network requests.

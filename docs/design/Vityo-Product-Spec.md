@@ -165,8 +165,11 @@ this launch promise.
 5. Agent runtimes own model/provider integration, context selection, tool execution, effect policy,
    coding-loop orchestration, durable session state, and multi-Agent coordination.
 6. The IDE never imports Agent runtime implementation and the Agent runtime never imports Vityo or
-   Flutter implementation.
-7. The Agent cannot write IDE-owned files directly. It proposes revision-bound change sets.
+   Flutter implementation. The Flutter client, Rust Coding Agent, and vityod daemon are separately
+   supervised processes.
+7. Agent operations use the same advertised capabilities, authorization, scoped workspace, and
+   IDE-owned document/transaction services as other clients. Standard ACP filesystem writes are
+   dispatched through those owners; source-aware atomic edits use revision-bound proposals.
 8. Permission requests, changes, and validation results remain visible until explicitly resolved.
 9. Model output and tool output are untrusted inputs; they cannot widen roots, permissions,
    credentials, network access, or execution capabilities.

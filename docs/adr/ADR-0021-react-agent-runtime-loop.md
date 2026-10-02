@@ -25,9 +25,17 @@ Current code is scaffolding, not a complete model-driven coding Agent:
 
 These are independent observations of current wiring. Selecting a target architecture does not make any of the missing runtime stages implemented.
 
+The current Rust Coding Agent package is a separate executable scaffold, not a composed provider/tool
+runtime. The selected implementation migrates the complete Coding Agent capability surface to Rust.
+It includes a real OpenAI-compatible streaming adapter configured by a nonsecret `--provider-config`
+file and native secret references. Deterministic verification uses the production adapter against a
+local HTTP/SSE fixture and exercises the actual executable; remote provider conversations remain
+separate live acceptance. The process and IDE operation boundary is recorded in
+[ADR-0022](./ADR-0022-agent-neutral-operation-boundary.md).
+
 ## Decision
 
-Use one ReAct-style action/observation loop as the default coding task runtime:
+Use one ReAct-style action/observation loop as the default Rust Coding Agent runtime:
 
 ```text
 observe current task and authorized workspace facts
@@ -64,6 +72,9 @@ The original ReAct work describes interleaving reasoning and actions to gather e
 4. The current plan-first `CodingLoop` may be changed when the approved runtime milestone implements this target. Its incomplete implementation does not create a compatibility obligation.
 5. Provider credentials and prompts remain inside the Agent runtime boundary; the Vityo IDE continues to communicate through the versioned Agent Protocol.
 6. A real provider conversation remains separate live acceptance by the user's designated Agent.
+7. Rust owns the first-party executable and its provider/runtime implementation. The Flutter/Dart
+   client and separate `vityod` daemon communicate through process protocols; this ADR does not
+   select FRB or move Agent scheduling into the IDE.
 
 ## Alternatives considered
 
@@ -79,3 +90,4 @@ The original ReAct work describes interleaving reasoning and actions to gather e
 - [Vityo Implementation Gaps](../design/Vityo-Implementation-Gaps.md)
 - [Vityo Agent Protocol schema](../../packages/vityo_agent_protocol/schema/acp-v1.schema.json)
 - [ADR-0019: Vityo Is the Styio Agent-Native IDE](./ADR-0019-vityo-is-the-styio-agent-native-ide.md)
+- [ADR-0022: Agent-Neutral Operations](./ADR-0022-agent-neutral-operation-boundary.md)

@@ -47,7 +47,7 @@ Status values:
 | Formatting | Upstream blocked | StyioService + Vityo | TextEdit-style edits and range rules from StyioService; command UI, save hook, and preview in Vityo. |
 | Inlay hints | Upstream blocked | StyioService + Vityo | Semantic payload from StyioService; rendering and settings in Vityo. |
 | Embedded parser API | Upstream blocked | styio-nightly | Stable embedded parser facade or published syntax-check API consumable by Vityo. |
-| Mandatory `.true.styio` / `.false.styio` gate | Validation needed | Vityo | `LanguageFixtureFileCollector` scans fixture roots through File System Manager, `LanguageFixtureFileSystemTextLoader` reads fixture text through File System Manager, `LanguageFixtureConfidenceMatrixBuilder` classifies `.true.styio`, `.false.styio`, and unlabeled fixtures against supplied parser pass/fail results, `StyioServiceFixtureValidator` adapts `StyioServiceConnector` diagnostics into those results without implementing a parser, `LanguageFixtureGateRunner` composes collection, validation, and classification into one gate result, `StyioServiceFixtureGate` wires File System Manager plus `StyioServiceConnector` into a reusable connector-backed gate, `StyioServiceFixtureGate.fromToolchainRuntime` supports one-shot local command execution, `StyioServiceFixtureGate.fromToolchainManager` supports Configuration-backed product runtime execution, `tool/language_fixture_gate.dart` exposes a local command backed by `ToolchainStyioServiceConnector`, `scripts/language-fixture-gate.sh` resolves the Styio executable, `checkpoint-health.sh` / `local-ci-gate.yml` wire the gate into repository health, and command output includes machine-readable JSON plus compact human summary. Remaining closure: confirm the GitHub-hosted CI run after sibling `styio-nightly` builds on the remote runner. |
+| Mandatory `.true.styio` / `.false.styio` gate | Validation needed | Vityo | `LanguageFixtureFileCollector`, `LanguageFixtureFileSystemTextLoader`, `LanguageFixtureConfidenceMatrixBuilder`, `StyioServiceFixtureValidator`, and `LanguageFixtureGateRunner` compose the connector-backed fixture gate; `tool/language_fixture_gate.dart` remains the focused module command. The canonical `python3 scripts/vityo.py test` stage resolves the pinned real Styio executable and invokes the fixture command for the parser-backed language fixture roots. A missing executable fails the required test stage. Remaining closure: confirm the GitHub-hosted CI run after the sibling `styio-nightly` build on the remote runner. |
 | Fixture corpus cleanliness | Validation needed | Vityo + StyioService | Re-run syntax validation against real Styio parser before claiming parser-clean fixtures. |
 
 ## 3. Editor Gaps
@@ -161,12 +161,14 @@ Use these destinations:
 
 ## 10. Current Validation Status
 
-This register does not preserve command-by-command audit snapshots. Current release evidence is
-produced by the repository-owned quality runner:
+This register does not preserve command-by-command audit snapshots. The canonical delivery command
+is `python3 scripts/vityo.py deliver`; the focused engineering test stage can be run with
+`python3 scripts/vityo.py test`. The orchestrator invokes the lower-level IDE quality engine and
+other scoped validators without duplicating those suites:
 
 ```bash
-python3 scripts/vityo_quality.py --product ide --suite full --preflight --receipt <path>
-python3 scripts/vityo_quality.py --product ide --suite full --receipt <path>
+python3 scripts/vityo.py test
+python3 scripts/vityo.py deliver
 ```
 
 The formal run must be bound to a clean source commit and a new receipt destination. Historical
