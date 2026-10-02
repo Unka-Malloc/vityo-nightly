@@ -21,6 +21,8 @@ def _load_delivery_module():
 
 def main() -> None:
     delivery = _load_delivery_module()
+    assert delivery.validate_repository(ROOT) == []
+
     expected_candidate = "vityo-nightly-linux-0.1.0.deb"
     evidence = {
         "schema_version": 1,
@@ -62,13 +64,6 @@ def main() -> None:
         evidence=evidence,
     )
     assert wrong_host.status == "blocked"
-
-    workflow = (
-        ROOT / ".github" / "workflows" / "local-ci-gate.yml"
-    ).read_text(encoding="utf-8")
-    assert workflow.count("--vityo-startup-probe") == 3
-    assert workflow.count("--vityo-candidate") == 3
-    assert workflow.count("--vityo-evidence-file") == 3
 
 
 if __name__ == "__main__":
