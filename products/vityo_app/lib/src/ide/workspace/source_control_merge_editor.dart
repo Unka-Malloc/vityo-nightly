@@ -302,13 +302,18 @@ class GitSourceControlMergeProvider
       if (resolution.deleteDocument) {
         await documentStore.deleteDocument(path);
       } else {
+        // The resolved text replaces a document the workspace owner already
+        // observed, so the write must carry that observation: the store rejects
+        // a fabricated snapshot instead of silently overwriting concurrent work.
         final currentDocument = loaded.workingDocument;
         await documentStore.saveDocument(
           DocumentState(
-            documentId: path,
+            documentId: currentDocument?.documentId ?? path,
             text: resolution.text,
             revision: (currentDocument?.revision ?? -1) + 1,
             encoding: currentDocument?.encoding,
+            workspaceRevision: currentDocument?.workspaceRevision,
+            baseDocumentRevision: currentDocument?.revision ?? 0,
           ),
         );
       }

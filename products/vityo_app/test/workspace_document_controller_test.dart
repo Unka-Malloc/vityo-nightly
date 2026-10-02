@@ -227,7 +227,10 @@ void main() {
       final result = await controller.discardAndCloseRequested();
 
       expect(result?.status, WorkspaceFileCloseRequestStatus.closed);
-      expect(editor.document, document);
+      // Discarding reloads the backing content, which the store hands back with
+      // the workspace snapshot it observed for that document.
+      expect(editor.document.text, document.text);
+      expect(editor.document.revision, document.revision);
       expect(binding.snapshot.state, DocumentResourceBindingState.boundClean);
       expect(state.isDirty(path), isFalse);
     },
