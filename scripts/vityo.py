@@ -580,6 +580,18 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
     commands: list[Command] = [
         Command("Flutter analysis", (flutter, "analyze"), ROOT / options.flutter_dir),
         Command("Python, Flutter, Agent, and daemon test/coverage collection", _project_coverage_command(options, collect_only=True)),
+        Command(
+            "Build current vityod executable for Dart integration tests",
+            (
+                "cargo",
+                "build",
+                "--locked",
+                "--manifest-path",
+                "products/vityo_app/native/vityod/crates/vityod/Cargo.toml",
+                "--bin",
+                "vityod",
+            ),
+        ),
     ]
     for suite in PORTABLE_IDE_SUITES:
         commands.append(

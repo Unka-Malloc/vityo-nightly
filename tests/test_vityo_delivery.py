@@ -45,7 +45,7 @@ class VityoDeliveryTest(unittest.TestCase):
             "build/custom-evidence/vityo-coding-agent-full.json",
         )
 
-    def test_full_test_stage_collects_all_product_coverage_once_without_duplicate_cargo_runs(self) -> None:
+    def test_stage_builds_current_daemon_before_ide_suites(self) -> None:
         options = self.delivery.DeliveryOptions(platform="macos")
         commands: list[tuple[str, ...]] = []
 
@@ -78,7 +78,28 @@ class VityoDeliveryTest(unittest.TestCase):
             set(self.delivery.PORTABLE_IDE_SUITES),
         )
         self.assertEqual(len(suite_runs), 9)
-        self.assertFalse(any(command and command[0] == "cargo" for command in commands))
+        daemon_build = (
+            "cargo",
+            "build",
+            "--locked",
+            "--manifest-path",
+            "products/vityo_app/native/vityod/crates/vityod/Cargo.toml",
+            "--bin",
+            "vityod",
+        )
+        self.assertEqual(
+            [command for command in commands if command[:2] == ("cargo", "build")],
+            [daemon_build],
+        )
+        self.assertLess(
+            commands.index(coverage_runs[0]),
+            commands.index(daemon_build),
+        )
+        self.assertLess(
+            commands.index(daemon_build),
+            min(commands.index(command) for command in suite_runs),
+        )
+        self.assertFalse(any(command[:2] == ("cargo", "test") for command in commands))
         self.assertFalse(
             any(
                 "vityo_quality.py" in command and "coding-agent" in command
