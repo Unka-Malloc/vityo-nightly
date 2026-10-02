@@ -169,6 +169,27 @@ class VityoDeliveryTest(unittest.TestCase):
                     ["/usr/bin/open", "-n", "-a", str(install_root)], ROOT, None
                 )
 
+    def test_each_product_lane_validates_its_real_report_and_stops_on_oracle_failure(self) -> None:
+        for platform in ("linux", "windows", "macos"):
+            options = self.delivery.DeliveryOptions(platform=platform)
+            with self.subTest(platform=platform), mock.patch.object(
+                self.delivery, "run_command", side_effect=(0, 17)
+            ) as runner:
+                self.assertEqual(
+                    self.delivery._run_product_acceptance(options, Path("styio"), Path("pafio")),
+                    17,
+                )
+            self.assertEqual(runner.call_count, 2)
+            producer = runner.call_args_list[0].args[0]
+            self.assertIn("--require-real-matrix", producer)
+            self.assertEqual(producer[producer.index("--platform") + 1], platform)
+            report = producer[producer.index("--output") + 1]
+            self.assertEqual(
+                runner.call_args_list[1].args[0],
+                ("dart", "run", "tests/acceptance/vityo_app/trusted_desktop_styio_loop_acceptance_test.dart",
+                 "--report", report, "--platform", platform),
+            )
+
     def test_coverage_scope_collects_only_through_project_gate(self) -> None:
         options = self.delivery.DeliveryOptions(platform="linux", scope="coverage")
         with mock.patch.object(self.delivery, "require_rust_toolchain", return_value=True), mock.patch.object(

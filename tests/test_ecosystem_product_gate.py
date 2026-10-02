@@ -508,22 +508,5 @@ class EcosystemProductGateTest(unittest.TestCase):
         self.assertEqual(payload["report"]["scenarios"], [])
         self.assertNotIn("source_path", json.dumps(payload))
 
-    def test_each_platform_ci_job_runs_the_frozen_report_oracle(self) -> None:
-        workflow = (REPO_ROOT / ".github/workflows/local-ci-gate.yml").read_text(
-            encoding="utf-8"
-        )
-        oracle = (
-            "dart run tests/acceptance/vityo_app/"
-            "trusted_desktop_styio_loop_acceptance_test.dart"
-        )
-        self.assertEqual(workflow.count(oracle), 3)
-        for platform in ("linux", "windows", "macos"):
-            self.assertIn(
-                f"{oracle} --report build/evidence/product-gate-{platform}.json "
-                f"--platform {platform}",
-                workflow,
-            )
-
-
 if __name__ == "__main__":
     unittest.main()
