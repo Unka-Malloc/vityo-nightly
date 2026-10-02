@@ -123,6 +123,32 @@ class VityoPrivacyTest(unittest.TestCase):
                     [f"{finding.path}:{finding.line}:{finding.rule}" for finding in findings],
                 )
 
+    def test_toolchain_paths_are_scanned_as_production_sources(self) -> None:
+        toolchain_sources = (
+            "products/vityo_app/lib/src/view_ide/toolchain/"
+            "native_compiler_toolchain_discovery_io.dart",
+            "products/vityo_app/lib/src/view_ide/toolchain/"
+            "styio_toolchain_discovery_io.dart",
+        )
+        for relative_path in toolchain_sources:
+            with self.subTest(path=relative_path):
+                source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+                self.assertEqual(vityo_privacy.scan_text(relative_path, source), [])
+
+                home_path = (
+                    "/" + "home" + "/" + "toolprofile" + "/.linuxbrew/bin/clang"
+                )
+                findings = vityo_privacy.scan_text(
+                    relative_path,
+                    "candidatePath = '" + home_path + "'",
+                )
+                self.assertEqual(len(findings), 1)
+                finding = findings[0]
+                self.assertEqual(
+                    finding.classification,
+                    "confirmed_exposure",
+                )
+
     def test_inert_api_placeholder_requires_explicit_marker(self) -> None:
         setting_name = "OPENAI" + "_API_KEY"
         dummy = "x" * 30

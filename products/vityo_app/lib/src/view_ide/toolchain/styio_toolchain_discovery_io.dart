@@ -5,7 +5,6 @@ const List<String> _defaultStyioExecutableCandidates = <String>[
   '/usr/local/bin/styio',
   '/usr/bin/styio',
   '/opt/homebrew/bin/styio',
-  '/home/linuxbrew/.linuxbrew/bin/styio',
 ];
 
 Future<ToolchainCatalog> createPlatformStyioLanguageToolchainCatalog({

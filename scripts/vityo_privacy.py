@@ -146,24 +146,6 @@ INTENTIONAL_FIXTURE_RULES: tuple[
         "The expected resource model preserves the synthetic profile-root fixture.",
     ),
 )
-PUBLIC_LINUXBREW_TOOL_FILES = {
-    "products/vityo_app/lib/src/view_ide/toolchain/native_compiler_toolchain_discovery_io.dart": {
-        "clang",
-        "clang++",
-        "cmake",
-        "ninja",
-        "clangd",
-        "lldb",
-        "gdb",
-        "clang-format",
-        "clang-tidy",
-        "ctest",
-    },
-    "products/vityo_app/lib/src/view_ide/toolchain/styio_toolchain_discovery_io.dart": {
-        "styio",
-    },
-}
-
 SECRET_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
     (
         "GitHub classic token",
@@ -390,30 +372,6 @@ def _finding(
 
     if category == "home_path":
         account = match.groupdict().get("account", "").casefold()
-        tool = line.rsplit("/", 1)[-1].strip(" \t\"',;)")
-        if (
-            path in PUBLIC_LINUXBREW_TOOL_FILES
-            and account == "linuxbrew"
-            and ".linuxbrew/bin/" in line
-            and tool in PUBLIC_LINUXBREW_TOOL_FILES[path]
-        ):
-            return PrivacyFinding(
-                path=path,
-                line=line_number,
-                rule=rule,
-                category="public Linuxbrew toolchain-prefix convention",
-                context="[toolchain path redacted]",
-                classification="false_positive",
-                judgement_basis=(
-                    "This exact tool-discovery source lists the conventional "
-                    "system Linuxbrew prefix for one of its known executable names."
-                ),
-                impact="The shared package-manager account name does not identify a user workspace.",
-                handling=(
-                    "Keep this narrow discovery entry; other installations remain "
-                    "resolved through PATH or explicit toolchain configuration."
-                ),
-            )
         if account in PLACEHOLDER_HOME_ACCOUNTS:
             return PrivacyFinding(
                 path=path,

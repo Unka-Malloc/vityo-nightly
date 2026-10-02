@@ -6,70 +6,60 @@ const List<String> _defaultClangCandidatePaths = <String>[
   '/usr/bin/clang',
   '/usr/local/bin/clang',
   '/opt/homebrew/bin/clang',
-  '/home/linuxbrew/.linuxbrew/bin/clang',
 ];
 
 const List<String> _defaultClangxxCandidatePaths = <String>[
   '/usr/bin/clang++',
   '/usr/local/bin/clang++',
   '/opt/homebrew/bin/clang++',
-  '/home/linuxbrew/.linuxbrew/bin/clang++',
 ];
 
 const List<String> _defaultCmakeCandidatePaths = <String>[
   '/usr/bin/cmake',
   '/usr/local/bin/cmake',
   '/opt/homebrew/bin/cmake',
-  '/home/linuxbrew/.linuxbrew/bin/cmake',
 ];
 
 const List<String> _defaultNinjaCandidatePaths = <String>[
   '/usr/bin/ninja',
   '/usr/local/bin/ninja',
   '/opt/homebrew/bin/ninja',
-  '/home/linuxbrew/.linuxbrew/bin/ninja',
 ];
 
 const List<String> _defaultClangdCandidatePaths = <String>[
   '/usr/bin/clangd',
   '/usr/local/bin/clangd',
   '/opt/homebrew/bin/clangd',
-  '/home/linuxbrew/.linuxbrew/bin/clangd',
 ];
 
 const List<String> _defaultLldbCandidatePaths = <String>[
   '/usr/bin/lldb',
   '/usr/local/bin/lldb',
   '/opt/homebrew/bin/lldb',
-  '/home/linuxbrew/.linuxbrew/bin/lldb',
 ];
 
 const List<String> _defaultGdbCandidatePaths = <String>[
   '/usr/bin/gdb',
   '/usr/local/bin/gdb',
   '/opt/homebrew/bin/gdb',
-  '/home/linuxbrew/.linuxbrew/bin/gdb',
 ];
 
 const List<String> _defaultClangFormatCandidatePaths = <String>[
   '/usr/bin/clang-format',
   '/usr/local/bin/clang-format',
   '/opt/homebrew/bin/clang-format',
-  '/home/linuxbrew/.linuxbrew/bin/clang-format',
 ];
 
 const List<String> _defaultClangTidyCandidatePaths = <String>[
   '/usr/bin/clang-tidy',
   '/usr/local/bin/clang-tidy',
   '/opt/homebrew/bin/clang-tidy',
-  '/home/linuxbrew/.linuxbrew/bin/clang-tidy',
 ];
 
 const List<String> _defaultCtestCandidatePaths = <String>[
   '/usr/bin/ctest',
   '/usr/local/bin/ctest',
   '/opt/homebrew/bin/ctest',
-  '/home/linuxbrew/.linuxbrew/bin/ctest',
 ];
 
 Future<ToolchainCatalog> createPlatformNativeCompilerToolchainCatalog({
