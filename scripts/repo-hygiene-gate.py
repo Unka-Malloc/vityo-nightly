@@ -161,9 +161,9 @@ REQUIRED_PROJECT_BRAND_METADATA = {
         "description: Pure, versioned protocol types shared by Vityo",
     ),
     Path("packaging/vityo/desktop-delivery.json"): '"product": "vityo"',
-    Path("products/vityo_coding_agent/pubspec.yaml"): (
-        "name: vityo_coding_agent",
-        "description: Standalone, model-neutral Vityo Coding Agent runtime.",
+    Path("products/vityo_coding_agent/Cargo.toml"): (
+        'name = "vityo-coding-agent"',
+        'description = "Standalone, model-neutral Vityo Coding Agent runtime"',
     ),
     Path("products/vityo_app/android/app/src/main/AndroidManifest.xml"): 'android:label="Vityo"',
     Path("products/vityo_app/ios/Runner/Info.plist"): (

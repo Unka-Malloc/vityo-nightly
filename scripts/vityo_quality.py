@@ -35,7 +35,14 @@ class FullSuiteEntry:
     requirement: str
     suite: str
     runner_name: str
-    rust_source_roots: tuple[str, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class AgentSuiteEntry:
+    requirement: str
+    suite: str
+    cargo_test_args: tuple[str, ...]
+    rust_source_roots: tuple[str, ...]
 
 
 FULL_IDE_PLAN = (
@@ -58,31 +65,45 @@ FULL_IDE_PLAN = (
 )
 
 FULL_AGENT_PLAN = (
-    FullSuiteEntry(
+    AgentSuiteEntry(
         "REQ-AGENT-001",
-        "headless-runtime",
-        "headless_runtime",
+        "stdio-runtime",
+        ("--test", "agent_stdio"),
         ("src/main.rs", "src/application/"),
     ),
-    FullSuiteEntry("REQ-AGENT-002", "providers", "providers", ("src/providers/",)),
-    FullSuiteEntry("REQ-AGENT-003", "context", "context_engine", ("src/context/",)),
-    FullSuiteEntry(
+    AgentSuiteEntry("REQ-AGENT-002", "providers", ("--test", "providers"), ("src/providers/",)),
+    AgentSuiteEntry("REQ-AGENT-003", "context", ("--test", "context"), ("src/context/",)),
+    AgentSuiteEntry(
         "REQ-AGENT-004",
         "tools-mcp",
-        "tools_mcp",
+        ("--test", "tools"),
         ("src/tools/", "src/policy/"),
     ),
-    FullSuiteEntry("REQ-AGENT-005", "agent-security", "agent_security", ("src/policy/",)),
-    FullSuiteEntry("REQ-AGENT-006", "coding-loop", "coding_loop", ("src/orchestration/",)),
-    FullSuiteEntry("REQ-AGENT-007", "session-recovery", "session_recovery", ("src/sessions/",)),
-    FullSuiteEntry("REQ-AGENT-008", "multi-agent", "multi_agent", ("src/multi_agent/",)),
-    FullSuiteEntry(
+    AgentSuiteEntry("REQ-AGENT-005", "agent-security", ("--test", "policy"), ("src/policy/",)),
+    AgentSuiteEntry(
+        "REQ-AGENT-006",
+        "coding-loop",
+        (
+            "--lib",
+            "configured_react_flow_records_commit_rejection_conflict_and_recovers_over_acp_sse",
+        ),
+        ("src/orchestration/",),
+    ),
+    AgentSuiteEntry(
+        "REQ-AGENT-007", "session-recovery", ("--test", "sessions"), ("src/sessions/",)
+    ),
+    AgentSuiteEntry(
+        "REQ-AGENT-008", "multi-agent", ("--test", "multi_agent"), ("src/multi_agent/",)
+    ),
+    AgentSuiteEntry(
         "REQ-AGENT-009",
         "protocol-integration",
-        "protocol_integration",
+        ("--test", "contract_wire"),
         ("src/protocol/", "src/hosts/"),
     ),
 )
+AGENT_MANIFEST = "products/vityo_coding_agent/Cargo.toml"
+_AGENT_SUITE_BY_NAME = {entry.suite: entry for entry in FULL_AGENT_PLAN}
 RUST_COVERAGE_OUTPUT = "build/evidence/rust-coverage"
 RUST_COVERAGE_GATE = "scripts/rust-coverage-gate.py"
 
@@ -127,8 +148,6 @@ def cutover() -> int:
         ),
         ([dart, "analyze"], ROOT / "packages" / "vityo_agent_protocol"),
         ([dart, "test"], ROOT / "packages" / "vityo_agent_protocol"),
-        ([dart, "analyze"], ROOT / "products" / "vityo_coding_agent"),
-        ([dart, "test"], ROOT / "products" / "vityo_coding_agent"),
         ([flutter, "analyze", "--no-pub"], ROOT / "products" / "vityo_app"),
         ([flutter, "test", "--no-pub", "test/vityo_app_smoke_test.dart"],
          ROOT / "products" / "vityo_app"),
@@ -140,323 +159,20 @@ def cutover() -> int:
     return 0
 
 
-def headless_runtime() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        ([sys.executable, "scripts/check_product_line_boundaries.py"], ROOT),
-        ([dart, "analyze"], product),
-        ([dart, "test", "test/headless"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "headless_runtime_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
+def agent_cargo_test_command(*test_args: str) -> list[str]:
+    return [
+        tool("cargo"),
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        AGENT_MANIFEST,
+        *test_args,
+    ]
 
 
-def providers() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/providers",
-                "lib/src/cancellation.dart",
-                "test/providers",
-                "benchmark/provider_stream_benchmark.dart",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/providers"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "benchmark/provider_stream_benchmark.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "provider_runtime_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def context_engine() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/context",
-                "test/context",
-                "benchmark/context_engine_benchmark.dart",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/context"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "benchmark/context_engine_benchmark.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "context_engine_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def tools_mcp() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/tools",
-                "lib/src/policy",
-                "test/tools",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/tools"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "tool_policy_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def agent_security() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/policy",
-                "lib/src/tools/tool_executor.dart",
-                "test/security",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/security"], product),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def coding_loop() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/orchestration",
-                "test/orchestration",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/orchestration"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "coding_loop_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def session_recovery() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/sessions",
-                "test/sessions",
-                "integration_test/session_recovery_test.dart",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/sessions"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "integration_test/session_recovery_test.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "session_recovery_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def multi_agent() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/multi_agent",
-                "test/multi_agent",
-                "integration_test/multi_agent_worktree_test.dart",
-            ],
-            product,
-        ),
-        ([dart, "test", "test/multi_agent"], product),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "integration_test/multi_agent_worktree_test.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "multi_agent_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
-
-
-def protocol_integration() -> int:
-    dart = tool("dart")
-    product = ROOT / "products" / "vityo_coding_agent"
-    commands = (
-        (
-            [
-                dart,
-                "analyze",
-                "lib/src/protocol",
-                "bin/vityo_coding_agent.dart",
-                "benchmark/release_evaluation.dart",
-                "integration_test/protocol_integration_test.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "integration_test/protocol_integration_test.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "benchmark/release_evaluation.dart",
-            ],
-            product,
-        ),
-        (
-            [
-                dart,
-                "--packages=.dart_tool/package_config.json",
-                "../../tests/acceptance/vityo_coding_agent/"
-                "protocol_release_acceptance_test.dart",
-            ],
-            product,
-        ),
-    )
-    for command, cwd in commands:
-        result = run(command, cwd)
-        if result:
-            return result
-    return 0
+def coding_agent_suite(entry: AgentSuiteEntry) -> int:
+    return run(agent_cargo_test_command(*entry.cargo_test_args))
 
 
 def workspace_transactions() -> int:
@@ -1193,80 +909,59 @@ def coding_agent_full(
     coverage_output_dir: str = RUST_COVERAGE_OUTPUT,
 ) -> int:
     platform = _host_platform()
-    outcomes: dict[str, dict[str, object]] = {}
-    for entry in FULL_AGENT_PLAN:
-        started = time.monotonic()
-        runner = globals().get(entry.runner_name)
-        try:
-            exit_code = 1 if runner is None else int(runner())
-        except Exception:
-            exit_code = 1
-        outcome: dict[str, object] = {
-            "status": "passed" if exit_code == 0 else "failed",
-            "suite": entry.suite,
-            "runner": entry.runner_name,
-            "duration_ms": max(
-                0,
-                round((time.monotonic() - started) * 1000),
-            ),
-        }
-        if exit_code != 0:
-            outcome["failure_code"] = (
-                "suite_runner_unavailable" if runner is None else "suite_failed"
-            )
-        outcomes[entry.requirement] = outcome
-
-    all_passed = all(
-        outcome["status"] == "passed" for outcome in outcomes.values()
+    runner_name = (
+        "cargo llvm-cov --collect-only"
+        if collect_coverage
+        else "cargo test --workspace --all-targets"
     )
-    rust_coverage: dict[str, object] | None = None
-    failure_code = None if all_passed else "suite_failed"
-    if collect_coverage and all_passed:
-        try:
-            coverage_code = run(
-                agent_rust_coverage_command(
-                    "collect-only",
-                    output_dir=coverage_output_dir,
-                )
+    started = time.monotonic()
+    try:
+        command = (
+            agent_rust_coverage_command(
+                "collect-only",
+                output_dir=coverage_output_dir,
             )
-            coverage_passed = coverage_code == 0
-            rust_coverage = {
-                "status": "passed" if coverage_passed else "failed",
-                "product": "coding-agent",
-                "output_dir": coverage_output_dir,
-                "exit_code": coverage_code,
-            }
-            if not coverage_passed:
-                failure_code = "coverage_collection_failed"
-        except Exception:
-            rust_coverage = {
-                "status": "failed",
-                "product": "coding-agent",
-                "output_dir": coverage_output_dir,
-                "failure_code": "coverage_collection_failed",
-            }
-            failure_code = "coverage_collection_failed"
-    elif collect_coverage:
-        rust_coverage = {
-            "status": "not-run",
+            if collect_coverage
+            else agent_cargo_test_command("--workspace", "--all-targets")
+        )
+        exit_code = run(command)
+    except Exception:
+        exit_code = 1
+    duration_ms = max(0, round((time.monotonic() - started) * 1000))
+    passed = exit_code == 0
+    failure_code = None
+    if not passed:
+        failure_code = (
+            "coverage_collection_failed" if collect_coverage else "suite_failed"
+        )
+    outcomes = {
+        entry.requirement: {
+            "status": "passed" if passed else "failed",
+            "suite": entry.suite,
+            "runner": runner_name,
+            "duration_ms": duration_ms,
+            "source_roots": list(entry.rust_source_roots),
+            "test_args": list(entry.cargo_test_args),
+            **({"failure_code": "workspace_validation_failed"} if not passed else {}),
+        }
+        for entry in FULL_AGENT_PLAN
+    }
+    rust_coverage = (
+        {
+            "status": "passed" if passed else "failed",
             "product": "coding-agent",
             "output_dir": coverage_output_dir,
-            "reason": "Agent requirement suites did not pass",
+            "exit_code": exit_code,
         }
-
-    passed = all_passed and (
-        not collect_coverage
-        or (
-            rust_coverage is not None
-            and rust_coverage.get("status") == "passed"
-        )
+        if collect_coverage
+        else None
     )
     payload: dict[str, object] = {
         "schema_version": 1,
         "product": "vityo_coding_agent",
         "suite": "full",
         "status": "passed" if passed else "failed",
-        "failure_code": None if passed else failure_code or "validation_harness_failed",
+        "failure_code": failure_code,
         "platform": platform,
         "requirements": outcomes,
     }
@@ -1312,24 +1007,13 @@ def main() -> int:
         parser.error("--coverage is supported only for coding-agent/full")
     if (args.product, args.suite) == ("ide", "cutover"):
         return cutover()
-    if (args.product, args.suite) == ("coding-agent", "headless-runtime"):
-        return headless_runtime()
-    if (args.product, args.suite) == ("coding-agent", "providers"):
-        return providers()
-    if (args.product, args.suite) == ("coding-agent", "context"):
-        return context_engine()
-    if (args.product, args.suite) == ("coding-agent", "tools-mcp"):
-        return tools_mcp()
-    if (args.product, args.suite) == ("coding-agent", "agent-security"):
-        return agent_security()
-    if (args.product, args.suite) == ("coding-agent", "coding-loop"):
-        return coding_loop()
-    if (args.product, args.suite) == ("coding-agent", "session-recovery"):
-        return session_recovery()
-    if (args.product, args.suite) == ("coding-agent", "multi-agent"):
-        return multi_agent()
-    if (args.product, args.suite) == ("coding-agent", "protocol-integration"):
-        return protocol_integration()
+    agent_suite = (
+        _AGENT_SUITE_BY_NAME.get(args.suite)
+        if args.product == "coding-agent"
+        else None
+    )
+    if agent_suite is not None:
+        return coding_agent_suite(agent_suite)
     if (args.product, args.suite) == ("coding-agent", "full"):
         report_path = args.receipt or (
             ROOT

@@ -1,4 +1,4 @@
-"""Focused unit freeze for IDE full-harness readiness seams.
+"""Focused tests for IDE and Rust Agent quality runner behavior.
 
 Adjacent to acceptance_paths because injectable runners, missing tools, early
 harness failure, source drift, and receipt-destination failures cannot be
@@ -42,15 +42,6 @@ def load_module():
 class VityoQualityTest(unittest.TestCase):
     suite_runners = (
         "cutover",
-        "headless_runtime",
-        "providers",
-        "context_engine",
-        "tools_mcp",
-        "agent_security",
-        "coding_loop",
-        "session_recovery",
-        "multi_agent",
-        "protocol_integration",
         "workspace_transactions",
         "developer_loop",
         "agent_client_protocol",
@@ -560,15 +551,29 @@ class VityoQualityTest(unittest.TestCase):
         self.assertEqual(report["failure_code"], "report_write_failed")
         self.assertNotIn("private fixture detail", stdout.getvalue())
 
-    def test_coding_agent_full_records_suites_and_one_coverage_collection(self) -> None:
+    def test_agent_focused_selectors_use_locked_rust_test_targets(self) -> None:
+        self.assertEqual(len(self.quality.FULL_AGENT_PLAN), 9)
+        for entry in self.quality.FULL_AGENT_PLAN:
+            with self.subTest(requirement=entry.requirement):
+                with mock.patch.object(self.quality, "tool", return_value="/tools/cargo"):
+                    with mock.patch.object(self.quality, "run", return_value=0) as run:
+                        self.assertEqual(self.quality.coding_agent_suite(entry), 0)
+                run.assert_called_once()
+                command = run.call_args.args[0]
+                self.assertEqual(command[0], "/tools/cargo")
+                self.assertEqual(command[1:3], ["test", "--locked"])
+                self.assertIn("--offline", command)
+                self.assertIn("--manifest-path", command)
+                self.assertIn(self.quality.AGENT_MANIFEST, command)
+                self.assertEqual(
+                    tuple(command[-len(entry.cargo_test_args):]),
+                    entry.cargo_test_args,
+                )
+
+    def test_coding_agent_full_runs_one_workspace_collection_with_nine_mappings(self) -> None:
         with tempfile.TemporaryDirectory(prefix="vityo-agent-report-") as directory:
             report_path = Path(directory) / "coding-agent-full.json"
             with ExitStack() as stack:
-                runners = {}
-                for entry in self.quality.FULL_AGENT_PLAN:
-                    runners[entry.requirement] = stack.enter_context(
-                        mock.patch.object(self.quality, entry.runner_name, return_value=0)
-                    )
                 stack.enter_context(
                     mock.patch.object(self.quality, "_host_platform", return_value="linux")
                 )
@@ -593,59 +598,93 @@ class VityoQualityTest(unittest.TestCase):
                 "build/test-evidence/rust-coverage",
             )
             run.assert_called_once()
-            self.assertIn("--collect-only", run.call_args.args[0])
-            for runner in runners.values():
-                runner.assert_called_once()
+            command = run.call_args.args[0]
+            self.assertIn("--collect-only", command)
+            required_mappings = [
+                command[index + 1]
+                for index, value in enumerate(command[:-1])
+                if value == "--require-module"
+            ]
+            expected_mapping_count = sum(
+                len(entry.rust_source_roots) for entry in self.quality.FULL_AGENT_PLAN
+            )
+            self.assertEqual(len(required_mappings), expected_mapping_count)
+            self.assertEqual(
+                {item.split("=", 1)[0] for item in required_mappings},
+                {f"REQ-AGENT-{index:03d}" for index in range(1, 10)},
+            )
+            for entry in self.quality.FULL_AGENT_PLAN:
+                outcome = report["requirements"][entry.requirement]
+                self.assertEqual(outcome["source_roots"], list(entry.rust_source_roots))
+                self.assertEqual(outcome["test_args"], list(entry.cargo_test_args))
 
-    def test_coding_agent_failure_is_truthful_and_does_not_collect_coverage(self) -> None:
+    def test_coding_agent_full_runs_workspace_tests_once_without_coverage(self) -> None:
         with tempfile.TemporaryDirectory(prefix="vityo-agent-report-") as directory:
             report_path = Path(directory) / "coding-agent-full.json"
-            failing_requirement = "REQ-AGENT-005"
             with ExitStack() as stack:
-                runners = {}
-                for entry in self.quality.FULL_AGENT_PLAN:
-                    failure = RuntimeError("private fixture detail") if entry.requirement == failing_requirement else None
-                    runners[entry.requirement] = stack.enter_context(
-                        mock.patch.object(
-                            self.quality,
-                            entry.runner_name,
-                            side_effect=failure,
-                            return_value=0,
-                        )
-                    )
+                stack.enter_context(
+                    mock.patch.object(self.quality, "tool", return_value="/tools/cargo")
+                )
+                run = stack.enter_context(
+                    mock.patch.object(self.quality, "run", return_value=0)
+                )
+                self.assertEqual(
+                    self.quality.coding_agent_full(receipt_path=report_path),
+                    0,
+                )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "passed")
+            self.assertNotIn("rust_coverage", report)
+            run.assert_called_once_with([
+                "/tools/cargo",
+                "test",
+                "--locked",
+                "--offline",
+                "--manifest-path",
+                self.quality.AGENT_MANIFEST,
+                "--workspace",
+                "--all-targets",
+            ])
+
+    def test_coding_agent_workspace_failure_is_truthful(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vityo-agent-report-") as directory:
+            report_path = Path(directory) / "coding-agent-full.json"
+            with ExitStack() as stack:
+                stack.enter_context(
+                    mock.patch.object(self.quality, "tool", return_value="/tools/cargo")
+                )
                 stack.enter_context(
                     mock.patch.object(self.quality, "_host_platform", return_value="macos")
                 )
-                run = stack.enter_context(mock.patch.object(self.quality, "run"))
+                run = stack.enter_context(
+                    mock.patch.object(self.quality, "run", return_value=9)
+                )
                 self.assertEqual(
-                    self.quality.coding_agent_full(
-                        receipt_path=report_path,
-                        collect_coverage=True,
-                    ),
+                    self.quality.coding_agent_full(receipt_path=report_path),
                     1,
                 )
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["failure_code"], "suite_failed")
-            self.assertEqual(report["requirements"][failing_requirement]["status"], "failed")
-            self.assertEqual(report["rust_coverage"]["status"], "not-run")
-            self.assertNotIn("private fixture detail", json.dumps(report))
-            run.assert_not_called()
-            for runner in runners.values():
-                runner.assert_called_once()
+            self.assertEqual(len(report["requirements"]), 9)
+            self.assertTrue(all(
+                item["status"] == "failed"
+                and item["failure_code"] == "workspace_validation_failed"
+                for item in report["requirements"].values()
+            ))
+            run.assert_called_once()
+            self.assertIn("--all-targets", run.call_args.args[0])
 
     def test_coding_agent_coverage_failure_is_reported(self) -> None:
         with tempfile.TemporaryDirectory(prefix="vityo-agent-report-") as directory:
             report_path = Path(directory) / "coding-agent-full.json"
             with ExitStack() as stack:
-                for entry in self.quality.FULL_AGENT_PLAN:
-                    stack.enter_context(
-                        mock.patch.object(self.quality, entry.runner_name, return_value=0)
-                    )
                 stack.enter_context(
                     mock.patch.object(self.quality, "_host_platform", return_value="linux")
                 )
-                stack.enter_context(mock.patch.object(self.quality, "run", return_value=1))
+                run = stack.enter_context(
+                    mock.patch.object(self.quality, "run", return_value=1)
+                )
                 self.assertEqual(
                     self.quality.coding_agent_full(
                         receipt_path=report_path,
@@ -658,20 +697,22 @@ class VityoQualityTest(unittest.TestCase):
             self.assertEqual(report["failure_code"], "coverage_collection_failed")
             self.assertEqual(report["rust_coverage"]["status"], "failed")
             self.assertEqual(report["rust_coverage"]["exit_code"], 1)
+            run.assert_called_once()
 
-    def test_main_routes_supported_suites_without_retired_fingerprint_selector(self) -> None:
+    def test_main_routes_supported_rust_agent_and_ide_suites(self) -> None:
         routes = (
             ("ide", "cutover", "cutover"),
-            ("coding-agent", "headless-runtime", "headless_runtime"),
-            ("coding-agent", "providers", "providers"),
-            ("coding-agent", "context", "context_engine"),
-            ("coding-agent", "tools-mcp", "tools_mcp"),
-            ("coding-agent", "agent-security", "agent_security"),
-            ("coding-agent", "coding-loop", "coding_loop"),
-            ("coding-agent", "session-recovery", "session_recovery"),
-            ("coding-agent", "multi-agent", "multi_agent"),
-            ("coding-agent", "protocol-integration", "protocol_integration"),
+            ("coding-agent", "stdio-runtime", "coding_agent_suite"),
+            ("coding-agent", "providers", "coding_agent_suite"),
+            ("coding-agent", "context", "coding_agent_suite"),
+            ("coding-agent", "tools-mcp", "coding_agent_suite"),
+            ("coding-agent", "agent-security", "coding_agent_suite"),
+            ("coding-agent", "coding-loop", "coding_agent_suite"),
+            ("coding-agent", "session-recovery", "coding_agent_suite"),
+            ("coding-agent", "multi-agent", "coding_agent_suite"),
+            ("coding-agent", "protocol-integration", "coding_agent_suite"),
             ("coding-agent", "full", "coding_agent_full"),
+            ("coding-agent", "coverage-report", "agent_rust_coverage_report"),
             ("ide", "workspace-transactions", "workspace_transactions"),
             ("ide", "developer-loop", "developer_loop"),
             ("ide", "agent-client-protocol", "agent_client_protocol"),
@@ -696,6 +737,11 @@ class VityoQualityTest(unittest.TestCase):
                     ):
                         self.assertEqual(self.quality.main(), 0)
                 routed.assert_called_once()
+                if product == "coding-agent" and suite in self.quality._AGENT_SUITE_BY_NAME:
+                    self.assertEqual(
+                        routed.call_args.args[0],
+                        self.quality._AGENT_SUITE_BY_NAME[suite],
+                    )
 
         with mock.patch.object(self.quality, "ide_full", return_value=0) as routed:
             with mock.patch.object(

@@ -1,4 +1,4 @@
-"""Acceptance for current Coding Agent suite and coverage reports."""
+"""Acceptance for the single-invocation Rust Agent quality runner."""
 
 from __future__ import annotations
 
@@ -14,113 +14,90 @@ import vityo_quality as quality  # noqa: E402
 
 
 def main() -> None:
-    original = {
-        entry.runner_name: getattr(quality, entry.runner_name)
-        for entry in quality.FULL_AGENT_PLAN
+    assert len(quality.FULL_AGENT_PLAN) == 9
+    assert {entry.requirement for entry in quality.FULL_AGENT_PLAN} == {
+        f"REQ-AGENT-{index:03d}" for index in range(1, 10)
     }
+    assert all(entry.rust_source_roots for entry in quality.FULL_AGENT_PLAN)
+    assert all(entry.cargo_test_args for entry in quality.FULL_AGENT_PLAN)
+
     original_platform = quality._host_platform
+    original_tool = quality.tool
     original_run = quality.run
-    calls: list[str] = []
+    commands: list[list[str]] = []
     try:
         quality._host_platform = lambda: "fixture"
-        for entry in quality.FULL_AGENT_PLAN:
-            setattr(quality, entry.runner_name, _runner(entry.requirement, calls))
+        quality.tool = lambda name: "/tools/cargo" if name == "cargo" else name
+        quality.run = lambda command: (commands.append(command) or 0)
         with tempfile.TemporaryDirectory() as directory:
-            destination = pathlib.Path(directory) / "current-report.json"
-            run = _run_mock(0)
-            quality.run = run
+            destination = pathlib.Path(directory) / "rust-report.json"
+            assert quality.coding_agent_full(receipt_path=destination) == 0
+            report = json.loads(destination.read_text(encoding="utf-8"))
+            _assert_report(report, "passed")
+            assert report["platform"] == "fixture"
+            assert commands == [[
+                "/tools/cargo",
+                "test",
+                "--locked",
+                "--offline",
+                "--manifest-path",
+                quality.AGENT_MANIFEST,
+                "--workspace",
+                "--all-targets",
+            ]]
+            for entry in quality.FULL_AGENT_PLAN:
+                outcome = report["requirements"][entry.requirement]
+                assert outcome["source_roots"] == list(entry.rust_source_roots)
+                assert outcome["test_args"] == list(entry.cargo_test_args)
+
+            commands.clear()
+            quality.run = lambda command: (commands.append(command) or 0)
             assert quality.coding_agent_full(
                 receipt_path=destination,
                 collect_coverage=True,
                 coverage_output_dir="build/evidence/fixture-rust-coverage",
             ) == 0
-            passed = json.loads(destination.read_text(encoding="utf-8"))
-            _assert_report(passed, "passed")
-            assert passed["platform"] == "fixture"
-            assert passed["rust_coverage"] == {
+            coverage_report = json.loads(destination.read_text(encoding="utf-8"))
+            _assert_report(coverage_report, "passed")
+            assert coverage_report["rust_coverage"] == {
                 "status": "passed",
                 "product": "coding-agent",
                 "output_dir": "build/evidence/fixture-rust-coverage",
                 "exit_code": 0,
             }
-            assert run.calls == 1
-            assert "--collect-only" in run.command[0]
-            assert calls == [f"REQ-AGENT-{index:03d}" for index in range(1, 10)]
-
-            calls.clear()
-            setattr(
-                quality,
-                quality.FULL_AGENT_PLAN[4].runner_name,
-                _failing_runner(calls),
+            assert len(commands) == 1
+            assert "--collect-only" in commands[0]
+            mappings = [
+                commands[0][index + 1]
+                for index, arg in enumerate(commands[0][:-1])
+                if arg == "--require-module"
+            ]
+            assert len(mappings) == sum(
+                len(entry.rust_source_roots) for entry in quality.FULL_AGENT_PLAN
             )
-            run = _run_mock(0)
-            quality.run = run
-            assert quality.coding_agent_full(
-                receipt_path=destination,
-                collect_coverage=True,
-            ) == 1
+            assert {item.split("=", 1)[0] for item in mappings} == {
+                f"REQ-AGENT-{index:03d}" for index in range(1, 10)
+            }
+
+            commands.clear()
+            quality.run = lambda command: (commands.append(command) or 5)
+            assert quality.coding_agent_full(receipt_path=destination) == 1
             failed = json.loads(destination.read_text(encoding="utf-8"))
             _assert_report(failed, "failed")
             assert failed["failure_code"] == "suite_failed"
-            assert failed["requirements"]["REQ-AGENT-005"]["status"] == "failed"
-            assert failed["rust_coverage"]["status"] == "not-run"
-            assert run.calls == 0
-
-            calls.clear()
-            for entry in quality.FULL_AGENT_PLAN:
-                setattr(quality, entry.runner_name, _runner(entry.requirement, calls))
-            run = _run_mock(5)
-            quality.run = run
-            assert quality.coding_agent_full(
-                receipt_path=destination,
-                collect_coverage=True,
-            ) == 1
-            coverage_failed = json.loads(destination.read_text(encoding="utf-8"))
-            _assert_report(coverage_failed, "failed")
-            assert coverage_failed["failure_code"] == "coverage_collection_failed"
-            assert coverage_failed["rust_coverage"]["status"] == "failed"
-            assert coverage_failed["rust_coverage"]["exit_code"] == 5
+            assert all(
+                item["status"] == "failed"
+                for item in failed["requirements"].values()
+            )
+            assert len(commands) == 1
     finally:
-        for name, runner in original.items():
-            setattr(quality, name, runner)
         quality._host_platform = original_platform
+        quality.tool = original_tool
         quality.run = original_run
 
 
-class _RunMock:
-    def __init__(self, exit_code: int) -> None:
-        self.exit_code = exit_code
-        self.calls = 0
-        self.command: list[list[str]] = []
-
-    def __call__(self, command: list[str]) -> int:
-        self.calls += 1
-        self.command.append(command)
-        return self.exit_code
-
-
-def _run_mock(exit_code: int) -> _RunMock:
-    return _RunMock(exit_code)
-
-
-def _runner(requirement: str, calls: list[str]):
-    def run() -> int:
-        calls.append(requirement)
-        return 0
-
-    return run
-
-
-def _failing_runner(calls: list[str]):
-    def run() -> int:
-        calls.append("REQ-AGENT-005")
-        raise RuntimeError("synthetic fixture detail")
-
-    return run
-
-
 def _assert_report(report: dict[str, object], status: str) -> None:
-    assert set(report) == {
+    expected = {
         "schema_version",
         "product",
         "suite",
@@ -128,8 +105,10 @@ def _assert_report(report: dict[str, object], status: str) -> None:
         "failure_code",
         "platform",
         "requirements",
-        "rust_coverage",
     }
+    if "rust_coverage" in report:
+        expected.add("rust_coverage")
+    assert set(report) == expected
     assert report["schema_version"] == 1
     assert report["product"] == "vityo_coding_agent"
     assert report["suite"] == "full"
@@ -137,7 +116,10 @@ def _assert_report(report: dict[str, object], status: str) -> None:
     requirements = report["requirements"]
     assert isinstance(requirements, dict)
     assert set(requirements) == {f"REQ-AGENT-{index:03d}" for index in range(1, 10)}
-    assert all("runner" in outcome and "duration_ms" in outcome for outcome in requirements.values())
+    assert all(
+        "runner" in outcome and "duration_ms" in outcome
+        for outcome in requirements.values()
+    )
 
 
 if __name__ == "__main__":

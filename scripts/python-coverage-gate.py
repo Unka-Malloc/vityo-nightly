@@ -42,7 +42,6 @@ STANDALONE_TEST_SCRIPTS = (
     "tests/acceptance/product_lines/cutover_acceptance_test.py",
     "tests/acceptance/vityo_app/desktop_evidence_binding_acceptance_test.py",
     "tests/acceptance/vityo_coding_agent/full_runner_acceptance_test.py",
-    "tests/acceptance/vityo_coding_agent/pure_release_evaluation_acceptance_test.py",
 )
 
 

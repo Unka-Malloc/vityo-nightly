@@ -23,6 +23,19 @@ def load_gate_module():
     return module
 
 
+class ProductIdentityPolicyTest(unittest.TestCase):
+    def test_agent_product_identity_uses_its_cargo_manifest(self) -> None:
+        gate = load_gate_module()
+        metadata = gate.REQUIRED_PROJECT_BRAND_METADATA
+        manifest = Path("products/vityo_coding_agent/Cargo.toml")
+        self.assertIn(manifest, metadata)
+        self.assertIn('name = "vityo-coding-agent"', metadata[manifest])
+        self.assertIn(
+            'description = "Standalone, model-neutral Vityo Coding Agent runtime"',
+            metadata[manifest],
+        )
+
+
 class ViewBoundaryImportPolicyTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
