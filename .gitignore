@@ -49,6 +49,7 @@ node_modules/
 /products/vityo_app/output/playwright/
 /build-*/
 **/coverage/
+/.coverage
 **/dist/
 /*.tmp
 /*.log

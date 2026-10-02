@@ -21,13 +21,11 @@ def main() -> None:
     original_fingerprint = quality._source_fingerprint
     original_commit = quality._head_commit
     original_platform = quality._host_platform
-    original_plan_validation = quality._run_plan_validation
     calls: list[str] = []
     try:
         quality._source_fingerprint = lambda _roots: "a" * 64
         quality._head_commit = lambda: "b" * 40
         quality._host_platform = lambda: "fixture"
-        quality._run_plan_validation = lambda: 0
         for entry in quality.FULL_AGENT_PLAN:
             setattr(
                 quality,
@@ -72,7 +70,6 @@ def main() -> None:
         quality._source_fingerprint = original_fingerprint
         quality._head_commit = original_commit
         quality._host_platform = original_platform
-        quality._run_plan_validation = original_plan_validation
 
 
 def _runner(requirement: str, calls: list[str]):

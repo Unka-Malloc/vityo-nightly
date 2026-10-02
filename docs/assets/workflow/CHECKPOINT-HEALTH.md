@@ -33,4 +33,4 @@ This portable command does not run native desktop integration or require a host 
 
 `PYTHON_BIN` selects the Python executable and defaults to `python3`. `STYIO` may select the fixture parser executable. `--skip-language-fixtures` is a targeted investigation option; it does not establish that language fixtures passed.
 
-GitHub Actions is configured to upload Python and Flutter coverage reports for the platform jobs. A report exists only for a run that completed its coverage gate; uploads do not establish coverage for source outside the measured scope.
+GitHub Actions is configured to upload Python and Flutter coverage reports for the platform jobs. The generated root `.coverage` database and app `coverage/` directory remain ignored local artifacts. A report exists only for a run that completed its coverage gate; uploads do not establish coverage for source outside the measured scope.

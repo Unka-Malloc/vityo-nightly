@@ -96,7 +96,7 @@ _AGENT_FINGERPRINT_ROOTS = (
     "products/vityo_coding_agent",
     "packages/vityo_agent_protocol",
     "scripts",
-    "docs/plan/vityo-coding-agent",
+    "tests/acceptance/vityo_coding_agent",
 )
 _IGNORED_DIRECTORIES = frozenset(
     {".dart_tool", "build", "target", "__pycache__", ".pytest_cache"}
