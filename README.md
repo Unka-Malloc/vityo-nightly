@@ -27,6 +27,8 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
 
 贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+功能测试根目录、CI 实际接入范围和未来画布验收要求见 [Test Catalog](docs/assets/workflow/TEST-CATALOG.md)。仓库级本地健康检查使用 [checkpoint-health](docs/assets/workflow/CHECKPOINT-HEALTH.md)，交付门禁见 [Delivery Gate](docs/assets/workflow/DELIVERY-GATE.md)；详细改动与回归流程见 [Contributor And Agent Workflow](docs/specs/CONTRIBUTOR-AND-AGENT-SPEC.md) 和 [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md)。
+
 安全报告与安全基线见 [SECURITY.md](SECURITY.md) 和 [docs/governance/SECURITY-AND-SUPPLY-CHAIN.md](docs/governance/SECURITY-AND-SUPPLY-CHAIN.md)。
 
 发布与 checkpoint 规则见 [docs/governance/RELEASE-CHECKLIST.md](docs/governance/RELEASE-CHECKLIST.md)。
@@ -116,8 +118,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-workspace.ps1 -Plat
 
 ## Architecture And Release Gates
 
-本仓当前 IDE 主线以 `view_ide/` 承载 domain/application/contracts，以 `view_render/` 承载
-Flutter presentation；第一方配套 Coding Agent 与共享协议分别位于独立实现包和中立协议包。
+本仓 IDE 的 `view_ide/` 拥有 presentation-independent service 和 contract，`ide/` 拥有 editor、
+document/workspace、Agent Client 与 collaboration state；`app/` 负责组合共享服务，`view_render/`
+承载 Flutter presentation。presentation 只能依赖 owner 已登记的窄 public model/adapter/projection
+入口。第一方配套 Coding Agent 与共享协议分别位于独立实现包和中立协议包。
 日常结构性变更至少运行：
 
 ```bash

@@ -1,14 +1,14 @@
 # Vityo Docs
 
-**Purpose:** 定义 `docs/` 树的范围、入口和维护规则；具体主题分别由各目录下的 `README.md`、`INDEX.md` 和权威文档负责。
+**Purpose:** Define the scope, entrypoints, and maintenance rules for the `docs/` tree; topic owners maintain their directories and authoritative documents.
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-10-02
 
 ## Tree Contract
 
 1. 产品、系统级 SSOT、已交付设计基线和活跃缺口登记放在 `docs/design/`。
 2. 协作规则、仓库边界、依赖与文档策略放在 `docs/specs/`。
-3. 冻结里程碑、能力目录、任务清单与门禁只放在唯一权威 Better Plan 根 `docs/plan/`；不得建立嵌套或平行工作区。
+3. `docs/plan/` 保存仓库拥有的计划说明与执行入口（如有）。已安装规划工具的活动状态由该工具配置的工作区负责；此目录不要求使用规划工具，也不构成执行授权。产品事实仍由各 owner 文档负责。
 4. 架构决策记录放在 `docs/adr/`。
 5. 风险、冲突和待裁决问题放在 `docs/review/`。
 6. 可复用测试/交付资产放在 `docs/assets/`。
@@ -31,7 +31,7 @@
 6. 活跃缺口登记：[design/Vityo-Implementation-Gaps.md](./design/Vityo-Implementation-Gaps.md)
 7. 文档策略：[specs/DOCUMENTATION-POLICY.md](./specs/DOCUMENTATION-POLICY.md)
 8. 当前状态摘要：[rollups/CURRENT-STATE.md](./rollups/CURRENT-STATE.md)
-9. 单一 Vityo 产品的双交付轨道入口：[plan/INDEX.md](./plan/INDEX.md)
+9. Repository planning and execution documents: [plan/INDEX.md](./plan/INDEX.md)
 10. ADR 入口：[adr/INDEX.md](./adr/INDEX.md)
 11. 产品合同入口：[contracts/INDEX.md](./contracts/INDEX.md)
 12. `styio` 对接入口：[external/for-styio/INDEX.md](./external/for-styio/INDEX.md)

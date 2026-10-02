@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 `Vityo` 的日常协调入口；显式维护团队 ownership、review routing、升级路径和 checkpoint 纪律，但不替代产品规格、系统架构或 adapter 合同 SSOT。
 
-**Last updated:** 2026-06-25
+**Last updated:** 2026-10-02
 
 ## Mission
 
@@ -70,20 +70,20 @@ flowchart TB
 
 ## Checkpoint Policy
 
-1. 高风险工作保持在一到三天可合并的 batch 内。
+1. High-risk work is divided into small, independently reviewable outcomes. Estimate batch size from scope; elapsed time or an observation window does not cancel or complete work.
 2. 一次结构性变更应同时带上设计或规格更新、必要 ADR、里程碑状态调整和测试目录映射。
 3. 若改变了 owned surface、review 路由或 handoff 路径，同批更新对应 team runbook。
 4. 中断时必须把状态、下一步、阻塞项和回滚点写入按主题命名的 `docs/history/<topic>.md`，日期只写入正文元数据。
 5. 若改动了三仓共同里程碑、repo exit、checkpoint ID 或跨仓 cutover 语义，同批更新本镜像总纲、`Vityo-Implementation-Gaps.md` 和对应 handoff 文档。
 6. 若改动了 docs tree、索引规则、archive/rollup lifecycle、ignore-policy 或 fixture 反忽略策略，同批更新文件治理对齐镜像、本仓文档策略和受影响 team runbook。
-7. `TEST-CATALOG` 中标为 `planned` 的项不得当作“已验证”。
+7. The test catalog distinguishes current executable suites from future acceptance. A future requirement, test declaration, or registered command is not a test result; record the suite actually run for the candidate revision.
 
 ## Release / Cutover Gates
 
 | Cutover | Minimum gate |
 |---------|--------------|
 | 手写 Web Editor 主线 | `cd prototype && npm run selftest:editor`，必要时更新手写 Web IDE handbook |
-| Flutter 壳层或共享 UI 状态 | `cd products/vityo_app && flutter analyze && flutter test` |
+| Flutter shell, shared UI state, or portable IDE integration | Focused owner tests during implementation; after source review, run `./scripts/checkpoint-health.sh` for the connected portable suites |
 | adapter / schema / handoff 合同 | 更新 `docs/contracts/`、`docs/external/for-styio/`、`docs/external/for-pafio/` 与 `TEST-CATALOG` 对应映射 |
 | module lifecycle / distribution / capability | 更新 manifest、capability matrix、分发 schema 与测试目录条目 |
 | 文档结构或交付边界 | 更新相关 `README.md` / `INDEX.md` 并运行 `python3 scripts/repo-hygiene-gate.py --mode tracked` |

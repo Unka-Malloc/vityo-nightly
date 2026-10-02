@@ -1,71 +1,44 @@
 # Vityo Test Catalog
 
-**Purpose:** 给出 `Vityo` 当前按里程碑组织的测试与验收目录；在实现期作为 `tests/` 与 CI 的映射基线。
+**Purpose:** Map current deterministic test ownership and CI reach, and define the future Flow Hero acceptance evidence without treating plans as results.
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-10-02
 
-## 1. 目录说明
+## Test To CI Contract
 
-当前仓库尚未建立实际 `tests/` 目录，本文件先冻结测试域、建议命名与自动化缺口，避免后续出现“有里程碑、无验收映射”的情况。
+Tests are executable parts of a feature change. A passing catalog entry, gate declaration, test plan, or capability flag does not prove behavior. Product tests exercise the real parser, transaction, scheduling, state, persistence, protocol, and recovery implementation; mocks stay at external boundaries.
 
-## 2. 测试清单
+Ordinary test files placed under an established test root are included by that root's normal discovery. A standalone integration suite or new package root must have a concrete command in the canonical runner and be called from the applicable local health or native CI lane in the same change. Keep one executable registry as the suite map; update this catalog to describe owners and evidence, not copy the registry's command list.
 
-| Test ID | Scope | Type | Platform | Planned Automation | Status |
-|---------|-------|------|----------|--------------------|--------|
-| DOC-001 | docs 树存在且索引一致 | docs | all | `gap` | planned |
-| MOD-001 | 模块 manifest 与 capability matrix 可正确解析 | unit | all | `gap` | planned |
-| MOD-002 | 用户可按设备安装与卸载 optional module | integration | desktop / android | `gap` | planned |
-| MOD-003 | staged update 下载后当前已挂载模块保持运行，重启后切换 staged package | integration | all | `gap` | planned |
-| MOD-004 | 平台不支持模块时入口自动隐藏 | integration | all | `gap` | planned |
-| EDIT-001 | `->` 显示替换不改写源码 | unit / golden | desktop | `gap` | planned |
-| EDIT-002 | `|>` 显示替换与光标映射正确 | unit / golden | desktop | `gap` | planned |
-| EDIT-003 | `{ ... }` 语义块表面跟随函数边界更新 | integration | desktop | `gap` | planned |
-| EDIT-004 | 用户可显式开关 substitution，关闭后恢复原始文本显示 | integration | desktop / mobile | `gap` | planned |
-| EDIT-005 | substitution 开启时复制结果仍为原始源码 token | integration | desktop / mobile | `gap` | planned |
-| EDIT-006 | substitution 开启时搜索、诊断定位与源码位置一致 | integration | desktop / mobile | `gap` | planned |
-| LANG-001 | 保存后自动编译当前文档 | integration | desktop | `gap` | planned |
-| LANG-002 | 最小可编译单元识别正确 | integration | desktop | `gap` | planned |
-| LANG-003 | token spans 可独立驱动基础高亮，即使 diagnostics 延迟也不丢失基础着色 | integration | desktop / mobile | `gap` | planned |
-| LANG-004 | semantic spans 叠加在 token spans 之上，不覆盖 Source Buffer 语义 | integration | desktop / mobile | `gap` | planned |
-| LANG-005 | linter 失败或超时不会导致基础高亮消失 | integration | desktop / mobile | `gap` | planned |
-| LANG-006 | 格式化结果通过 `TextEdit[]` 补丁进入编辑器，而不是静默重写文档 | integration | desktop / mobile | `gap` | planned |
-| RUN-001 | `Ctrl+Enter` 运行当前最小单元 | e2e | desktop | `gap` | planned |
-| RUN-002 | 编译失败时诊断能回指到编辑器位置 | integration | desktop | `gap` | planned |
-| VIS-001 | runtime event stream 能生成线程轨 | integration | desktop | `gap` | planned |
-| VIS-002 | 简化图模型与事件流一致 | golden | desktop | `gap` | planned |
-| VIS-003 | 启动时只加载已装模块声明的 runtime surface feature entry | integration | desktop / mobile | `gap` | planned |
-| VIS-004 | 卸载可视化模块后入口列表与面板能力同步回收 | integration | desktop / mobile | `gap` | planned |
-| VIS-005 | staged update 后重启前保持旧可视化特性，重启后切到新特性 | integration | desktop / mobile | `gap` | planned |
-| EVT-001 | `RuntimeEvent.sequence` 在同一 `RunSession` 中单调递增 | integration | desktop / mobile | `gap` | planned |
-| EVT-002 | 未识别 `eventKind` 会退化为日志或未支持提示，不导致崩溃 | integration | desktop / mobile | `gap` | planned |
-| AI-001 | Agent Workbench exports only user-approved, redacted, revision-bound IDE context through the versioned protocol | integration | desktop | `gap` | planned |
-| AI-002 | A future provider-neutral IDE profile remains local-only when no ProfileSync component is attached | unit / integration | all | `gap` | planned |
-| AI-003 | Vityo interoperates with Vityo Coding Agent and a compatible protocol fixture without importing either runtime implementation | integration | desktop / mobile | `gap` | planned |
-| AI-004 | With no Agent connected, Vityo still completes edit, analyze, test, run, and observe without forced configuration | integration | all | `gap` | planned |
-| AI-005 | An Agent task exposes plan, permission request, revision-bound change preview, IDE transaction result, and verification receipt | integration | desktop | `gap` | planned |
-| PROF-001 | 实现 provider-neutral profile 后，未挂载 `ProfileSyncAdapter` 时仍完整保存在本地 | integration | desktop / mobile | `gap` | planned |
-| PROF-002 | 挂载 profile sync 组件后，local store 与 cloud mirror 不冲突 | integration | desktop / mobile | `gap` | planned |
-| THEME-001 | 主题预设切换不破坏编辑器层级配色 | golden | desktop | `gap` | planned |
-| THEME-002 | 用户局部覆写可持久化 | integration | desktop | `gap` | planned |
-| PERF-001 | substitution 开启时编辑基线性能达标 | benchmark | desktop | `gap` | planned |
-| PERF-002 | substitution 关闭时编辑基线性能达标 | benchmark | desktop | `gap` | planned |
-| PERF-003 | substitution 开/关的性能差值在可接受阈值内 | benchmark | desktop / mobile | `gap` | planned |
-| MOB-001 | Android 本地最小示例可编译运行 | e2e | android | `gap` | planned |
-| MOB-002 | 移动端 pipeline selector 只列出类型安全候选 | integration | android | `gap` | planned |
-| MOB-003 | Android 本地运行模块体积不超过 `50 MB` 预算 | build / packaging | android | `gap` | planned |
-| IOS-001 | iOS 云执行闭环可用 | e2e | ios | `gap` | planned |
-| IOS-002 | iOS 客户端不暴露本地编译模块入口 | integration | ios | `gap` | planned |
-| IOS-003 | iOS 在仅云执行场景下给出清晰运行路径提示 | integration | ios | `gap` | planned |
-| DIST-001 | iOS 只挂载 iOS-safe 模块并遵循 App Store 分发策略 | integration | ios | `gap` | planned |
-| DIST-002 | Desktop / Android 可通过自分发路径获取 non-iOS-only 模块 | integration | desktop / android | `gap` | planned |
-| MOD-005 | 手机端卸载 optional module 后模块包、缓存和模块数据被全量回收 | integration | android / ios | `gap` | planned |
-| MOD-006 | 桌面端卸载 optional module 时提供保留或清除数据的选择 | integration | desktop | `gap` | planned |
-| MOD-007 | 卸载后菜单项、设置入口和失效 workspace 引用被同步回收 | integration | all | `gap` | planned |
-| WEB-001 | Web 关闭 hosted workspace 前显示清空提示与核心文件导出入口 | integration | web | `gap` | planned |
-| WEB-002 | Hosted workspace 进入 pending-deletion 后默认保留 7 天再删除 | integration / scheduled | web / cloud | `gap` | planned |
+The current contributor entrypoints are [Checkpoint Health](./CHECKPOINT-HEALTH.md) and [Delivery Gate](./DELIVERY-GATE.md). They are also used by the configured repository CI jobs. The exact CI status and platform observations are separate from this source map.
 
-## 3. 当前门禁
+## Current Deterministic Test Owners
 
-1. 每新增一个里程碑主功能，至少新增一条对应测试目录条目。
-2. 每新增一个平台承诺，至少新增一条该平台的 e2e 或 integration 条目。
-3. 在实际测试目录落地前，`Status = planned` 不得被当成“已验证”。
+| Owner and test root | Current CI connection | Evidence boundary |
+|---|---|---|
+| Vityo IDE unit, widget, contract, model, and performance-budget tests: `products/vityo_app/test/**/*_test.dart` | Flutter test discovery with coverage from `scripts/checkpoint-health.sh` through `scripts/project-coverage-gate.py` | Portable tests against the Flutter implementation; does not establish provider or real-user behavior. Current Flow Hero model/layout tests cover their fixtures only. |
+| Repository and development-tool tests: `tests/test_*.py` | Python `unittest` discovery and coverage from `scripts/checkpoint-health.sh` through `scripts/python-coverage-gate.py` | Newly named tests under `tests/` are discovered. Prototype's server-security module remains an explicit additional test target. |
+| Coding Agent runtime: `products/vityo_coding_agent/test/` and its protocol integration fixtures | `scripts/vityo_quality.py --product coding-agent --suite full`, invoked by Checkpoint Health with a validation receipt under `build/evidence/` | The full registry executes nine deterministic runtime/protocol suites with local fixtures; it does not call a real model provider or prove a user-assigned Agent task. |
+| Portable IDE integration: workspace transactions, developer loop, Agent client protocol, MCP host, IDE security, Agent Workbench, quality runtime, and recovery isolation | Eight `ide/<suite>` entries in `scripts/vityo_quality.py`, invoked individually by Checkpoint Health | Exercises the selected local IDE and protocol integration seams with deterministic fixtures. It does not prove an external Agent conversation. |
+| Native desktop reconnection: `products/vityo_app/integration_test/vityod_reconnect_test.dart` | `scripts/vityo_quality.py --product ide --suite native-desktop` in the Linux and macOS jobs | Runs the supported real desktop reconnect integration. This host suite is not run on Windows. |
+| macOS native UI and credential tests: all 11 `integration_test/*_native_ui_test.dart` files plus `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 tests) | `scripts/vityo_quality.py --product ide --suite macos-native-ui` in the macOS job | Discovers the 11-file native UI glob and explicitly registers the three remaining macOS-specific integration tests. |
+| Windows platform integration | No Windows-target native app integration test exists in the current app integration root. Standard Flutter unit/widget coverage and Windows build evidence remain separate. | Treat this as absent coverage, not a passing native integration suite. Do not run the Linux/macOS reconnect test on Windows. |
+| Retained hand-written prototype governance and editor smoke tests: `prototype/` | `npm run governance` and `npm run selftest:editor`, called from Checkpoint Health | Regression evidence for the permanent independent source asset; does not replace Flutter behavior or release evidence. |
+| Styio parser-backed language fixtures | `scripts/language-fixture-gate.sh`, called from Checkpoint Health | Tests only the declared fixture roots and executable contract. It is not evidence that every source language feature or upstream matrix is connected. |
+
+The quality-runner test compares every file under the app's standalone integration root with its explicit file literals and registered glob patterns. An added file fails that check until it is mapped to a runnable suite; moving a test requires preserving equivalent CI coverage. Deleting or renaming a test cannot turn its requirement into a pass.
+
+## Flow Hero Future Acceptance
+
+These are target requirements for the later production wiring milestone. The current Flow Hero preview/model and styled upstream component spike do not satisfy them. Add each applicable test with the implementation that first provides its behavior.
+
+| Scenario | Deterministic acceptance evidence |
+|---|---|
+| Styio-backed graph and edge direction | Parse valid current Styio syntax and derive a directed source-to-target graph from language-service facts. Reject fabricated keywords and metadata-only project graph facts as program semantics. |
+| Source-to-graph updates | Edit the actual source document, re-analyze its revision, and assert that node/edge content follows only the latest accepted revision. Cover invalid syntax, asynchronous stale results, and Unicode source ranges. |
+| Graph-to-source edits | Move a node without changing program semantics; apply a supported rewire through a source transaction; verify cancel, rejected validation, undo, and invalid rewrites preserve the original source and graph. |
+| Agent proposal and application | Drive the shared Agent protocol fixture through proposal, permission, transaction result, applied revision, ordered observations, verification, and recovery. Assert pending or rejected changes never appear as applied graph state. |
+| Visual parity and motion | Compare representative light and dark graph frames against the tagged current visual baseline. Add deterministic drag, rewire, and Agent-change animation checks without making layout jitter or animation timing a semantic result. |
+| Performance and revision churn | Exercise realistic node/edge counts and rapid source/Agent updates through the real projection path; assert stale work is discarded and measure the agreed rendering budget. |
+
+Unit, contract, widget, and deterministic integration evidence belongs in auto-discovered roots or a registered suite used by Checkpoint Health/native CI. Real provider conversations, installed-client inspection, or live UI acceptance remain a separate workflow for the user's designated Agent and an explicit task.

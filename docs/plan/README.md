@@ -1,13 +1,9 @@
-# Vityo — Better Plan Workspace
+# Planning And Execution Documents
 
-**Purpose:** Keep an empty repository location for future explicitly authorized Better Plan work.
+**Purpose:** Explain the repository's planning-document scope and link to Vityo's execution workflow.
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-10-02
 
-There is no active or historical Better Plan state in this repository. The capability catalog,
-Plan manifest, task-group directories, and Node checkpoints were explicitly cleared by the
-maintainer. No delivery authority may be inferred from this directory.
+`docs/plan/` holds repository-owned planning documents and execution guidance when present. It does not require an installed planning tool or contain its active state by default. Installed tool state remains in the tool's configured workspace; it does not grant implementation, publication, or release authority.
 
-[EXECUTION-RUNBOOK.md](./EXECUTION-RUNBOOK.md) contains Vityo-specific execution and verification
-boundaries. A future authorized planning request uses the active installed Better Plan skill's
-current format and tools; this directory alone neither requires a Plan nor supplies delivery authority.
+The current repository entrypoint is [EXECUTION-RUNBOOK.md](./EXECUTION-RUNBOOK.md). Product facts and accepted architecture remain in their owner documents under `docs/design/`, `docs/adr/`, and `docs/contracts/`.

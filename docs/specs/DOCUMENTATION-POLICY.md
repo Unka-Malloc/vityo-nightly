@@ -1,8 +1,8 @@
 # Vityo Documentation Policy
 
-**Purpose:** 定义 `Vityo` 的文档目录、单一事实来源、联动更新规则与最小维护要求；产品行为与系统边界分别以 `docs/design/` 中的权威文档为准。
+**Purpose:** Define Vityo's documentation ownership, source-of-truth rules, cross-document updates, and minimum maintenance requirements.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-02
 
 ## 0. 文档维护准则
 
@@ -40,7 +40,7 @@
 | 第三方依赖清单 | `THIRD-PARTY.md` | 与实现同步更新 |
 | `styio` 对接边界与接口合同 | `../external/for-styio/` | 链接 |
 | `pafio` 对接边界与接口合同 | `../external/for-pafio/` | 链接 |
-| Active delivery tracks | `../plan/INDEX.md` | Link to the IDE and first-party companion-runtime tracks for one Vityo product |
+| Repository-owned execution guidance | `../plan/EXECUTION-RUNBOOK.md` | Link; installed planning-tool state remains in its configured workspace |
 | 测试与验收映射 | `../assets/workflow/TEST-CATALOG.md` | 链接 |
 | 架构裁决与已实现决策 | `../adr/` | 只保留仍需评审的 ADR 与当前实现决策摘要 |
 | 未决风险与冲突 | `../review/Logic-Conflicts.md` | 链接 |
@@ -48,15 +48,15 @@
 ### 0.5 文档状态
 
 1. `docs/design/` 是产品、系统、已交付设计基线和活跃缺口登记的 SSOT。
-2. `docs/plan/` is the only authoritative local Better Plan workspace and the only permitted Better
-   Plan root. It contains exactly two delivery tracks for one Vityo product: `vityo` for the IDE and
-   `vityo-coding-agent` for the first-party companion runtime. Nested or parallel Better Plan
-   workspaces are forbidden. Product facts remain grounded in their requirements, evidence,
+2. `docs/plan/` contains repository-owned planning material and execution guidance when present.
+   It is not a mandatory or authoritative workspace for an installed planning tool; active state
+   follows that tool's configured workspace. Do not mirror external state or infer execution
+   authority from a plan. Product facts remain grounded in their requirements, evidence,
    architecture, and validation contracts.
 3. `docs/rollups/` 负责压缩当前状态和活跃缺口，不替代 owner 文档。
 4. `docs/history/` 负责活跃恢复记录；原始历史一旦退役，应迁入 `docs/archive/`。
 5. `docs/archive/` 负责归档 provenance 与 lifecycle 元数据，不用来隐藏仍活跃的 owner 文档。
-6. `docs/plan/` 按功能主题保存冻结目标和任务清单；日期和版本号只能作为状态字段出现在正文，不能作为目录、入口或任务身份。
+6. `docs/plan/` may contain maintained product plans and task lists organized by function. Dates and version numbers are state metadata, not directory, entrypoint, or task identity.
 7. `docs/review/` 中的未决问题一旦裁决，应按评审需要迁入 ADR，或在实现吸收到 owner SSOT 后压缩进 `docs/adr/IMPLEMENTED-DECISIONS.md`，并在 review 文档中回填链接。
 
 ## 1. 目录职责
@@ -99,11 +99,11 @@
 
 1. 设计级文档使用稳定主题名，优先 `Vityo-*.md`。
 2. 规范文件使用稳定全大写或描述性短横线命名。
-3. Keep all Better Plan capability and workflow state directly under the single `docs/plan/` root,
-   with one IDE delivery track in `vityo` and one first-party companion-runtime track in
-   `vityo-coding-agent`. Do not create a nested or parallel workspace. Product facts remain in owner
-   documents; validate plan state with the current Better Plan manifest tool rather than a
-   repository-local validator copy.
+3. Use `docs/plan/` for repository-owned product planning documents and execution guidance when
+   present. Active state for an installed planning tool follows that tool's configured workspace;
+   this directory neither requires a planning tool nor grants execution authority. Keep product facts
+   in their owner documents. Do not mirror external tool state here or restore a retired local
+   validator; use the current tool for state it owns.
 4. 历史、审计和 rollup 文件使用稳定主题名；日期只能写入 `Date`、`Last updated` 或正文状态说明。
 5. 独立 ADR 文件严格使用 `ADR-XXXX-<slug>.md`；`docs/adr/IMPLEMENTED-DECISIONS.md` 不编号，只作为当前已实现决策的压缩索引。
 6. 里程碑文件使用稳定功能主题名；不得使用日期目录、版本号目录、阶段编号前缀或 `00-` 入口文件组织里程碑。

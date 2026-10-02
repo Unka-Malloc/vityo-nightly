@@ -1,36 +1,39 @@
 # Vityo Execution Runbook
 
-**Purpose:** Route authorized Vityo work through current product contracts, focused verification, and final delivery without duplicating an installed planning skill's lifecycle.
+**Purpose:** Route authorized Vityo work through current product contracts, executable tests, source review, and truthful delivery evidence.
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-10-02
 
 ## Authority And Scope
 
-The current user request and its existing approvals define the work. A request to review or edit a Plan authorizes that planning work only. A pending item, a historical delivery, or the existence of `docs/plan/` does not authorize implementation, regression, or publication.
+The current user request and its existing approvals define the scope and authority for a task. A request to review or edit a plan authorizes only that planning work. A pending item, historical delivery, or the existence of `docs/plan/` does not authorize implementation, regression, or publication.
 
-Use the ordinary repository workflow for a small independently acceptable change. A Plan is not a prerequisite for routine investigation, documentation edits, or an already-authorized bounded fix. Follow [the contributor rules](../specs/CONTRIBUTOR-AND-AGENT-SPEC.md), preserve concurrent changes, and inspect the relevant product and protocol contracts before implementation.
+Use ordinary repository workflow for routine investigation, documentation, and bounded fixes. A planning tool is not a prerequisite for implementation. When a task explicitly uses a planning workflow, follow its currently installed instructions and configured workspace; this runbook does not copy tool lifecycle commands or state formats.
 
-Resolve discoverable facts and ordinary in-scope defects directly. Report material findings without treating every report as an approval request. If the work needs a new product decision, public-contract change, risk allowance, or explicitly required approval, first prepare the concrete proposal using existing authority. Pause only the dependent work and continue independent authorized work. Reuse prior approval only when it covers the same action and risk boundary.
-
-## Planning Skill Boundary
-
-When the authorized task uses Better Plan, read the active installed skill and use its current tool entrypoint, schema, role contracts, and recovery instructions. Do not copy lifecycle commands, role counts, state formats, or sample task identities into this repository runbook. Repository policy and the current user request still bound what the tool may execute.
-
-Treat completed delivery state and evidence as history. Never replay or rewrite them to manufacture authority or a passing result. Do not create a compatibility reader, revive a removed lifecycle command, or recreate cleared planning state merely to perform ordinary repository work. If a tool instruction conflicts with current authorization or final-regression policy, report the specific conflict and continue work that does not depend on that tool transition.
+Resolve discoverable facts and ordinary in-scope defects directly. Report material findings without treating every report as an approval request. If work needs a new product decision, published-contract change, risk allowance, or explicitly required approval, first prepare the concrete proposal from available evidence. Pause only dependent work and continue independent authorized work.
 
 ## Implementation And Focused Verification
 
-1. Identify the smallest independently acceptable Vityo capability or scenario and its affected callers, protocol consumers, tests, and owner documents.
-2. Inspect actual source and contract paths. If a planned path is missing, determine whether the task creates it, an existing owner already provides it, or the plan needs correction. Do not assume every missing path blocks all work, and do not invent a parallel implementation.
-3. Keep product effects within authorized scope. Preserve the IDE's protocol, permission, proposed-change review, and verification boundaries; repository rules also govern permanently retained assets.
-4. Select focused checks from [the test catalog](../assets/workflow/TEST-CATALOG.md) and the affected product's documented tooling. A planning or documentation-only change does not require unrelated compiler, Flutter, or release suites.
-5. Repair ordinary implementation, documentation, and focused-test issues inside the same closure. Reuse passing evidence while its relevant inputs remain unchanged.
-6. Update affected owner documents and generated indexes. Keep evidence privacy-safe and repository-relative; do not publish machine identities, credentials, backend runtime payloads, or raw private logs.
-
-A real missing environment, external dependency, or approval is an unresolved requirement, not a passing check. Investigate it within existing authority, state the unblock condition, and keep independent work moving.
+1. Identify the smallest independently acceptable behavior, current owner, affected callers, producers, consumers, contracts, state transitions, and recovery behavior. Inspect actual source and contracts; a missing planned path does not by itself block unrelated work or justify a parallel implementation.
+2. Implement the complete behavior for the authorized scope. Keep producers and consumers in step, retain the established IDE/runtime and public protocol boundaries, and correct unpublished internal mistakes without adding compatibility layers solely for those mistakes.
+3. Add deterministic unit, contract, or integration coverage against the implementation. Keep mocks at external boundaries. DSL parsing, state transitions, scheduling, persistence, permission handling, and recovery are engineering tests; a conversation with a real Agent is not a substitute.
+4. Put ordinary tests under established auto-discovered roots. If a test requires a standalone runner, add its executable suite entry and CI connection in the same change. Consult [the test catalog](../assets/workflow/TEST-CATALOG.md) for current suite ownership and future Flow Hero requirements.
+5. Run focused tests and checks for changed owners during implementation. Review the source and test diffs, repair ordinary in-scope defects, and update the owner docs, catalogs, and generated indexes affected by the change.
+6. Preserve concurrent changes. Before editing, inspect `git status --short`; do not revert, overwrite, stage, or reorder unrelated work.
+7. Keep evidence privacy-safe and repository-relative. Do not record workstation identity, personal paths, credentials, backend runtime payloads, or raw private logs in source or reports.
 
 ## Final Regression And Handoff
 
-Follow [Post-Commit CI Checks](../specs/POST-COMMIT-CI-CHECKS.md) for final-regression order, developer decisions after a complete-regression failure, authorized publication, CI observation, and completion criteria. Finish source review, in-scope repairs, and focused verification before the one required complete regression. Do not weaken candidate, receipt, security, or platform gates to obtain a pass.
+After all writers have stopped, source review and in-scope repairs are complete, and focused verification passes, run the applicable integrated local regression once. Use [the verification and CI spec](../specs/POST-COMMIT-CI-CHECKS.md) for the current canonical entrypoints and the limits of each check.
 
-Report the delivered behavior, focused evidence, final-regression result when required, and any unresolved acceptance or decision. An actionable partial handoff is still incomplete verification. A local-only request does not require a commit or push solely to satisfy this runbook.
+If regression finds an ordinary in-scope defect, repair it directly, run the affected focused checks, and repeat the final checks needed to establish the repaired revision. A regression failure alone does not require a new user decision. Escalate only a requirement that changes scope, a published contract, a risk boundary, or required authority; pause only the work that depends on that decision.
+
+Report the delivered behavior, commands actually run, test roots and suites covered, and any unresolved checks. Keep local results distinct from configured but unobserved GitHub Actions or platform lanes. A queued, unavailable, or unobserved check is unresolved, not passing.
+
+Platform package/build evidence does not establish live product behavior. Installation or client launch does not authorize Computer Use, reading the live interface, or testing a real user scenario. Real Agent conversations and development tasks belong to the user's designated Agent on an explicit task. Do not start that workflow to complete repository engineering work.
+
+## Planning And Observation
+
+`docs/plan/` is a repository entrypoint and document location, not a mandatory or authoritative in-repository planning state. Active state for an installed planning tool follows its configured workspace. No planning state or evidence grants implementation, publication, installation, launch, or live-acceptance authority beyond the current user request.
+
+For delegated work, do not use fast mode. Use at least a 10-minute observation window for ordinary work and 30 minutes for large work; split individual waits to fit host limits and send progress updates. A window is a progress checkpoint, never a cancellation deadline. Continue observing or report the exact unresolved state and recovery path. Do not add arbitrary timeouts to product behavior. See the [contributor workflow](../specs/CONTRIBUTOR-AND-AGENT-SPEC.md) for the full delivery boundary.

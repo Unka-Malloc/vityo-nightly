@@ -1,8 +1,8 @@
 # Docs / Delivery Runbook
 
-**Purpose:** 提供 `Vityo` 文档树、里程碑、history、repo hygiene 与交付文档的日常维护入口。
+**Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-10-02
 
 ## Mission
 
@@ -106,10 +106,10 @@ claims.
 23. Governance docs are part of docs delivery. API compatibility, security, release checklist, CODEOWNERS policy, root contribution/security entries, and PR template changes must keep generated docs indexes current.
 24. When a new docs collection is added, update `scripts/docs-index.py` collection metadata and run `python3 scripts/docs-index.py --write` in the same change.
 25. Platform-native CI changes must keep `README.md`, `docs/BUILD-AND-DEV-ENV.md`, `.github/workflows/local-ci-gate.yml`, and bootstrap script comments aligned. The PowerShell workspace bootstrap may create Flutter plugin junctions on Windows to avoid Developer Mode or admin symlink requirements, but it must restore tracked `.metadata` and `pubspec.lock` after runner generation and dependency restore.
-26. `docs/plan/` is the only permitted location for future Better Plan state. It is currently an
-    empty documentation container with no capability catalog, Manifest, task group, or Node
-    checkpoint. A later explicitly authorized planning request may initialize one canonical
-    workspace there; nested or parallel workspaces remain invalid.
+26. `docs/plan/` stores repository-owned planning documents and execution guidance when present.
+    Active state for an installed planning tool belongs to its configured workspace; the repository
+    does not require an in-tree Plan, mirror external state, or infer authority from planning data.
+    Keep product facts in their owner documents and do not restore retired local validators.
 27. Implemented architectural decisions belong in `docs/adr/IMPLEMENTED-DECISIONS.md` only when they match current code, tests, gates, or owner SSOTs; stale plan residue must be deleted or routed back to active gap/review docs.
 28. Repository documentation is English by default. Chinese prose is allowed only when a document's `Purpose` explicitly scopes it as Chinese localization, Chinese translation, or Chinese user-facing product/marketing copy; when touching legacy Chinese prose in non-localized owner docs, convert the touched passage to English.
 29. Workspace bootstrap scripts must not leave Flutter template files that are not tracked product tests. When runner generation, Windows LLVM discovery, or platform bootstrap behavior changes, keep bash, PowerShell, and GitHub Actions entry points aligned in the same change.

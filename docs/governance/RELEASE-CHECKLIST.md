@@ -1,17 +1,22 @@
 # Vityo Release Checklist
 
-**Purpose:** Provide the release and checkpoint checklist for the Vityo agent-native IDE, including package-boundary, no-Agent, Agent Workbench, security, and performance evidence.
+**Purpose:** Define release and checkpoint evidence for Vityo's product boundary, deterministic CI, platform builds, security, performance, and later live acceptance.
 
 **Owner:** Governance owner (`CODEOWNERS` -> governance domain)
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-02
 
 ## Release Rule
 
-A release or checkpoint candidate must prove four things before it is cut:
+A release candidate must prove the product and boundary claims below. A checkpoint candidate records evidence for every claim in its authorized scope and marks unrelated release criteria out of scope:
 
 1. Vityo remains the sole product identity and is described as the agent-native IDE for Styio.
-2. The IDE architecture boundary holds: `view_ide/` owns domain/application contracts and
-   `view_render/` owns Flutter presentation.
+2. IDE ownership follows [the system architecture](../design/Vityo-System-Architecture.md):
+   `view_ide/` owns presentation-independent IDE services and contracts; `ide/` owns editor,
+   document/workspace, Agent Client, and collaboration application state; `app/` composes shared
+   services; and `view_render/` owns Flutter presentation. Presentation imports only narrow public
+   model, adapter, or projection paths registered from their actual owner. The allowlist is enforced
+   by `scripts/check_architecture_boundaries.py`; registration does not claim that a consumer or
+   feature is wired into production.
 3. IDE, companion Agent runtime, and shared protocol code live only at their final owner paths;
    removed package identities and forwarding roots are not recreated.
 4. Sandbox, Agent permission, module manifest security, redaction, and secret handling have explicit
@@ -25,44 +30,33 @@ A formal product release candidate must additionally prove that the launch artif
 
 ## CI Gate Classification
 
-Every CI check listed below runs on every PR and push to `nightly`. The distinction between *default CI* and *opt-in product gate* is at the script level, not the workflow level: all workflows are always triggered, but certain gates inside them require explicit environment variables or external fixtures to execute their full product-matrix scope.
+The workflow files define configured lanes and triggers. They are configuration evidence only; a result must be observed for the exact candidate revision. The `delivery-gate.sh` product gate is optional during an ordinary local run, while GitHub Actions automatically requires the configured real Styio/Pafio matrix.
 
-### Default CI (always runs, no external fixtures required)
+### Configured CI Workflows
 
 | Workflow / Gate | What It Proves | Evidence Claim |
 |-----------------|----------------|----------------|
 | `repo-hygiene.yml` | Tracked-tree governance, dependency policy, supply chain, GitHub Actions pin, architecture and product-line boundaries, security baseline, performance budget, license policy, import boundary, ecosystem CLI doc, incoming history range | Repository hygiene and policy compliance is maintained |
 | `audit.yml` | Supply chain governance, dependency policy, GitHub Actions pin audit, security baseline, license policy, architecture and product-line boundaries | Security, supply-chain, and architecture policy gates pass |
 | `styio-audit.yml` | External styio-audit gate against released policy | Cross-repository audit policy is satisfied |
-| `project-coverage-gate.yml` | Python coverage >= 95%, Flutter coverage >= 85% | Project coverage floors are met |
-| `local-ci-gate.yml` (linux job) | `delivery-gate.sh --mode push` (no --skip-health, no --skip-ecosystem by default), `flutter build linux --release` | Linux delivery floor + native release build |
-| `local-ci-gate.yml` (windows job) | `delivery-gate.sh --mode push --skip-audit`, `flutter build windows --release` | Windows delivery floor + native release build |
-| `local-ci-gate.yml` (macos job) | `delivery-gate.sh --mode push --skip-audit`, `flutter build macos --release` | macOS delivery floor + native release build |
-| `windows-native.yml` | `delivery-gate.sh --mode push --skip-audit`, `flutter analyze`, `flutter build windows --release`, upload coverage + build artifacts | Windows-specific delivery gate + release build + artifact upload |
+| `project-coverage-gate.yml` | Discovered Python tooling tests and Flutter app tests with 95% and 85% coverage floors | Configured Python and Flutter coverage scopes pass |
+| `local-ci-gate.yml` (Linux, Windows, macOS jobs) | Full `delivery-gate.sh --mode push`, deterministic portable health suites, required real Styio/Pafio matrix, and host-specific native checks: desktop reconnect on Linux/macOS and the 14-test native UI/credential suite on macOS (11 glob-discovered plus three explicit tests) | The configured platform delivery and package smoke evidence passes for the host; the current app integration root has no Windows-target native integration suite |
+| `windows-native.yml` | `delivery-gate.sh --mode push --skip-audit`, Flutter analysis, native Windows build, and coverage/build artifacts | The additional Windows delivery lane passes; this is build and portable-test evidence, not Windows app integration evidence; audit evidence is supplied by the separate required audit workflow |
 
-### Opt-In Product Gates (require `VITYO_PRODUCT_GATE=1` and external fixtures)
+### Real Product Matrix
 
-These gates are **not** executed by default CI. They require explicit activation and external fixtures (Styio/Pafio executables, hosted control plane endpoints). Their passing state is **not** part of default CI green.
+The real local product matrix requires the configured Styio and Pafio executables. A local contributor opts in with `VITYO_PRODUCT_GATE=1`; GitHub Actions requires the matrix automatically and provisions the pinned executables.
 
 | Gate Script | What It Proves | Trigger |
 |-------------|----------------|---------|
-| `ecosystem-product-gate.py` | Desktop owner-adapter matrix: public `pafio new` and `pafio metadata --json`, system `styio --machine-info=json`, and stable local project composition | fixed Pafio/Styio executables |
-| Cross-repository owner matrix | Fixed-revision Pafio metadata/workflow, Styio compiler contracts, Platform hosted/registry/worker contracts, and Vityo adapters | coordinated nightly matrix |
-| Product coverage gate (within `delivery-gate.sh`) | Product-matrix coverage beyond default CI unit/widget test scope | `VITYO_PRODUCT_GATE=1` + external fixtures |
+| `ecosystem-product-gate.py` | Owner-adapter fixture through public `pafio new`, `pafio metadata --json`, `styio --machine-info=json`, and local project composition | Required in CI; `VITYO_PRODUCT_GATE=1` for an explicit local run |
+| Platform product matrix and pinned desktop developer-loop evidence | The host-specific real Styio/Pafio matrix and its matching accepted report | Configured Linux, Windows, and macOS workflow jobs |
 
-### What Default CI Green Means
+### What Passing Required Checks Establish
 
-Default CI green means:
-- Repository hygiene, security, architecture, product-line boundaries, performance budgets, and license policy all pass.
-- Linux, Windows, and macOS each complete the delivery floor and produce a native `--release` Flutter build.
-- Project coverage floors (Python 95%, Flutter 85%) are met.
-- External styio-audit policy passes.
+Green required checks for a specific CI revision mean the configured repository and security gates, deterministic health suites, required real product matrix, coverage floors, and host-specific operations passed.
 
-Default CI green does **not** mean:
-- Full product workflow matrix has been executed (requires `VITYO_PRODUCT_GATE=1`).
-- Cross-repository ecosystem sample workflows have passed.
-- Platform packaging, signing, distribution, or install/update/uninstall have been verified.
-- The build artifact is a production-signed, distributed release.
+Passing CI does **not** mean platform signing, distribution, installer/update/uninstall, or production release readiness has been verified. It also does not establish a live model-provider conversation or real user acceptance.
 
 ## Skip Flags And Closure Evidence
 
@@ -77,9 +71,7 @@ The delivery gate supports several `--skip-*` flags. Each has a narrow legitimat
 
 **Rule:** A PR or checkpoint claiming product closure must show positive evidence for every gate relevant to the claimed scope. Relying on `--skip-*` flags as evidence of passing is invalid. The evidence record must include the actual gate output or a reference to the CI run that executed that gate without the skip flag.
 
-## Terminal Closure Constraint
-
-The Better Plan checkpoint `6fd0bfe7-3d65-429f-8a6d-fd0a0fc08092` ("Clarify product gate default-CI evidence policy to launch-ready production release closure") is the terminal governance checkpoint in its chain. It cannot be marked **completed** unless the repository has launch-ready production release evidence meeting all criteria in the [Formal Product Launch Gate](#formal-product-launch-gate) section. Documentation-only clarification of the policy is necessary but not sufficient for closure — the checkpoint requires actual release evidence, not just policy text.
+This checklist defines release evidence; it does not create an active planning checkpoint or grant release authority. Record evidence against the current authorized delivery and the exact candidate revision.
 
 ## Required Commands
 
@@ -137,14 +129,17 @@ Architecture changes must pass:
 python3 scripts/check_architecture_boundaries.py
 ```
 
-The gate rejects:
+The gate enforces:
 
 1. `view_ide/` importing or exporting `view_render/`.
 2. `view_ide/` importing Flutter presentation APIs.
-3. `view_render/` importing unregistered `view_ide/` implementation files.
+3. `view_render/` importing unregistered `ide/` or `view_ide/` implementation files.
 4. IDE/Agent package dependency direction is enforced separately by `scripts/check_product_line_boundaries.py`.
 
-New `view_render -> view_ide` dependencies require a narrow registration in `VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS` in `scripts/check_architecture_boundaries.py` plus architecture review.
+New presentation dependencies on IDE code require review and a narrow registration in
+`VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS` in `scripts/check_architecture_boundaries.py`. The registry
+contains only the public model, provider, and projection contracts named by the current gate; it
+does not authorize imports of private implementation files.
 
 ## IDE/Agent Package Boundary Gate
 

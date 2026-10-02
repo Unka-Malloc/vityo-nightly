@@ -1,27 +1,36 @@
 # Checkpoint Health
 
-**Purpose:** Define the repository-wide build/test health entrypoint for `Vityo` so CI and checkpoint delivery can call one script instead of wiring Flutter and prototype verification inline.
+**Purpose:** Document the canonical portable deterministic test and static-health entrypoint used by contributors and repository CI.
 
-**Last updated:** 2026-06-19
+**Last updated:** 2026-10-02
 
 ## Command
+
+Run from the repository root:
 
 ```bash
 ./scripts/checkpoint-health.sh
 ```
 
-## What It Runs
+This is the integrated portable health entrypoint. Use a focused package command during implementation; run checkpoint health after source review, focused repairs, and ordinary test work are complete.
 
-1. `flutter analyze` in `products/vityo_app`
-2. `python3 -m unittest tests.test_repo_hygiene_gate`
-3. `python3 scripts/project-coverage-gate.py --python-fail-under 95 --flutter-fail-under 85 --flutter-dir products/vityo_app`, which runs the Python tooling coverage gate and `flutter test --coverage`
-4. `python3 scripts/release-readiness-gate.py --skip-build`
-5. `./scripts/language-fixture-gate.sh --flutter-dir products/vityo_app`
-6. `npm run governance` in `prototype/`
-7. `npm run selftest:editor` in `prototype/` with the focused editor URL pinned to port `4180`
+## Suites And Gates
 
-The repository keeps its native Flutter, Python, and npm-based tooling, but callers must continue to use this outer health entrypoint. CI installs `coverage.py` before the health gate so the Python coverage floor and Flutter LCOV floor are both enforced.
+1. `flutter analyze` in `products/vityo_app/`.
+2. Python tooling coverage. `scripts/python-coverage-gate.py` discovers `tests/test_*.py` under `tests/`, then runs the retained Prototype server-security test. The configured Python tooling coverage floor is 95%.
+3. Flutter app coverage. `scripts/project-coverage-gate.py` builds the local daemon prerequisite, runs `flutter test --coverage` under `products/vityo_app/`, and enforces the configured 85% Flutter line-coverage floor.
+4. Eight deterministic IDE suites through `scripts/vityo_quality.py`: `ide/workspace-transactions`, `ide/developer-loop`, `ide/agent-client-protocol`, `ide/mcp-host`, `ide/ide-security`, `ide/agent-workbench`, `ide/quality-runtime`, and `ide/recovery-isolation`.
+5. Deterministic Coding Agent suites through `scripts/vityo_quality.py --product coding-agent --suite full`. The health script writes its validation receipt under `build/evidence/`; receipt generation does not make a failed suite pass.
+6. `scripts/release-readiness-gate.py --skip-build` for static release rules. This proves no platform build.
+7. `scripts/language-fixture-gate.sh --flutter-dir products/vityo_app` for its declared parser-backed fixture roots. Optional `--fixture-root` arguments intentionally select additional roots.
+8. `npm run governance` and `npm run selftest:editor` under `prototype/`.
 
-The language fixture gate wrapper defaults to the parser-backed CI roots `test/fixtures/language_service` and `test/fixtures/styio_language/syntax_contract`. Pass one or more `--fixture-root` values to scan a broader fixture set intentionally.
+The test and suite registry implementation is `scripts/python-coverage-gate.py` plus `scripts/vityo_quality.py`. New ordinary Python tests in `tests/test_*.py` and Flutter tests under `products/vityo_app/test/` are discovered through their normal roots. A standalone suite must be added to the appropriate `vityo_quality.py` registry and invoked by this script or a documented native lane in the same change. The [test catalog](./TEST-CATALOG.md) records owners and future feature acceptance without duplicating suite commands.
 
-Set `PYTHON_BIN` to run the Python gates through a prepared virtual environment; it defaults to `python3`. GitHub Actions uploads `.coverage` and `products/vityo_app/coverage/lcov.info` as `vityo-coverage-reports-linux`, `vityo-coverage-reports-windows`, or `vityo-coverage-reports-macos` after each platform gate. The separate `project-coverage-gate` workflow runs only the Python plus Flutter coverage gate and uploads the same LCOV source as `vityo-project-coverage`.
+This portable command does not run native desktop integration or require a host UI. The configured Linux and macOS jobs run `scripts/vityo_quality.py --product ide --suite native-desktop` for `vityod_reconnect_test.dart`; macOS additionally runs `scripts/vityo_quality.py --product ide --suite macos-native-ui`, covering 11 `*_native_ui_test.dart` files and explicitly registering `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 total). The current app integration root has no Windows-target native integration test, so Windows native app integration coverage is absent; Windows still runs its configured portable suites and platform delivery/build checks. The quality-runner tests compare every app integration file with the executable selector literals and globs, rejecting new unregistered tests until they are mapped. Configured but unobserved Actions runs are not test results.
+
+## Tool And Artifact Notes
+
+`PYTHON_BIN` selects the Python executable and defaults to `python3`. `STYIO` may select the fixture parser executable. `--skip-language-fixtures` is a targeted investigation option; it does not establish that language fixtures passed.
+
+GitHub Actions is configured to upload Python and Flutter coverage reports for the platform jobs. A report exists only for a run that completed its coverage gate; uploads do not establish coverage for source outside the measured scope.
