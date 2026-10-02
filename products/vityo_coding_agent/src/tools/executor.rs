@@ -20,11 +20,11 @@ use crate::{
     contracts::JsonObject,
     policy::{
         DefaultPolicyEvaluator, ExecutionPolicy, PermissionGrantStore, PolicyDecisionCode,
-        ToolEffect, ToolPermissionRequirement, ToolRoot,
+        ToolEffect, ToolPathScope, ToolPermissionRequirement, ToolRoot,
     },
 };
 
-use super::{ToolCatalog, ToolDescriptor, ToolSchema};
+use super::{ToolCatalog, ToolDescriptor, ToolPathDomain, ToolSchema};
 
 #[derive(Clone, PartialEq)]
 pub struct ToolCall {
@@ -54,6 +54,28 @@ pub struct ToolPreflight {
     call: ToolCall,
     session_id: String,
     prepared: PreparedCall,
+}
+
+/// A one-shot approval bound to exactly one opaque preflight call.
+pub(crate) struct ToolOneShotApproval {
+    session_id: String,
+    call_id: String,
+    call_fingerprint: String,
+    requirement: ToolPermissionRequirement,
+}
+
+impl ToolOneShotApproval {
+    fn matches(
+        &self,
+        session_id: &str,
+        call: &ToolCall,
+        requirement: &ToolPermissionRequirement,
+    ) -> bool {
+        self.session_id == session_id
+            && self.call_id == call.call_id
+            && self.call_fingerprint == fingerprint(call)
+            && self.requirement == *requirement
+    }
 }
 
 impl ToolPreflight {
@@ -220,12 +242,35 @@ pub trait ExecutionHook: Send + Sync {
 
 #[async_trait]
 pub trait ToolPathResolver: Send + Sync {
-    /// Resolves the request using the IDE/workspace authority, including symlinks.
+    /// Resolves a path in its declared domain using the session-bound authority.
+    ///
+    /// Host-managed ACP paths are checked lexically here; the IDE/daemon remains the
+    /// authority for symlink containment and revision checks when the operation runs.
     async fn resolve(
         &self,
-        requested_uri: &str,
+        request: ToolPathRequest,
         cancellation: CancellationToken,
-    ) -> Result<String, ()>;
+    ) -> Result<ToolPathResolution, ()>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolPathRequest {
+    pub session_id: String,
+    pub call_id: String,
+    /// Kept byte-for-byte for ACP dispatch; the resolver must not rewrite it.
+    pub original_path: String,
+    pub domain: ToolPathDomain,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolPathResolution {
+    ResourceUri {
+        resolved_uri: String,
+    },
+    HostManaged {
+        root_id: String,
+        relative_path: String,
+    },
 }
 
 #[async_trait]
@@ -299,6 +344,32 @@ impl ToolExecutor {
         })
     }
 
+    /// Binds an already correlated ACP allow-once decision to this exact preflight.
+    ///
+    /// The caller must invoke this only after the host allowed the matching session/call
+    /// permission request. The returned token cannot authorize another call.
+    pub(crate) fn bind_one_shot_approval(
+        &self,
+        preflight: &ToolPreflight,
+        approved_session_id: &str,
+        approved_call_id: &str,
+    ) -> Result<ToolOneShotApproval, ToolFailure> {
+        if preflight.session_id != approved_session_id || preflight.call.call_id != approved_call_id
+        {
+            return Err(ToolFailure::new(ToolFailureCode::InvalidCall));
+        }
+        let requirement = preflight
+            .permission_requirement()
+            .cloned()
+            .ok_or_else(|| ToolFailure::new(ToolFailureCode::PermissionDenied))?;
+        Ok(ToolOneShotApproval {
+            session_id: approved_session_id.to_owned(),
+            call_id: approved_call_id.to_owned(),
+            call_fingerprint: fingerprint(&preflight.call),
+            requirement,
+        })
+    }
+
     /// Executes a preflighted call after the caller has resolved any permission prompt.
     ///
     /// Current catalog, descriptor, workspace resolution, policy, and grants are checked
@@ -306,6 +377,26 @@ impl ToolExecutor {
     pub async fn execute_prepared(
         &self,
         preflight: ToolPreflight,
+        context: ToolExecutionContext,
+    ) -> ToolExecutionReceipt {
+        self.execute_prepared_inner(preflight, None, context).await
+    }
+
+    /// Executes after a correlated allow-once response without persisting a grant.
+    pub(crate) async fn execute_prepared_once(
+        &self,
+        preflight: ToolPreflight,
+        approval: ToolOneShotApproval,
+        context: ToolExecutionContext,
+    ) -> ToolExecutionReceipt {
+        self.execute_prepared_inner(preflight, Some(approval), context)
+            .await
+    }
+
+    async fn execute_prepared_inner(
+        &self,
+        preflight: ToolPreflight,
+        approval: Option<ToolOneShotApproval>,
         context: ToolExecutionContext,
     ) -> ToolExecutionReceipt {
         let call = preflight.call;
@@ -317,7 +408,15 @@ impl ToolExecutor {
             );
         }
         let mut prepared = preflight.prepared;
-        if let Err(code) = revalidate(&self.inner, &call, &mut prepared, &context).await {
+        if let Err(code) = revalidate(
+            &self.inner,
+            &call,
+            &mut prepared,
+            &context,
+            approval.as_ref(),
+        )
+        .await
+        {
             return ToolExecutionReceipt::failure(&call, code, EffectState::None);
         }
         let key = call.idempotency_key.as_ref().and_then(|key| {
@@ -396,12 +495,14 @@ impl ToolExecutor {
         let task_call = call.clone();
         let task_context = context.clone();
         let task_prepared = prepared;
+        let task_approval = approval;
         let sender = owned_sender.expect("leader retains its result sender");
         tokio::spawn(async move {
             let receipt = std::panic::AssertUnwindSafe(run_prepared(
                 &inner,
                 &task_call,
                 task_prepared,
+                task_approval,
                 &task_context,
             ))
             .catch_unwind()
@@ -549,8 +650,17 @@ async fn prepare(
         }
     }
 
+    if descriptor.path_domain == Some(ToolPathDomain::HostManaged)
+        && descriptor
+            .path_argument
+            .as_ref()
+            .is_some_and(|argument| arguments.get(argument) != call.arguments.get(argument))
+    {
+        return Err(ToolFailureCode::HookRejected);
+    }
+
     let (permission_requirement, secret_references) =
-        authorize_arguments(&descriptor, &arguments, context).await?;
+        authorize_arguments(&descriptor, &arguments, call, context).await?;
 
     Ok(PreparedCall {
         descriptor,
@@ -566,6 +676,7 @@ async fn revalidate(
     call: &ToolCall,
     prepared: &mut PreparedCall,
     context: &ToolExecutionContext,
+    approval: Option<&ToolOneShotApproval>,
 ) -> Result<(), ToolFailureCode> {
     check_control(context)?;
     let (descriptor, adapter) = {
@@ -595,8 +706,11 @@ async fn revalidate(
         (descriptor, adapter)
     };
     let (permission_requirement, secret_references) =
-        authorize_arguments(&descriptor, &prepared.arguments, context).await?;
-    if permission_requirement.is_some() {
+        authorize_arguments(&descriptor, &prepared.arguments, call, context).await?;
+    if let Some(requirement) = permission_requirement.as_ref()
+        && !approval
+            .is_some_and(|approval| approval.matches(&context.session_id, call, requirement))
+    {
         return Err(ToolFailureCode::PermissionDenied);
     }
     prepared.adapter = adapter;
@@ -608,6 +722,7 @@ async fn revalidate(
 async fn authorize_arguments(
     descriptor: &ToolDescriptor,
     arguments: &JsonObject,
+    call: &ToolCall,
     context: &ToolExecutionContext,
 ) -> Result<
     (
@@ -620,26 +735,54 @@ async fn authorize_arguments(
         .path_argument
         .as_ref()
         .map(|argument| arguments.get(argument).and_then(Value::as_str));
-    let resolved_path = if let Some(Some(requested)) = requested_path {
+    let path_scope = if let Some(Some(requested)) = requested_path {
         let resolver = context
             .path_resolver
             .as_ref()
             .ok_or(ToolFailureCode::PolicyDenied)?;
-        Some(
-            match bounded(
-                resolver.resolve(requested, context.cancellation.clone()),
-                context,
-            )
-            .await
-            {
-                Ok(Ok(path)) => path,
-                Ok(Err(())) | Err(BoundedError::Failed) => {
-                    return Err(ToolFailureCode::PolicyDenied);
-                }
-                Err(BoundedError::Cancelled) => return Err(ToolFailureCode::Cancelled),
-                Err(BoundedError::Deadline) => return Err(ToolFailureCode::DeadlineReached),
-            },
+        let domain = descriptor
+            .path_domain
+            .ok_or(ToolFailureCode::PolicyDenied)?;
+        let resolution = match bounded(
+            resolver.resolve(
+                ToolPathRequest {
+                    session_id: context.session_id.clone(),
+                    call_id: call.call_id.clone(),
+                    original_path: requested.to_owned(),
+                    domain,
+                },
+                context.cancellation.clone(),
+            ),
+            context,
         )
+        .await
+        {
+            Ok(Ok(resolution)) => resolution,
+            Ok(Err(())) | Err(BoundedError::Failed) => {
+                return Err(ToolFailureCode::PolicyDenied);
+            }
+            Err(BoundedError::Cancelled) => return Err(ToolFailureCode::Cancelled),
+            Err(BoundedError::Deadline) => return Err(ToolFailureCode::DeadlineReached),
+        };
+        Some(match (domain, resolution) {
+            (ToolPathDomain::ResourceUri, ToolPathResolution::ResourceUri { resolved_uri }) => {
+                ToolPathScope::ResourceUri {
+                    requested_uri: requested.to_owned(),
+                    resolved_uri,
+                }
+            }
+            (
+                ToolPathDomain::HostManaged,
+                ToolPathResolution::HostManaged {
+                    root_id,
+                    relative_path,
+                },
+            ) => ToolPathScope::HostManaged {
+                root_id,
+                relative_path,
+            },
+            _ => return Err(ToolFailureCode::PolicyDenied),
+        })
     } else if requested_path.is_some() {
         return Err(ToolFailureCode::SchemaInvalid);
     } else {
@@ -657,8 +800,9 @@ async fn authorize_arguments(
     let effect = ToolEffect {
         tool_id: descriptor.id.clone(),
         risk: descriptor.risk,
-        requested_path: requested_path.flatten().map(str::to_owned),
-        resolved_path,
+        path_scope: path_scope.clone(),
+        require_host_managed_root: descriptor.approval_mode
+            == super::catalog::ToolApprovalMode::HostReview,
         network_host,
         raw_credential_detected,
         secret_audience_valid,
@@ -676,6 +820,11 @@ async fn authorize_arguments(
     );
     match decision.code {
         PolicyDecisionCode::Allowed => Ok((None, secret_references)),
+        PolicyDecisionCode::PermissionDenied
+            if descriptor.approval_mode == super::catalog::ToolApprovalMode::HostReview =>
+        {
+            Ok((None, secret_references))
+        }
         PolicyDecisionCode::PermissionDenied => Ok((
             Some(
                 decision
@@ -692,6 +841,7 @@ async fn run_prepared(
     inner: &ToolExecutorInner,
     call: &ToolCall,
     mut prepared: PreparedCall,
+    approval: Option<ToolOneShotApproval>,
     context: &ToolExecutionContext,
 ) -> ToolExecutionReceipt {
     let id = effect_id(call);
@@ -749,7 +899,7 @@ async fn run_prepared(
         resolved_secrets.push(value);
     }
 
-    if let Err(code) = revalidate(inner, call, &mut prepared, context).await {
+    if let Err(code) = revalidate(inner, call, &mut prepared, context, approval.as_ref()).await {
         return ToolExecutionReceipt::failure(call, code, EffectState::None);
     }
 
@@ -1126,4 +1276,188 @@ fn effect_id(call: &ToolCall) -> String {
         call.catalog_version
     );
     format!("{:x}", Sha256::digest(value.as_bytes()))
+}
+
+#[cfg(test)]
+mod approval_tests {
+    use std::{
+        collections::BTreeMap,
+        sync::{
+            Arc, RwLock,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use async_trait::async_trait;
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    use crate::{
+        contracts::JsonObject,
+        policy::{ExecutionPolicy, PermissionGrantStore, ToolRoot},
+        tools::{ToolCatalog, ToolDescriptor, ToolRisk, ToolSourceKind},
+    };
+
+    use super::{
+        ToolAdapter, ToolAdapterError, ToolCall, ToolExecutionContext, ToolExecutionLimits,
+        ToolExecutor, ToolFailureCode,
+    };
+
+    struct CountingAdapter(AtomicUsize);
+
+    #[async_trait]
+    impl ToolAdapter for CountingAdapter {
+        async fn execute(
+            &self,
+            _descriptor: &ToolDescriptor,
+            _arguments: JsonObject,
+            _cancellation: CancellationToken,
+        ) -> Result<JsonObject, ToolAdapterError> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(JsonObject::new())
+        }
+    }
+
+    fn empty_schema() -> JsonObject {
+        serde_json::from_value(json!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": true,
+        }))
+        .unwrap()
+    }
+
+    fn context() -> ToolExecutionContext {
+        ToolExecutionContext {
+            session_id: "session".to_owned(),
+            cancellation: CancellationToken::new(),
+            deadline: None,
+            roots: vec![ToolRoot::host_managed("flow-hero").unwrap()],
+            policy: ExecutionPolicy::new(1, [ToolRisk::Write], [], 1024).unwrap(),
+            grants: Arc::new(RwLock::new(PermissionGrantStore::new(4).unwrap())),
+            path_resolver: None,
+            secret_resolver: None,
+        }
+    }
+
+    fn executor(host_review: bool) -> (ToolExecutor, Arc<CountingAdapter>) {
+        let mut schema = empty_schema();
+        schema.insert(
+            "properties".to_owned(),
+            json!({"value": {"type": "string"}}),
+        );
+        let mut descriptor = ToolDescriptor::new(
+            "proposal.submit",
+            "Submit a reviewed proposal",
+            ToolSourceKind::Builtin,
+            schema,
+            empty_schema(),
+            ToolRisk::Write,
+            ["proposal".to_owned()],
+            None,
+            None,
+            BTreeMap::new(),
+            1024,
+        )
+        .unwrap();
+        if host_review {
+            descriptor = descriptor.with_host_review().unwrap();
+        }
+        let adapter = Arc::new(CountingAdapter(AtomicUsize::new(0)));
+        let executor = ToolExecutor::new(
+            ToolCatalog::new("catalog", [descriptor], false).unwrap(),
+            BTreeMap::from([(
+                "proposal.submit".to_owned(),
+                adapter.clone() as Arc<dyn ToolAdapter>,
+            )]),
+            Vec::new(),
+            ToolExecutionLimits::new(2, 2, 1024).unwrap(),
+        );
+        (executor, adapter)
+    }
+
+    fn call(call_id: &str, value: &str) -> ToolCall {
+        ToolCall {
+            call_id: call_id.to_owned(),
+            tool_id: "proposal.submit".to_owned(),
+            catalog_version: "catalog".to_owned(),
+            arguments: serde_json::from_value(json!({"value": value})).unwrap(),
+            idempotency_key: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn allow_once_is_bound_to_the_exact_call_and_does_not_store_a_grant() {
+        let (executor, adapter) = executor(false);
+        let context = context();
+        let first = executor
+            .preflight(call("call-1", "first"), &context)
+            .await
+            .unwrap();
+        let approval = executor
+            .bind_one_shot_approval(&first, "session", "call-1")
+            .unwrap();
+        let second = executor
+            .preflight(call("call-1", "different"), &context)
+            .await
+            .unwrap();
+
+        let receipt = executor
+            .execute_prepared_once(second, approval, context.clone())
+            .await;
+
+        assert_eq!(
+            receipt.failure.unwrap().code,
+            ToolFailureCode::PermissionDenied
+        );
+        assert_eq!(adapter.0.load(Ordering::Relaxed), 0);
+
+        let approved = executor
+            .preflight(call("call-2", "allowed"), &context)
+            .await
+            .unwrap();
+        let approval = executor
+            .bind_one_shot_approval(&approved, "session", "call-2")
+            .unwrap();
+        let receipt = executor
+            .execute_prepared_once(approved, approval, context.clone())
+            .await;
+        assert!(receipt.succeeded());
+        assert_eq!(adapter.0.load(Ordering::Relaxed), 1);
+        assert_eq!(context.grants.read().unwrap().active_grant_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn host_review_defers_only_the_grant_to_the_correlated_host_review() {
+        let (executor, adapter) = executor(true);
+        let context = context();
+        let preflight = executor
+            .preflight(call("proposal-call", "proposal"), &context)
+            .await
+            .unwrap();
+        assert!(preflight.permission_requirement().is_none());
+
+        let receipt = executor.execute_prepared(preflight, context.clone()).await;
+
+        assert!(receipt.succeeded());
+        assert_eq!(adapter.0.load(Ordering::Relaxed), 1);
+        assert_eq!(context.grants.read().unwrap().active_grant_count(), 0);
+
+        let mut denied = context;
+        denied.policy = ExecutionPolicy::new(2, [ToolRisk::Read], [], 1024).unwrap();
+        let preflight = executor
+            .preflight(call("blocked", "proposal"), &denied)
+            .await;
+        assert!(matches!(preflight, Err(failure) if failure.code == ToolFailureCode::PolicyDenied));
+
+        let mut missing_root = denied;
+        missing_root.policy = ExecutionPolicy::new(3, [ToolRisk::Write], [], 1024).unwrap();
+        missing_root.roots.clear();
+        let preflight = executor
+            .preflight(call("missing-root", "proposal"), &missing_root)
+            .await;
+        assert!(matches!(preflight, Err(failure) if failure.code == ToolFailureCode::PolicyDenied));
+        assert_eq!(adapter.0.load(Ordering::Relaxed), 1);
+    }
 }

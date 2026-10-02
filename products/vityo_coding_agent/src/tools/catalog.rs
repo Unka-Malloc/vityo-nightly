@@ -20,6 +20,21 @@ pub enum ToolSourceKind {
     Mcp,
 }
 
+/// The authority used to validate a path argument before dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolPathDomain {
+    /// A URI-based resource resolved by the configured resource resolver.
+    ResourceUri,
+    /// An absolute ACP filesystem path checked against its host-bound workspace root.
+    HostManaged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ToolApprovalMode {
+    SessionGrant,
+    HostReview,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolDescriptor {
     pub id: String,
@@ -30,6 +45,8 @@ pub struct ToolDescriptor {
     pub risk: ToolRisk,
     pub tags: BTreeSet<String>,
     pub path_argument: Option<String>,
+    pub path_domain: Option<ToolPathDomain>,
+    pub(crate) approval_mode: ToolApprovalMode,
     pub network_host_argument: Option<String>,
     pub secret_arguments: BTreeMap<String, String>,
     pub max_result_bytes: usize,
@@ -58,7 +75,9 @@ impl ToolDescriptor {
             output_schema,
             risk,
             tags: tags.into_iter().collect(),
+            path_domain: path_argument.as_ref().map(|_| ToolPathDomain::ResourceUri),
             path_argument,
+            approval_mode: ToolApprovalMode::SessionGrant,
             network_host_argument,
             secret_arguments,
             max_result_bytes,
@@ -66,12 +85,36 @@ impl ToolDescriptor {
         if descriptor.id.trim().is_empty()
             || descriptor.description.trim().is_empty()
             || descriptor.max_result_bytes == 0
+            || descriptor.path_argument.is_some() != descriptor.path_domain.is_some()
         {
             return Err(ToolSchemaError::InvalidDescriptor);
         }
         ToolSchema::validate_definition(&descriptor.input_schema, true)?;
         ToolSchema::validate_definition(&descriptor.output_schema, true)?;
         Ok(descriptor)
+    }
+
+    /// Marks a path argument as an ACP absolute path bound to the IDE's workspace root.
+    pub fn with_path_domain(mut self, domain: ToolPathDomain) -> Result<Self, ToolSchemaError> {
+        if self.path_argument.is_none() {
+            return Err(ToolSchemaError::InvalidDescriptor);
+        }
+        self.path_domain = Some(domain);
+        Ok(self)
+    }
+
+    /// Delegates the user decision to the host's correlated review operation.
+    ///
+    /// This is restricted to first-party write tools; remote MCP metadata cannot opt in.
+    pub(crate) fn with_host_review(mut self) -> Result<Self, ToolSchemaError> {
+        if self.source_kind != ToolSourceKind::Builtin
+            || self.risk != ToolRisk::Write
+            || self.path_argument.is_some()
+        {
+            return Err(ToolSchemaError::InvalidDescriptor);
+        }
+        self.approval_mode = ToolApprovalMode::HostReview;
+        Ok(self)
     }
 }
 

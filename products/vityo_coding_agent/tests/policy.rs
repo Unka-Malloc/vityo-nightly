@@ -1,4 +1,7 @@
-use vityo_coding_agent::{policy::*, tools::ToolRisk};
+use vityo_coding_agent::{
+    policy::{ToolPathScope, *},
+    tools::ToolRisk,
+};
 
 fn policy() -> ExecutionPolicy {
     ExecutionPolicy::new(
@@ -11,7 +14,7 @@ fn policy() -> ExecutionPolicy {
 }
 
 fn roots() -> Vec<ToolRoot> {
-    vec![ToolRoot::new("workspace", "workspace://project/src/").unwrap()]
+    vec![ToolRoot::resource_uri("workspace", "workspace://project/src/").unwrap()]
 }
 
 fn grants(tool: &str, root: &str) -> PermissionGrantStore {
@@ -62,16 +65,20 @@ fn path_scope_uses_segment_boundaries_and_rejects_encoded_traversal() {
     let grants = grants("source.read", "workspace");
     let evaluator = DefaultPolicyEvaluator;
     let mut effect = ToolEffect::new("source.read", ToolRisk::Write);
-    effect.requested_path = Some("workspace://project/src/main.sty".to_owned());
-    effect.resolved_path = effect.requested_path.clone();
+    effect.path_scope = Some(ToolPathScope::ResourceUri {
+        requested_uri: "workspace://project/src/main.sty".to_owned(),
+        resolved_uri: "workspace://project/src/main.sty".to_owned(),
+    });
     assert!(
         evaluator
             .evaluate(&effect, &policy(), &roots(), &grants, "session")
             .allowed()
     );
 
-    effect.requested_path = Some("workspace://project/src-elsewhere/main.sty".to_owned());
-    effect.resolved_path = effect.requested_path.clone();
+    effect.path_scope = Some(ToolPathScope::ResourceUri {
+        requested_uri: "workspace://project/src-elsewhere/main.sty".to_owned(),
+        resolved_uri: "workspace://project/src-elsewhere/main.sty".to_owned(),
+    });
     assert_eq!(
         evaluator
             .evaluate(&effect, &policy(), &roots(), &grants, "session")
@@ -79,8 +86,10 @@ fn path_scope_uses_segment_boundaries_and_rejects_encoded_traversal() {
         PolicyDecisionCode::PathDenied
     );
 
-    effect.requested_path = Some("workspace://project/src/%2e%2e/secrets.sty".to_owned());
-    effect.resolved_path = effect.requested_path.clone();
+    effect.path_scope = Some(ToolPathScope::ResourceUri {
+        requested_uri: "workspace://project/src/%2e%2e/secrets.sty".to_owned(),
+        resolved_uri: "workspace://project/src/%2e%2e/secrets.sty".to_owned(),
+    });
     assert_eq!(
         evaluator
             .evaluate(&effect, &policy(), &roots(), &grants, "session")
@@ -94,12 +103,62 @@ fn resolved_symlink_target_must_remain_under_the_requested_root() {
     let grants = grants("source.read", "workspace");
     let evaluator = DefaultPolicyEvaluator;
     let mut effect = ToolEffect::new("source.read", ToolRisk::Write);
-    effect.requested_path = Some("workspace://project/src/link.sty".to_owned());
-    effect.resolved_path = Some("workspace://other/secrets.sty".to_owned());
+    effect.path_scope = Some(ToolPathScope::ResourceUri {
+        requested_uri: "workspace://project/src/link.sty".to_owned(),
+        resolved_uri: "workspace://other/secrets.sty".to_owned(),
+    });
 
     assert_eq!(
         evaluator
             .evaluate(&effect, &policy(), &roots(), &grants, "session")
+            .code,
+        PolicyDecisionCode::PathDenied
+    );
+}
+
+#[test]
+fn host_managed_scope_requires_its_exact_root_and_normalized_relative_path() {
+    let roots = vec![ToolRoot::host_managed("flow-hero").unwrap()];
+    let mut grants = PermissionGrantStore::new(4).unwrap();
+    grants.grant(
+        PermissionGrant::new(
+            "host-grant",
+            "session",
+            "source.read",
+            [ToolRisk::Read],
+            ["flow-hero".to_owned()],
+        )
+        .unwrap(),
+    );
+    let evaluator = DefaultPolicyEvaluator;
+    let mut effect = ToolEffect::new("source.read", ToolRisk::Read);
+    effect.path_scope = Some(ToolPathScope::HostManaged {
+        root_id: "flow-hero".to_owned(),
+        relative_path: "src/main.sty".to_owned(),
+    });
+    assert!(
+        evaluator
+            .evaluate(&effect, &policy(), &roots, &grants, "session")
+            .allowed()
+    );
+
+    if let Some(ToolPathScope::HostManaged { relative_path, .. }) = effect.path_scope.as_mut() {
+        *relative_path = "src/../private.sty".to_owned();
+    }
+    assert_eq!(
+        evaluator
+            .evaluate(&effect, &policy(), &roots, &grants, "session")
+            .code,
+        PolicyDecisionCode::PathDenied
+    );
+
+    effect.path_scope = Some(ToolPathScope::HostManaged {
+        root_id: "other-workspace".to_owned(),
+        relative_path: "src/main.sty".to_owned(),
+    });
+    assert_eq!(
+        evaluator
+            .evaluate(&effect, &policy(), &roots, &grants, "session")
             .code,
         PolicyDecisionCode::PathDenied
     );
@@ -190,6 +249,7 @@ fn secret_key_redaction_preserves_non_secret_arguments() {
         redacted["nested"]["accessToken"],
         serde_json::json!("[redacted]")
     );
-    assert!(ToolRoot::new("", "workspace://project/").is_none());
-    assert!(ToolRoot::new("workspace", "workspace://project/../outside").is_none());
+    assert!(ToolRoot::resource_uri("", "workspace://project/").is_none());
+    assert!(ToolRoot::resource_uri("workspace", "workspace://project/../outside").is_none());
+    assert!(ToolRoot::host_managed(" ").is_none());
 }

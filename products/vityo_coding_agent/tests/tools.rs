@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
-        Arc, RwLock,
+        Arc, Mutex as StdMutex, RwLock,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -17,8 +17,9 @@ use vityo_coding_agent::{
     tools::{
         ExecutionHook, McpClient, McpFailure, McpFailureCode, McpToolMetadata, McpToolPolicy,
         McpToolSource, SecretResolver, ToolAdapter, ToolAdapterError, ToolCall, ToolCatalog,
-        ToolDescriptor, ToolExecutionContext, ToolExecutionLimits, ToolExecutor, ToolPathResolver,
-        ToolRisk, ToolSchema, ToolSourceKind,
+        ToolDescriptor, ToolExecutionContext, ToolExecutionLimits, ToolExecutor, ToolPathDomain,
+        ToolPathRequest, ToolPathResolution, ToolPathResolver, ToolRisk, ToolSchema,
+        ToolSourceKind,
     },
 };
 
@@ -84,7 +85,7 @@ fn context(
         session_id: session_id.to_owned(),
         cancellation,
         deadline: None,
-        roots: vec![ToolRoot::new("root", "workspace://project/").unwrap()],
+        roots: vec![ToolRoot::resource_uri("root", "workspace://project/").unwrap()],
         policy: ExecutionPolicy::new(1, [risk], [], 4096).unwrap(),
         grants: Arc::new(RwLock::new(grants)),
         path_resolver: None,
@@ -307,6 +308,168 @@ async fn prepared_call_revalidates_live_workspace_resolution_before_effect() {
         receipt.effect_state,
         vityo_coding_agent::tools::EffectState::None
     );
+    assert_eq!(adapter.calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn host_managed_write_keeps_the_absolute_acp_path_for_dispatch() {
+    let raw_path = "/workspace/project/src/new-file.sty";
+    let adapter = Arc::new(PathRecordingAdapter::default());
+    let resolver = Arc::new(RecordingHostPathResolver {
+        root_id: "flow-hero".to_owned(),
+        relative_path: "src/new-file.sty".to_owned(),
+        requests: StdMutex::new(Vec::new()),
+    });
+    let tool = descriptor(
+        "fs.write",
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        ToolRisk::Write,
+        256,
+        Some("path"),
+        BTreeMap::new(),
+    )
+    .with_path_domain(ToolPathDomain::HostManaged)
+    .unwrap();
+    let executor = executor(tool, adapter.clone(), Vec::new());
+    let mut context = context(
+        "session",
+        "fs.write",
+        ToolRisk::Write,
+        CancellationToken::new(),
+    );
+    context.roots = vec![ToolRoot::host_managed("flow-hero").unwrap()];
+    context.grants.write().unwrap().revoke("grant");
+    context.grants.write().unwrap().grant(
+        PermissionGrant::new(
+            "host-grant",
+            "session",
+            "fs.write",
+            [ToolRisk::Write],
+            ["flow-hero".to_owned()],
+        )
+        .unwrap(),
+    );
+    context.path_resolver = Some(resolver.clone());
+
+    let mut call = call(object(json!({"path": raw_path})), None);
+    call.tool_id = "fs.write".to_owned();
+    call.call_id = "acp-call".to_owned();
+    let receipt = executor.execute(call, context).await;
+
+    assert!(receipt.succeeded());
+    assert_eq!(
+        receipt.output.get("path").and_then(Value::as_str),
+        Some(raw_path)
+    );
+    let requests = resolver.requests.lock().unwrap();
+    assert_eq!(
+        requests.len(),
+        3,
+        "scope is checked during preflight and both execution validation steps"
+    );
+    for request in requests.iter() {
+        assert_eq!(request.session_id, "session");
+        assert_eq!(request.call_id, "acp-call");
+        assert_eq!(request.domain, ToolPathDomain::HostManaged);
+        assert_eq!(request.original_path, raw_path);
+    }
+}
+
+#[tokio::test]
+async fn host_managed_path_escape_is_denied_before_the_adapter_runs() {
+    let adapter = Arc::new(PathRecordingAdapter::default());
+    let tool = descriptor(
+        "fs.write",
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        ToolRisk::Write,
+        256,
+        Some("path"),
+        BTreeMap::new(),
+    )
+    .with_path_domain(ToolPathDomain::HostManaged)
+    .unwrap();
+    let executor = executor(tool, adapter.clone(), Vec::new());
+    let mut context = context(
+        "session",
+        "fs.write",
+        ToolRisk::Write,
+        CancellationToken::new(),
+    );
+    context.roots = vec![ToolRoot::host_managed("flow-hero").unwrap()];
+    context.path_resolver = Some(Arc::new(RecordingHostPathResolver {
+        root_id: "flow-hero".to_owned(),
+        relative_path: "../outside.sty".to_owned(),
+        requests: StdMutex::new(Vec::new()),
+    }));
+
+    let mut call = call(
+        object(json!({"path": "/workspace/project/../outside.sty"})),
+        None,
+    );
+    call.tool_id = "fs.write".to_owned();
+    let receipt = executor.execute(call, context).await;
+
+    assert_eq!(
+        receipt.failure.unwrap().code,
+        vityo_coding_agent::tools::ToolFailureCode::PolicyDenied
+    );
+    assert_eq!(adapter.calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn hooks_cannot_rewrite_the_absolute_host_managed_dispatch_path() {
+    let adapter = Arc::new(PathRecordingAdapter::default());
+    let tool = descriptor(
+        "fs.read",
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        schema(json!({"path": {"type": "string"}}), &["path"], false),
+        ToolRisk::Read,
+        256,
+        Some("path"),
+        BTreeMap::new(),
+    )
+    .with_path_domain(ToolPathDomain::HostManaged)
+    .unwrap();
+    let resolver = Arc::new(RecordingHostPathResolver {
+        root_id: "flow-hero".to_owned(),
+        relative_path: "src/main.sty".to_owned(),
+        requests: StdMutex::new(Vec::new()),
+    });
+    let executor = ToolExecutor::new(
+        ToolCatalog::new("catalog-1", [tool], false).unwrap(),
+        BTreeMap::from([(
+            "fs.read".to_owned(),
+            adapter.clone() as Arc<dyn ToolAdapter>,
+        )]),
+        vec![Arc::new(RewritePathHook)],
+        ToolExecutionLimits::new(2, 2, 1024).unwrap(),
+    );
+    let mut context = context(
+        "session",
+        "fs.read",
+        ToolRisk::Read,
+        CancellationToken::new(),
+    );
+    context.roots = vec![ToolRoot::host_managed("flow-hero").unwrap()];
+    context.path_resolver = Some(resolver.clone());
+    let mut call = call(
+        object(json!({"path": "/workspace/project/src/main.sty"})),
+        None,
+    );
+    call.tool_id = "fs.read".to_owned();
+
+    let failure = match executor.preflight(call, &context).await {
+        Err(failure) => failure,
+        Ok(_) => panic!("host-managed hook rewrite should be rejected"),
+    };
+
+    assert_eq!(
+        failure.code,
+        vityo_coding_agent::tools::ToolFailureCode::HookRejected
+    );
+    assert!(resolver.requests.lock().unwrap().is_empty());
     assert_eq!(adapter.calls.load(Ordering::Relaxed), 0);
 }
 
@@ -954,6 +1117,26 @@ struct ControlledAdapter {
     release: Notify,
 }
 
+#[derive(Default)]
+struct PathRecordingAdapter {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl ToolAdapter for PathRecordingAdapter {
+    async fn execute(
+        &self,
+        _descriptor: &ToolDescriptor,
+        arguments: JsonObject,
+        _cancellation: CancellationToken,
+    ) -> Result<JsonObject, ToolAdapterError> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Ok(object(
+            json!({"path": arguments.get("path").cloned().unwrap_or(Value::Null)}),
+        ))
+    }
+}
+
 impl ControlledAdapter {
     fn new(output: Value, block: bool) -> Self {
         Self {
@@ -1007,6 +1190,33 @@ impl ExecutionHook for RejectHook {
     }
 }
 
+struct RewritePathHook;
+
+#[async_trait]
+impl ExecutionHook for RewritePathHook {
+    async fn before(
+        &self,
+        _descriptor: &ToolDescriptor,
+        mut arguments: JsonObject,
+        _cancellation: CancellationToken,
+    ) -> Result<JsonObject, ()> {
+        arguments.insert(
+            "path".to_owned(),
+            Value::String("/workspace/other-file.sty".to_owned()),
+        );
+        Ok(arguments)
+    }
+
+    async fn after(
+        &self,
+        _descriptor: &ToolDescriptor,
+        output: JsonObject,
+        _cancellation: CancellationToken,
+    ) -> Result<JsonObject, ()> {
+        Ok(output)
+    }
+}
+
 #[derive(Default)]
 struct BlockingAfterHook {
     started: Notify,
@@ -1041,10 +1251,38 @@ struct StaticPathResolver(String);
 impl ToolPathResolver for StaticPathResolver {
     async fn resolve(
         &self,
-        _requested_uri: &str,
+        request: ToolPathRequest,
         _cancellation: CancellationToken,
-    ) -> Result<String, ()> {
-        Ok(self.0.clone())
+    ) -> Result<ToolPathResolution, ()> {
+        (request.domain == ToolPathDomain::ResourceUri)
+            .then(|| ToolPathResolution::ResourceUri {
+                resolved_uri: self.0.clone(),
+            })
+            .ok_or(())
+    }
+}
+
+struct RecordingHostPathResolver {
+    root_id: String,
+    relative_path: String,
+    requests: StdMutex<Vec<ToolPathRequest>>,
+}
+
+#[async_trait]
+impl ToolPathResolver for RecordingHostPathResolver {
+    async fn resolve(
+        &self,
+        request: ToolPathRequest,
+        _cancellation: CancellationToken,
+    ) -> Result<ToolPathResolution, ()> {
+        if request.domain != ToolPathDomain::HostManaged {
+            return Err(());
+        }
+        self.requests.lock().unwrap().push(request);
+        Ok(ToolPathResolution::HostManaged {
+            root_id: self.root_id.clone(),
+            relative_path: self.relative_path.clone(),
+        })
     }
 }
 

@@ -4,21 +4,51 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use crate::tools::ToolRisk;
 
+/// The root identity and path domain an Agent operation is allowed to address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolRootDomain {
+    ResourceUri(String),
+    HostManaged,
+}
+
 /// A workspace resource explicitly authorized for an Agent session.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ToolRoot {
     pub id: String,
-    pub uri: String,
+    pub domain: ToolRootDomain,
 }
 
 impl ToolRoot {
-    pub fn new(id: impl Into<String>, uri: impl Into<String>) -> Option<Self> {
+    pub fn resource_uri(id: impl Into<String>, uri: impl Into<String>) -> Option<Self> {
         let root = Self {
             id: id.into(),
-            uri: uri.into(),
+            domain: ToolRootDomain::ResourceUri(uri.into()),
         };
-        (!root.id.trim().is_empty() && parse_resource_uri(&root.uri).is_some()).then_some(root)
+        (!root.id.trim().is_empty()
+            && matches!(&root.domain, ToolRootDomain::ResourceUri(uri) if parse_resource_uri(uri).is_some()))
+        .then_some(root)
     }
+
+    pub fn host_managed(id: impl Into<String>) -> Option<Self> {
+        let root = Self {
+            id: id.into(),
+            domain: ToolRootDomain::HostManaged,
+        };
+        (!root.id.trim().is_empty()).then_some(root)
+    }
+}
+
+/// A validated path scope returned by the resolver appropriate to its domain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ToolPathScope {
+    ResourceUri {
+        requested_uri: String,
+        resolved_uri: String,
+    },
+    HostManaged {
+        root_id: String,
+        relative_path: String,
+    },
 }
 
 /// Immutable policy inputs for one Agent turn or operation batch.
@@ -180,8 +210,8 @@ impl PermissionGrantStore {
 pub struct ToolEffect {
     pub tool_id: String,
     pub risk: ToolRisk,
-    pub requested_path: Option<String>,
-    pub resolved_path: Option<String>,
+    pub path_scope: Option<ToolPathScope>,
+    pub require_host_managed_root: bool,
     pub network_host: Option<String>,
     pub raw_credential_detected: bool,
     pub secret_audience_valid: bool,
@@ -192,8 +222,8 @@ impl ToolEffect {
         Self {
             tool_id: tool_id.into(),
             risk,
-            requested_path: None,
-            resolved_path: None,
+            path_scope: None,
+            require_host_managed_root: false,
             network_host: None,
             raw_credential_detected: false,
             secret_audience_valid: true,
@@ -270,30 +300,56 @@ impl DefaultPolicyEvaluator {
             }
         }
 
-        let root_id = if let Some(requested) = effect.requested_path.as_deref() {
-            let Some(requested_uri) = parse_resource_uri(requested) else {
-                return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
-            };
-            let Some(resolved) = effect.resolved_path.as_deref() else {
-                return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
-            };
-            let Some(resolved_uri) = parse_resource_uri(resolved) else {
-                return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
-            };
-            let requested_root = matching_root(&requested_uri, roots);
-            let resolved_root = matching_root(&resolved_uri, roots);
-            let (Some(requested_root), Some(resolved_root)) = (requested_root, resolved_root)
-            else {
-                return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
-            };
-            if requested_root.id != resolved_root.id {
+        let root_id = if effect.require_host_managed_root {
+            if let Some(root) = roots
+                .iter()
+                .find(|root| root.domain == ToolRootDomain::HostManaged)
+            {
+                root.id.as_str()
+            } else {
                 return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
             }
-            resolved_root.id.as_str()
+        } else if let Some(path_scope) = effect.path_scope.as_ref() {
+            match path_scope {
+                ToolPathScope::ResourceUri {
+                    requested_uri,
+                    resolved_uri,
+                } => {
+                    let Some(requested_uri) = parse_resource_uri(requested_uri) else {
+                        return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
+                    };
+                    let Some(resolved_uri) = parse_resource_uri(resolved_uri) else {
+                        return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
+                    };
+                    let requested_root = matching_root(&requested_uri, roots);
+                    let resolved_root = matching_root(&resolved_uri, roots);
+                    let (Some(requested_root), Some(resolved_root)) =
+                        (requested_root, resolved_root)
+                    else {
+                        return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
+                    };
+                    if requested_root.id != resolved_root.id {
+                        return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
+                    }
+                    resolved_root.id.as_str()
+                }
+                ToolPathScope::HostManaged {
+                    root_id,
+                    relative_path,
+                } => {
+                    let has_root = roots.iter().any(|root| {
+                        root.id == *root_id && root.domain == ToolRootDomain::HostManaged
+                    });
+                    if !has_root || !is_normalized_relative_path(relative_path) {
+                        return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
+                    }
+                    root_id.as_str()
+                }
+            }
         } else if let Some(root) = roots.first() {
             root.id.as_str()
         } else {
-            return PolicyDecision::deny(PolicyDecisionCode::PermissionDenied);
+            return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
         };
 
         if !grants.allows(session_id, &effect.tool_id, effect.risk, root_id) {
@@ -393,7 +449,10 @@ fn hex(byte: u8) -> Option<u8> {
 
 fn matching_root<'a>(candidate: &ResourceUri, roots: &'a [ToolRoot]) -> Option<&'a ToolRoot> {
     roots.iter().find(|root| {
-        let Some(root_uri) = parse_resource_uri(&root.uri) else {
+        let ToolRootDomain::ResourceUri(uri) = &root.domain else {
+            return false;
+        };
+        let Some(root_uri) = parse_resource_uri(uri) else {
             return false;
         };
         root_uri.scheme == candidate.scheme
@@ -401,6 +460,17 @@ fn matching_root<'a>(candidate: &ResourceUri, roots: &'a [ToolRoot]) -> Option<&
             && candidate.segments.len() >= root_uri.segments.len()
             && candidate.segments[..root_uri.segments.len()] == root_uri.segments
     })
+}
+
+fn is_normalized_relative_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path
+            .chars()
+            .any(|character| matches!(character, '\\' | '\0'))
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
 /// Sanitizes schema-independent policy maps before durable logging.
