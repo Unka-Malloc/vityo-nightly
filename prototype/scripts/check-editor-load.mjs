@@ -14,10 +14,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROTOTYPE_ROOT = path.resolve(__dirname, "..");
 const DEFAULT_URL = process.env.VITYO_EDITOR_URL ?? "http://127.0.0.1:4180/editor";
-const CHROME_PATH =
-  process.env.VITYO_CHROME_PATH ??
-  process.env.CHROME_EXECUTABLE ??
-  "/usr/bin/chromium";
+const CHROME_CANDIDATES = [
+  process.env.VITYO_CHROME_PATH,
+  process.env.CHROME_EXECUTABLE,
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/google-chrome",
+  "/opt/homebrew/bin/chromium",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+].filter((candidate) => typeof candidate === "string" && candidate.length > 0);
 const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
 const ARTIFACT_DIR = path.join(PROTOTYPE_ROOT, ".artifacts");
 const SCREENSHOT_PATH = path.join(ARTIFACT_DIR, "editor-load-failure.png");
@@ -105,15 +114,24 @@ async function ensureServer(url) {
   return { child, started: true };
 }
 
-async function runSelfTest() {
-  if (!(await fs.stat(CHROME_PATH).then(() => true).catch(() => false))) {
-    throw new Error(`chrome executable not found: ${CHROME_PATH}`);
+async function resolveChromePath() {
+  for (const candidate of CHROME_CANDIDATES) {
+    if (await fs.stat(candidate).then(() => true).catch(() => false)) {
+      return candidate;
+    }
   }
+  throw new Error(
+    `chrome executable not found; set VITYO_CHROME_PATH (checked ${CHROME_CANDIDATES.join(", ")})`,
+  );
+}
+
+async function runSelfTest() {
+  const chromePath = await resolveChromePath();
 
   const server = await ensureServer(DEFAULT_URL);
   const browser = await chromium.launch({
     headless: true,
-    executablePath: CHROME_PATH,
+    executablePath: chromePath,
     args: ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check"],
   });
 
