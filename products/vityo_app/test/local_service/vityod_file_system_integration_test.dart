@@ -122,6 +122,8 @@ void main() {
           documentId: loaded.documentId,
           text: 'saved through workspace transaction',
           revision: loaded.revision + 1,
+          workspaceRevision: loaded.workspaceRevision,
+          baseDocumentRevision: loaded.revision,
         ),
       );
       expect(
@@ -136,25 +138,150 @@ void main() {
       await manager.writeText(helper, 'helper before');
       final currentMain = await documentStore.loadDocument(source);
       final currentHelper = await documentStore.loadDocument(helper);
-      final atomicRevisions = await documentStore
-          .saveDocumentsAtomically(<DocumentState>[
-            DocumentState(
-              documentId: currentMain.documentId,
-              text: 'main atomic after',
-              revision: currentMain.revision + 1,
-            ),
-            DocumentState(
-              documentId: currentHelper.documentId,
-              text: 'helper atomic after',
-              revision: currentHelper.revision + 1,
-            ),
-          ]);
-      expect(atomicRevisions.keys.toSet(), <String>{
+      final atomicReceipt = await documentStore.saveDocumentsAtomically(
+        <DocumentState>[
+          DocumentState(
+            documentId: currentMain.documentId,
+            text: 'main atomic after',
+            revision: currentMain.revision + 1,
+          ),
+          DocumentState(
+            documentId: currentHelper.documentId,
+            text: 'helper atomic after',
+            revision: currentHelper.revision + 1,
+          ),
+        ],
+        expectedWorkspaceRevision: currentMain.workspaceRevision!,
+        expectedDocumentRevisions: <String, int>{
+          currentMain.documentId: currentMain.revision,
+          currentHelper.documentId: currentHelper.revision,
+        },
+      );
+      expect(atomicReceipt.documentRevisions.keys.toSet(), <String>{
         'src/main.styio',
         'src/helper.styio',
       });
       expect(await manager.readText(source), 'main atomic after');
       expect(await manager.readText(helper), 'helper atomic after');
+      await expectLater(
+        documentStore.saveDocumentsAtomically(
+          <DocumentState>[
+            DocumentState(
+              documentId: currentMain.documentId,
+              text: 'stale atomic overwrite',
+              revision: currentMain.revision + 1,
+            ),
+          ],
+          expectedWorkspaceRevision: currentMain.workspaceRevision!,
+          expectedDocumentRevisions: <String, int>{
+            currentMain.documentId: currentMain.revision,
+          },
+        ),
+        throwsA(
+          isA<VityodWorkspaceStoreFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'workspace_revision_conflict',
+          ),
+        ),
+      );
+      expect(await manager.readText(source), 'main atomic after');
+
+      final missingPath = manager.joinPath(<String>[
+        root.path,
+        'created.styio',
+      ]);
+      final missing = await documentStore.readWorkspaceSnapshot(missingPath);
+      expect(missing.resourceId, 'created.styio');
+      expect(missing.document, isNull);
+      final creationReceipt = await documentStore.saveDocumentsAtomically(
+        <DocumentState>[
+          const DocumentState(
+            documentId: 'created.styio',
+            text: 'created from an observed absence',
+            revision: 1,
+          ),
+        ],
+        expectedWorkspaceRevision: missing.workspaceRevision,
+        expectedDocumentRevisions: const <String, int>{'created.styio': 0},
+      );
+      expect(creationReceipt.workspaceRevision, missing.workspaceRevision + 1);
+      expect(
+        await manager.readText(missingPath),
+        'created from an observed absence',
+      );
+      await expectLater(
+        documentStore.saveDocumentsAtomically(
+          <DocumentState>[
+            const DocumentState(
+              documentId: 'created.styio',
+              text: 'stale create overwrite',
+              revision: 1,
+            ),
+          ],
+          expectedWorkspaceRevision: missing.workspaceRevision,
+          expectedDocumentRevisions: const <String, int>{'created.styio': 0},
+        ),
+        throwsA(
+          isA<VityodWorkspaceStoreFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'workspace_revision_conflict',
+          ),
+        ),
+      );
+      expect(
+        await manager.readText(missingPath),
+        'created from an observed absence',
+      );
+
+      final outside = await Directory.systemTemp.createTemp(
+        'vityod-fs-outside-',
+      );
+      addTearDown(() async {
+        if (await outside.exists()) await outside.delete(recursive: true);
+      });
+      final outsideFile = File('${outside.path}/private.styio')
+        ..writeAsStringSync('outside source');
+      final linkPath = '${root.path}${Platform.pathSeparator}escape.styio';
+      final inScopeLinkTarget = File(linkPath)
+        ..writeAsStringSync('in-scope source');
+      await documentStore.readWorkspaceSnapshot(linkPath);
+      await inScopeLinkTarget.delete();
+      final link = Link(linkPath)..createSync(outsideFile.path);
+      expect(await link.exists(), isTrue);
+      await expectLater(
+        documentStore.readWorkspaceSnapshot(linkPath),
+        throwsA(
+          isA<VityodWorkspaceStoreFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'workspace_root_escape',
+          ),
+        ),
+      );
+      final safeSnapshot = await documentStore.readWorkspaceSnapshot(source);
+      await expectLater(
+        documentStore.saveDocumentsAtomically(
+          <DocumentState>[
+            const DocumentState(
+              documentId: 'escape.styio',
+              text: 'must not follow symlink',
+              revision: 1,
+            ),
+          ],
+          expectedWorkspaceRevision: safeSnapshot.workspaceRevision,
+          expectedDocumentRevisions: const <String, int>{'escape.styio': 0},
+        ),
+        throwsA(
+          isA<VityodWorkspaceStoreFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'workspace_root_escape',
+          ),
+        ),
+      );
+      expect(outsideFile.readAsStringSync(), 'outside source');
 
       final secondSource = File(
         '${secondRoot.path}${Platform.pathSeparator}src'

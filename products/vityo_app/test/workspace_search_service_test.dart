@@ -75,6 +75,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 1,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/b.styio',
@@ -82,6 +83,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 2,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/c.styio',
@@ -89,6 +91,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 3,
+          workspaceRevision: 0,
         ),
       ],
     );
@@ -1302,7 +1305,7 @@ class _FailingWorkspaceSearchStore implements WorkspaceDocumentStore {
   String? filePathForDocumentId(String documentId) => null;
 }
 
-class _FailingSaveWorkspaceSearchStore implements WorkspaceDocumentStore {
+class _FailingSaveWorkspaceSearchStore implements AtomicWorkspaceDocumentStore {
   final Map<String, DocumentState> _documents = <String, DocumentState>{
     'main.styio': const DocumentState(
       documentId: 'main.styio',
@@ -1316,15 +1319,70 @@ class _FailingSaveWorkspaceSearchStore implements WorkspaceDocumentStore {
     ),
   };
 
+  var _workspaceRevision = 0;
+
   @override
-  Future<DocumentState> loadDocument(String path) async => _documents[path]!;
+  Future<DocumentState> loadDocument(String path) async {
+    final document = _documents[path]!;
+    return DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
+  }
 
   @override
   Future<void> saveDocument(DocumentState document) async {
     if (document.documentId == 'fail-save.styio') {
       throw StateError('failed to save ${document.documentId}');
     }
-    _documents[document.documentId] = document;
+    _workspaceRevision += 1;
+    _documents[document.documentId] = DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
+  }
+
+  @override
+  Future<WorkspaceDocumentCommitReceipt> saveDocumentsAtomically(
+    Iterable<DocumentState> documents, {
+    required int expectedWorkspaceRevision,
+    required Map<String, int> expectedDocumentRevisions,
+  }) async {
+    if (_workspaceRevision != expectedWorkspaceRevision) {
+      throw StateError('workspace_revision_conflict');
+    }
+    final pending = documents.toList(growable: false);
+    for (final document in pending) {
+      if (document.documentId == 'fail-save.styio') {
+        throw StateError('failed to save ${document.documentId}');
+      }
+      if (_documents[document.documentId]?.revision !=
+          expectedDocumentRevisions[document.documentId]) {
+        throw StateError('document_revision_conflict');
+      }
+    }
+    _workspaceRevision += 1;
+    final revisions = <String, int>{};
+    for (final document in pending) {
+      _documents[document.documentId] = DocumentState(
+        documentId: document.documentId,
+        text: document.text,
+        revision: document.revision,
+        workspaceRevision: _workspaceRevision,
+        baseDocumentRevision: document.revision,
+      );
+      revisions[document.documentId] = document.revision;
+    }
+    return WorkspaceDocumentCommitReceipt(
+      workspaceRevision: _workspaceRevision,
+      documentRevisions: revisions,
+    );
   }
 
   @override

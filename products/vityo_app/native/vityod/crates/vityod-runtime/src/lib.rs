@@ -346,6 +346,38 @@ impl ManagedPtyRegistry {
         })
     }
 
+    /// Stops a command while retaining its terminal and buffered output until
+    /// the client explicitly releases the stream.
+    pub fn kill(&mut self, stream_id: u32) -> Result<u32, PtyRuntimeError> {
+        let session = self
+            .sessions
+            .get_mut(&stream_id)
+            .ok_or(PtyRuntimeError::UnknownSession)?;
+        if let Some(exit_code) = session.exit_code {
+            return Ok(exit_code);
+        }
+        if let Some(status) = session
+            .child
+            .try_wait()
+            .map_err(|_| PtyRuntimeError::OutputUnavailable)?
+        {
+            let exit_code = status.exit_code();
+            session.exit_code = Some(exit_code);
+            return Ok(exit_code);
+        }
+        session
+            .child
+            .kill()
+            .map_err(|_| PtyRuntimeError::TerminateFailed)?;
+        let exit_code = session
+            .child
+            .wait()
+            .map_err(|_| PtyRuntimeError::TerminateFailed)?
+            .exit_code();
+        session.exit_code = Some(exit_code);
+        Ok(exit_code)
+    }
+
     pub fn terminate(&mut self, stream_id: u32) -> Result<u32, PtyRuntimeError> {
         let mut session = self
             .sessions
@@ -1168,6 +1200,93 @@ mod tests {
         }
         assert!(String::from_utf8_lossy(&all).contains("seen:hello"));
         ptys.terminate(stream).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_pty_kill_keeps_output_available_until_release() {
+        let mut ptys = ManagedPtyRegistry::new(2, 1024);
+        let stream = ptys
+            .start(PtyLaunch {
+                id: "terminal-kill".into(),
+                executable: "/bin/sh".into(),
+                arguments: vec![
+                    "-c".into(),
+                    "printf ready; sleep 0.1; printf ' retained'; read value".into(),
+                ],
+                working_directory: None,
+                environment: HashMap::new(),
+                rows: 24,
+                cols: 80,
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let mut output = Vec::new();
+        while std::time::Instant::now() < deadline {
+            let chunk = ptys.drain(stream, 1024).unwrap();
+            output.extend(chunk.payload);
+            if String::from_utf8_lossy(&output).contains("ready") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(String::from_utf8_lossy(&output).contains("ready"));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        let exit_code = ptys.kill(stream).unwrap();
+        let mut closed = false;
+        let kill_deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < kill_deadline {
+            let chunk = ptys.drain(stream, 1024).unwrap();
+            output.extend(chunk.payload);
+            if chunk.closed {
+                closed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(closed);
+        assert!(String::from_utf8_lossy(&output).contains("retained"));
+        assert_eq!(ptys.terminate(stream), Ok(exit_code));
+        assert_eq!(ptys.drain(stream, 1), Err(PtyRuntimeError::UnknownSession));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_pty_kill_of_an_exited_process_keeps_the_stream_until_release() {
+        let mut ptys = ManagedPtyRegistry::new(2, 1024);
+        let stream = ptys
+            .start(PtyLaunch {
+                id: "terminal-already-exited".into(),
+                executable: "/bin/sh".into(),
+                arguments: vec!["-c".into(), "printf finished".into()],
+                working_directory: None,
+                environment: HashMap::new(),
+                rows: 24,
+                cols: 80,
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let mut closed = false;
+        let mut output = Vec::new();
+        while std::time::Instant::now() < deadline {
+            let chunk = ptys.drain(stream, 1024).unwrap();
+            output.extend(chunk.payload);
+            if chunk.closed {
+                closed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(closed);
+        assert_eq!(String::from_utf8_lossy(&output), "finished");
+
+        let exit_code = ptys.kill(stream).unwrap();
+        let retained = ptys.drain(stream, 1024).unwrap();
+        assert!(retained.closed);
+        assert_eq!(retained.exit_code, Some(exit_code));
+        assert_eq!(ptys.terminate(stream), Ok(exit_code));
+        assert_eq!(ptys.drain(stream, 1), Err(PtyRuntimeError::UnknownSession));
     }
 
     #[cfg(unix)]

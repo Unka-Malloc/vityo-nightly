@@ -22,19 +22,16 @@ Future<WorkspaceDocumentStore> createPlatformWorkspaceDocumentStore({
 }
 
 final class VityodWorkspaceDocumentStore
-    implements AtomicWorkspaceDocumentStore {
+    implements WorkspaceDocumentOperationStore {
   VityodWorkspaceDocumentStore({
     required VityodClient client,
     this.workspaceId,
     this.workspaceRoot,
-  }) : _client = client,
-       _workspaceRevision = client.snapshot?.workspaceRevision ?? 0;
+  }) : _client = client;
 
   final VityodClient _client;
   final String? workspaceId;
   final String? workspaceRoot;
-  final Map<String, int> _documentRevisions = <String, int>{};
-  int _workspaceRevision;
   var _sequence = 0;
 
   Future<void> open() async {
@@ -52,58 +49,152 @@ final class VityodWorkspaceDocumentStore
     if (workspaceRevision is! int) {
       throw const VityodWorkspaceStoreFailure('invalid_workspace_snapshot');
     }
-    _workspaceRevision = workspaceRevision;
   }
 
   @override
   Future<DocumentState> loadDocument(String path) async {
+    final snapshot = await readWorkspaceSnapshot(path);
+    final existing = snapshot.document;
+    if (existing != null) return existing;
+    final seeded = EditorSessionController.seedDocumentForPath(path);
+    final relativePath = snapshot.resourceId;
+    final receipt = await saveDocumentsAtomically(
+      <DocumentState>[
+        DocumentState(
+          documentId: relativePath,
+          text: seeded.text,
+          revision: 0,
+          encoding: seeded.encoding,
+          workspaceRevision: snapshot.workspaceRevision,
+          baseDocumentRevision: 0,
+        ),
+      ],
+      expectedWorkspaceRevision: snapshot.workspaceRevision,
+      expectedDocumentRevisions: <String, int>{relativePath: 0},
+    );
+    final revision = receipt.documentRevisions[relativePath];
+    if (revision == null) {
+      throw const VityodWorkspaceStoreFailure('invalid_commit_receipt');
+    }
+    return DocumentState(
+      documentId: relativePath,
+      text: seeded.text,
+      revision: revision,
+      encoding: seeded.encoding,
+      workspaceRevision: receipt.workspaceRevision,
+      baseDocumentRevision: revision,
+    );
+  }
+
+  /// Reads a document through the workspace owner without creating seeded
+  /// content when the requested file does not exist.
+  @override
+  Future<DocumentState?> readExistingDocument(String path) async {
+    return (await readWorkspaceSnapshot(path)).document;
+  }
+
+  @override
+  Future<WorkspaceDocumentOperationSnapshot> readWorkspaceSnapshot(
+    String path,
+  ) async {
     final relativePath = _relativePath(path);
-    try {
-      final response = await _client.request(
-        method: 'workspace.read',
-        idempotencyKey: _nextKey('read'),
-        workspaceId: workspaceId,
-        params: <String, Object?>{'relativePath': relativePath},
-      );
-      _throwIfError(response);
-      final contents = response.params['contents'];
-      final documentRevision = response.params['documentRevision'];
+    final response = await _client.request(
+      method: 'workspace.read',
+      idempotencyKey: _nextKey('read'),
+      workspaceId: workspaceId,
+      params: <String, Object?>{'relativePath': relativePath},
+    );
+    if (response.method.endsWith('.error')) {
+      final code = response.params['errorCode'];
       final workspaceRevision = response.params['workspaceRevision'];
-      final encoding = response.params['encoding'];
-      if (contents is! String ||
-          documentRevision is! int ||
-          workspaceRevision is! int) {
-        throw const VityodWorkspaceStoreFailure('invalid_workspace_snapshot');
+      if (code == 'document_missing' && workspaceRevision is int) {
+        final context = response.params['context'];
+        final hostResourceId = context is Map ? context['relativePath'] : null;
+        if (hostResourceId is! String || hostResourceId != relativePath) {
+          throw const VityodWorkspaceStoreFailure('invalid_workspace_snapshot');
+        }
+        return WorkspaceDocumentOperationSnapshot(
+          resourceId: hostResourceId,
+          workspaceRevision: workspaceRevision,
+          document: null,
+        );
       }
-      _documentRevisions[relativePath] = documentRevision;
-      _workspaceRevision = workspaceRevision;
-      return DocumentState(
-        documentId: relativePath,
+      throw VityodWorkspaceStoreFailure(
+        code is String ? code : 'workspace_service_error',
+      );
+    }
+    final contents = response.params['contents'];
+    final documentRevision = response.params['documentRevision'];
+    final workspaceRevision = response.params['workspaceRevision'];
+    final canonicalResourceId = response.params['relativePath'];
+    final encoding = response.params['encoding'];
+    if (contents is! String ||
+        documentRevision is! int ||
+        workspaceRevision is! int ||
+        canonicalResourceId is! String ||
+        canonicalResourceId != relativePath) {
+      throw const VityodWorkspaceStoreFailure('invalid_workspace_snapshot');
+    }
+    return WorkspaceDocumentOperationSnapshot(
+      resourceId: canonicalResourceId,
+      workspaceRevision: workspaceRevision,
+      document: DocumentState(
+        documentId: canonicalResourceId,
         text: contents,
         revision: documentRevision,
+        baseDocumentRevision: documentRevision,
+        workspaceRevision: workspaceRevision,
         encoding: encoding is String
             ? DocumentEncoding.fromWireValue(encoding)
             : null,
-      );
-    } on VityodWorkspaceStoreFailure catch (error) {
-      if (error.code != 'document_missing') rethrow;
-      final seeded = EditorSessionController.seedDocumentForPath(path);
-      await saveDocument(seeded);
-      return seeded;
-    }
+      ),
+    );
   }
 
   @override
   Future<void> saveDocument(DocumentState document) async {
-    await saveDocumentsAtomically(<DocumentState>[document]);
+    final relativePath = _relativePath(document.documentId);
+    final workspaceRevision = document.workspaceRevision;
+    if (workspaceRevision == null) {
+      final snapshot = await readWorkspaceSnapshot(document.documentId);
+      if (snapshot.document != null) {
+        throw const VityodWorkspaceStoreFailure('document_snapshot_required');
+      }
+      await saveDocumentsAtomically(
+        <DocumentState>[
+          DocumentState(
+            documentId: relativePath,
+            text: document.text,
+            revision: document.revision,
+            encoding: document.encoding,
+            baseDocumentRevision: 0,
+            workspaceRevision: snapshot.workspaceRevision,
+          ),
+        ],
+        expectedWorkspaceRevision: snapshot.workspaceRevision,
+        expectedDocumentRevisions: <String, int>{relativePath: 0},
+      );
+      return;
+    }
+    await saveDocumentsAtomically(
+      <DocumentState>[document],
+      expectedWorkspaceRevision: workspaceRevision,
+      expectedDocumentRevisions: <String, int>{
+        document.documentId: document.baseDocumentRevision,
+      },
+    );
   }
 
   @override
-  Future<Map<String, int>> saveDocumentsAtomically(
-    Iterable<DocumentState> documents,
-  ) async {
+  Future<WorkspaceDocumentCommitReceipt> saveDocumentsAtomically(
+    Iterable<DocumentState> documents, {
+    required int expectedWorkspaceRevision,
+    required Map<String, int> expectedDocumentRevisions,
+  }) async {
     final pending = documents.toList(growable: false);
-    if (pending.isEmpty) return const <String, int>{};
+    if (pending.isEmpty) {
+      throw const VityodWorkspaceStoreFailure('empty_workspace_transaction');
+    }
     final seen = <String>{};
     final changes = <Map<String, Object?>>[];
     for (final document in pending) {
@@ -111,9 +202,15 @@ final class VityodWorkspaceDocumentStore
       if (!seen.add(relativePath)) {
         throw const VityodWorkspaceStoreFailure('duplicate_document_change');
       }
+      final expectedRevision = expectedDocumentRevisions[document.documentId];
+      if (expectedRevision == null || expectedRevision < 0) {
+        throw const VityodWorkspaceStoreFailure(
+          'invalid_expected_document_revision',
+        );
+      }
       changes.add(<String, Object?>{
         'relativePath': relativePath,
-        'expectedDocumentRevision': _documentRevisions[relativePath] ?? 0,
+        'expectedDocumentRevision': expectedRevision,
         'contents': document.text,
         if (document.encoding != null) 'encoding': document.encoding!.wireValue,
       });
@@ -123,7 +220,7 @@ final class VityodWorkspaceDocumentStore
       idempotencyKey: _nextKey('commit'),
       workspaceId: workspaceId,
       params: <String, Object?>{
-        'expectedWorkspaceRevision': _workspaceRevision,
+        'expectedWorkspaceRevision': expectedWorkspaceRevision,
         'changes': changes,
       },
     );
@@ -141,24 +238,26 @@ final class VityodWorkspaceDocumentStore
       }
       committed[relativePath] = documentRevision;
     }
-    _workspaceRevision = workspaceRevision;
-    _documentRevisions.addAll(committed);
-    return Map<String, int>.unmodifiable(committed);
+    return WorkspaceDocumentCommitReceipt(
+      workspaceRevision: workspaceRevision,
+      documentRevisions: committed,
+    );
   }
 
   @override
   Future<bool> deleteDocument(String path) async {
     final relativePath = _relativePath(path);
-    final revision = _documentRevisions[relativePath];
-    if (revision == null && !await documentExists(relativePath)) return false;
+    final snapshot = await readWorkspaceSnapshot(path);
+    final document = snapshot.document;
+    if (document == null) return false;
     final response = await _client.request(
       method: 'workspace.delete',
       idempotencyKey: _nextKey('delete'),
       workspaceId: workspaceId,
       params: <String, Object?>{
         'relativePath': relativePath,
-        'expectedWorkspaceRevision': _workspaceRevision,
-        'expectedDocumentRevision': _documentRevisions[relativePath],
+        'expectedWorkspaceRevision': snapshot.workspaceRevision,
+        'expectedDocumentRevision': document.revision,
       },
     );
     _throwIfError(response);
@@ -167,34 +266,12 @@ final class VityodWorkspaceDocumentStore
     if (deleted is! bool || workspaceRevision is! int) {
       throw const VityodWorkspaceStoreFailure('invalid_delete_receipt');
     }
-    _workspaceRevision = workspaceRevision;
-    if (deleted) _documentRevisions.remove(relativePath);
     return deleted;
   }
 
   @override
   Future<bool> documentExists(String path) async {
-    final relativePath = _relativePath(path);
-    try {
-      final response = await _client.request(
-        method: 'workspace.read',
-        idempotencyKey: _nextKey('exists'),
-        workspaceId: workspaceId,
-        params: <String, Object?>{'relativePath': relativePath},
-      );
-      _throwIfError(response);
-      final documentRevision = response.params['documentRevision'];
-      final workspaceRevision = response.params['workspaceRevision'];
-      if (documentRevision is! int || workspaceRevision is! int) {
-        throw const VityodWorkspaceStoreFailure('invalid_workspace_snapshot');
-      }
-      _documentRevisions[relativePath] = documentRevision;
-      _workspaceRevision = workspaceRevision;
-      return true;
-    } on VityodWorkspaceStoreFailure catch (error) {
-      if (error.code == 'document_missing') return false;
-      rethrow;
-    }
+    return (await readWorkspaceSnapshot(path)).document != null;
   }
 
   @override
@@ -212,6 +289,9 @@ final class VityodWorkspaceDocumentStore
   String _relativePath(String path) {
     final root = workspaceRoot;
     final normalizedPath = path.replaceAll(r'\', '/');
+    if (normalizedPath.split('/').contains('..')) {
+      throw const VityodWorkspaceStoreFailure('workspace_root_escape');
+    }
     if (root == null) return normalizedPath;
     final normalizedRoot = root
         .replaceAll(r'\', '/')
@@ -227,7 +307,7 @@ final class VityodWorkspaceDocumentStore
     final absolute =
         normalizedPath.startsWith('/') ||
         RegExp(r'^[A-Za-z]:/').hasMatch(normalizedPath);
-    if (absolute || normalizedPath.split('/').contains('..')) {
+    if (absolute) {
       throw const VityodWorkspaceStoreFailure('workspace_root_escape');
     }
     return normalizedPath;
@@ -235,6 +315,10 @@ final class VityodWorkspaceDocumentStore
 
   String _nextKey(String operation) =>
       'workspace-$operation-${++_sequence}-${_client.clientInstanceId}';
+
+  /// Resolves an absolute path beneath this workspace to its wire path.
+  @override
+  String relativeDocumentPath(String path) => _relativePath(path);
 }
 
 final class VityodWorkspaceStoreFailure implements Exception {

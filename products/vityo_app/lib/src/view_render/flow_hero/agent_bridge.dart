@@ -8,12 +8,20 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 
 import '../../ide/agent_client/agent_client_models.dart';
 import '../../ide/agent_client/agent_client_registry.dart';
 import '../../ide/local_service/vityod_client.dart';
+import '../../ide/workspace/workspace_document_store_io.dart';
+import 'agent_operations.dart';
+import 'engine/machine.dart';
 
 enum AgentLinkMode { demo, connecting, live, failed }
+
+const flowHeroAgentClientPolicy = AgentClientPolicy(
+  allowedExtensions: <String>{VityoCapability.workspaceChangeProposal},
+);
 
 class AgentBridge extends ChangeNotifier {
   static const String agentId = 'vityo-coding-agent';
@@ -33,11 +41,28 @@ class AgentBridge extends ChangeNotifier {
 
   VityodClient? _client;
   AgentClientRegistry? _registry;
+  FlowHeroAgentOperationPort? _operationPort;
   AgentClientSession? _session;
   StreamSubscription<AgentSessionUpdate>? _updates;
+  StreamSubscription<AgentPermissionRequest>? _permissionUpdates;
+  StreamSubscription<FlowHeroWorkspaceChangeReview>? _proposalUpdates;
+  StreamSubscription<String>? _proposalResolutions;
+  final List<AgentPermissionRequest> _pendingPermissions =
+      <AgentPermissionRequest>[];
+  final List<FlowHeroWorkspaceChangeReview> _pendingWorkspaceReviews =
+      <FlowHeroWorkspaceChangeReview>[];
   bool _attachStarted = false;
 
+  List<AgentPermissionRequest> get pendingPermissions =>
+      List<AgentPermissionRequest>.unmodifiable(_pendingPermissions);
+
+  List<FlowHeroWorkspaceChangeReview> get pendingWorkspaceReviews =>
+      List<FlowHeroWorkspaceChangeReview>.unmodifiable(
+        _pendingWorkspaceReviews,
+      );
+
   Future<void> attach({
+    required WorkbenchController engine,
     required void Function(String text) onText,
     required void Function(String text) onReceipt,
   }) async {
@@ -60,6 +85,53 @@ class AgentBridge extends ChangeNotifier {
         notifyListeners();
         return;
       }
+      FlowHeroAgentOperationPort? operationPort;
+      try {
+        final scope = await _client!.request(
+          method: 'fs.scope.open',
+          idempotencyKey:
+              'flow-hero-fs-${DateTime.now().microsecondsSinceEpoch}',
+          params: <String, Object?>{
+            'scopeId': 'flow-hero',
+            'rootPath': workspaceDir,
+          },
+        );
+        if (scope.method.endsWith('.error')) {
+          throw StateError('workspace scope could not be opened');
+        }
+        final store = VityodWorkspaceDocumentStore(
+          client: _client!,
+          workspaceId: 'flow-hero',
+          workspaceRoot: workspaceDir,
+        );
+        await store.open();
+        await engine.attachWorkspaceDocumentStore(store);
+        operationPort = FlowHeroAgentOperationPort(
+          engine: engine,
+          documentStore: store,
+          client: _client!,
+          workspaceId: 'flow-hero',
+          workspaceRoot: workspaceDir,
+        );
+        _operationPort = operationPort;
+        _proposalUpdates = operationPort.proposalReviews.listen((review) {
+          _pendingWorkspaceReviews.removeWhere(
+            (current) => current.reviewId == review.reviewId,
+          );
+          _pendingWorkspaceReviews.add(review);
+          notifyListeners();
+        });
+        _proposalResolutions = operationPort.resolvedProposalReviews.listen((
+          id,
+        ) {
+          _pendingWorkspaceReviews.removeWhere(
+            (review) => review.reviewId == id,
+          );
+          notifyListeners();
+        });
+      } on Object {
+        // No file or terminal capability is advertised without live owners.
+      }
       _registry = AgentClientRegistry(
         descriptors: <String, AgentLaunchDescriptor>{
           agentId: AgentLaunchDescriptor(
@@ -74,32 +146,18 @@ class AgentBridge extends ChangeNotifier {
           ),
         },
         client: _client!,
+        operationPort: operationPort,
+        policy: flowHeroAgentClientPolicy,
       );
+      _permissionUpdates = _registry!.permissionRequests.listen((permission) {
+        _pendingPermissions.removeWhere((item) => item.id == permission.id);
+        _pendingPermissions.add(permission);
+        notifyListeners();
+      });
       // A crashed client leaves a stale connection that blocks a fresh open;
       // close it first. Session persistence in the daemon is idempotent.
       try {
         await _registry!.disconnect(agentId);
-      } catch (_) {}
-      // File scope + workspace projection for later tool calls; session.new
-      // itself only needs the capability-negotiated connection above, so
-      // these stay best-effort.
-      try {
-        await _client!.request(
-          method: 'fs.scope.open',
-          idempotencyKey:
-              'flow-hero-fs-${DateTime.now().microsecondsSinceEpoch}',
-          params: const <String, Object?>{
-            'scopeId': 'flow-hero',
-            'rootPath': workspaceDir,
-          },
-        );
-        await _client!.request(
-          method: 'workspace.open',
-          idempotencyKey:
-              'flow-hero-ws-${DateTime.now().microsecondsSinceEpoch}',
-          workspaceId: 'flow-hero',
-          params: const <String, Object?>{'rootPath': workspaceDir},
-        );
       } catch (_) {}
       statusLine = '拉起 coding agent…';
       notifyListeners();
@@ -133,9 +191,28 @@ class AgentBridge extends ChangeNotifier {
     await session.prompt(text);
   }
 
+  Future<void> decidePermission(
+    String permissionId,
+    AgentPermissionDecision decision,
+  ) async {
+    await _registry?.resolvePermission(permissionId, decision);
+    _pendingPermissions.removeWhere((item) => item.id == permissionId);
+    notifyListeners();
+  }
+
+  void decideWorkspaceProposal(String reviewId, {required bool apply}) {
+    _operationPort?.decideWorkspaceProposal(reviewId, apply: apply);
+  }
+
   @override
   void dispose() {
     unawaited(_updates?.cancel());
+    unawaited(_permissionUpdates?.cancel());
+    unawaited(_proposalUpdates?.cancel());
+    unawaited(_proposalResolutions?.cancel());
+    _pendingPermissions.clear();
+    _pendingWorkspaceReviews.clear();
+    unawaited(_operationPort?.close());
     unawaited(_registry?.close());
     super.dispose();
   }

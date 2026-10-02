@@ -63,6 +63,7 @@ class WorkspaceSearchIndexDocument {
     required this.documentId,
     required this.text,
     required this.revision,
+    required this.workspaceRevision,
     required this.lineCount,
     required this.byteLength,
   });
@@ -72,6 +73,7 @@ class WorkspaceSearchIndexDocument {
       documentId: document.documentId,
       text: document.text,
       revision: document.revision,
+      workspaceRevision: document.workspaceRevision,
       lineCount: _countWorkspaceSearchLines(document.text),
       byteLength: document.text.length,
     );
@@ -80,6 +82,7 @@ class WorkspaceSearchIndexDocument {
   final String documentId;
   final String text;
   final int revision;
+  final int? workspaceRevision;
   final int lineCount;
   final int byteLength;
 
@@ -87,6 +90,7 @@ class WorkspaceSearchIndexDocument {
     return <String, Object?>{
       'documentId': documentId,
       'revision': revision,
+      if (workspaceRevision != null) 'workspaceRevision': workspaceRevision,
       'lineCount': lineCount,
       'byteLength': byteLength,
     };
@@ -97,6 +101,8 @@ class WorkspaceSearchIndexDocument {
       documentId: documentId,
       text: text,
       revision: revision,
+      workspaceRevision: workspaceRevision,
+      baseDocumentRevision: revision,
     );
   }
 }
@@ -1349,11 +1355,13 @@ class WorkspaceReplaceResult {
     required this.documents,
     this.failures = const <WorkspaceSearchFailure>[],
     this.truncated = false,
+    this.workspaceRevision,
   });
 
   final List<WorkspaceReplaceDocumentResult> documents;
   final List<WorkspaceSearchFailure> failures;
   final bool truncated;
+  final int? workspaceRevision;
 
   int get replacementCount => documents.fold<int>(
     0,
@@ -1368,6 +1376,7 @@ class WorkspaceReplacePreviewDocument {
     required this.afterText,
     required this.replacementCount,
     required this.revision,
+    required this.workspaceRevision,
   });
 
   final String documentId;
@@ -1375,6 +1384,7 @@ class WorkspaceReplacePreviewDocument {
   final String afterText;
   final int replacementCount;
   final int revision;
+  final int workspaceRevision;
 
   bool get changed => beforeText != afterText;
 }
@@ -1830,6 +1840,7 @@ class WorkspaceSearchService {
     final failures = <WorkspaceSearchFailure>[];
     var truncated = false;
     var replacementCount = 0;
+    int? workspaceRevisionAfterCommit;
 
     for (final documentId in _uniqueDocumentIds(documentIds)) {
       if (replacementCount >= maxReplacements) {
@@ -1844,6 +1855,16 @@ class WorkspaceSearchService {
           WorkspaceSearchFailure(
             documentId: documentId,
             message: error.toString(),
+          ),
+        );
+        continue;
+      }
+      final workspaceRevision = document.workspaceRevision;
+      if (workspaceRevision == null) {
+        failures.add(
+          WorkspaceSearchFailure(
+            documentId: documentId,
+            message: 'document_snapshot_required',
           ),
         );
         continue;
@@ -1874,9 +1895,35 @@ class WorkspaceSearchService {
           replacement,
         ),
         revision: document.revision + 1,
+        workspaceRevision: workspaceRevision,
+        baseDocumentRevision: document.revision,
       );
       try {
-        await documentStore.saveDocument(nextDocument);
+        final store = documentStore;
+        if (store is! AtomicWorkspaceDocumentStore) {
+          throw StateError('Workspace edits require an atomic document store.');
+        }
+        final receipt = await store.saveDocumentsAtomically(
+          <DocumentState>[nextDocument],
+          expectedWorkspaceRevision: workspaceRevision,
+          expectedDocumentRevisions: <String, int>{
+            document.documentId: document.revision,
+          },
+        );
+        workspaceRevisionAfterCommit = receipt.workspaceRevision;
+        final committedRevision =
+            receipt.documentRevisions[document.documentId];
+        if (committedRevision == null) {
+          throw StateError('Workspace omitted a committed document revision.');
+        }
+        replacementCount += effectiveMatches.length;
+        documents.add(
+          WorkspaceReplaceDocumentResult(
+            documentId: document.documentId,
+            replacementCount: effectiveMatches.length,
+            revision: committedRevision,
+          ),
+        );
       } on Object catch (error) {
         failures.add(
           WorkspaceSearchFailure(
@@ -1886,14 +1933,6 @@ class WorkspaceSearchService {
         );
         continue;
       }
-      replacementCount += effectiveMatches.length;
-      documents.add(
-        WorkspaceReplaceDocumentResult(
-          documentId: document.documentId,
-          replacementCount: effectiveMatches.length,
-          revision: nextDocument.revision,
-        ),
-      );
       if (searchResult.truncated) {
         truncated = true;
         break;
@@ -1904,6 +1943,7 @@ class WorkspaceSearchService {
       documents: List.unmodifiable(documents),
       failures: List.unmodifiable(failures),
       truncated: truncated,
+      workspaceRevision: workspaceRevisionAfterCommit,
     );
   }
 
@@ -1943,6 +1983,16 @@ class WorkspaceSearchService {
         );
         continue;
       }
+      final workspaceRevision = document.workspaceRevision;
+      if (workspaceRevision == null) {
+        failures.add(
+          WorkspaceSearchFailure(
+            documentId: documentId,
+            message: 'document_snapshot_required',
+          ),
+        );
+        continue;
+      }
       final searchResult = _searchDocument(
         document,
         query: query,
@@ -1973,12 +2023,23 @@ class WorkspaceSearchService {
           ),
           replacementCount: effectiveMatches.length,
           revision: document.revision,
+          workspaceRevision: workspaceRevision,
         ),
       );
       if (searchResult.truncated) {
         truncated = true;
         break;
       }
+    }
+
+    if (documents.map((document) => document.workspaceRevision).toSet().length >
+        1) {
+      failures.add(
+        const WorkspaceSearchFailure(
+          documentId: '',
+          message: 'workspace_revision_conflict',
+        ),
+      );
     }
 
     return WorkspaceReplacePreview(
@@ -2010,6 +2071,7 @@ class WorkspaceSearchService {
         continue;
       }
       if (current.revision != previewDocument.revision ||
+          current.workspaceRevision != previewDocument.workspaceRevision ||
           current.text != previewDocument.beforeText) {
         failures.add(
           WorkspaceSearchFailure(
@@ -2024,22 +2086,40 @@ class WorkspaceSearchService {
         documentId: previewDocument.documentId,
         text: previewDocument.afterText,
         revision: current.revision + 1,
+        workspaceRevision: previewDocument.workspaceRevision,
+        baseDocumentRevision: previewDocument.revision,
       );
       pending.add((preview: previewDocument, next: nextDocument));
     }
 
+    int? committedWorkspaceRevision;
     if (failures.isEmpty && pending.isNotEmpty) {
       try {
-        await saveWorkspaceDocuments(
-          documentStore,
+        final store = documentStore;
+        if (store is! AtomicWorkspaceDocumentStore) {
+          throw StateError('Workspace edits require an atomic document store.');
+        }
+        final receipt = await store.saveDocumentsAtomically(
           pending.map((entry) => entry.next),
+          expectedWorkspaceRevision: pending.first.preview.workspaceRevision,
+          expectedDocumentRevisions: <String, int>{
+            for (final entry in pending)
+              entry.preview.documentId: entry.preview.revision,
+          },
         );
+        committedWorkspaceRevision = receipt.workspaceRevision;
         for (final entry in pending) {
+          final revision = receipt.documentRevisions[entry.preview.documentId];
+          if (revision == null) {
+            throw StateError(
+              'Workspace omitted a committed document revision.',
+            );
+          }
           documents.add(
             WorkspaceReplaceDocumentResult(
               documentId: entry.next.documentId,
               replacementCount: entry.preview.replacementCount,
-              revision: entry.next.revision,
+              revision: revision,
             ),
           );
         }
@@ -2059,6 +2139,7 @@ class WorkspaceSearchService {
       documents: List.unmodifiable(documents),
       failures: List.unmodifiable(failures),
       truncated: preview.truncated,
+      workspaceRevision: committedWorkspaceRevision,
     );
   }
 }

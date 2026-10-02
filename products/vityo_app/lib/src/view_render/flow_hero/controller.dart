@@ -45,7 +45,13 @@ class FlowHeroController extends ChangeNotifier {
   FlowHeroController() {
     engine.addListener(notifyListeners);
     bridge.addListener(notifyListeners);
-    unawaited(bridge.attach(onText: _agentText, onReceipt: _agentReceipt));
+    unawaited(
+      bridge.attach(
+        engine: engine,
+        onText: _agentText,
+        onReceipt: _agentReceipt,
+      ),
+    );
     _seed();
   }
 
@@ -59,11 +65,40 @@ class FlowHeroController extends ChangeNotifier {
 
   // ── graph ────────────────────────────────────────────────────
   final List<HeroNode> nodes = <HeroNode>[
-    HeroNode(id: 'fetch', name: 'fetch_users', sig: 'api: Endpoint → List[User]', pos: const Offset(70, 110), status: NodeStatus.done),
-    HeroNode(id: 'valid', name: 'validate', sig: 's: Schema → Rule', pos: const Offset(340, 70), status: NodeStatus.done),
-    HeroNode(id: 'dedup', name: 'dedupe', sig: 'key: Str → Rule', pos: const Offset(340, 230), status: NodeStatus.running),
-    HeroNode(id: 'emit', name: 'emit', sig: 'to: warehouse', pos: const Offset(620, 150), status: NodeStatus.running),
-    HeroNode(id: 'state', name: 'sync', sig: 'state · idle → running', pos: const Offset(620, 310)),
+    HeroNode(
+      id: 'fetch',
+      name: 'fetch_users',
+      sig: 'api: Endpoint → List[User]',
+      pos: const Offset(70, 110),
+      status: NodeStatus.done,
+    ),
+    HeroNode(
+      id: 'valid',
+      name: 'validate',
+      sig: 's: Schema → Rule',
+      pos: const Offset(340, 70),
+      status: NodeStatus.done,
+    ),
+    HeroNode(
+      id: 'dedup',
+      name: 'dedupe',
+      sig: 'key: Str → Rule',
+      pos: const Offset(340, 230),
+      status: NodeStatus.running,
+    ),
+    HeroNode(
+      id: 'emit',
+      name: 'emit',
+      sig: 'to: warehouse',
+      pos: const Offset(620, 150),
+      status: NodeStatus.running,
+    ),
+    HeroNode(
+      id: 'state',
+      name: 'sync',
+      sig: 'state · idle → running',
+      pos: const Offset(620, 310),
+    ),
   ];
   final List<HeroEdge> edges = <HeroEdge>[
     const HeroEdge('fetch', 'valid'),
@@ -171,9 +206,11 @@ class FlowHeroController extends ChangeNotifier {
     treeVisible = false;
     editorMode = true; // opening a file opens the editor
     if (path != null) {
-      unawaited(engine.openPath(path).then((bool ok) {
-        if (!ok) postAgentNote('打不开 $name —— 不是可读的 UTF-8 文本。');
-      }));
+      unawaited(
+        engine.openPath(path).then((bool ok) {
+          if (!ok) postAgentNote('打不开 $name —— 不是可读的 UTF-8 文本。');
+        }),
+      );
     }
     notifyListeners();
   }
@@ -224,21 +261,27 @@ class FlowHeroController extends ChangeNotifier {
       ChatMsg('AGENT', '收到，写入中 —— 看画布。'),
     ]);
     Timer(const Duration(milliseconds: 2600), () {
-      nodes.add(HeroNode(
-        id: 'enrich',
-        name: 'enrich',
-        sig: 'u: User → User+Profile',
-        pos: const Offset(470, 330),
-        status: NodeStatus.running,
-      ));
+      nodes.add(
+        HeroNode(
+          id: 'enrich',
+          name: 'enrich',
+          sig: 'u: User → User+Profile',
+          pos: const Offset(470, 330),
+          status: NodeStatus.running,
+        ),
+      );
       edges.add(const HeroEdge('dedup', 'enrich'));
       edges.add(const HeroEdge('enrich', 'emit'));
       flashingId = 'enrich'; // 写代码时代码框不弹，节点闪一下
-      messages.add(const ChatMsg('AGENT', '已写入 fn enrich，接入 dedupe → emit 之间。'));
+      messages.add(
+        const ChatMsg('AGENT', '已写入 fn enrich，接入 dedupe → emit 之间。'),
+      );
       notifyListeners();
     });
     Timer(const Duration(milliseconds: 4200), () {
-      messages.add(const ChatMsg('AGENT', '回执 · +9 行 user_sync.sty · 测试通过', receipt: true));
+      messages.add(
+        const ChatMsg('AGENT', '回执 · +9 行 user_sync.sty · 测试通过', receipt: true),
+      );
       notifyListeners();
     });
   }

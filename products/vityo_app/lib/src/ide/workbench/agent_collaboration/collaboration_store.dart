@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
-
 import '../../agent_client/agent_client.dart';
 import '../../workspace/workspace_change_set.dart';
 import '../../workspace/workspace_transaction_service.dart';
@@ -296,9 +294,6 @@ final class AgentCollaborationStore {
             }
             title = titleCandidate;
             status = _decodeStatus(update.payload['status']);
-            continue;
-          }
-          if (update.kind == VityoCapability.workspaceChangeProposal) {
             continue;
           }
           final sourceId = update.payload['id']?.toString() ?? '$index';

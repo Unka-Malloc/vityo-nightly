@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 mod acp;
 
 pub use acp::{
-    AcpConnectionSnapshot, AcpError, AcpEvent, AcpPermissionRequest, AcpPollResult, AcpRuntime,
-    AcpSessionSnapshot,
+    AcpClientCapabilities, AcpClientOperation, AcpConnectionSnapshot, AcpError, AcpEvent,
+    AcpPermissionRequest, AcpPollResult, AcpRuntime, AcpSessionSnapshot,
 };
 
 #[derive(Debug, Clone)]
@@ -263,6 +263,33 @@ pub struct AgentProcessLaunch {
     pub working_directory: PathBuf,
 }
 
+#[cfg(any(test, target_os = "linux"))]
+fn allowlisted_agent_environment(
+    entries: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    entries
+        .into_iter()
+        .filter(|(name, _)| {
+            name == std::ffi::OsStr::new("XDG_RUNTIME_DIR")
+                || name == std::ffi::OsStr::new("DBUS_SESSION_BUS_ADDRESS")
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn inherited_agent_environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    allowlisted_agent_environment(
+        ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]
+            .into_iter()
+            .filter_map(|name| std::env::var_os(name).map(|value| (name.into(), value))),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn inherited_agent_environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    Vec::new()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentPollResult {
     pub messages: Vec<Vec<u8>>,
@@ -318,6 +345,9 @@ impl SupervisedAgentRegistry {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        for (name, value) in inherited_agent_environment() {
+            command.env(name, value);
+        }
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -597,6 +627,21 @@ mod tests {
             host.authorize("session", "workspace", 4, "workspace.read"),
             Err(AuthorizationError::Revoked)
         );
+    }
+
+    #[test]
+    fn only_linux_session_bus_environment_names_are_forwarded() {
+        let forwarded = allowlisted_agent_environment([
+            ("XDG_RUNTIME_DIR".into(), "synthetic-runtime".into()),
+            ("DBUS_SESSION_BUS_ADDRESS".into(), "synthetic-bus".into()),
+            ("API_KEY".into(), "synthetic-secret".into()),
+            ("VITYO_PROVIDER_TOKEN".into(), "synthetic-secret".into()),
+        ]);
+        let names = forwarded
+            .into_iter()
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]);
     }
 
     #[test]

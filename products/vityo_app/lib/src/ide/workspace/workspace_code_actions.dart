@@ -193,7 +193,18 @@ class WorkspaceCodeActionsService {
       }
       changedDocuments[document.documentId] = document;
     }
-    await saveWorkspaceDocuments(documentStore, changedDocuments.values);
+    await saveWorkspaceDocuments(
+      documentStore,
+      changedDocuments.values,
+      expectedWorkspaceRevision: expectedWorkspaceRevisionForDocuments(
+        preview.persistedDocuments.values,
+      ),
+      expectedDocumentRevisions: <String, int>{
+        for (final documentId in changedDocuments.keys)
+          documentId:
+              preview.persistedDocuments[documentId]!.baseDocumentRevision,
+      },
+    );
 
     return WorkspaceCodeActionApplyResult(
       preview: preview.result,
@@ -214,14 +225,16 @@ class WorkspaceCodeActionsService {
     required WorkspaceCodeActionsQuery query,
     required Map<String, DocumentState> overlayDocuments,
   }) async {
-    final documents = await _loadIndexableDocuments(
+    final loaded = await _loadIndexableDocuments(
       filePaths: filePaths,
       query: query,
       overlayDocuments: overlayDocuments,
     );
+    final documents = loaded.analysisDocuments;
     if (documents.isEmpty) {
       return _WorkspaceCodeActionsPreview(
         documents: const <DocumentState>[],
+        persistedDocuments: const <String, DocumentState>{},
         candidates: const <_WorkspaceCodeActionCandidate>[],
         result: WorkspaceCodeActionsResult(
           query: query,
@@ -260,6 +273,7 @@ class WorkspaceCodeActionsService {
 
     return _WorkspaceCodeActionsPreview(
       documents: documents,
+      persistedDocuments: loaded.persistedDocuments,
       candidates: List<_WorkspaceCodeActionCandidate>.unmodifiable(
         limitedCandidates,
       ),
@@ -280,7 +294,7 @@ class WorkspaceCodeActionsService {
     );
   }
 
-  Future<List<DocumentState>> _loadIndexableDocuments({
+  Future<_WorkspaceCodeActionDocuments> _loadIndexableDocuments({
     required List<String> filePaths,
     required WorkspaceCodeActionsQuery query,
     required Map<String, DocumentState> overlayDocuments,
@@ -289,13 +303,25 @@ class WorkspaceCodeActionsService {
         .where((filePath) => _isIndexable(filePath, query))
         .toList(growable: false);
     final documents = <DocumentState>[];
+    final persistedDocuments = <String, DocumentState>{};
     for (final filePath in uniqueFilePaths) {
-      documents.add(
-        overlayDocuments[filePath] ??
-            await documentStore.loadDocument(filePath),
-      );
+      final persisted = await documentStore.loadDocument(filePath);
+      persistedDocuments[persisted.documentId] = persisted;
+      final overlay = overlayDocuments[filePath];
+      if (overlay != null &&
+          (overlay.baseDocumentRevision != persisted.revision ||
+              (overlay.workspaceRevision != null &&
+                  overlay.workspaceRevision != persisted.workspaceRevision))) {
+        throw StateError('document_revision_conflict');
+      }
+      documents.add(overlay ?? persisted);
     }
-    return documents;
+    return _WorkspaceCodeActionDocuments(
+      analysisDocuments: List<DocumentState>.unmodifiable(documents),
+      persistedDocuments: Map<String, DocumentState>.unmodifiable(
+        persistedDocuments,
+      ),
+    );
   }
 
   static List<_WorkspaceCodeActionCandidate> _buildCandidates({
@@ -508,13 +534,25 @@ class WorkspaceCodeActionsService {
 class _WorkspaceCodeActionsPreview {
   const _WorkspaceCodeActionsPreview({
     required this.documents,
+    required this.persistedDocuments,
     required this.candidates,
     required this.result,
   });
 
   final List<DocumentState> documents;
+  final Map<String, DocumentState> persistedDocuments;
   final List<_WorkspaceCodeActionCandidate> candidates;
   final WorkspaceCodeActionsResult result;
+}
+
+class _WorkspaceCodeActionDocuments {
+  const _WorkspaceCodeActionDocuments({
+    required this.analysisDocuments,
+    required this.persistedDocuments,
+  });
+
+  final List<DocumentState> analysisDocuments;
+  final Map<String, DocumentState> persistedDocuments;
 }
 
 class _WorkspaceCodeActionCandidate {

@@ -6,6 +6,7 @@ import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 import '../local_service/vityod_client.dart';
 import 'agent_client_models.dart';
+import 'agent_client_operations.dart';
 import 'agent_session_reducer.dart';
 
 /// Thin Flutter gateway and immutable projection for daemon-owned ACP state.
@@ -17,11 +18,13 @@ final class AgentClientRegistry {
   AgentClientRegistry({
     required Map<String, AgentLaunchDescriptor> descriptors,
     required VityodClient client,
+    AgentClientOperationPort? operationPort,
     AgentClientPolicy policy = const AgentClientPolicy(),
   }) : _descriptors = Map<String, AgentLaunchDescriptor>.unmodifiable(
          descriptors,
        ),
        _client = client,
+       _operationPort = operationPort,
        policy = _freezePolicy(policy),
        _permissionQueue = PermissionRequestQueue(
          maxItems: policy.maxPendingRequests,
@@ -47,6 +50,7 @@ final class AgentClientRegistry {
 
   final Map<String, AgentLaunchDescriptor> _descriptors;
   final VityodClient _client;
+  final AgentClientOperationPort? _operationPort;
   final Map<String, AgentConnectionSnapshot> _connections =
       <String, AgentConnectionSnapshot>{};
   final Map<String, Future<AgentConnectionSnapshot>> _connecting =
@@ -59,6 +63,10 @@ final class AgentClientRegistry {
       <String, _RecoveryRoute>{};
   final Map<String, AgentPermissionRequest> _pendingPermissions =
       <String, AgentPermissionRequest>{};
+  final Map<String, Future<void>> _activeClientOperations =
+      <String, Future<void>>{};
+  final Map<String, Map<String, Object?>> _clientOperationResponses =
+      <String, Map<String, Object?>>{};
   final PermissionRequestQueue _permissionQueue;
   final AgentClientPolicy policy;
   var _requestSequence = 0;
@@ -102,6 +110,9 @@ final class AgentClientRegistry {
         'workingDirectory': descriptor.workingDirectory,
         'allowedExtensions': policy.allowedExtensions.toList(growable: false),
         'maximumMessageBytes': policy.maxMessageBytes,
+        'clientCapabilities':
+            (_operationPort?.capabilities ?? AgentClientOperationCapabilities())
+                .toJson(),
       },
       deadline: policy.requestTimeout,
     );
@@ -297,6 +308,12 @@ final class AgentClientRegistry {
       (_, permission) => permission.agentId == agentId,
     );
     _permissionQueue.removeWhere((permission) => permission.agentId == agentId);
+    for (final session
+        in _sessions.values
+            .where((session) => session.agentId == agentId)
+            .toList(growable: false)) {
+      await session._close();
+    }
     return AgentShutdownReceipt(
       agentId: agentId,
       terminated: response.params['terminated'] == true,
@@ -414,6 +431,7 @@ final class AgentClientRegistry {
     required String method,
     required Map<String, Object?> params,
     required Duration deadline,
+    String? idempotencyKey,
   }) async {
     if (!_client.state.canDispatch) {
       throw AgentClientFailure(
@@ -423,7 +441,7 @@ final class AgentClientRegistry {
     }
     final response = await _client.request(
       method: method,
-      idempotencyKey: 'agent-${++_requestSequence}-$method',
+      idempotencyKey: idempotencyKey ?? 'agent-${++_requestSequence}-$method',
       params: params,
       deadline: deadline,
     );
@@ -507,6 +525,23 @@ final class AgentClientRegistry {
         ),
       );
     }
+    final clientOperations = response.params['clientOperations'];
+    if (clientOperations is! List<Object?>) {
+      throw AgentClientFailure(
+        'malformed_message',
+        'vityod returned an invalid Agent client operation projection',
+      );
+    }
+    for (final raw in clientOperations) {
+      final operation = AgentClientOperation.fromJson(raw);
+      if (operation.sessionId != session.id) {
+        throw AgentClientFailure(
+          'malformed_message',
+          'Agent client operation belongs to a different session',
+        );
+      }
+      _dispatchClientOperation(operation);
+    }
     final permissions = response.params['permissions'];
     if (permissions is! List<Object?>) {
       throw AgentClientFailure(
@@ -565,7 +600,106 @@ final class AgentClientRegistry {
     return null;
   }
 
+  void _dispatchClientOperation(AgentClientOperation operation) {
+    if (_activeClientOperations.containsKey(operation.operationId)) return;
+    if (_activeClientOperations.length >= policy.maxPendingRequests ||
+        (!_clientOperationResponses.containsKey(operation.operationId) &&
+            _clientOperationResponses.length >= policy.maxPendingRequests)) {
+      // The daemon retains unacknowledged operations, so a later poll retries
+      // them when a bounded response slot becomes available.
+      return;
+    }
+    final pending = _answerClientOperation(operation);
+    _activeClientOperations[operation.operationId] = pending;
+    unawaited(_retireClientOperation(operation.operationId, pending));
+  }
+
+  Future<void> _retireClientOperation(
+    String operationId,
+    Future<void> pending,
+  ) async {
+    try {
+      await pending;
+    } on Object {
+      // Polling must not create an unhandled future if transport teardown races
+      // an operation callback. The retained response is retried on a later poll.
+    } finally {
+      if (identical(_activeClientOperations[operationId], pending)) {
+        _activeClientOperations.remove(operationId);
+      }
+    }
+  }
+
+  Future<void> _answerClientOperation(AgentClientOperation operation) async {
+    final port = _operationPort;
+    if (!_clientOperationResponses.containsKey(operation.operationId)) {
+      late final Map<String, Object?> result;
+      if (port == null || !port.capabilities.supports(operation.kind)) {
+        result = const <String, Object?>{
+          'errorCode': 'operation_unavailable',
+          'message': 'The IDE operation owner is not connected.',
+        };
+      } else {
+        try {
+          result = await port.dispatch(operation);
+        } on AgentClientOperationFailure catch (failure) {
+          result = <String, Object?>{
+            'errorCode': failure.code,
+            'message': failure.message,
+            if (failure.data.isNotEmpty) 'data': failure.data,
+          };
+        } on Object {
+          result = const <String, Object?>{
+            'errorCode': 'operation_failed',
+            'message': 'The IDE could not complete the requested operation.',
+          };
+        }
+      }
+      _clientOperationResponses[operation.operationId] = result;
+    }
+    try {
+      await _request(
+        method: 'agent.acp.client_operation.respond',
+        params: <String, Object?>{
+          'sessionId': operation.sessionId,
+          'operationId': operation.operationId,
+          'response': _clientOperationResponses[operation.operationId]!,
+        },
+        idempotencyKey: 'agent-client-operation-${operation.operationId}',
+        deadline: policy.requestTimeout,
+      );
+      _clientOperationResponses.remove(operation.operationId);
+    } on Object catch (error) {
+      final failureCode = error is AgentClientFailure
+          ? error.code
+          : 'transport_failure';
+      final session = _sessions[operation.sessionId];
+      if (session != null) {
+        try {
+          await session._reducer.reduce(
+            AgentSessionUpdate(
+              sessionId: session.id,
+              kind: 'client_operation.delivery_failed',
+              payload: <String, Object?>{
+                'operationId': operation.operationId,
+                'failureCode': failureCode,
+              },
+            ),
+          );
+        } on Object {
+          // Session teardown can race an operation response delivery.
+        }
+      }
+    }
+  }
+
   Future<bool> _cancel(AgentClientSession session) async {
+    final operationPort = _operationPort;
+    if (operationPort is AgentClientOperationLifecycle) {
+      (operationPort as AgentClientOperationLifecycle).cancelSessionOperations(
+        session.id,
+      );
+    }
     final response = await _request(
       method: 'agent.acp.session.cancel',
       params: <String, Object?>{'sessionId': session.id},
@@ -600,6 +734,22 @@ final class AgentClientRegistry {
           'failureCode': failure.code,
         },
       ),
+    );
+  }
+
+  Future<void> _closeSessionOperations(String sessionId) async {
+    final operationPort = _operationPort;
+    if (operationPort is AgentClientOperationLifecycle) {
+      await (operationPort as AgentClientOperationLifecycle)
+          .closeSessionOperations(sessionId);
+    }
+    _sessions.remove(sessionId);
+    _recoveryRoutes.remove(sessionId);
+    _pendingPermissions.removeWhere(
+      (_, permission) => permission.sessionId == sessionId,
+    );
+    _permissionQueue.removeWhere(
+      (permission) => permission.sessionId == sessionId,
     );
   }
 
@@ -682,6 +832,7 @@ final class AgentClientSession {
   Future<void> _close() async {
     if (_closed) return;
     _closed = true;
+    await _registry._closeSessionOperations(id);
     await _reducer.close();
   }
 }

@@ -7,14 +7,20 @@ class DocumentState {
     required String text,
     required this.revision,
     this.encoding,
-  }) : _text = text;
+    this.workspaceRevision,
+    int? baseDocumentRevision,
+  }) : _text = text,
+       baseDocumentRevision = baseDocumentRevision ?? revision;
 
   DocumentState._fromTextBuffer({
     required this.documentId,
     required TextBufferSnapshot textBufferSnapshot,
     required this.revision,
     this.encoding,
-  }) : _text = null {
+    this.workspaceRevision,
+    int? baseDocumentRevision,
+  }) : _text = null,
+       baseDocumentRevision = baseDocumentRevision ?? revision {
     _snapshotCache[this] = textBufferSnapshot;
   }
 
@@ -23,12 +29,16 @@ class DocumentState {
     required TextBufferSnapshot textBufferSnapshot,
     required int revision,
     DocumentEncoding? encoding,
+    int? workspaceRevision,
+    int? baseDocumentRevision,
   }) {
     return DocumentState._fromTextBuffer(
       documentId: documentId,
       textBufferSnapshot: textBufferSnapshot,
       revision: revision,
       encoding: encoding,
+      workspaceRevision: workspaceRevision,
+      baseDocumentRevision: baseDocumentRevision,
     );
   }
 
@@ -39,6 +49,15 @@ class DocumentState {
   final String? _text;
   final int revision;
   final DocumentEncoding? encoding;
+
+  /// Document revision observed before the current in-memory edit sequence.
+  /// It remains stable while [revision] describes the projected result.
+  final int baseDocumentRevision;
+
+  /// Workspace-wide revision captured with this persisted document snapshot.
+  /// Null means the producer has not observed a workspace snapshot suitable
+  /// for an atomic workspace transaction.
+  final int? workspaceRevision;
 
   /// Materializes the complete source only for consumers that explicitly need
   /// it. Piece-table edits keep this lazy so viewport and input-window work do
@@ -164,6 +183,8 @@ class DocumentState {
       textBufferSnapshot: nextSnapshot,
       revision: revision + 1,
       encoding: encoding,
+      workspaceRevision: workspaceRevision,
+      baseDocumentRevision: baseDocumentRevision,
     );
   }
 }

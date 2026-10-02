@@ -262,6 +262,7 @@ void main() {
           afterText: 'value := 1\n',
           replacementCount: 1,
           revision: 1,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/lib.styio',
@@ -269,6 +270,7 @@ void main() {
           afterText: 'value := 2\n',
           replacementCount: 1,
           revision: 2,
+          workspaceRevision: 0,
         ),
       ],
     );

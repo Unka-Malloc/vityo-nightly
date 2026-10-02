@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use vityod_agent_host::{AcpError, AgentProcessLaunch, CapabilityGrant, PermissionDecision};
+use vityod_agent_host::{
+    AcpClientCapabilities, AcpError, AgentProcessLaunch, CapabilityGrant, PermissionDecision,
+};
 use vityod_kernel::{
     DurableDocumentChange, DurableFsTransactionBinding, DurableRenameDocument, DurableStateError,
     DurableStateStore,
@@ -1420,45 +1422,47 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                     );
                 }
             };
-            if durable_document.is_none()
-                && let Some(scope_id) = workspace_scope
-            {
-                let contents = match state.files.read(&scope_id, &relative_path) {
-                    Ok(contents) => contents,
+            if let Some(scope_id) = workspace_scope {
+                match state.files.read(&scope_id, &relative_path) {
+                    Ok(contents) if durable_document.is_none() => {
+                        if state
+                            .durable
+                            .import_document_if_missing(
+                                &durable_workspace_id,
+                                &relative_path,
+                                &contents,
+                                Some("utf-8"),
+                            )
+                            .is_err()
+                        {
+                            return error_response(
+                                request,
+                                "durable_state_unavailable",
+                                true,
+                                workspace_revision,
+                            );
+                        }
+                        durable_document = state
+                            .durable
+                            .read_document(&durable_workspace_id, &relative_path)
+                            .ok()
+                            .flatten();
+                    }
+                    Ok(_) | Err(FileServiceError::NotFound) if durable_document.is_some() => {}
+                    Ok(_) => {}
                     Err(FileServiceError::NotFound) => {
-                        return error_response(
+                        return error_response_with_context(
                             request,
                             "document_missing",
                             false,
                             workspace_revision,
+                            json!({"relativePath": relative_path}),
                         );
                     }
                     Err(error) => {
                         return file_error_response(request, error, workspace_revision);
                     }
-                };
-                if state
-                    .durable
-                    .import_document_if_missing(
-                        &durable_workspace_id,
-                        &relative_path,
-                        &contents,
-                        Some("utf-8"),
-                    )
-                    .is_err()
-                {
-                    return error_response(
-                        request,
-                        "durable_state_unavailable",
-                        true,
-                        workspace_revision,
-                    );
                 }
-                durable_document = state
-                    .durable
-                    .read_document(&durable_workspace_id, &relative_path)
-                    .ok()
-                    .flatten();
             }
             match durable_document {
                 Some(document) => match String::from_utf8(document.contents) {
@@ -1479,7 +1483,13 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                     }
                 },
                 None => {
-                    return error_response(request, "document_missing", false, workspace_revision);
+                    return error_response_with_context(
+                        request,
+                        "document_missing",
+                        false,
+                        workspace_revision,
+                        json!({"relativePath": relative_path}),
+                    );
                 }
             }
         }
@@ -2313,6 +2323,22 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 }
             }
         }
+        "pty.kill" => {
+            let Some(stream_id) = u32_param(&request, "streamId") else {
+                return error_response(request, "invalid_stream_id", false, workspace_revision);
+            };
+            match state.runtime.ptys.kill(stream_id) {
+                Ok(exit_code) => json!({"state": "killed", "exitCode": exit_code}),
+                Err(error) => {
+                    return error_response(
+                        request,
+                        pty_error_code(error),
+                        false,
+                        workspace_revision,
+                    );
+                }
+            }
+        }
         "dap.start" | "lsp.start" => {
             let kind = request.method.split('.').next().unwrap_or("protocol");
             let Some(process_id) = required_string_param(&request, "processId") else {
@@ -2460,6 +2486,33 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 .and_then(Value::as_u64)
                 .and_then(|value| usize::try_from(value).ok())
                 .unwrap_or(1024 * 1024);
+            let client_capabilities = AcpClientCapabilities {
+                read_text_file: request
+                    .params
+                    .get("clientCapabilities")
+                    .and_then(Value::as_object)
+                    .and_then(|capabilities| capabilities.get("fs"))
+                    .and_then(Value::as_object)
+                    .and_then(|filesystem| filesystem.get("readTextFile"))
+                    .and_then(Value::as_bool)
+                    == Some(true),
+                write_text_file: request
+                    .params
+                    .get("clientCapabilities")
+                    .and_then(Value::as_object)
+                    .and_then(|capabilities| capabilities.get("fs"))
+                    .and_then(Value::as_object)
+                    .and_then(|filesystem| filesystem.get("writeTextFile"))
+                    .and_then(Value::as_bool)
+                    == Some(true),
+                terminal: request
+                    .params
+                    .get("clientCapabilities")
+                    .and_then(Value::as_object)
+                    .and_then(|capabilities| capabilities.get("terminal"))
+                    .and_then(Value::as_bool)
+                    == Some(true),
+            };
             match state.runtime.acp_agents.connect(
                 AgentProcessLaunch {
                     agent_id,
@@ -2468,6 +2521,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                     working_directory: std::path::PathBuf::from(working_directory),
                 },
                 allowed_extensions,
+                client_capabilities,
                 maximum_message_bytes,
                 bounded_request_timeout(&request),
             ) {
@@ -2680,11 +2734,55 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                             "toolCallKind": permission.tool_call_kind,
                             "options": permission.options,
                         })).collect::<Vec<_>>(),
+                        "clientOperations": poll.client_operations.into_iter().map(|operation| json!({
+                            "operationId": operation.operation_id,
+                            "sessionId": operation.session_id,
+                            "method": operation.method,
+                            "params": operation.params,
+                        })).collect::<Vec<_>>(),
                         "promptResult": poll.prompt_result,
                         "processExitCode": poll.process_exit_code,
                         "connectionCapabilities": connection_capabilities,
                         "connectionGeneration": connection_generation,
                     })
+                }
+                Err(error) => {
+                    return error_response(
+                        request,
+                        acp_error_code(error),
+                        matches!(error, AcpError::TransportFailed),
+                        workspace_revision,
+                    );
+                }
+            }
+        }
+        "agent.acp.client_operation.respond" => {
+            let Some(session_id) = required_string_param(&request, "sessionId") else {
+                return error_response(request, "invalid_agent_session", false, workspace_revision);
+            };
+            let Some(operation_id) = required_string_param(&request, "operationId") else {
+                return error_response(
+                    request,
+                    "invalid_client_operation",
+                    false,
+                    workspace_revision,
+                );
+            };
+            let Some(response) = request.params.get("response").cloned() else {
+                return error_response(
+                    request,
+                    "invalid_client_operation_response",
+                    false,
+                    workspace_revision,
+                );
+            };
+            match state.runtime.acp_agents.respond_client_operation(
+                &session_id,
+                &operation_id,
+                response,
+            ) {
+                Ok(()) => {
+                    json!({"sessionId": session_id, "operationId": operation_id, "accepted": true})
                 }
                 Err(error) => {
                     return error_response(
@@ -4109,6 +4207,7 @@ fn acp_error_code(error: AcpError) -> &'static str {
         AcpError::StartFailed => "agent_start_failed",
         AcpError::UnknownAgent => "unknown_agent",
         AcpError::UnknownSession => "unknown_agent_session",
+        AcpError::UnknownClientOperation => "unknown_client_operation",
         AcpError::UnknownPermission => "unknown_permission",
         AcpError::PermissionAlreadyResolved => "permission_already_resolved",
         AcpError::UnsupportedProtocol => "unsupported_version",

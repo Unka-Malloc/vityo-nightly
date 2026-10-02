@@ -269,7 +269,28 @@ class WorkspaceRenameService {
       }
       changedDocuments[entry.key] = nextDocument;
     }
-    await saveWorkspaceDocuments(documentStore, changedDocuments.values);
+    final persistedDocuments = <String, DocumentState>{};
+    for (final documentId in changedDocuments.keys) {
+      final persisted = await documentStore.loadDocument(documentId);
+      final source = documentsById[documentId]!;
+      if (source.baseDocumentRevision != persisted.revision ||
+          (source.workspaceRevision != null &&
+              source.workspaceRevision != persisted.workspaceRevision)) {
+        throw StateError('document_revision_conflict');
+      }
+      persistedDocuments[documentId] = persisted;
+    }
+    await saveWorkspaceDocuments(
+      documentStore,
+      changedDocuments.values,
+      expectedWorkspaceRevision: expectedWorkspaceRevisionForDocuments(
+        persistedDocuments.values,
+      ),
+      expectedDocumentRevisions: <String, int>{
+        for (final documentId in changedDocuments.keys)
+          documentId: persistedDocuments[documentId]!.baseDocumentRevision,
+      },
+    );
 
     return WorkspaceRenameApplyResult(
       preview: preview,

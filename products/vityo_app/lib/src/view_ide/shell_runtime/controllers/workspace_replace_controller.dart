@@ -76,6 +76,10 @@ final class WorkspaceReplaceController extends ChangeNotifier {
     }
     final activePath = workspaceController.activeFilePath;
     WorkspaceReplacePreviewDocument? activePreviewDocument;
+    final appliedRevisions = <String, int>{
+      for (final document in result.documents)
+        document.documentId: document.revision,
+    };
     for (final document in preview.documents) {
       if (document.documentId == activePath &&
           result.documents.any(
@@ -90,7 +94,13 @@ final class WorkspaceReplaceController extends ChangeNotifier {
         DocumentState(
           documentId: activePreviewDocument.documentId,
           text: activePreviewDocument.afterText,
-          revision: activePreviewDocument.revision + 1,
+          revision:
+              appliedRevisions[activePreviewDocument.documentId] ??
+              activePreviewDocument.revision,
+          workspaceRevision: result.workspaceRevision,
+          baseDocumentRevision:
+              appliedRevisions[activePreviewDocument.documentId] ??
+              activePreviewDocument.revision,
         ),
       );
     }
@@ -125,6 +135,16 @@ final class WorkspaceReplaceController extends ChangeNotifier {
     for (final entry in byDocument.entries) {
       try {
         final document = await documentStore.loadDocument(entry.key);
+        final workspaceRevision = document.workspaceRevision;
+        if (workspaceRevision == null) {
+          failures.add(
+            WorkspaceSearchFailure(
+              documentId: entry.key,
+              message: 'document_snapshot_required',
+            ),
+          );
+          continue;
+        }
         final matches =
             entry.value
                 .where(
@@ -160,6 +180,7 @@ final class WorkspaceReplaceController extends ChangeNotifier {
             afterText: _replaceMatches(document.text, matches, replacement),
             replacementCount: matches.length,
             revision: document.revision,
+            workspaceRevision: workspaceRevision,
           ),
         );
       } on Object catch (error) {
@@ -186,11 +207,28 @@ final class WorkspaceReplaceController extends ChangeNotifier {
     AtomicWorkspaceDocumentStore store,
   ) async {
     final pending = <DocumentState>[];
+    final expectedDocumentRevisions = <String, int>{};
     final failures = <WorkspaceSearchFailure>[];
+    final expectedWorkspaceRevisions = preview.documents
+        .map((document) => document.workspaceRevision)
+        .toSet();
+    if (expectedWorkspaceRevisions.length != 1) {
+      return WorkspaceReplaceResult(
+        documents: const <WorkspaceReplaceDocumentResult>[],
+        failures: const <WorkspaceSearchFailure>[
+          WorkspaceSearchFailure(
+            documentId: '',
+            message: 'workspace_revision_conflict',
+          ),
+        ],
+        truncated: preview.truncated,
+      );
+    }
     for (final candidate in preview.documents) {
       try {
         final current = await documentStore.loadDocument(candidate.documentId);
         if (current.revision != candidate.revision ||
+            current.workspaceRevision != candidate.workspaceRevision ||
             current.text != candidate.beforeText) {
           failures.add(
             WorkspaceSearchFailure(
@@ -207,8 +245,11 @@ final class WorkspaceReplaceController extends ChangeNotifier {
             text: candidate.afterText,
             revision: current.revision + 1,
             encoding: current.encoding,
+            workspaceRevision: candidate.workspaceRevision,
+            baseDocumentRevision: candidate.revision,
           ),
         );
+        expectedDocumentRevisions[candidate.documentId] = current.revision;
       } on Object catch (error) {
         failures.add(
           WorkspaceSearchFailure(
@@ -226,7 +267,11 @@ final class WorkspaceReplaceController extends ChangeNotifier {
       );
     }
     try {
-      final revisions = await store.saveDocumentsAtomically(pending);
+      final receipt = await store.saveDocumentsAtomically(
+        pending,
+        expectedWorkspaceRevision: expectedWorkspaceRevisions.single,
+        expectedDocumentRevisions: expectedDocumentRevisions,
+      );
       return WorkspaceReplaceResult(
         documents: <WorkspaceReplaceDocumentResult>[
           for (final candidate in preview.documents)
@@ -234,10 +279,12 @@ final class WorkspaceReplaceController extends ChangeNotifier {
               documentId: candidate.documentId,
               replacementCount: candidate.replacementCount,
               revision:
-                  revisions[candidate.documentId] ?? candidate.revision + 1,
+                  receipt.documentRevisions[candidate.documentId] ??
+                  candidate.revision,
             ),
         ],
         truncated: preview.truncated,
+        workspaceRevision: receipt.workspaceRevision,
       );
     } on Object catch (error) {
       return WorkspaceReplaceResult(

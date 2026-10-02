@@ -7,6 +7,8 @@ use crate::{AgentProcessError, AgentProcessLaunch, SupervisedAgentRegistry};
 
 const ACP_PROTOCOL_VERSION: u64 = 1;
 const MAX_EVENTS_PER_SESSION: usize = 4096;
+const MAX_CLIENT_OPERATIONS_PER_SESSION: usize = 64;
+const MAX_COMPLETED_CLIENT_OPERATIONS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AcpConnectionSnapshot {
@@ -43,10 +45,26 @@ pub struct AcpPermissionRequest {
     pub options: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AcpClientCapabilities {
+    pub read_text_file: bool,
+    pub write_text_file: bool,
+    pub terminal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AcpClientOperation {
+    pub operation_id: String,
+    pub session_id: String,
+    pub method: String,
+    pub params: Value,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AcpPollResult {
     pub events: Vec<AcpEvent>,
     pub permissions: Vec<AcpPermissionRequest>,
+    pub client_operations: Vec<AcpClientOperation>,
     pub prompt_result: Option<Value>,
     pub process_exit_code: Option<i32>,
 }
@@ -59,6 +77,7 @@ pub enum AcpError {
     StartFailed,
     UnknownAgent,
     UnknownSession,
+    UnknownClientOperation,
     UnknownPermission,
     PermissionAlreadyResolved,
     UnsupportedProtocol,
@@ -82,6 +101,7 @@ pub struct AcpRuntime {
     permissions: HashMap<String, PendingPermission>,
     next_generation: u64,
     next_session: u64,
+    next_client_operation: u64,
 }
 
 struct AcpConnection {
@@ -90,6 +110,7 @@ struct AcpConnection {
     maximum_message_bytes: usize,
     capabilities: HashSet<String>,
     allowed_extensions: HashSet<String>,
+    client_capabilities: AcpClientCapabilities,
 }
 
 struct AcpSession {
@@ -102,6 +123,14 @@ struct AcpSession {
     events: VecDeque<AcpEvent>,
     prompt_request_id: Option<String>,
     prompt_result: Option<Value>,
+    client_operations: VecDeque<PendingClientOperation>,
+    completed_client_operations: HashMap<String, Value>,
+    completed_client_operation_order: VecDeque<String>,
+}
+
+struct PendingClientOperation {
+    request: AcpClientOperation,
+    rpc_id: Value,
 }
 
 struct PendingPermission {
@@ -138,6 +167,7 @@ impl AcpRuntime {
             permissions: HashMap::new(),
             next_generation: 1,
             next_session: 1,
+            next_client_operation: 1,
         }
     }
 
@@ -145,6 +175,7 @@ impl AcpRuntime {
         &mut self,
         launch: AgentProcessLaunch,
         allowed_extensions: impl IntoIterator<Item = String>,
+        client_capabilities: AcpClientCapabilities,
         maximum_message_bytes: usize,
         timeout: Duration,
     ) -> Result<AcpConnectionSnapshot, AcpError> {
@@ -163,6 +194,8 @@ impl AcpRuntime {
             .into_iter()
             .filter(|capability| capability.starts_with("_vityo.dev/") && capability.len() <= 256)
             .collect::<HashSet<_>>();
+        let mut advertised_extensions = allowed_extensions.iter().cloned().collect::<Vec<_>>();
+        advertised_extensions.sort();
         self.connections.insert(
             agent_id.clone(),
             AcpConnection {
@@ -171,6 +204,7 @@ impl AcpRuntime {
                 maximum_message_bytes,
                 capabilities: HashSet::new(),
                 allowed_extensions,
+                client_capabilities,
             },
         );
         let result = self.request_and_wait(
@@ -180,8 +214,16 @@ impl AcpRuntime {
                 "protocolVersion": ACP_PROTOCOL_VERSION,
                 "clientInfo": {"name": "vityod", "version": "0.1.0"},
                 "clientCapabilities": {
-                    "fs": {"readTextFile": false, "writeTextFile": false},
-                    "terminal": false
+                    "fs": {
+                        "readTextFile": client_capabilities.read_text_file,
+                        "writeTextFile": client_capabilities.write_text_file
+                    },
+                    "terminal": client_capabilities.terminal,
+                    "_meta": {
+                        "vityo.dev": {
+                            "extensions": advertised_extensions
+                        }
+                    }
                 }
             }),
             timeout,
@@ -269,6 +311,9 @@ impl AcpRuntime {
                 events: VecDeque::with_capacity(MAX_EVENTS_PER_SESSION),
                 prompt_request_id: None,
                 prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
             },
         );
         self.session(&session_id)
@@ -470,12 +515,122 @@ impl AcpRuntime {
             .map(PendingPermission::snapshot)
             .collect::<Vec<_>>();
         permissions.sort_unstable_by(|left, right| left.permission_id.cmp(&right.permission_id));
+        let client_operations = session
+            .client_operations
+            .iter()
+            .map(|pending| pending.request.clone())
+            .collect();
         Ok(AcpPollResult {
             events,
             permissions,
+            client_operations,
             prompt_result: session.prompt_result.clone(),
             process_exit_code: poll.exit_code,
         })
+    }
+
+    pub fn respond_client_operation(
+        &mut self,
+        session_id: &str,
+        operation_id: &str,
+        response: Value,
+    ) -> Result<(), AcpError> {
+        if serde_json::to_vec(&response)
+            .map_err(|_| AcpError::MalformedMessage)?
+            .len()
+            > 1024 * 1024
+        {
+            return Err(AcpError::MessageTooLarge);
+        }
+        let (agent_id, request, operation) = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or(AcpError::UnknownSession)?;
+            if let Some(previous) = session.completed_client_operations.get(operation_id) {
+                return if previous == &response {
+                    Ok(())
+                } else {
+                    Err(AcpError::InvalidRequest)
+                };
+            }
+            let pending = session
+                .client_operations
+                .iter()
+                .find(|pending| pending.request.operation_id == operation_id)
+                .ok_or(AcpError::UnknownClientOperation)?;
+            (
+                session.agent_id.clone(),
+                pending.rpc_id.clone(),
+                pending.request.clone(),
+            )
+        };
+        let envelope = if response.get("errorCode").is_some() {
+            let code = response
+                .get("errorCode")
+                .and_then(Value::as_str)
+                .filter(|code| !code.is_empty() && code.len() <= 128)
+                .ok_or(AcpError::InvalidRequest)?;
+            let message = response
+                .get("message")
+                .and_then(Value::as_str)
+                .filter(|message| message.len() <= 1024)
+                .unwrap_or("IDE operation failed");
+            let mut data = Map::new();
+            data.insert("errorCode".to_owned(), Value::String(code.to_owned()));
+            if let Some(extra) = response.get("data").and_then(Value::as_object) {
+                for (key, value) in extra {
+                    if key != "errorCode" {
+                        data.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            json!({
+                "jsonrpc": "2.0",
+                "id": request,
+                "error": {
+                    "code": -32000,
+                    "message": message,
+                    "data": data
+                }
+            })
+        } else {
+            json!({"jsonrpc": "2.0", "id": request, "result": response})
+        };
+        let completed = envelope.get("error").is_none();
+        self.send_json(&agent_id, envelope)?;
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .expect("session retained while operation response is sent");
+        let index = session
+            .client_operations
+            .iter()
+            .position(|pending| pending.request.operation_id == operation_id)
+            .expect("operation retained while response is sent");
+        session.client_operations.remove(index);
+        session
+            .completed_client_operations
+            .insert(operation_id.to_owned(), response);
+        session
+            .completed_client_operation_order
+            .push_back(operation_id.to_owned());
+        while session.completed_client_operation_order.len() > MAX_COMPLETED_CLIENT_OPERATIONS {
+            if let Some(expired) = session.completed_client_operation_order.pop_front() {
+                session.completed_client_operations.remove(&expired);
+            }
+        }
+        self.append_event(
+            session_id,
+            "client_operation.completed".to_owned(),
+            None,
+            json!({
+                "operationId": operation.operation_id,
+                "method": operation.method,
+                "status": if completed { "completed" } else { "failed" }
+            }),
+        )?;
+        Ok(())
     }
 
     pub fn cancel_prompt(&mut self, session_id: &str) -> Result<bool, AcpError> {
@@ -753,9 +908,11 @@ impl AcpRuntime {
                 self.append_event(&session_id, kind, text, update)
             }
             "_vityo.dev/workspace-change-proposal" => {
-                let remote_session_id = required_bounded_string(&params, "sessionId", 256)?;
-                let session_id = self.session_id_for_remote(agent_id, &remote_session_id)?;
-                self.append_event(&session_id, method.to_owned(), None, params)
+                // Proposals are correlated requests so the Agent observes the
+                // user's review and the transaction receipt. Notifications
+                // cannot carry that result and are not projected as proposals.
+                let _ = (agent_id, params);
+                Ok(())
             }
             "_vityo.dev/capabilities_changed" => {
                 let values = params
@@ -794,12 +951,72 @@ impl AcpRuntime {
             .cloned()
             .ok_or(AcpError::MalformedMessage)?;
         if method != "session/request_permission" {
-            return self.send_json(
-                agent_id,
+            let Some(capability) = client_operation_capability(method) else {
+                return self.send_json(
+                    agent_id,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "error": {"code": -32601, "message": "method not found"}
+                    }),
+                );
+            };
+            let connection = self
+                .connections
+                .get(agent_id)
+                .ok_or(AcpError::UnknownAgent)?;
+            let enabled = if capability == ClientOperationCapability::WorkspaceChangeProposal {
+                connection.capabilities.contains(method)
+            } else {
+                client_operation_is_enabled(connection.client_capabilities, capability)
+            };
+            if !enabled {
+                return self.send_json(
+                    agent_id,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "error": {"code": -32601, "message": "client operation is unavailable"}
+                    }),
+                );
+            }
+            if !params.is_object() {
+                return Err(AcpError::MalformedMessage);
+            }
+            let remote_session_id = required_bounded_string(&params, "sessionId", 256)?;
+            let session_id = self.session_id_for_remote(agent_id, &remote_session_id)?;
+            let session = self
+                .sessions
+                .get_mut(&session_id)
+                .ok_or(AcpError::UnknownSession)?;
+            if session.client_operations.len() >= MAX_CLIENT_OPERATIONS_PER_SESSION
+                || session
+                    .client_operations
+                    .iter()
+                    .any(|pending| pending.rpc_id == rpc_id)
+            {
+                return Err(AcpError::CapacityExceeded);
+            }
+            let operation_id = format!("client-operation-{}", self.next_client_operation);
+            self.next_client_operation = self.next_client_operation.saturating_add(1);
+            let operation = AcpClientOperation {
+                operation_id,
+                session_id: session_id.clone(),
+                method: method.to_owned(),
+                params,
+            };
+            session.client_operations.push_back(PendingClientOperation {
+                request: operation.clone(),
+                rpc_id,
+            });
+            return self.append_event(
+                &session_id,
+                "client_operation.requested".to_owned(),
+                None,
                 json!({
-                    "jsonrpc": "2.0",
-                    "id": rpc_id,
-                    "error": {"code": -32601, "message": "method not found"}
+                    "operationId": operation.operation_id,
+                    "method": operation.method,
+                    "status": "requested"
                 }),
             );
         }
@@ -938,6 +1155,42 @@ fn decode_capabilities(result: &Value, allowed_extensions: &HashSet<String>) -> 
     capabilities
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClientOperationCapability {
+    ReadTextFile,
+    WriteTextFile,
+    Terminal,
+    WorkspaceChangeProposal,
+}
+
+fn client_operation_capability(method: &str) -> Option<ClientOperationCapability> {
+    match method {
+        "fs/read_text_file" => Some(ClientOperationCapability::ReadTextFile),
+        "fs/write_text_file" => Some(ClientOperationCapability::WriteTextFile),
+        "terminal/create"
+        | "terminal/output"
+        | "terminal/wait_for_exit"
+        | "terminal/kill"
+        | "terminal/release" => Some(ClientOperationCapability::Terminal),
+        "_vityo.dev/workspace-change-proposal" => {
+            Some(ClientOperationCapability::WorkspaceChangeProposal)
+        }
+        _ => None,
+    }
+}
+
+fn client_operation_is_enabled(
+    capabilities: AcpClientCapabilities,
+    operation: ClientOperationCapability,
+) -> bool {
+    match operation {
+        ClientOperationCapability::ReadTextFile => capabilities.read_text_file,
+        ClientOperationCapability::WriteTextFile => capabilities.write_text_file,
+        ClientOperationCapability::Terminal => capabilities.terminal,
+        ClientOperationCapability::WorkspaceChangeProposal => false,
+    }
+}
+
 fn decode_message(bytes: &[u8]) -> Result<Value, AcpError> {
     if bytes.is_empty() || bytes.len() > 1024 * 1024 {
         return Err(AcpError::MessageTooLarge);
@@ -1017,6 +1270,11 @@ mod tests {
                 maximum_message_bytes: 1024 * 1024,
                 capabilities: HashSet::new(),
                 allowed_extensions: HashSet::new(),
+                client_capabilities: AcpClientCapabilities {
+                    read_text_file: true,
+                    write_text_file: true,
+                    terminal: true,
+                },
             },
         );
         runtime.sessions.insert(
@@ -1031,6 +1289,9 @@ mod tests {
                 events: VecDeque::new(),
                 prompt_request_id: None,
                 prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
             },
         );
         runtime
@@ -1077,5 +1338,405 @@ mod tests {
         let permission = runtime.permissions.values().next().unwrap().snapshot();
         assert_eq!(permission.session_id, "session");
         assert_eq!(permission.options, vec!["allow_once", "reject_once"]);
+    }
+
+    #[test]
+    fn workspace_change_proposal_notifications_are_not_projected() {
+        let mut runtime = AcpRuntime::default();
+        runtime.connections.insert(
+            "agent".to_owned(),
+            AcpConnection {
+                generation: 1,
+                next_request: 1,
+                maximum_message_bytes: 1024 * 1024,
+                capabilities: HashSet::new(),
+                allowed_extensions: HashSet::from([
+                    "_vityo.dev/workspace-change-proposal".to_owned()
+                ]),
+                client_capabilities: AcpClientCapabilities::default(),
+            },
+        );
+        runtime.sessions.insert(
+            "session".to_owned(),
+            AcpSession {
+                session_id: "session".to_owned(),
+                agent_id: "agent".to_owned(),
+                generation: 1,
+                remote_session_id: "remote".to_owned(),
+                workspace_path: "/workspace".to_owned(),
+                next_sequence: 1,
+                events: VecDeque::new(),
+                prompt_request_id: None,
+                prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
+            },
+        );
+
+        let proposal = json!({
+            "sessionId": "remote",
+            "proposal": {"proposalId": "proposal-1"}
+        });
+        runtime
+            .route_notification(
+                "agent",
+                "_vityo.dev/workspace-change-proposal",
+                proposal.clone(),
+            )
+            .unwrap();
+        assert!(runtime.sessions["session"].events.is_empty());
+
+        runtime
+            .connections
+            .get_mut("agent")
+            .unwrap()
+            .capabilities
+            .insert("_vityo.dev/workspace-change-proposal".to_owned());
+        runtime
+            .route_notification(
+                "agent",
+                "_vityo.dev/workspace-change-proposal",
+                proposal.clone(),
+            )
+            .unwrap();
+        assert!(runtime.sessions["session"].events.is_empty());
+    }
+
+    #[test]
+    fn initialize_filters_extension_capabilities_to_the_host_allow_list() {
+        let proposal = "_vityo.dev/workspace-change-proposal";
+        let advertised = json!({
+            "agentCapabilities": {
+                "_meta": {
+                    "vityo.dev": {
+                        "extensions": [proposal, "_vityo.dev/unapproved"]
+                    }
+                }
+            }
+        });
+        let allowed = HashSet::from([proposal.to_owned()]);
+
+        let negotiated = decode_capabilities(&advertised, &allowed);
+
+        assert_eq!(negotiated, allowed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proposal_is_a_negotiated_correlated_request_with_typed_result_and_error_data() {
+        let mut runtime = AcpRuntime::default();
+        runtime
+            .processes
+            .start(AgentProcessLaunch {
+                agent_id: "agent".to_owned(),
+                executable: std::path::PathBuf::from("/bin/sh"),
+                arguments: vec![
+                    "-c".to_owned(),
+                    "while IFS= read -r line; do printf '%s\\n' \"$line\"; done".to_owned(),
+                ],
+                working_directory: std::env::current_dir().unwrap(),
+            })
+            .unwrap();
+        runtime.connections.insert(
+            "agent".to_owned(),
+            AcpConnection {
+                generation: 1,
+                next_request: 1,
+                maximum_message_bytes: 1024 * 1024,
+                capabilities: HashSet::new(),
+                allowed_extensions: HashSet::from([
+                    "_vityo.dev/workspace-change-proposal".to_owned()
+                ]),
+                client_capabilities: AcpClientCapabilities {
+                    read_text_file: true,
+                    write_text_file: true,
+                    terminal: true,
+                },
+            },
+        );
+        runtime.sessions.insert(
+            "session".to_owned(),
+            AcpSession {
+                session_id: "session".to_owned(),
+                agent_id: "agent".to_owned(),
+                generation: 1,
+                remote_session_id: "remote".to_owned(),
+                workspace_path: "/workspace".to_owned(),
+                next_sequence: 1,
+                events: VecDeque::new(),
+                prompt_request_id: None,
+                prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
+            },
+        );
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "_vityo.dev/workspace-change-proposal",
+            "params": {
+                "sessionId": "remote",
+                "proposal": {
+                    "id": "proposal-1",
+                    "baseWorkspaceRevision": 7,
+                    "resources": [{
+                        "resourceId": "src/main.styio",
+                        "baseDocumentRevision": 3,
+                        "edits": [{"start": 0, "end": 1, "replacement": "M"}]
+                    }]
+                }
+            }
+        });
+
+        runtime.route_value("agent", request.clone()).unwrap();
+        let denied = next_process_json(&mut runtime, "agent");
+        assert_eq!(denied["id"], 1);
+        assert_eq!(denied["error"]["code"], -32601);
+        assert!(runtime.sessions["session"].client_operations.is_empty());
+
+        runtime
+            .connections
+            .get_mut("agent")
+            .unwrap()
+            .capabilities
+            .insert("_vityo.dev/workspace-change-proposal".to_owned());
+        let mut negotiated_request = request;
+        negotiated_request["id"] = json!(2);
+        runtime.route_value("agent", negotiated_request).unwrap();
+        let operation = runtime.sessions["session"]
+            .client_operations
+            .front()
+            .unwrap()
+            .request
+            .clone();
+        assert_eq!(operation.session_id, "session");
+        assert_eq!(operation.params["sessionId"], "remote");
+        assert_eq!(operation.method, "_vityo.dev/workspace-change-proposal");
+        let proposal_result = json!({
+            "proposalId": "proposal-1",
+            "outcome": "committed",
+            "workspaceRevision": 8,
+            "documentRevisions": {"src/main.styio": 4}
+        });
+        runtime
+            .respond_client_operation("session", &operation.operation_id, proposal_result.clone())
+            .unwrap();
+        let response = next_process_json(&mut runtime, "agent");
+        assert_eq!(response["id"], 2);
+        assert_eq!(response["result"], proposal_result);
+
+        runtime
+            .route_value(
+                "agent",
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "fs/read_text_file",
+                    "params": {"sessionId": "remote", "path": "/workspace/src/new.styio"}
+                }),
+            )
+            .unwrap();
+        let operation = runtime.sessions["session"]
+            .client_operations
+            .front()
+            .unwrap()
+            .request
+            .clone();
+        let failure = json!({
+            "errorCode": "document_missing",
+            "message": "The requested workspace document does not exist.",
+            "data": {
+                "_meta": {"vityo.dev": {"workspaceSnapshot": {
+                    "rootId": "flow-hero",
+                    "resourceId": "src/new.styio",
+                    "workspaceRevision": 9,
+                    "documentExists": false,
+                    "documentRevision": null
+                }}}
+            }
+        });
+        runtime
+            .respond_client_operation("session", &operation.operation_id, failure)
+            .unwrap();
+        let response = next_process_json(&mut runtime, "agent");
+        assert_eq!(response["id"], 3);
+        assert_eq!(response["error"]["data"]["errorCode"], "document_missing");
+        assert_eq!(
+            response["error"]["data"]["_meta"]["vityo.dev"]["workspaceSnapshot"]["documentRevision"],
+            Value::Null
+        );
+        runtime.processes.close("agent").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn client_operation_requests_are_projected_and_correlated_responses_are_redacted() {
+        let mut runtime = AcpRuntime::default();
+        runtime
+            .processes
+            .start(AgentProcessLaunch {
+                agent_id: "agent".to_owned(),
+                executable: std::path::PathBuf::from("/bin/sh"),
+                arguments: vec![
+                    "-c".to_owned(),
+                    "while IFS= read -r line; do printf '%s\\n' \"$line\"; done".to_owned(),
+                ],
+                working_directory: std::env::current_dir().unwrap(),
+            })
+            .unwrap();
+        runtime.connections.insert(
+            "agent".to_owned(),
+            AcpConnection {
+                generation: 1,
+                next_request: 1,
+                maximum_message_bytes: 1024 * 1024,
+                capabilities: HashSet::new(),
+                allowed_extensions: HashSet::new(),
+                client_capabilities: AcpClientCapabilities {
+                    read_text_file: true,
+                    write_text_file: true,
+                    terminal: true,
+                },
+            },
+        );
+        runtime.sessions.insert(
+            "session".to_owned(),
+            AcpSession {
+                session_id: "session".to_owned(),
+                agent_id: "agent".to_owned(),
+                generation: 1,
+                remote_session_id: "remote".to_owned(),
+                workspace_path: "/workspace".to_owned(),
+                next_sequence: 1,
+                events: VecDeque::new(),
+                prompt_request_id: None,
+                prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
+            },
+        );
+        runtime.sessions.insert(
+            "other-session".to_owned(),
+            AcpSession {
+                session_id: "other-session".to_owned(),
+                agent_id: "agent".to_owned(),
+                generation: 1,
+                remote_session_id: "other-remote".to_owned(),
+                workspace_path: "/workspace".to_owned(),
+                next_sequence: 1,
+                events: VecDeque::new(),
+                prompt_request_id: None,
+                prompt_result: None,
+                client_operations: VecDeque::new(),
+                completed_client_operations: HashMap::new(),
+                completed_client_operation_order: VecDeque::new(),
+            },
+        );
+
+        runtime
+            .route_value(
+                "agent",
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "fs/write_text_file",
+                    "params": {
+                        "sessionId": "remote",
+                        "path": "/workspace/src/app.styio",
+                        "content": "private-source-must-not-enter-the-event-log"
+                    }
+                }),
+            )
+            .unwrap();
+        let queued = runtime.sessions["session"]
+            .client_operations
+            .front()
+            .unwrap();
+        let operation = queued.request.clone();
+        assert_eq!(operation.method, "fs/write_text_file");
+        assert_eq!(queued.rpc_id, json!(7));
+        assert_eq!(
+            runtime.respond_client_operation(
+                "other-session",
+                &operation.operation_id,
+                json!({"accepted": true})
+            ),
+            Err(AcpError::UnknownClientOperation)
+        );
+        assert_eq!(
+            operation.params["content"],
+            "private-source-must-not-enter-the-event-log"
+        );
+        assert_eq!(
+            runtime.sessions["session"].events.front().unwrap().kind,
+            "client_operation.requested"
+        );
+        assert!(
+            !runtime.sessions["session"]
+                .events
+                .front()
+                .unwrap()
+                .payload
+                .to_string()
+                .contains("private-source")
+        );
+
+        let response = json!({"accepted": true});
+        runtime
+            .respond_client_operation("session", &operation.operation_id, response.clone())
+            .unwrap();
+        assert_eq!(
+            runtime.respond_client_operation("session", &operation.operation_id, response.clone()),
+            Ok(())
+        );
+        assert!(
+            runtime
+                .respond_client_operation(
+                    "session",
+                    &operation.operation_id,
+                    json!({"accepted": false})
+                )
+                .is_err()
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut responses = Vec::new();
+        while Instant::now() < deadline {
+            let output = runtime.processes.poll("agent", 8).unwrap();
+            responses.extend(output.messages);
+            if !responses.is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(responses.len(), 1);
+        let wire: Value = serde_json::from_slice(&responses[0]).unwrap();
+        assert_eq!(wire["id"], json!(7));
+        assert_eq!(wire["result"], response);
+        assert_eq!(
+            runtime.sessions["session"].events.back().unwrap().payload,
+            json!({
+                "operationId": operation.operation_id,
+                "method": "fs/write_text_file",
+                "status": "completed"
+            })
+        );
+        runtime.processes.close("agent").unwrap();
+    }
+
+    #[cfg(unix)]
+    fn next_process_json(runtime: &mut AcpRuntime, agent_id: &str) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            let output = runtime.processes.poll(agent_id, 8).unwrap();
+            if let Some(message) = output.messages.first() {
+                return serde_json::from_slice(message).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("Agent process did not return an ACP response");
     }
 }

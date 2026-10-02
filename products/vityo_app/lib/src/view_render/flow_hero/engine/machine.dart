@@ -10,6 +10,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../ide/editor/document/document_state.dart';
+import '../../../ide/workspace/workspace_document_store_types.dart';
 import 'editor.dart';
 import 'flow_board.dart';
 import '../flow_model.dart';
@@ -19,7 +21,15 @@ import 'transport.dart';
 
 /// ------------------------------------------------------------------ buffers ---
 class BufferFile {
-  BufferFile(this.name, this.text, {required this.lang, this.path});
+  BufferFile(
+    this.name,
+    this.text, {
+    required this.lang,
+    this.path,
+    this.documentRevision,
+    this.workspaceRevision,
+    this.persistedText,
+  });
   final String name;
   final String lang; // styio | toml | plain
   String text;
@@ -27,6 +37,18 @@ class BufferFile {
   /// Set for buffers backed by a real file on disk (workspace drawer opens);
   /// null for the built-in demo buffers, which have nowhere to save.
   final String? path;
+
+  /// Workspace transaction revision for the persisted source, when loaded.
+  int? documentRevision;
+
+  /// Workspace-wide revision captured with [documentRevision].
+  int? workspaceRevision;
+
+  /// Last source content known to be persisted, used to detect external edits.
+  String? persistedText;
+
+  /// Monotonic editor revision used to preserve edits across async commits.
+  int sourceRevision = 0;
 
   /// Edits since the last save. Demo buffers stay clean: they cannot persist.
   bool dirty = false;
@@ -40,7 +62,9 @@ class BufferFile {
 }
 
 String langForPath(String path) {
-  final String ext = path.contains('.') ? path.split('.').last.toLowerCase() : '';
+  final String ext = path.contains('.')
+      ? path.split('.').last.toLowerCase()
+      : '';
   return switch (ext) {
     'sty' || 'styio' => 'styio',
     'toml' => 'toml',
@@ -64,7 +88,13 @@ int _utf8Length(String s) {
   return n;
 }
 
-const String kMainStyio = 'pipeline mainFlow\n'
+String _canonicalDocumentPath(String path) {
+  final absolute = File(path).absolute.path.replaceAll(r'\', '/');
+  return Platform.isWindows ? absolute.toLowerCase() : absolute;
+}
+
+const String kMainStyio =
+    'pipeline mainFlow\n'
     'let staged := source |> normalize\n'
     'let routeOut = staged -> render\n'
     'let routeIn = source <- bridge\n'
@@ -76,7 +106,8 @@ const String kMainStyio = 'pipeline mainFlow\n'
     '  emit staged\n'
     '}';
 
-const String kUtilStyio = 'fn clamp01(x) {\n'
+const String kUtilStyio =
+    'fn clamp01(x) {\n'
     '  when x < 0 -> 0\n'
     '  when x > 1 -> 1\n'
     '  emit x\n'
@@ -84,7 +115,8 @@ const String kUtilStyio = 'fn clamp01(x) {\n'
     'let gain := 0.8\n'
     'let bias := 0.02';
 
-const String kStyioToml = '[workspace]\n'
+const String kStyioToml =
+    '[workspace]\n'
     'name = "demo/app"\n'
     'rev = 142\n'
     '\n'
@@ -94,10 +126,22 @@ const String kStyioToml = '[workspace]\n'
 
 /// The sixteen stations, in four quarters of four.
 const List<String> kStepNames = <String>[
-  'buffer', 'tokens', 'blocks', 'save',
-  'parse', 'sema', 'diag', 'facts',
-  'build', 'unit', 'golden', 'bench',
-  'launch', 'trace', 'observe', 'receipt',
+  'buffer',
+  'tokens',
+  'blocks',
+  'save',
+  'parse',
+  'sema',
+  'diag',
+  'facts',
+  'build',
+  'unit',
+  'golden',
+  'bench',
+  'launch',
+  'trace',
+  'observe',
+  'receipt',
 ];
 const List<String> kPhaseNames = <String>['Edit', 'Analyze', 'Test', 'Run'];
 
@@ -139,6 +183,8 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   final List<BufferFile> files = <BufferFile>[];
+  final Map<String, BufferFile> _pathBuffers = <String, BufferFile>{};
+  WorkspaceDocumentOperationStore? _documentStore;
   late BufferFile activeFile;
   bool showFlow = true;
 
@@ -228,23 +274,26 @@ class WorkbenchController extends ChangeNotifier {
 
   // ------------------------------------------------------------------ graph ---
   GraphBoard _buildGraphFor(BufferFile f) => buildGraph(
-        parseStyio(f.text),
-        fileName: f.name,
-        hanging: lintText(f.text).map((Diagnostic d) => d.ident).toSet(),
-        glyphs: const FlutterGlyphs(),
-      );
+    parseStyio(f.text),
+    fileName: f.name,
+    hanging: lintText(f.text).map((Diagnostic d) => d.ident).toSet(),
+    glyphs: const FlutterGlyphs(),
+  );
 
   void _analyzeMain() {
     mainDiags = lintText(files.first.text);
   }
 
   void _analyzeActive() {
-    activeDiags = activeFile.drawable ? lintText(activeFile.text) : <Diagnostic>[];
+    activeDiags = activeFile.drawable
+        ? lintText(activeFile.text)
+        : <Diagnostic>[];
   }
 
   /// Editing: the buffer is the instrument; the board answers every keystroke.
   void onBufferChanged(String text, {required int line, required int column}) {
     activeFile.text = text;
+    activeFile.sourceRevision++;
     if (activeFile.savable) activeFile.dirty = true;
     cursorLine = line;
     cursorColumn = column;
@@ -284,31 +333,60 @@ class WorkbenchController extends ChangeNotifier {
   /// the path is already open; returns false when the file is not readable
   /// text (binary, permissions).
   Future<bool> openPath(String path) async {
-    for (final BufferFile f in files) {
-      if (f.path == path) {
-        activeFile = f;
-        bufferEpoch++;
-        if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
-        _analyzeActive();
-        notifyListeners();
-        return true;
-      }
+    final BufferFile? opened = _pathBuffers[_canonicalDocumentPath(path)];
+    if (opened != null) {
+      activeFile = opened;
+      bufferEpoch++;
+      if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+      _analyzeActive();
+      notifyListeners();
+      return true;
     }
     final String text;
-    try {
-      text = await File(path).readAsString();
-    } on FileSystemException {
-      return false;
-    } on FormatException {
-      return false; // not UTF-8 text
+    int? documentRevision;
+    int? workspaceRevision;
+    final store = _documentStore;
+    if (store != null) {
+      try {
+        final snapshot = await store.readWorkspaceSnapshot(path);
+        final document = snapshot.document;
+        if (document == null) return false;
+        text = document.text;
+        documentRevision = document.revision;
+        workspaceRevision = snapshot.workspaceRevision;
+      } on Object {
+        return false;
+      }
+    } else {
+      try {
+        text = await File(path).readAsString();
+      } on FileSystemException {
+        return false;
+      } on FormatException {
+        return false; // not UTF-8 text
+      }
+    }
+    // Another request may have opened this path while the workspace read was
+    // in flight. Keep the first live buffer as the sole editor authority.
+    final BufferFile? raced = _pathBuffers[_canonicalDocumentPath(path)];
+    if (raced != null) {
+      activeFile = raced;
+      bufferEpoch++;
+      _refreshActiveDocument();
+      notifyListeners();
+      return true;
     }
     final BufferFile f = BufferFile(
-      path.split('/').last,
+      path.split(RegExp(r'[/\\]')).last,
       text,
       lang: langForPath(path),
       path: path,
+      documentRevision: documentRevision,
+      workspaceRevision: workspaceRevision,
+      persistedText: text,
     );
     files.add(f);
+    _pathBuffers[_canonicalDocumentPath(path)] = f;
     activeFile = f;
     bufferEpoch++;
     if (f.drawable) _graph = _buildGraphFor(f);
@@ -324,14 +402,198 @@ class WorkbenchController extends ChangeNotifier {
   Future<bool> saveActive() async {
     final BufferFile f = activeFile;
     if (!f.savable || !f.dirty) return f.savable && !f.dirty;
+    final store = _documentStore;
+    if (store != null) {
+      final sourceRevision = f.sourceRevision;
+      final contents = f.text;
+      try {
+        final relativePath = store.relativeDocumentPath(f.path!);
+        final snapshot = await store.readWorkspaceSnapshot(f.path!);
+        final currentDocument = snapshot.document;
+        final expectedWorkspaceRevision = f.workspaceRevision;
+        if (currentDocument == null ||
+            expectedWorkspaceRevision == null ||
+            currentDocument.revision != f.documentRevision ||
+            currentDocument.text != f.persistedText) {
+          return false;
+        }
+        final receipt = await store.saveDocumentsAtomically(
+          <DocumentState>[
+            DocumentState(
+              documentId: f.path!,
+              text: contents,
+              revision: f.documentRevision ?? 0,
+            ),
+          ],
+          expectedWorkspaceRevision: expectedWorkspaceRevision,
+          expectedDocumentRevisions: <String, int>{
+            f.path!: f.documentRevision ?? 0,
+          },
+        );
+        final revision = receipt.documentRevisions[relativePath];
+        if (revision == null) return false;
+        f.documentRevision = revision;
+        f.workspaceRevision = receipt.workspaceRevision;
+        f.persistedText = contents;
+        f.dirty = f.sourceRevision != sourceRevision;
+      } on Object {
+        return false;
+      }
+      notifyListeners();
+      return !f.dirty;
+    }
     try {
       await File(f.path!).writeAsString(f.text);
     } on FileSystemException {
       return false;
     }
     f.dirty = false;
+    f.persistedText = f.text;
     notifyListeners();
     return true;
+  }
+
+  /// Binds live file buffers to the existing revisioned workspace owner.
+  /// Buffers opened before the Agent connection remain authoritative and are
+  /// imported atomically before file callbacks are advertised.
+  Future<void> attachWorkspaceDocumentStore(
+    WorkspaceDocumentOperationStore store,
+  ) async {
+    _documentStore = store;
+    final snapshots = <(BufferFile, int, String, int)>[];
+    var activeBufferChanged = false;
+    for (final file in files.where((file) => file.savable)) {
+      final sourceRevision = file.sourceRevision;
+      final baseline = file.persistedText;
+      final wasDirty = file.dirty;
+      final workspaceSnapshot = await store.readWorkspaceSnapshot(file.path!);
+      final document = workspaceSnapshot.document;
+      file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+      if (document == null) {
+        file.documentRevision = null;
+        continue;
+      }
+      final changedDuringRead = file.sourceRevision != sourceRevision;
+      if (baseline == null || document.text != baseline) {
+        if (!wasDirty && !changedDuringRead) {
+          file.text = document.text;
+          file.persistedText = document.text;
+          file.documentRevision = document.revision;
+          file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+          file.sourceRevision++;
+          activeBufferChanged =
+              activeBufferChanged || identical(file, activeFile);
+        } else {
+          // Preserve local edits when the opened source no longer matches its
+          // disk baseline. A later save must first resolve that conflict.
+          file.documentRevision = null;
+          file.workspaceRevision = null;
+        }
+        continue;
+      }
+      file.documentRevision = document.revision;
+      file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+      file.persistedText = document.text;
+      final currentRevision = file.sourceRevision;
+      final currentText = file.text;
+      if (document.text != currentText) {
+        snapshots.add((
+          file,
+          currentRevision,
+          currentText,
+          workspaceSnapshot.workspaceRevision,
+        ));
+      }
+    }
+    if (snapshots.isEmpty) {
+      if (activeBufferChanged) {
+        _refreshActiveDocument();
+        bufferEpoch++;
+      }
+      if (activeBufferChanged || files.any((file) => file.savable)) {
+        notifyListeners();
+      }
+      return;
+    }
+    final observedWorkspaceRevisions = snapshots
+        .map((snapshot) => snapshot.$4)
+        .toSet();
+    if (observedWorkspaceRevisions.length != 1) {
+      throw StateError('Workspace changed while open buffers were attached.');
+    }
+    final expectedWorkspaceRevision = observedWorkspaceRevisions.single;
+    final receipt = await store.saveDocumentsAtomically(
+      snapshots.map(
+        (snapshot) => DocumentState(
+          documentId: snapshot.$1.path!,
+          text: snapshot.$3,
+          revision: snapshot.$1.documentRevision ?? 0,
+        ),
+      ),
+      expectedWorkspaceRevision: expectedWorkspaceRevision,
+      expectedDocumentRevisions: <String, int>{
+        for (final snapshot in snapshots)
+          snapshot.$1.path!: snapshot.$1.documentRevision ?? 0,
+      },
+    );
+    for (final (file, sourceRevision, committedText, _) in snapshots) {
+      final relativePath = store.relativeDocumentPath(file.path!);
+      final revision = receipt.documentRevisions[relativePath];
+      if (revision == null) {
+        throw StateError(
+          'The workspace omitted a committed document revision.',
+        );
+      }
+      file.documentRevision = revision;
+      file.workspaceRevision = receipt.workspaceRevision;
+      file.persistedText = committedText;
+      file.dirty = file.sourceRevision != sourceRevision;
+    }
+    if (activeBufferChanged ||
+        snapshots.any((snapshot) => identical(snapshot.$1, activeFile))) {
+      _refreshActiveDocument();
+      bufferEpoch++;
+    }
+    notifyListeners();
+  }
+
+  BufferFile? openedBuffer(String absolutePath) =>
+      _pathBuffers[_canonicalDocumentPath(absolutePath)];
+
+  /// Reflects a committed Agent write only if no user edit arrived while the
+  /// workspace transaction was pending.
+  void acceptAgentDocumentWrite({
+    required String absolutePath,
+    required String text,
+    required int expectedSourceRevision,
+    required int documentRevision,
+    required int workspaceRevision,
+  }) {
+    final file = openedBuffer(absolutePath);
+    if (file == null) return;
+    file.documentRevision = documentRevision;
+    file.workspaceRevision = workspaceRevision;
+    file.persistedText = text;
+    if (file.sourceRevision != expectedSourceRevision) {
+      file.dirty = true;
+      notifyListeners();
+      return;
+    }
+    file.text = text;
+    file.sourceRevision++;
+    file.dirty = false;
+    if (identical(file, activeFile)) {
+      _refreshActiveDocument();
+      bufferEpoch++;
+    }
+    notifyListeners();
+  }
+
+  void _refreshActiveDocument() {
+    _analyzeActive();
+    _analyzeMain();
+    if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+    if (activeFile.lang == 'toml') readTempoFromToml();
   }
 
   void setInstrument(Instrument i) {
@@ -340,7 +602,8 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void setNotation(bool flow) {
-    if (flow && !flowTabEnabled) return; // this buffer has no program to project
+    if (flow && !flowTabEnabled)
+      return; // this buffer has no program to project
     if (showFlow == flow) {
       if (flow) _graph = _buildGraphFor(activeFile);
       notifyListeners();
@@ -411,11 +674,15 @@ class WorkbenchController extends ChangeNotifier {
         if (chaseStep == i - 1) chaseStep = -1;
       }
       if (armed[i]) chaseStep = i;
-      _status('RUNNING · ${(i + 1).toString().padLeft(2, '0')} ${kStepNames[i].toUpperCase()}',
-          red: true);
+      _status(
+        'RUNNING · ${(i + 1).toString().padLeft(2, '0')} ${kStepNames[i].toUpperCase()}',
+        red: true,
+      );
       if (i.isEven) flowEmit();
       if (i == kFaultStep && willHold) {
-        await Future<void>.delayed(Duration(microseconds: (stepMs * 1000).round()));
+        await Future<void>.delayed(
+          Duration(microseconds: (stepMs * 1000).round()),
+        );
         if (runGeneration != _runToken) return;
         chaseStep = -1;
         faultStepLit = true;
@@ -434,7 +701,9 @@ class WorkbenchController extends ChangeNotifier {
         notifyListeners();
         return; // the loop stops here; steps 12–16 never ran
       }
-      await Future<void>.delayed(Duration(microseconds: (stepMs * 1000).round()));
+      await Future<void>.delayed(
+        Duration(microseconds: (stepMs * 1000).round()),
+      );
     }
     if (runGeneration != _runToken) return;
     // full pass: every station clean
@@ -480,7 +749,9 @@ class WorkbenchController extends ChangeNotifier {
       if (i.isEven) flowEmit();
       // stepMs reads bpm live: the operator can slow the microscope as the
       // fault approaches
-      await Future<void>.delayed(Duration(microseconds: (stepMs * 1000).round()));
+      await Future<void>.delayed(
+        Duration(microseconds: (stepMs * 1000).round()),
+      );
       if (runGeneration != _runToken) return;
     }
     chaseStep = -1;
@@ -648,7 +919,8 @@ class _MachineState extends State<Machine> {
     if (e is! KeyDownEvent) return false;
     final WorkbenchController c = widget.controller;
     final FocusNode? f = FocusManager.instance.primaryFocus;
-    final bool typing = f?.context?.widget is EditableText ||
+    final bool typing =
+        f?.context?.widget is EditableText ||
         (f?.context?.findAncestorWidgetOfExactType<EditableText>() != null);
     if (typing) return false;
     if (e.logicalKey == LogicalKeyboardKey.keyC) {
@@ -749,7 +1021,13 @@ class InstrumentRail extends StatelessWidget {
       ),
       child: Stack(
         children: <Widget>[
-          const Positioned(top: 0, bottom: 0, right: 1, width: 1, child: ColoredBox(color: C.seamHi)),
+          const Positioned(
+            top: 0,
+            bottom: 0,
+            right: 1,
+            width: 1,
+            child: ColoredBox(color: C.seamHi),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Column(
@@ -817,10 +1095,7 @@ class _ProgramPanel extends StatelessWidget {
               children: <Widget>[
                 Container(
                   padding: const EdgeInsets.all(14),
-                  child: Well(
-                    radius: 6,
-                    child: FlowBoard(controller: c),
-                  ),
+                  child: Well(radius: 6, child: FlowBoard(controller: c)),
                 ),
                 SourceEditor(controller: c),
               ],
@@ -932,7 +1207,7 @@ class StatusStrip extends StatelessWidget {
     final String last = c.lastRunSeconds == null
         ? 'Last Run —'
         : 'Last Run ${c.lastRunSeconds!.toStringAsFixed(1)}s'
-            '${c.lastRunKind.isEmpty ? '' : ' · ${c.lastRunKind}'}';
+              '${c.lastRunKind.isEmpty ? '' : ' · ${c.lastRunKind}'}';
     return SeamTop(
       color: C.panelHi,
       child: SizedBox(
@@ -982,9 +1257,9 @@ class StatusStrip extends StatelessWidget {
   }
 
   List<Widget> _screws() => const <Widget>[
-        Positioned(left: 6, bottom: 6, child: Screw(angle: 41)),
-        Positioned(right: 6, bottom: 6, child: Screw(angle: 78)),
-      ];
+    Positioned(left: 6, bottom: 6, child: Screw(angle: 41)),
+    Positioned(right: 6, bottom: 6, child: Screw(angle: 78)),
+  ];
 }
 
 class StatusLeftLive extends StatelessWidget {
@@ -1004,10 +1279,7 @@ class StatusLeftLive extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           c.status,
-          style: T.monoBold.copyWith(
-            letterSpacing: 1.1,
-            color: C.silkHi,
-          ),
+          style: T.monoBold.copyWith(letterSpacing: 1.1, color: C.silkHi),
         ),
       ],
     );
@@ -1020,12 +1292,12 @@ class _Silk extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        style: T.silk,
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.clip,
-      );
+    text,
+    style: T.silk,
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.clip,
+  );
 }
 
 /// A 10px fastener head with a rotated slot — the machine's only exposed
@@ -1036,10 +1308,10 @@ class Screw extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 10,
-        height: 10,
-        child: CustomPaint(painter: _ScrewPainter(angle)),
-      );
+    width: 10,
+    height: 10,
+    child: CustomPaint(painter: _ScrewPainter(angle)),
+  );
 }
 
 class _ScrewPainter extends CustomPainter {

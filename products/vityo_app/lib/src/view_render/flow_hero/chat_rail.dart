@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'agent_bridge.dart';
 import 'controller.dart';
 import 'palette.dart';
+import '../../ide/agent_client/agent_client_models.dart';
+import 'agent_operations.dart';
 
 class ChatRail extends StatefulWidget {
   const ChatRail({super.key, required this.controller});
@@ -63,18 +65,41 @@ class _ChatRailState extends State<ChatRail> {
             child: AnimatedBuilder(
               animation: c,
               builder: (BuildContext context, _) {
-                return ListView.builder(
+                final permissions = c.bridge.pendingPermissions;
+                final proposals = c.bridge.pendingWorkspaceReviews;
+                return ListView(
                   controller: _scroll,
                   padding: const EdgeInsets.all(12),
-                  itemCount: c.messages.length,
-                  itemBuilder: (BuildContext context, int i) => _MsgView(msg: c.messages[i]),
+                  children: <Widget>[
+                    if (permissions.isNotEmpty || proposals.isNotEmpty)
+                      FlowHeroAgentReviewPanel(
+                        permissions: permissions,
+                        proposals: proposals,
+                        onResolvePermission:
+                            (
+                              AgentPermissionRequest request,
+                              AgentPermissionDecision decision,
+                            ) {
+                              c.bridge.decidePermission(request.id, decision);
+                            },
+                        onResolveProposal: (String reviewId, bool apply) {
+                          c.bridge.decideWorkspaceProposal(
+                            reviewId,
+                            apply: apply,
+                          );
+                        },
+                      ),
+                    for (final message in c.messages) _MsgView(msg: message),
+                  ],
                 );
               },
             ),
           ),
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(border: Border(top: BorderSide(color: P.seamHi))),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: P.seamHi)),
+            ),
             child: Row(
               children: <Widget>[
                 Expanded(
@@ -88,7 +113,10 @@ class _ChatRailState extends State<ChatRail> {
                       filled: true,
                       fillColor: P.well,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(2),
                         borderSide: BorderSide(color: P.ring),
@@ -99,7 +127,9 @@ class _ChatRailState extends State<ChatRail> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(2),
-                        borderSide: BorderSide(color: P.red.withValues(alpha: 0.6)),
+                        borderSide: BorderSide(
+                          color: P.red.withValues(alpha: 0.6),
+                        ),
                       ),
                     ),
                   ),
@@ -117,7 +147,10 @@ class _ChatRailState extends State<ChatRail> {
                       borderRadius: BorderRadius.circular(3),
                       border: Border.all(color: P.seamLo),
                     ),
-                    child: Text('SEND', style: P.silkStyle().copyWith(color: P.paperLow)),
+                    child: Text(
+                      'SEND',
+                      style: P.silkStyle().copyWith(color: P.paperLow),
+                    ),
                   ),
                 ),
               ],
@@ -127,6 +160,203 @@ class _ChatRailState extends State<ChatRail> {
       ),
     );
   }
+}
+
+class FlowHeroAgentReviewPanel extends StatelessWidget {
+  const FlowHeroAgentReviewPanel({
+    super.key,
+    required this.permissions,
+    required this.proposals,
+    required this.onResolvePermission,
+    required this.onResolveProposal,
+  });
+
+  final List<AgentPermissionRequest> permissions;
+  final List<FlowHeroWorkspaceChangeReview> proposals;
+  final void Function(
+    AgentPermissionRequest request,
+    AgentPermissionDecision decision,
+  )
+  onResolvePermission;
+  final void Function(String reviewId, bool apply) onResolveProposal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final permission in permissions)
+          _PermissionReviewCard(
+            request: permission,
+            onResolve: (AgentPermissionDecision decision) =>
+                onResolvePermission(permission, decision),
+          ),
+        for (final proposal in proposals)
+          _WorkspaceProposalReviewCard(
+            proposal: proposal,
+            onResolve: (bool apply) =>
+                onResolveProposal(proposal.reviewId, apply),
+          ),
+      ],
+    );
+  }
+}
+
+class _PermissionReviewCard extends StatelessWidget {
+  const _PermissionReviewCard({required this.request, required this.onResolve});
+
+  final AgentPermissionRequest request;
+  final ValueChanged<AgentPermissionDecision> onResolve;
+
+  @override
+  Widget build(BuildContext context) {
+    final title =
+        request.toolCallTitle ?? request.toolCallKind ?? 'Agent operation';
+    return _ReviewCardFrame(
+      key: ValueKey<String>('agent-permission-${request.id}'),
+      title: 'PERMISSION · $title',
+      subtitle: '一次性授权 · ${request.sessionId}',
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 6,
+        children: <Widget>[
+          if (request.options.contains('reject_once'))
+            TextButton(
+              key: ValueKey<String>('reject-permission-${request.id}'),
+              onPressed: () => onResolve(AgentPermissionDecision.rejectOnce),
+              child: const Text('REJECT ONCE'),
+            ),
+          if (request.options.contains('allow_once'))
+            TextButton(
+              key: ValueKey<String>('allow-permission-${request.id}'),
+              onPressed: () => onResolve(AgentPermissionDecision.allowOnce),
+              child: const Text('ALLOW ONCE'),
+            ),
+          if (request.options.isEmpty)
+            Text(
+              'No decision option was offered',
+              style: P.silkStyle(dim: true),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceProposalReviewCard extends StatelessWidget {
+  const _WorkspaceProposalReviewCard({
+    required this.proposal,
+    required this.onResolve,
+  });
+
+  final FlowHeroWorkspaceChangeReview proposal;
+  final ValueChanged<bool> onResolve;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ReviewCardFrame(
+      key: ValueKey<String>('workspace-proposal-${proposal.reviewId}'),
+      title: 'WORKSPACE PATCH · ${proposal.proposal.id}',
+      subtitle:
+          'rev ${proposal.proposal.baseWorkspaceRevision} · '
+          '${proposal.resources.length} file(s) · ${proposal.editCount} edit(s)',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (final resource in proposal.resources) ...<Widget>[
+            Text(
+              '${resource.resourceId} · base ${resource.baseDocumentRevision}',
+              style: P.silkStyle(hi: true),
+            ),
+            for (final edit in resource.edits) ...<Widget>[
+              _DiffLine(
+                prefix: '−',
+                text: edit.beforeText.isEmpty ? '<insert>' : edit.beforeText,
+                color: P.red,
+              ),
+              _DiffLine(
+                prefix: '+',
+                text: edit.replacement.isEmpty ? '<delete>' : edit.replacement,
+                color: const Color(0xFF30D158),
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 6,
+            children: <Widget>[
+              TextButton(
+                key: ValueKey<String>('reject-proposal-${proposal.reviewId}'),
+                onPressed: () => onResolve(false),
+                child: const Text('REJECT'),
+              ),
+              TextButton(
+                key: ValueKey<String>('apply-proposal-${proposal.reviewId}'),
+                onPressed: () => onResolve(true),
+                child: const Text('APPLY'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiffLine extends StatelessWidget {
+  const _DiffLine({
+    required this.prefix,
+    required this.text,
+    required this.color,
+  });
+
+  final String prefix;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 3),
+    child: SelectableText(
+      '$prefix $text',
+      style: P.monoStyle(color: color, size: 10),
+    ),
+  );
+}
+
+class _ReviewCardFrame extends StatelessWidget {
+  const _ReviewCardFrame({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: P.well,
+      border: Border.all(color: P.orange.withValues(alpha: 0.55)),
+      borderRadius: BorderRadius.circular(3),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: P.silkStyle(hi: true)),
+        const SizedBox(height: 3),
+        Text(subtitle, style: P.silkStyle(dim: true)),
+        const SizedBox(height: 8),
+        child,
+      ],
+    ),
+  );
 }
 
 /// The agent column's title strip, 38pt — the same grade as the main strip,
@@ -167,7 +397,9 @@ class _AgentHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: dot,
-                boxShadow: glow ? <BoxShadow>[BoxShadow(color: dot, blurRadius: 5)] : null,
+                boxShadow: glow
+                    ? <BoxShadow>[BoxShadow(color: dot, blurRadius: 5)]
+                    : null,
               ),
             ),
           ),
@@ -190,7 +422,12 @@ class _MsgView extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
           color: P.well,
-          border: Border(left: BorderSide(color: P.orange, width: 2), top: BorderSide(color: P.seamLo), bottom: BorderSide(color: P.seamLo), right: BorderSide(color: P.seamLo)),
+          border: Border(
+            left: BorderSide(color: P.orange, width: 2),
+            top: BorderSide(color: P.seamLo),
+            bottom: BorderSide(color: P.seamLo),
+            right: BorderSide(color: P.seamLo),
+          ),
         ),
         child: Text(msg.text, style: P.monoStyle(color: P.silk, size: 11)),
       );
@@ -213,7 +450,10 @@ class _MsgView extends StatelessWidget {
                 borderRadius: BorderRadius.circular(3),
                 border: Border.all(color: isUser ? P.ring : P.seamLo),
               ),
-              child: Text(msg.text, style: P.monoStyle(color: P.paperLow, size: 11.5)),
+              child: Text(
+                msg.text,
+                style: P.monoStyle(color: P.paperLow, size: 11.5),
+              ),
             ),
           ],
         ),

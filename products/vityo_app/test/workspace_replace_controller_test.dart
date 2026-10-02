@@ -171,26 +171,65 @@ final class _AtomicStore implements AtomicWorkspaceDocumentStore {
 
   final Map<String, DocumentState> _documents;
   int atomicCommitCount = 0;
+  var _workspaceRevision = 0;
 
   @override
-  Future<Map<String, int>> saveDocumentsAtomically(
-    Iterable<DocumentState> documents,
-  ) async {
+  Future<WorkspaceDocumentCommitReceipt> saveDocumentsAtomically(
+    Iterable<DocumentState> documents, {
+    required int expectedWorkspaceRevision,
+    required Map<String, int> expectedDocumentRevisions,
+  }) async {
+    if (_workspaceRevision != expectedWorkspaceRevision) {
+      throw StateError('workspace_revision_conflict');
+    }
     atomicCommitCount += 1;
     final revisions = <String, int>{};
-    for (final document in documents) {
-      _documents[document.documentId] = document;
+    final pending = documents.toList(growable: false);
+    for (final document in pending) {
+      expect(
+        _documents[document.documentId]?.revision,
+        expectedDocumentRevisions[document.documentId],
+      );
       revisions[document.documentId] = document.revision;
     }
-    return revisions;
+    _workspaceRevision += 1;
+    for (final document in pending) {
+      _documents[document.documentId] = DocumentState(
+        documentId: document.documentId,
+        text: document.text,
+        revision: document.revision,
+        workspaceRevision: _workspaceRevision,
+        baseDocumentRevision: document.revision,
+      );
+    }
+    return WorkspaceDocumentCommitReceipt(
+      workspaceRevision: _workspaceRevision,
+      documentRevisions: revisions,
+    );
   }
 
   @override
-  Future<DocumentState> loadDocument(String path) async => _documents[path]!;
+  Future<DocumentState> loadDocument(String path) async {
+    final document = _documents[path]!;
+    return DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
+  }
 
   @override
   Future<void> saveDocument(DocumentState document) async {
-    _documents[document.documentId] = document;
+    _workspaceRevision += 1;
+    _documents[document.documentId] = DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
   }
 
   @override
