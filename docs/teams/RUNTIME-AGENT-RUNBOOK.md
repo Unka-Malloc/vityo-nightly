@@ -12,6 +12,10 @@ orchestration; those belong to the compatible Agent runtime.
 
 ## Owned Surface
 
+Pending Agent terminal output and exit waits settle when the session is cancelled or
+closed, the terminal is released, the operation port closes, or the daemon transport
+disconnects. These lifecycle transitions do not impose a wall-clock execution limit.
+
 Primary paths:
 
 1. `products/vityo_app/lib/src/view_ide/runtime/`

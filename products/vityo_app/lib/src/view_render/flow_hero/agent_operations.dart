@@ -598,6 +598,9 @@ final class FlowHeroAgentOperationPort
 
   @override
   void cancelSessionOperations(String sessionId) {
+    for (final terminal in _terminals.values) {
+      if (terminal.sessionId == sessionId) terminal.interruptWaits();
+    }
     for (final pending in _pendingProposals.values) {
       if (pending.sessionId == sessionId && !pending.decision.isCompleted) {
         pending.decision.complete('cancelled');
@@ -619,6 +622,8 @@ final class FlowHeroAgentOperationPort
         in _terminals.values
             .where((terminal) => terminal.sessionId == sessionId)
             .toList(growable: false)) {
+      _terminals.remove(terminal.id);
+      terminal.interruptWaits();
       try {
         await _client.request(
           method: 'pty.close',
@@ -629,7 +634,6 @@ final class FlowHeroAgentOperationPort
       } on Object {
         // Session teardown drops local terminal ownership if vityod is gone.
       }
-      _terminals.remove(terminal.id);
     }
   }
 
@@ -720,8 +724,9 @@ final class FlowHeroAgentOperationPort
     AgentClientOperation operation,
   ) async {
     final terminal = _terminalFor(operation.params);
+    final waitEpoch = terminal.waitEpoch;
     while (!terminal.exited) {
-      await _drainOutput(terminal);
+      await _drainOutput(terminal, waitEpoch: waitEpoch);
       if (!terminal.exited) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
@@ -759,12 +764,23 @@ final class FlowHeroAgentOperationPort
     );
     _throwServiceError(response);
     _terminals.remove(terminal.id);
+    terminal.interruptWaits();
     return <String, Object?>{};
   }
 
-  Future<void> _drainOutput(_FlowHeroTerminal terminal) async {
+  Future<void> _drainOutput(
+    _FlowHeroTerminal terminal, {
+    int? waitEpoch,
+  }) async {
     const creditBytes = 256 * 1024;
+    final epoch = waitEpoch ?? terminal.waitEpoch;
     while (!terminal.outputClosed) {
+      if (_closed ||
+          _terminals[terminal.id] != terminal ||
+          terminal.waitEpoch != epoch ||
+          !_client.state.canDispatch) {
+        throw _terminalWaitInterrupted();
+      }
       final frame = await _requestPtyOutput(terminal, creditBytes);
       if (frame.sequence > terminal.lastOutputSequence) {
         terminal.lastOutputSequence = frame.sequence;
@@ -779,27 +795,49 @@ final class FlowHeroAgentOperationPort
     int creditBytes,
   ) async {
     final received = Completer<VityodBinaryFrame>();
-    final subscription = _client.binaryFrames.listen((frame) {
-      if (!received.isCompleted &&
-          frame.kind == VityodFrameKind.pty &&
-          frame.streamId == terminal.streamId) {
-        received.complete(frame);
+    terminal.pendingOutput.add(received);
+    void interrupted() {
+      if (!received.isCompleted) {
+        received.completeError(_terminalWaitInterrupted());
       }
-    });
+    }
+
+    final subscription = _client.binaryFrames.listen(
+      (frame) {
+        if (!received.isCompleted &&
+            frame.kind == VityodFrameKind.pty &&
+            frame.streamId == terminal.streamId) {
+          received.complete(frame);
+        }
+      },
+      onDone: interrupted,
+      onError: (Object _, StackTrace __) => interrupted(),
+    );
+    final states = _client.states.listen((state) {
+      if (!state.canDispatch) interrupted();
+    }, onDone: interrupted);
     try {
       final credit = Uint8List(4);
       ByteData.sublistView(credit).setUint32(0, creditBytes, Endian.big);
-      await _client.sendBinary(
-        VityodBinaryFrame(
-          kind: VityodFrameKind.credit,
-          streamId: terminal.streamId,
-          sequence: ++terminal.creditSequence,
-          payload: credit,
+      // Attach the reply/error listener before dispatch: a synchronous transport
+      // can close or fail while sending the output credit.
+      final reply = received.future;
+      await Future.wait<Object?>([
+        reply,
+        _client.sendBinary(
+          VityodBinaryFrame(
+            kind: VityodFrameKind.credit,
+            streamId: terminal.streamId,
+            sequence: ++terminal.creditSequence,
+            payload: credit,
+          ),
         ),
-      );
-      return await received.future;
+      ], eagerError: true);
+      return await reply;
     } finally {
+      terminal.pendingOutput.remove(received);
       await subscription.cancel();
+      await states.cancel();
     }
   }
 
@@ -853,6 +891,7 @@ final class FlowHeroAgentOperationPort
     _pendingProposals.clear();
     _documentBaselines.clear();
     for (final terminal in _terminals.values.toList(growable: false)) {
+      terminal.interruptWaits();
       try {
         await _client.request(
           method: 'pty.close',
@@ -1035,6 +1074,15 @@ final class _FlowHeroTerminal {
   bool exited = false;
   bool outputClosed = false;
   int? exitCode;
+  int waitEpoch = 0;
+  final Set<Completer<VityodBinaryFrame>> pendingOutput = {};
+
+  void interruptWaits() {
+    waitEpoch++;
+    for (final reply in pendingOutput) {
+      if (!reply.isCompleted) reply.completeError(_terminalWaitInterrupted());
+    }
+  }
 
   void appendFrame(VityodBinaryFrame frame) {
     var start = 0;
@@ -1072,6 +1120,12 @@ final class _FlowHeroTerminal {
     'signal': null,
   };
 }
+
+AgentClientOperationFailure _terminalWaitInterrupted() =>
+    AgentClientOperationFailure(
+      'terminal_wait_interrupted',
+      'The terminal wait ended because its session or connection changed.',
+    );
 
 final class _AgentDocumentBaseline {
   const _AgentDocumentBaseline({

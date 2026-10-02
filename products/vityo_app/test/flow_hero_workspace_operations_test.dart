@@ -943,6 +943,80 @@ void main() {
     },
   );
 
+  for (final ending in [
+    'disconnect',
+    'cancel',
+    'session-close',
+    'release',
+    'port-close',
+    'stream-close',
+  ]) {
+    test('pending terminal wait ends on $ending', () async {
+      final transport = _OperationTransport(emitTerminalOutput: false);
+      final client = _newClient(transport);
+      await client.connect();
+      final engine = WorkbenchController();
+      final port = FlowHeroAgentOperationPort(
+        engine: engine,
+        documentStore: _MemoryDocumentStore(root: '/workspace'),
+        client: client,
+        workspaceId: 'flow-hero',
+        workspaceRoot: '/workspace',
+      );
+      addTearDown(engine.dispose);
+      addTearDown(client.dispose);
+      final created = await port.dispatch(
+        _operation(
+          id: 'create-waiting-terminal',
+          method: 'terminal/create',
+          params: const {'sessionId': 'session-1', 'command': 'shell'},
+        ),
+      );
+      final params = <String, Object?>{
+        'sessionId': 'session-1',
+        'terminalId': created['terminalId'],
+      };
+      final waiting = expectLater(
+        port.dispatch(
+          _operation(
+            id: 'wait',
+            method: 'terminal/wait_for_exit',
+            params: params,
+          ),
+        ),
+        throwsA(
+          isA<AgentClientOperationFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'terminal_wait_interrupted',
+          ),
+        ),
+      );
+      await transport.terminalCredit.future;
+      switch (ending) {
+        case 'disconnect':
+          await client.close();
+        case 'cancel':
+          port.cancelSessionOperations('session-1');
+        case 'session-close':
+          await port.closeSessionOperations('session-1');
+        case 'release':
+          await port.dispatch(
+            _operation(
+              id: 'release',
+              method: 'terminal/release',
+              params: params,
+            ),
+          );
+        case 'port-close':
+          await port.close();
+        case 'stream-close':
+          await transport._binary.close();
+      }
+      await waiting;
+    });
+  }
+
   test('terminal output remains readable after kill until release', () async {
     final transport = _OperationTransport();
     final client = _newClient(transport);
@@ -1219,7 +1293,6 @@ final class _MemoryDocumentStore implements WorkspaceDocumentOperationStore {
 
   @override
   Future<void> saveDocument(DocumentState document) async {
-    final relativePath = relativeDocumentPath(document.documentId);
     final snapshot = await readWorkspaceSnapshot(document.documentId);
     await saveDocumentsAtomically(
       <DocumentState>[document],
@@ -1311,10 +1384,13 @@ final class _OperationTransport implements VityodTransport {
   _OperationTransport({
     this.includeClientOperation = false,
     this.failOperationResponses = false,
+    this.emitTerminalOutput = true,
   });
 
   final bool includeClientOperation;
   final bool failOperationResponses;
+  final bool emitTerminalOutput;
+  final Completer<void> terminalCredit = Completer<void>();
   final StreamController<Uint8List> _control =
       StreamController<Uint8List>.broadcast(sync: true);
   final StreamController<VityodBinaryFrame> _binary =
@@ -1433,6 +1509,8 @@ final class _OperationTransport implements VityodTransport {
   Future<void> sendBinary(VityodBinaryFrame frame) async {
     if (!_connected) throw StateError('disconnected');
     if (frame.kind != VityodFrameKind.credit) return;
+    if (!terminalCredit.isCompleted) terminalCredit.complete();
+    if (!emitTerminalOutput) return;
     final payload = Uint8List(4 + utf8.encode('retained after kill').length);
     ByteData.sublistView(payload).setUint32(0, 137, Endian.big);
     payload.setRange(4, payload.length, utf8.encode('retained after kill'));
