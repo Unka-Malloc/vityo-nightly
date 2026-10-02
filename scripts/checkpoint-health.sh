@@ -74,6 +74,7 @@ log "project coverage gate"
 
 log "deterministic IDE integration suites"
 IDE_SUITES=(
+  daemon-core
   workspace-transactions
   developer-loop
   agent-client-protocol

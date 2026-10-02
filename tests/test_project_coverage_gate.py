@@ -45,6 +45,7 @@ class ProjectCoverageGateTest(unittest.TestCase):
             encoding="utf-8"
         )
         for suite in (
+            "daemon-core",
             "workspace-transactions",
             "developer-loop",
             "agent-client-protocol",

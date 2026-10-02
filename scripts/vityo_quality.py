@@ -810,18 +810,17 @@ def recovery_isolation() -> int:
     )
 
 
-def ide_quality() -> int:
+def daemon_core() -> int:
     cargo = tool("cargo")
     dart = tool("dart")
-    flutter = tool("flutter")
-    product = ROOT / "products" / "vityo_app"
-    daemon = product / "native" / "vityod"
+    daemon = ROOT / "products" / "vityo_app" / "native" / "vityod"
     daemon_protocol = ROOT / "packages" / "vityo_daemon_protocol"
     commands = (
         (
             [
                 cargo,
                 "test",
+                "--locked",
                 "--manifest-path",
                 str(daemon / "Cargo.toml"),
                 "--workspace",
@@ -831,6 +830,22 @@ def ide_quality() -> int:
         ),
         ([dart, "analyze"], daemon_protocol),
         ([dart, "test"], daemon_protocol),
+    )
+    for command, cwd in commands:
+        code = run(command, cwd)
+        if code:
+            return code
+    return 0
+
+
+def ide_quality() -> int:
+    code = daemon_core()
+    if code:
+        return code
+    dart = tool("dart")
+    flutter = tool("flutter")
+    product = ROOT / "products" / "vityo_app"
+    commands = (
         (
             _native_desktop_test_command(flutter),
             product,
@@ -1538,6 +1553,8 @@ def main() -> int:
         return quality_runtime()
     if (args.product, args.suite) == ("ide", "recovery-isolation"):
         return recovery_isolation()
+    if (args.product, args.suite) == ("ide", "daemon-core"):
+        return daemon_core()
     if (args.product, args.suite) == ("ide", "ide-quality"):
         return ide_quality()
     if (args.product, args.suite) == ("ide", "full"):

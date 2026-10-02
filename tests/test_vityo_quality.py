@@ -61,6 +61,7 @@ class VityoQualityTest(unittest.TestCase):
         "macos_native_ui",
         "quality_runtime",
         "recovery_isolation",
+        "daemon_core",
         "ide_quality",
     )
 
@@ -1239,6 +1240,7 @@ class VityoQualityTest(unittest.TestCase):
             ("ide", "macos-native-ui", "macos_native_ui"),
             ("ide", "quality-runtime", "quality_runtime"),
             ("ide", "recovery-isolation", "recovery_isolation"),
+            ("ide", "daemon-core", "daemon_core"),
             ("ide", "ide-quality", "ide_quality"),
             ("ide", "full", "ide_full"),
         )
