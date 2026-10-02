@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/main.dart' as app_entrypoint;
-import 'package:vityo_app/src/ide/platform/desktop_startup_probe_contract.dart';
+import 'package:vityo_app/src/app/platform/desktop_startup_probe_contract.dart';
 import 'package:vityo_app/src/view_render/flow_hero/flow_hero.dart';
 
 void main() {
