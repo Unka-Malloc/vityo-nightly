@@ -73,6 +73,10 @@ def _git_value(command: Sequence[str], *, cwd: Path) -> str:
     return result.stdout.strip()
 
 
+def _normalized_repository(url: str) -> str:
+    return url.removesuffix(".git").rstrip("/")
+
+
 def _checkout_matches(source: Path, product: str, commit: str) -> bool:
     if not source.is_dir():
         return False
@@ -80,7 +84,9 @@ def _checkout_matches(source: Path, product: str, commit: str) -> bool:
     if not repository_root or Path(repository_root).resolve() != source.resolve():
         return False
     origin = _git_value(("git", "remote", "get-url", "origin"), cwd=source)
-    if origin.removesuffix(".git").rstrip("/") != str(PRODUCTS[product]["repository"]).removesuffix(".git"):
+    if _normalized_repository(origin) != _normalized_repository(
+        str(PRODUCTS[product]["repository"])
+    ):
         return False
     return _git_value(("git", "rev-parse", "HEAD"), cwd=source) == commit
 
@@ -136,8 +142,7 @@ def ensure_pinned_checkout(
 
 def _llvm_cmake_dir() -> Path:
     explicit = os.environ.get("LLVM_DIR")
-    candidates: list[Path] = [Path(explicit)] if explicit else []
-    candidates.extend(LLVM_CMAKE_ROOTS)
+    discovered: list[Path] = []
     for command in ("llvm-config-18", "llvm-config"):
         executable = shutil.which(command)
         if executable is None:
@@ -150,7 +155,12 @@ def _llvm_cmake_dir() -> Path:
                 [executable, "--cmakedir"], capture_output=True, text=True, check=False
             )
             if configured.returncode == 0:
-                candidates.insert(0, Path(configured.stdout.strip()))
+                discovered.append(Path(configured.stdout.strip()))
+    # An explicit LLVM_DIR is the operator's request and wins over discovery;
+    # a PATH llvm-config only outranks the well-known installation roots.
+    candidates: list[Path] = [Path(explicit)] if explicit else []
+    candidates.extend(discovered)
+    candidates.extend(LLVM_CMAKE_ROOTS)
     for candidate in candidates:
         config = candidate / "LLVMConfig.cmake"
         if not config.is_file():

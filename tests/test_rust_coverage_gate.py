@@ -581,5 +581,246 @@ class RustCoverageGateTest(unittest.TestCase):
         self.assertNotIn("/private/tool", stderr.getvalue())
 
 
+    def test_report_reader_edge_cases(self) -> None:
+        with mock.patch.object(
+            self.gate.Path, "unlink", side_effect=OSError("denied")
+        ):
+            self.assertFalse(self.gate.discard_report(self.output_dir / "x.lcov"))
+
+        outside = self.root.parent / f"{self.root.name}-outside"
+        outside.mkdir()
+        try:
+            (self.root / "escape").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "stay inside the repository"):
+                self.gate.resolve_output_dir(Path("escape/evidence"))
+        finally:
+            outside.rmdir()
+
+    def test_source_path_and_requirement_edges(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be relative"):
+            self.gate.normalize_source_path("/absolute/lib.rs", "coding-agent")
+        with self.assertRaisesRegex(ValueError, "belongs to another product"):
+            self.gate.normalize_source_path("products/vityod/src/lib.rs", "coding-agent")
+        with self.assertRaisesRegex(ValueError, "outside first-party Rust sources"):
+            self.gate.normalize_source_path("vendor/lib.rs", "coding-agent")
+
+        with self.assertRaisesRegex(ValueError, "stay under the Coding Agent src tree"):
+            self.gate.parse_module_requirement("REQ-AGENT-001=other/lib.rs")
+        with self.assertRaisesRegex(ValueError, "must end with '/'"):
+            self.gate.parse_module_requirement("REQ-AGENT-001=src/tools.rs/")
+        with self.assertRaisesRegex(ValueError, "must end with '.rs'"):
+            self.gate.parse_module_requirement("REQ-AGENT-001=src/tools")
+
+        with self.assertRaisesRegex(ValueError, "counter is malformed"):
+            self.gate._parse_nonnegative_int("x", field="found", record=1)
+        with self.assertRaisesRegex(ValueError, "counter is negative"):
+            self.gate._parse_nonnegative_int("-1", field="found", record=1)
+
+    def test_parse_lcov_rejects_malformed_reports(self) -> None:
+        source = self._first_party_path("coding-agent", "src/lib.rs")
+        cases = (
+            ("unknown product", lambda: self.gate.parse_lcov("", "other"), "unknown Rust coverage product"),
+            (
+                "missing summary",
+                lambda: self.gate.parse_lcov(f"SF:{source}\nDA:1,1\nend_of_record\n", "coding-agent"),
+                "line summary is missing",
+            ),
+            (
+                "duplicate source",
+                lambda: self.gate.parse_lcov(
+                    lcov_record(source, [(1, 1)]) + lcov_record(source, [(1, 1)]),
+                    "coding-agent",
+                ),
+                "duplicate first-party source record",
+            ),
+            (
+                "unterminated record",
+                lambda: self.gate.parse_lcov(f"SF:{source}\nDA:1,1\nLF:1\nLH:1\n", "coding-agent"),
+                "missing end_of_record",
+            ),
+            (
+                "line data outside a record",
+                lambda: self.gate.parse_lcov("DA:1,1\n", "coding-agent"),
+                "outside a source record",
+            ),
+            (
+                "summary outside a record",
+                lambda: self.gate.parse_lcov("LF:1\n", "coding-agent"),
+                "summary appears outside a source record",
+            ),
+            (
+                "repeated summary",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:1,1\nLF:1\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "repeats a found summary",
+            ),
+            (
+                "repeated line",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:1,1\nDA:1,1\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "repeats a line",
+            ),
+            (
+                "malformed line",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:one,1\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "counter is malformed",
+            ),
+            (
+                "wide line record",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:1,1,2,3\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "line data is malformed",
+            ),
+            (
+                "zero line number",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:0,1\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "line number is invalid",
+            ),
+            (
+                "negative hits",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:1,-1\nLF:1\nLH:0\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "counter is negative",
+            ),
+            (
+                "unsafe source path",
+                lambda: self.gate.parse_lcov(
+                    "SF:../outside/lib.rs\nDA:1,1\nLF:1\nLH:1\nend_of_record\n",
+                    "coding-agent",
+                ),
+                "unsafe source path",
+            ),
+            (
+                "unterminated before next source",
+                lambda: self.gate.parse_lcov(
+                    f"SF:{source}\nDA:1,1\nSF:{source}\n", "coding-agent"
+                ),
+                "not terminated",
+            ),
+        )
+        for label, call, message in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, message):
+                    call()
+
+    def test_collect_reports_unreplaceable_and_unreadable_reports(self) -> None:
+        with mock.patch.object(
+            self.gate.shutil, "which", return_value="/tool/bin/tool"
+        ), mock.patch.object(self.gate, "discard_report", return_value=False):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                result = self.gate.collect_product("coding-agent", self.output_dir, [])
+        self.assertEqual(result, 2)
+        self.assertIn("cannot be replaced", stderr.getvalue())
+
+        def fake_run(_command, cwd, check):
+            destination = self.output_dir / "coding-agent.lcov"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                lcov_record(
+                    self._first_party_path("coding-agent", "src/lib.rs"), [(1, 1)]
+                ),
+                encoding="utf-8",
+            )
+            return SimpleNamespace(returncode=0)
+
+        with mock.patch.object(
+            self.gate.shutil, "which", return_value="/tool/bin/tool"
+        ), mock.patch.object(self.gate.subprocess, "run", side_effect=fake_run), mock.patch.object(
+            self.gate.Path, "read_text", side_effect=OSError("unreadable")
+        ):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                result = self.gate.collect_product("coding-agent", self.output_dir, [])
+        self.assertEqual(result, 2)
+        self.assertIn("unreadable", stderr.getvalue())
+
+    def test_report_reader_reports_unreadable_reports(self) -> None:
+        self._write_report(
+            "coding-agent",
+            lcov_record(self._first_party_path("coding-agent", "src/lib.rs"), [(1, 1)]),
+        )
+        with mock.patch.object(
+            self.gate.Path, "read_text", side_effect=OSError("unreadable")
+        ):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                result = self.gate.evaluate_product(
+                    "coding-agent", self.output_dir, fail_under=None, required_modules=[]
+                )
+        self.assertEqual(result, 2)
+        self.assertIn("missing or unreadable", stderr.getvalue())
+
+    def test_run_gate_and_cli_validate_their_inputs(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.assertEqual(
+                self.gate.run_gate(
+                    product="coding-agent",
+                    output_dir=self.output_dir,
+                    collect=False,
+                    report=False,
+                    fail_under=None,
+                    required_modules=[],
+                ),
+                2,
+            )
+        self.assertIn("must be selected", stderr.getvalue())
+
+        with mock.patch.object(self.gate, "collect_product", return_value=5) as collect:
+            self.assertEqual(
+                self.gate.run_gate(
+                    product="coding-agent",
+                    output_dir=self.output_dir,
+                    collect=True,
+                    report=False,
+                    fail_under=None,
+                    required_modules=[],
+                ),
+                5,
+            )
+        self.assertTrue(collect.called)
+
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                self.gate.main(["--product", "coding-agent"])
+            with self.assertRaises(SystemExit):
+                self.gate.main(
+                    [
+                        "--product",
+                        "coding-agent",
+                        "--report-only",
+                        "--require-module",
+                        "REQ-AGENT-001=vityod/src/lib.rs",
+                    ]
+                )
+            self.assertEqual(
+                self.gate.main(
+                    [
+                        "--product",
+                        "coding-agent",
+                        "--report-only",
+                        "--fail-under",
+                        "0",
+                    ]
+                ),
+                2,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
