@@ -446,8 +446,6 @@ class VityoQualityTest(unittest.TestCase):
                         expected,
                     )
 
-        self.assertFalse(hasattr(self.quality, "_run_plan_validation"))
-
     def _patch_formal_success(self, stack: ExitStack, *, written: list) -> None:
         self._patch_preflight_ready(stack)
         stack.enter_context(

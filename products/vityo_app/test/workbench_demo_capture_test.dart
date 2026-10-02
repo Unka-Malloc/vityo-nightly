@@ -41,6 +41,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 900));
     await _capture('running'); // pulses riding the cables
     await tester.pump(const Duration(milliseconds: 1800)); // fault latches at step 11
+    expect(c.lastRunSeconds, isNotNull);
+    // Stopwatch uses wall time even in the fake-async harness. Keep the
+    // displayed measurement stable while preserving the held-state visuals.
+    c.lastRunSeconds = 0.1;
+    c.notifyListeners();
+    await tester.pump();
     await _capture('held');
 
     c.setBpm(40.0); // the microscope: slow enough to watch a signal think

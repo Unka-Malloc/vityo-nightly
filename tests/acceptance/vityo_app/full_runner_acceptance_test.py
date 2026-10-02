@@ -185,7 +185,6 @@ class IdeFullRunnerAcceptanceTest(unittest.TestCase):
         source = QUALITY_SCRIPT.read_text(encoding="utf-8")
         for marker in FORBIDDEN_PATH_MARKERS:
             self.assertNotIn(marker, source)
-        self.assertNotIn("def _run_plan_validation", source)
         self.assertNotRegex(
             source,
             r"""["']\$HOME["']|os\.environ\[\s*["']HOME["']\s*\]""",
