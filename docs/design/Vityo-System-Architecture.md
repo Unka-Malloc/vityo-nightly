@@ -1,8 +1,8 @@
 # Vityo System Architecture
 
-**Purpose:** 定义 `Vityo` 的系统层次、adapter 边界、平台执行后端与主线实现策略；具体产品语义以 [Vityo-Product-Spec.md](./Vityo-Product-Spec.md) 为准。
+**Purpose:** Define Vityo's maintained system boundaries, application composition, language/runtime adapters, and source-authoritative Flow Hero target. Product commitments remain in [Vityo-Product-Spec.md](./Vityo-Product-Spec.md).
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
 **Status:** Current system architecture
 
@@ -42,33 +42,38 @@ The IDE owns source buffers, document and workspace revisions, Styio compiler/ru
 workspace transactions. Agent runtimes own model/provider access, context selection, the tool loop,
 Agent policy, durable sessions, and multi-Agent orchestration.
 
-## 1.1 前端 / 后端切面
+## 1.1 Product And Repository Ownership
 
-这里的“前端 / 后端”不是按单一仓库目录硬切，而是按产品责任切：
+The repository has three product-facing roots:
 
-- 前端是面向用户的 `Flutter UI Runtime + Custom Editor Engine + IDE Surfaces + Agent Workbench + Module Host`，负责编辑、浏览、交互和状态呈现。
-- 后端是 `Vityo` 背后的整条工具链面，包含 adapter layer、local CLI / FFI、hosted control plane，以及上游 `pafio` / `styio` 提供的 machine contract。
-- `prototype/` 与 `products/vityo_app/lib/src/app|editor|runtime|agent_client|theme|module_host|platform` 属于前端主面；`products/vityo_app/lib/src/frontend_shell/` 是这组壳层模块对外聚合的显式入口边界。
-- `products/vityo_app/lib/src/view_ide/backend_toolchain/` 是后端工具链接入的实现根目录，承载 adapter、hosted control plane codec 和产品运维 lane。
-- `products/vityo_app/lib/src/view_ide/backend_toolchain/` 只保留 legacy compatibility exports；它继续服务旧 import 路径，但不再承载新的后端实现。
+| Root | Ownership |
+|---|---|
+| `products/vityo_app/` | Flutter IDE, editor and workspace state, language/runtime adapters, Agent Client and IDE-side review/transaction policy, and presentation. |
+| `products/vityo_coding_agent/` | First-party Agent runtime, including provider/model access, tool policy and execution, task/session orchestration, and its protocol producer. |
+| `packages/vityo_agent_protocol/` | Versioned, implementation-independent IDE-to-Agent wire contract. |
 
-非协商规则：
+Within the Flutter application, responsibilities follow the actual source roots:
 
-1. 前端不重新实现 compiler、resolver、registry、publish、worker scheduling 语义。
-2. 后端不输出只为某个页面私定的状态拼装；它输出 machine contract 和 domain payload。
-3. Web hosted workspace、iOS cloud-only、Android cloud fallback 都属于后端执行/工具链路线，不属于前端业务逻辑。
-4. 新增后端实现默认进入 `backend_toolchain/`；`integration/` 不得重新生长成第二套逻辑根目录。
+1. `lib/src/app/` is the composition root. It creates and injects shared IDE services into the application presentation.
+2. `lib/src/view_ide/` owns presentation-independent IDE services and contracts, including language, runtime, platform, and backend-toolchain adapters. `backend_toolchain/` is an active implementation root for those adapters; it is not a legacy export façade.
+3. `lib/src/ide/` owns editor, document/workspace, Agent Client, and collaboration application state. A consumer uses an explicitly registered public contract or projection from its owner rather than relocating that domain to satisfy an import rule.
+4. `lib/src/view_render/` owns Flutter screens and visual state bindings. It consumes only explicitly registered public contract/projection surfaces from their actual owners.
+5. `lib/src/frontend_shell/` aggregates the public Flutter shell entry points; it is not a replacement for `app/` composition.
+6. The old top-level `backend_toolchain/`, `editor/`, `language/`, and `integration/` import roots are retired. Do not restore compatibility exports under those paths.
+7. `prototype/` is a permanent source asset and remains alongside the Flutter product.
+
+The words *frontend* and *backend* describe deployment or user-facing responsibilities, not a reason to duplicate semantic authority. Vityo owns client-side editing and orchestration contracts. Styio owns language/compiler semantics, and Pafio owns project/package metadata. Hosted services own their published remote facts. Flutter code must not infer those facts from page state or private upstream storage.
 
 ## 1.2 IDE Implementation Boundary
 
-当前 Flutter 主线分为三个可审计层：
+The Flutter application keeps these ownership layers distinct:
 
-1. `products/vityo_app/lib/src/view_ide/`：domain/application/contracts/state 层，承载 editor document、workspace、language service、Agent Client、IDE-side permission presentation、module host、environment sandbox、commands、registry 和 backend toolchain 合同。该层不得 import Flutter presentation APIs。
-2. `products/vityo_app/lib/src/view_render/`：Flutter presentation 层，承载 shell、editor/runtime/agent/debug surfaces、theme 和 viewport profile。该层只能依赖已登记的 `view_ide/` contract/model surface。
-3. `products/vityo_app/lib/src/app/`：composition root，负责把 `view_ide` 对象接到 `view_render` widgets。
+1. `lib/src/view_ide/` owns presentation-independent service contracts, adapters, capability models, environment services, module/runtime models, and application services in those domains. It must not import Flutter presentation libraries or `view_render/`.
+2. `lib/src/ide/` owns editor/document/workspace application state and Agent Client/collaboration state. Its owner paths remain separate from `view_ide/` where the implementation ownership differs.
+3. `lib/src/view_render/` owns Flutter widgets, screens, visual state, themes, and presentation bindings. It may consume only the public model/adapter/projection paths recorded in the path-level boundary registry, regardless of whether each path is owned by `ide/` or `view_ide/`.
+4. `lib/src/app/` is the composition root. It creates shared service instances and injects them into the shell/presentation; widgets do not construct competing workspace or Agent authorities.
 
-当前 canonical roots 是 `view_ide/backend_toolchain/`、`ide/editor/`、`view_render/editor/` 和
-`view_ide/language/`。旧 import roots 已移除，不是兼容面，也不得恢复。
+The `view_ide/`, `ide/`, and `view_render/` roots have distinct owners. A path-level allowlist in the architecture boundary gate records the small set of public model, adapter, and projection surfaces that presentation may consume. This does not make the remaining implementation directories public APIs.
 
 本边界由以下命令守住：
 
@@ -76,6 +81,18 @@ Agent policy, durable sessions, and multi-Agent orchestration.
 python3 scripts/check_architecture_boundaries.py
 python3 scripts/import-boundary-gate.py
 ```
+
+## 1.3 Application Composition And Current Flow Hero Entry
+
+`AppBootstrap.load()` is the existing Flutter composition mechanism and `VityoApp` consumes its result. The current `products/vityo_app/lib/main.dart`, however, calls `runApp(const FlowHeroApp())`; it does not load `AppBootstrap` or construct `VityoApp`. The Flow Hero route therefore does not currently consume the shared bootstrap-owned workspace, language, execution, or collaboration services.
+
+Flow Hero presently builds a local sample graph and demonstration source, uses a small regex-based parser for that sample, simulates run progress with timers, and seeds a scripted Agent transcript. Its `AgentBridge` can establish an Agent Client transport when explicitly configured, but transport connectivity alone does not mean the first-party runtime can call a model, run coding tools, or apply source-bound proposals. Preserve these differences in implementation status and user-facing state.
+
+The integration target is one composition path: load the actual workspace once, inject its document/editor/language/execution/Agent services into Flow Hero, and use the existing shell for other IDE routes. Flow Hero must not independently discover a second workspace or become a separate data owner. `AppBootstrap` capability entries and protocol negotiation describe available wiring; they do not prove a user-facing feature is connected.
+
+## 1.4 Source Of Language And Project Truth
+
+Styio owns source grammar, parsing, type and resource rules, semantic flow facts, valid source rewrites, compiler results, and execution semantics. Pafio owns workspace/package/dependency/target metadata. Vityo renders typed, revisioned facts and applies proposed edits through IDE-owned document transactions. Generic canvas packages provide interaction and drawing mechanics only; they cannot supply Styio meaning.
 
 ## 2. 主要层次
 
@@ -247,42 +264,47 @@ Execution sandboxing, IDE secret storage, log redaction, and module trust remain
 IDE-owned operations. Agent-runtime secrets and tool policy remain Agent-runtime concerns. Protocol
 messages and all UI projections must be redacted and must never contain raw credentials.
 
-The IDE-side migration is complete. Agent collaboration is implemented only through the supervised
-Agent Client, immutable collaboration projection, presentation Workbench, bounded context/MCP
-export, and IDE-owned workspace transactions; see
-[Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) for remaining product closure.
+These IDE-owned components exist as reusable application and presentation surfaces. They are not all connected to the current Flow Hero entry point; see [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) for the open production wiring and Agent-runtime gaps.
 
-## 3. 平台执行矩阵
+### 2.10 Source-Authoritative Flow Hero
+
+Flow Hero remains an editor view over the shared Styio document. It does not own another program model.
+
+1. **One source authority.** The editor's document/workspace services own text, document revisions, history, and persistence. The lower-right source dock edits the actual selected document or a range anchored into it; it never keeps a copied snippet as a second saveable source.
+2. **Derived graph.** Styio language-service facts for a document revision determine operation/resource nodes, typed input/output ports, source ranges, diagnostics, and directed semantic edges in producer-to-consumer order. The graph is a keyed projection/cache. Pafio project metadata does not define program flow. A stale or incomplete analysis must remain identified as stale/incomplete; a canvas gesture cannot invent valid language semantics.
+3. **Separate layout state.** Moving a node changes view/layout state only. Positions, selection, zoom, and palette are presentation state and do not rewrite source or alter semantic edges.
+4. **Source rewiring.** A connection gesture is a transient preview. A semantic rewire request is sent to the Styio-owned language service with the expected document revision and the edge/endpoint identity. The current committed edge remains until an accepted source edit is applied. Cancellation or rejection leaves source and graph unchanged. An accepted edit is checked against its base revision, applied once through the IDE workspace/editor transaction path, and then reanalyzed. Async validation must not be hidden inside a graph library's synchronous hover/completion predicate.
+5. **Code and Agent edits.** Typing in the dock, full editor changes, and accepted Agent proposals enter the same document revision/analyze/projection path. Agent updates first remain proposals governed by protocol permissions and IDE review; animation may reflect an observed proposal or committed edit only when its state is labelled accurately.
+6. **Execution is a separate state.** Run effects are driven only by ordered runtime evidence for an execution and source revision. A graph overlay requires a source/semantic identity supplied by the owner. Replay and live stream must be distinguished; editing transitions are not runtime pulses.
+7. **Incremental rendering.** Preserve stable semantic identities, update only affected keyed nodes/edges, preserve manual positions, and animate those real projection deltas. Arrange the graph only at explicit/initial layout boundaries; do not relayout the whole graph on each keystroke. Preserve reduced-motion preferences and the Flow Hero visual baseline.
+
+This is the target architecture, not a claim that Flow Hero is already wired. The detailed semantic handoff remains owned by [Styio-Language-Service-Adapter-Contract.md](../external/for-styio/Styio-Language-Service-Adapter-Contract.md). Vyuh Node Flow is the current canvas candidate, subject to its reconnection cancellation/lock lifecycle and a visual/interaction parity proof. GraphView is limited to layout coordinates, not a second canvas renderer. Neither is adopted as a production dependency by this architecture/CI foundation. Preserve the independent `prototype/` asset.
+
+## 3. Platform Execution Matrix
 
 | Platform | Primary Project Graph Route | Primary Execution Route | Notes |
 |----------|-----------------------------|-------------------------|-------|
-| macOS / Windows / Linux | CLI or FFI | CLI first, FFI optional | 桌面主线 |
-| Android | CLI or Cloud | Local-first, Cloud fallback | 本地能力可卸载 |
-| iOS | Cloud | Cloud only | 不暴露本地编译模块 |
-| Web | Cloud | Cloud only | hosted workspace 主路径 |
+| macOS / Windows / Linux | CLI or FFI | CLI first, FFI optional | Desktop route |
+| Android | CLI or Cloud | Local-first when supported; hosted route when declared | Platform capability determines route |
+| iOS | Cloud | Cloud only | No unrestricted local compiler modules |
+| Web | Cloud | Cloud only | Hosted workspace route |
 
-## 4. 当前主线策略
+## 4. Current Integration Strategy
 
-1. 主线先用已发布的 `styio` single-file CLI 能力和 `jsonl diagnostics`。
-2. 项目图当前可基于 canonical files 做 partial inference。
-3. `FFI Adapter` 是统一原生接入标识，不再引入单独的 native bridge 品牌名。
-4. 上游一旦补齐正式 machine contract，只替换 adapter 实现，不重构 Flutter UI 和编辑器语义。
+1. Consume published Styio machine contracts through product-owned adapters.
+2. Keep project/package metadata separate from Styio program semantics.
+3. Use CLI or FFI as implementation choices behind the same typed product contracts.
+4. When an upstream machine contract changes, update its adapter and deterministic contract coverage without moving upstream semantics into Flutter UI.
 
-## 5. 当前代码锚点
+## 5. Current Code Anchors
 
-当前已落地的实现入口：
+The following implementation roots exist in the current checkout:
 
-1. `products/vityo_app/lib/src/view_ide/`
-2. `products/vityo_app/lib/src/view_ide/backend_toolchain/`
-3. `products/vityo_app/lib/src/ide/editor/`
-4. `products/vityo_app/lib/src/view_ide/language/`
-5. `products/vityo_app/lib/src/ide/workspace/`
-6. `products/vityo_app/lib/src/ide/agent_client/`
-7. `products/vityo_app/lib/src/view_ide/module_host/`
-8. `products/vityo_app/lib/src/view_ide/environment/`
-9. `products/vityo_app/lib/src/view_render/`
-10. `products/vityo_app/lib/src/app/`
-11. `products/vityo_app/lib/src/view_ide/backend_toolchain/` compatibility façade
-12. `products/vityo_app/lib/src/ide/editor/` compatibility façade for migrated entries
-13. `products/vityo_app/lib/src/view_ide/language/` compatibility façade
-14. `products/vityo_app/lib/src/view_ide/backend_toolchain/` legacy compatibility exports
+1. `products/vityo_app/lib/main.dart` — current Flutter package entry; presently starts Flow Hero directly.
+2. `products/vityo_app/lib/src/app/app_bootstrap.dart` and `vityo_app.dart` — reusable service composition and shell application.
+3. `products/vityo_app/lib/src/ide/editor/` and `ide/workspace/` — source/editor and workspace application state.
+4. `products/vityo_app/lib/src/ide/agent_client/` and `ide/workbench/agent_collaboration/` — Agent protocol client and IDE-owned collaboration projection/transactions.
+5. `products/vityo_app/lib/src/view_ide/backend_toolchain/` and `view_ide/language/` — active backend/toolchain and language adapter/service implementations.
+6. `products/vityo_app/lib/src/view_render/` — Flutter presentation, including current isolated `flow_hero/` and the reusable IDE shell.
+7. `products/vityo_coding_agent/` — companion runtime.
+8. `packages/vityo_agent_protocol/` — shared Agent protocol.

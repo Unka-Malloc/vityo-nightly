@@ -1,99 +1,79 @@
-# ADR-0010: Vityo view_ide / view_render Boundary
+# ADR-0010: Vityo IDE Ownership And Presentation Import Boundary
 
-**Purpose:** Establish a strict architectural boundary between the domain/application layer and the presentation surface.
+**Purpose:** Establish presentation-independent service ownership, registered presentation imports, and a single application composition boundary.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
 **Status:** Accepted
 **Date:** 2026-06-24
 **Deciders:** Architecture owner
 **Replaces:** None (new ADR)
 
----
-
 ## Context
 
-Vityo's Flutter codebase grew organically, resulting in unclear boundaries between domain logic and presentation. Files in `view_ide/` began importing Flutter Material and Widgets libraries, coupling domain models and adapter contracts to a specific presentation framework. This violates the product principle that Vityo's IDE domain model should be presentation-agnostic.
+Vityo's Flutter codebase has domain/application contracts in both `view_ide/` and `ide/`, with Flutter screens in `view_render/` and service composition in `app/`. Treating every IDE contract as if it lived in `view_ide/` would either hide the true owner or encourage unnecessary moves. At the same time, unregistered presentation imports can couple domain implementation to widgets and make dependency direction unclear.
 
 ## Decision
 
-We establish a strict boundary between `view_ide/` and `view_render/`:
+We establish these ownership and import rules:
 
-1. **`view_ide/`** is the **domain/application layer**. It contains:
-   - Domain models (editor state, workspace model, revision-bound IDE facts)
-   - Adapter contracts (language service, project graph, execution, debug)
-   - State management (not tied to any UI framework)
-   - Command definitions
-   - Capability registries
-   - Tool permission models
+1. **`view_ide/`** owns presentation-independent IDE services and contracts, including language, runtime, platform, and backend-toolchain adapters. It must not import `view_render/` or Flutter presentation libraries such as `package:flutter/material.dart`, `package:flutter/widgets.dart`, `package:flutter/cupertino.dart`, or `dart:ui`.
+2. **`ide/`** remains an independently owned IDE application root for editor/document/workspace state and Agent Client/collaboration state. Its public model, command, and projection surfaces are not moved to `view_ide/` solely to simplify a gate.
+3. **`view_render/`** owns Flutter screens, visual state, themes, and presentation bindings. It may consume only narrow, path-registered public contract/model/projection surfaces from their actual owners in `ide/` or `view_ide/`. Registering one path does not make sibling implementation paths public. Widgets do not construct a second workspace or Agent authority.
+4. **`app/`** is the composition root. It creates shared service instances and injects them into the IDE application and presentation.
+5. **Legacy source roots remain retired.** Old top-level `backend_toolchain/`, `editor/`, `language/`, and `integration/` import paths are not compatibility surfaces and must not be restored. The active `view_ide/backend_toolchain/` implementation is not one of these retired roots.
 
-   **Import rule:** `view_ide/` MUST NOT import `package:flutter/material.dart`, `package:flutter/widgets.dart`, `package:flutter/cupertino.dart`, or `dart:ui`.
-
-2. **`view_render/`** is the **presentation surface**. It contains:
-   - Flutter widgets, screens, and surfaces
-   - Theme and styling
-   - Platform viewport profiles
-   - UI-specific state bindings
-
-   **Import rule:** `view_render/` consumes only registered `view_ide/` contract/model surfaces. Until a top-level `view_ide/contracts/` package exists, the canonical registration list is `VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS` in `scripts/check_architecture_boundaries.py`. New `view_render -> view_ide` imports must be reviewed by adding a narrow registration entry instead of importing arbitrary implementation modules.
-
-3. **`app/`** is the **composition root**. It wires `view_ide` domain objects to `view_render` widgets through dependency injection and feature flags.
-
-4. **Legacy source roots are removed.** Old top-level `backend_toolchain/`, `editor/`, and
-   `language/` import paths are not compatibility surfaces and must not be restored.
+The path-level registry is a reviewed declaration of individual presentation dependencies, not a directory-wide API or proof that a feature is connected at runtime.
 
 ## Consequences
 
 ### Positive
 
-- Domain models are testable without Flutter widget tests.
-- Adapter contracts can be validated without a running Flutter environment.
-- The agent system can be tested independently of any UI.
-- Clear separation enables potential future non-Flutter presentation surfaces.
-- Import rules are machine-enforceable via `scripts/check_architecture_boundaries.py` and
-  `scripts/import-boundary-gate.py`.
+- Domain and adapter services can be validated without building Flutter widgets.
+- Source paths retain their actual owners rather than being moved to satisfy a presentation gate.
+- Presentation receives only explicit model/projection entry points.
+- Application composition can share one workspace, editor, language, runtime, and Agent authority.
+- Import rules are covered by complementary architecture, product-import, and legacy-root checks; they do not share one registry or prove production composition.
 
 ### Negative
 
-- Some boilerplate in `app/` for wiring domain to presentation.
-- Existing code that violates this boundary must be migrated.
-- Developers must understand and respect the boundary.
-
-### Neutral
-
-- The boundary is enforced by resolved import graph checks.
-- Violations are caught in CI, not at runtime.
+- Composition and narrow import registrations require explicit maintenance as new surfaces are added.
+- A registered import must remain a small stable surface with owner-level tests; it is not permission for presentation to depend on neighboring implementation details.
 
 ## Enforcement
 
 ### Automated Gate
 
-`scripts/check_architecture_boundaries.py` scans Dart `import` and `export` directives, resolves relative and `package:vityo_app/...` URIs, and fails when:
+The checks have separate responsibilities:
 
-1. `view_ide/` imports or exports `view_render/`.
-2. `view_ide/` imports Flutter presentation APIs.
-3. `view_render/` imports `view_ide/` targets that are not registered contract/model surfaces.
-4. `view_render/` imports legacy compatibility roots such as `backend_toolchain/`, `editor/`, `language/`, or `integration/`.
+1. `scripts/check_architecture_boundaries.py` resolves Dart imports and exports. It rejects `ide/` or `view_ide/` dependencies on `view_render/`, Flutter presentation imports from those IDE roots, and `view_render/` imports into either IDE root that are not listed individually in `VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS`.
+2. `scripts/import-boundary-gate.py` retains complementary product checks for direct legacy backend-toolchain and integration imports, concrete toolchain implementations, upstream-private imports from `view_ide/`, and Flutter widget imports from the legacy backend-toolchain root. Its independent allowlist does not replace the path-level registry.
+3. `scripts/vityo-product-gate.py` rejects non-facade implementation in the retained legacy `integration/`, top-level `backend_toolchain/`, and top-level `language/` directories. These checks do not constitute a general import graph scan or establish that retired roots can never be recreated.
+
+The architecture registry is the narrow presentation dependency check. These gates do not verify that an allowlisted path is composed by the running application or that its feature is operational.
+
+The gate must report the missing owner path and preserve the registered public path as the smallest reviewed unit. Expanding an allowlist to an entire directory is not an acceptable repair for a missing import.
 
 ### Code Review Checklist
 
-Reviewers must verify:
-1. New `view_ide/` files do not import Flutter presentation libraries.
-2. New `view_render/` files use existing registered contract/model surfaces, or add a narrow `VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS` entry with an architecture review.
-3. New domain models in `view_ide/` do not reference Flutter types (e.g., `Color`, `Widget`, `BuildContext`).
-4. Removed legacy import roots are not restored.
+Reviewers verify:
+
+1. New `view_ide/` files do not import Flutter presentation libraries or `view_render/`.
+2. New presentation imports use a path registered for an existing public contract/model/projection and have an architecture owner review.
+3. `app/` composes one shared service instance for each document/workspace/Agent authority used by multiple surfaces.
+4. Registered import paths do not expose neighboring implementation as a public API.
+5. Retired top-level compatibility roots are not restored.
 
 ### Migration Path
 
-The source-root migration is complete. New violations are rejected by the architecture and import
-boundary gates; no compatibility phase remains.
+The top-level source-root migration is complete. The path-level presentation registry is the maintained boundary; no compatibility phase remains. An allowlisted presentation dependency is not evidence that a feature is composed in the production application.
 
 ## Validation
 
 - `scripts/check_architecture_boundaries.py` — resolved import/export graph scan
 - `scripts/import-boundary-gate.py` — product import-boundary scan
 - `python3 -m unittest tests.test_architecture_boundaries` — gate unit tests
-- `flutter analyze` — static analysis (indirect enforcement)
+- `flutter analyze` — static analysis
 - Code review checklist in `docs/teams/ARCHITECTURE-RUNBOOK.md`
 
 ## Related

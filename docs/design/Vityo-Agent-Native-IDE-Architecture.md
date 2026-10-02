@@ -2,7 +2,7 @@
 
 **Purpose:** Define the stable ownership, state, process, and protocol boundaries between the Vityo IDE, compatible Agents, and the first-party Vityo Coding Agent companion runtime.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-02
 
 **Status:** Current
 
@@ -114,7 +114,8 @@ exported roots, schemas, permissions, or capability set.
 ## 6. Change and Effect Flow
 
 ```text
-Agent plan
+Observe task and authorized facts
+  -> optional revisable task plan
   -> tool/effect request
   -> runtime and host policy
   -> user permission when required
@@ -143,7 +144,7 @@ Agent-native is an interaction and control property, not a synonym for chat.
 The workbench provides:
 
 1. a task center for active, waiting, blocked, completed, failed, and cancelled work;
-2. session/thread views with user and Agent turns, plans, steps, usage, and context summaries;
+2. session/thread views with user and Agent turns, optional revisable plans, steps, usage, and context summaries;
 3. an activity timeline for tools, permissions, terminal activity, diagnostics, and validations;
 4. change views with file/hunk diffs, base revisions, conflicts, apply/reject/revert controls;
 5. steer, cancel, retry, reconnect, and Agent-switch controls;
@@ -179,12 +180,21 @@ Platform transport differences do not move model/provider or Agent execution own
 
 ## 10. Current Implementation Status
 
-The IDE-side ownership cutover is complete. Vityo now composes only the canonical supervised
-Agent Client (`products/vityo_app/lib/src/ide/agent_client`), collaboration projection
+The ownership boundary is established in reusable components: Vityo has a supervised Agent Client
+(`products/vityo_app/lib/src/ide/agent_client`), collaboration projection
 (`products/vityo_app/lib/src/ide/workbench/agent_collaboration`), presentation Workbench
 (`products/vityo_app/lib/src/presentation/agent_workbench`), MCP/context export, and IDE-owned
-workspace transactions. Direct provider transport, provider configuration, prompt/tool loops,
-durable Agent-session controllers, and their compatibility UI have been removed from the IDE.
+workspace transactions. Direct model-provider transport and Agent tool-loop ownership do not
+belong in the IDE. This component boundary does not prove every application route composes those
+services. In particular, `products/vityo_app/lib/main.dart` currently starts the isolated Flow Hero
+route directly and does not load `AppBootstrap` or `VityoApp`.
+
+The companion Agent's current runtime also does not yet implement a model-driven ReAct loop.
+`AgentRuntime` delegates to `AgentSessionService`, which currently performs one host inspection;
+the CLI/stdio endpoint uses `InMemoryHostWorkspace`. The separate plan-first `CodingLoop` has no
+production `CodingPlanner` connected to that endpoint. The selected runtime target and these open
+gaps are recorded in [ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md) and
+[Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md).
 
 The remaining product-closure work is tracked in
 [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md): prove richer end-to-end Agent
@@ -196,6 +206,6 @@ ownership back into the IDE.
 1. [Vityo Product Spec](./Vityo-Product-Spec.md)
 2. [Vityo System Architecture](./Vityo-System-Architecture.md)
 3. [Vityo Protocol and Capability Negotiation](./Vityo-Protocol-And-Capability-Negotiation.md)
-4. [Vityo IDE plan architecture](../plan/vityo/Architecture.md)
-5. [Vityo Coding Agent plan architecture](../plan/vityo-coding-agent/Architecture.md)
-6. [ADR-0019](../adr/ADR-0019-vityo-is-the-styio-agent-native-ide.md)
+4. [Repository execution workflow](../plan/EXECUTION-RUNBOOK.md)
+5. [ADR-0019](../adr/ADR-0019-vityo-is-the-styio-agent-native-ide.md)
+6. [ADR-0021: ReAct Agent Runtime Loop](../adr/ADR-0021-react-agent-runtime-loop.md)

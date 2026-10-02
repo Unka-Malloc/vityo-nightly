@@ -2,7 +2,7 @@
 
 **Purpose:** Serve as the product-level source of truth for Vityo's positioning, hierarchy, users, invariants, capability domains, platform strategy, and acceptance boundary.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-02
 
 **Status:** Current
 
@@ -22,8 +22,8 @@ is that these facts and controls are first-class parts of the same product:
 
 1. Styio source and semantic structures remain authoritative and inspectable.
 2. Compiler, test, execution, and runtime results are typed facts rather than inferred success.
-3. Agent plans, tool activity, permissions, change sets, and validation receipts are visible and
-   controllable inside the workbench.
+3. Agent activity, permissions, change sets, and validation receipts are visible and controllable;
+   an optional task plan is shown when the runtime supplies one.
 4. Agent-originated edits enter only through the IDE-owned, revision-bound workspace transaction
    path.
 5. Missing capabilities remain explicit degraded or blocked states; Vityo never invents compiler,
@@ -81,12 +81,15 @@ structured receipts, or an explicit unavailable/blocked state.
 ### 4.2 Reviewable Agent loop
 
 ```text
-goal -> plan -> approved tools -> proposed changes -> review -> validation receipt
+goal -> observe -> authorized action -> observe -> proposed changes -> review -> validation receipt
 ```
 
-At least one compatible Agent can run as a supervised workbench task. The user can inspect its plan
-and activity, answer permission requests, steer or cancel it, review its changes, and inspect
-validation results. The Agent cannot mutate IDE-owned files directly or authorize its own effects.
+At least one compatible Agent can run as a supervised workbench task. The user can inspect its
+activity and any revisable plan, answer permission requests, steer or cancel it, review its changes,
+and inspect validation results. The default runtime follows the ReAct action/observation pattern;
+a plan is optional task state, not a separate required orchestration service. The Agent cannot
+mutate IDE-owned files directly or authorize its own effects. The selected runtime boundary is
+recorded in [ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md).
 
 Mobile interaction, hosted workspaces, full module distribution, visual theme authoring, and
 additional runtime visualizations remain valid product directions, but they do not dilute or replace
@@ -117,7 +120,7 @@ this launch promise.
 | **Minimal Compilable Unit** | The smallest legal unit in the current context that can be compiled or run. |
 | **Runtime Surface** | The workbench area that renders ordered execution facts, state graphs, thread lanes, diagnostics, and logs. |
 | **Runtime Event Protocol** | The ordered machine contract that drives runtime visualization. |
-| **Agent Workbench** | The IDE capability that presents Agent tasks, sessions, plans, activity, permissions, changes, artifacts, and validation receipts. |
+| **Agent Workbench** | The IDE capability that presents Agent tasks, sessions, optional plans, activity, permissions, changes, artifacts, and validation receipts. |
 | **Agent Panel** | A concrete UI surface that may display part of the Agent Workbench; it is not the Agent runtime or the product definition. |
 | **Agent Client** | The IDE-owned process/protocol client that discovers, launches, supervises, reconnects to, and communicates with compatible Agents. |
 | **Compatible Agent** | An Agent implementation that negotiates and follows the supported versioned session boundary. |
@@ -189,6 +192,17 @@ Vityo owns the document model, cursor and selection semantics, undo/redo, source
 visual substitution, semantic block surfaces, desktop/mobile input adaptation, workspace navigation,
 and application of revisioned language edits.
 
+#### 8.1.1 Interactive Flow Hero
+
+Flow Hero is a visual editing surface over the same revisioned Styio document used by the full
+editor. Editing in its source dock updates that document immediately. Moving a node changes layout
+state; reconnecting a semantic edge requests a valid source edit from Styio and applies it through
+the IDE's revision-checked transaction path. Both views then render the accepted document revision.
+An Agent proposal follows the ordinary permission and review path. Transitions animate actual
+document, proposal, or runtime state changes, with their state identified accurately. The graph
+does not supply language semantics. Its visuals must preserve or improve the established Flow Hero
+baseline. The current entry point is not yet wired this way; see [ADR-0020](../adr/ADR-0020-source-authoritative-flow-hero.md).
+
 Styio-owned services provide lexical, semantic, diagnostic, completion, hover, formatting,
 reference, refactor, compile, and runtime facts through explicit adapters. Unavailable facts produce
 capability gaps, not local guesses presented as authoritative results.
@@ -211,7 +225,7 @@ are not.
 The Agent Workbench provides:
 
 1. multiple task/session views with explicit lifecycle state;
-2. streamed turns, plans, steps, tool activity, artifacts, and usage;
+2. streamed turns, optional revisable plans, tool activity, artifacts, and usage;
 3. persistent permission and elicitation requests;
 4. steer, cancel, retry, reconnect, and Agent-switch controls;
 5. revision-bound diff preview, conflict reporting, apply/reject/revert, and receipts;
@@ -246,7 +260,7 @@ Failure on one platform does not invalidate another platform's independently pro
 2. Language, compiler, test, run, and runtime facts are attributable to a source revision.
 3. Missing or heuristic capabilities are visible and never reported as successful.
 4. The IDE starts and completes the developer loop with no Agent available.
-5. Agent plans, permissions, tool activity, changes, and validation receipts remain reviewable.
+5. Agent permissions, tool activity, proposals, changes, and validation receipts remain reviewable; a task plan is shown when the runtime supplies one.
 6. Stale Agent changes fail without partial mutation.
 7. Agent and IDE failures are isolated; one failed session cannot take down the editor or a sibling
    session.
@@ -254,6 +268,7 @@ Failure on one platform does not invalidate another platform's independently pro
    protocol payloads, context, and receipts.
 9. Mobile interaction is designed for mobile rather than scaled from desktop.
 10. Hosted-workspace export, retention, closure, and deletion behavior is explicit and recoverable.
+11. Flow Hero edits the shared source document, distinguishes view movement from semantic rewrites, and animates only observed source/proposal/runtime transitions while retaining its visual baseline.
 
 The launch positioning is accepted only when a representative Styio workspace completes both the
 trustworthy developer loop and the reviewable Agent loop described in Section 4. Documentation,

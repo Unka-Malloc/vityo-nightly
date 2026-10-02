@@ -2,7 +2,7 @@
 
 **Purpose:** Track current implementation and integration facts that ground the two delivery tracks for one Vityo product without duplicating their workflow state.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
 **Latest audit run:** 2026-06-25 02:00–02:30 UTC
 
@@ -103,16 +103,21 @@ Status values:
 
 Direct IDE model-provider transport, prompt-profile, coding-loop, and durable session-controller
 ownership is retired and closed under §1.1. Vityo IDE does not execute models. Collaboration goes
-exclusively through the versioned Agent Client (`lib/src/ide/agent_client`), immutable Workbench
-projections (`lib/src/ide/workbench/agent_collaboration`), and presentation Workbench UI
+through the versioned Agent Client (`lib/src/ide/agent_client`), immutable Workbench projections
+(`lib/src/ide/workbench/agent_collaboration`), and the presentation Workbench
 (`lib/src/presentation/agent_workbench`). Provider validation, provider credentials, model HTTP
-transport, route/local-bridge execution planning, and coding-loop orchestration belong to
-compatible Agent runtimes. IDE closure remains protocol interoperability, permission presentation,
-change review, and workspace-transaction enforcement.
+transport, and coding-loop orchestration belong to Agent runtimes. This ownership decision does not
+mean the first-party Coding Agent has a complete model-driven coding loop; its runtime gap is listed
+below. IDE closure remains protocol interoperability, permission presentation, change review, and
+workspace-transaction enforcement.
 
 | Gap | Status | Owner | Required closure |
 |---|---|---|---|
-| Real AI provider call | Closed (not applicable to Vityo IDE) | Compatible Agent | Model/provider HTTP transport, credential-backed provider adapters, durable coding-session controllers, structured provider-transport failure handling, cancel/retry of model calls, Provider Profile endpoint/token reconfiguration, and live provider E2E validation are Agent-runtime owned. Vityo IDE does not host OpenAI-compatible provider calls or mount those controllers. Optional live cloud-provider validation with real credentials remains Agent-runtime work outside the Vityo IDE delivery track. |
+| Real AI provider call in the IDE | Closed for Vityo IDE (not applicable) | Compatible Agent | Model/provider HTTP transport, credential-backed provider adapters, durable coding-session controllers, structured provider-transport failure handling, cancel/retry of model calls, Provider Profile endpoint/token reconfiguration, and live provider E2E validation are Agent-runtime owned. Vityo IDE does not host OpenAI-compatible provider calls or mount those controllers. This boundary does not assert that the first-party Coding Agent has a production provider implementation; see the runtime row below. |
+| First-party Coding Agent runtime loop | Implementation needed | Vityo Coding Agent | `AgentRuntime` delegates to `AgentSessionService`, which currently calls `HostWorkspace.inspect` once. The CLI and stdio endpoint compose `InMemoryHostWorkspace`; they do not establish model inference or workspace coding tools. A separate plan-first `CodingLoop` requires an injected `CodingPlanner`, but no production implementation connects it to `AgentRuntime` or the endpoint. Implement the ReAct action/observation loop, authorized tools, typed results, proposal/transaction boundary, and deterministic model/tool-port tests under [ADR-0021](../adr/ADR-0021-react-agent-runtime-loop.md). A real provider conversation remains separate live acceptance. |
+| Flow Hero production composition and shared source | Implementation needed | Vityo | `products/vityo_app/lib/main.dart` starts `FlowHeroApp` directly. `AppBootstrap.load()` and `VityoApp` exist but are not used by this entry. The current Flow Hero route owns a sample graph/source, a restricted regex parser, timer-driven run presentation, and a scripted Agent transcript. Compose Flow Hero from the shared bootstrap services, edit the same revisioned document as the full editor, and remove the sample-only presentation claims from the production route under [ADR-0020](../adr/ADR-0020-source-authoritative-flow-hero.md). |
+| Styio semantic flow and source rewire | Upstream blocked | Styio first, Vityo adapter second | The current `LanguageServiceAdapter` facts do not expose the complete revisioned typed program-flow projection or a validated rewire edit proposal. Extend the existing Styio language-service handoff with semantic identities, direction, source locations, and edit/diagnostic results for supported connections. Vityo owns revision checks, transaction application, cancel/reject behavior, and projection; no generic graph library or Pafio metadata supplies language meaning. See [Styio Language Service Adapter Contract](../external/for-styio/Styio-Language-Service-Adapter-Contract.md) and [ADR-0020](../adr/ADR-0020-source-authoritative-flow-hero.md). |
+| Flow Hero editing, animation, and visual parity | Implementation needed | Vityo | Deterministically prove same-document dock/full-editor edits, view-only node moves, accepted/cancelled/stale rewires, proposal-versus-commit states, and source-bound runtime highlights. Animate observed deltas while preserving manual positions and the tagged visual baseline. Runtime replay must remain distinct from a live stream. |
 | Agent Workbench command closure | Closed (protocol/Workbench) | Vityo | The Workbench command port owns only Agent-session actions: prompt/steer, cancel, retry, reconnect, one-shot permission resolution, and apply/reject/revert of protocol-proposed workspace changes through the injected IDE transaction authority. Ordinary settings, toolchain, build, test, source-control, and editor commands remain IDE-owned shell commands and are not exposed through a hidden Agent command dispatcher. New Agent-triggerable behavior requires an explicit versioned protocol capability, bounded payload, authorization rule, immutable projection, and acceptance oracle. |
 | Secret injection | Partially implemented | Vityo | Configuration-owned `CredentialSecretInjector` resolves short-lived injected values from `CredentialReference`, returns redacted projections for logs/UI, and fails closed for missing/expired/empty/kind-mismatched credentials. Model-provider bearer-token routing and provider-credential injection belong to compatible Agent runtimes, not the IDE. Remaining closure: wire the same injection path into Toolchain execution, remote service connectors, and product credential setup UI. |
 | Local bridge / cloud execution for AI | Closed (not applicable to Vityo IDE) | Compatible Agent | Cloud, loopback local-bridge, and blocked model-execution planning—including endpoint resolution reports, credential readiness, failover across profile endpoints, local-service bridge routing, and endpoint probes—are Agent-runtime owned. Vityo IDE does not mount provider route executors, configured provider adapter factories, provider configurators, or Provider Profile endpoint editors for model execution. AppBootstrap and Workbench retain Agent Client / collaboration wiring only. Multi-fallback management, retry-probe controls, and richer failover history remain Agent-runtime work outside the Vityo IDE delivery track. |
