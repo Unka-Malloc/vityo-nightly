@@ -33,11 +33,19 @@ The shared product boundaries remain: `products/vityo_app/` is the IDE, `product
 5. After all writers stop, source review and focused repairs finish, run the applicable full local regression once. If it finds an ordinary scoped defect, repair it and rerun the affected checks needed to establish the repaired revision. See [Verification And CI](docs/specs/POST-COMMIT-CI-CHECKS.md) for the current commands and CI evidence limits.
 6. Report the exact local checks and test suites run. Report configured but unobserved Actions or host lanes as unverified.
 
-The portable health entrypoint is:
+Use the pinned toolchain from [Build And Development Environment](docs/BUILD-AND-DEV-ENV.md).
+The Python coverage gate also requires `coverage.py`. Install it in an ignored local environment
+and select that interpreter for the portable health entrypoint:
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install coverage
+export PYTHON_BIN="$PWD/.venv/bin/python"
 ./scripts/checkpoint-health.sh
 ```
+
+On Windows, use `.venv/Scripts/python.exe` for the install command and `PYTHON_BIN` value in the
+repository's Bash-based gate. CI provisions coverage in its isolated runner environment.
 
 The delivery wrapper adds repository hygiene, documentation checks, audit, and delivery policy:
 

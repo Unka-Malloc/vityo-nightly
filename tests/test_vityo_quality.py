@@ -103,6 +103,33 @@ class VityoQualityTest(unittest.TestCase):
             env=environment,
         )
 
+    def test_preflight_rejects_dirty_sources_and_missing_required_tools(self) -> None:
+        for stdout, expected in (("", False), (" M source.dart\n", True)):
+            with mock.patch.object(
+                self.quality.subprocess, "run",
+                return_value=SimpleNamespace(returncode=0, stdout=stdout),
+            ):
+                self.assertEqual(self.quality._source_tree_dirty(("source",)), expected)
+        with mock.patch.object(
+            self.quality.subprocess, "run", return_value=SimpleNamespace(returncode=1)
+        ), self.assertRaisesRegex(self.quality.ValidationReceiptError, "dirty_candidate"):
+            self.quality._source_tree_dirty(("source",))
+        with mock.patch.object(self.quality.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(self.quality.ValidationReceiptError, "tool_unavailable"):
+                self.quality._resolve_required_tools()
+        with mock.patch.object(self.quality.shutil, "which", return_value="/tools/fixture"):
+            self.quality._resolve_required_tools()
+
+    def test_receipt_destination_rejects_missing_or_non_file_locations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.quality._receipt_destination_usable(root / "new.json")
+            for destination in (root / "missing" / "receipt.json", root):
+                with self.assertRaisesRegex(
+                    self.quality.ValidationReceiptError, "receipt_destination_unavailable"
+                ):
+                    self.quality._receipt_destination_usable(destination)
+
     def test_all_focused_suite_runners_execute_and_stop_on_failure(self) -> None:
         for name in self.suite_runners:
             runner = getattr(self.quality, name)
