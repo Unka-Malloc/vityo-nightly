@@ -32,7 +32,9 @@ Future<void> main() async {
     },
     client: harness.client,
     policy: const AgentClientPolicy(
-      requestTimeout: Duration(seconds: 3),
+      // Opening a connection includes spawning the Dart VM fixture, so the
+      // handshake gets the production request budget instead of a tight one.
+      requestTimeout: Duration(seconds: 30),
       shutdownTimeout: Duration(seconds: 2),
     ),
   );

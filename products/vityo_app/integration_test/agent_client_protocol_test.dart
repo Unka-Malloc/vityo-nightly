@@ -26,7 +26,9 @@ Future<void> main() async {
     },
     client: harness.client,
     policy: const AgentClientPolicy(
-      requestTimeout: Duration(seconds: 3),
+      // Opening a connection includes spawning the Dart VM fixture, so the
+      // handshake gets the production request budget instead of a tight one.
+      requestTimeout: Duration(seconds: 30),
       allowedExtensions: <String>{
         '_vityo.dev/test/write',
         '_vityo.dev/test/status',
