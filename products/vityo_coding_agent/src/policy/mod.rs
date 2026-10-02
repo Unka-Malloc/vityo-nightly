@@ -340,7 +340,10 @@ impl DefaultPolicyEvaluator {
                     let has_root = roots.iter().any(|root| {
                         root.id == *root_id && root.domain == ToolRootDomain::HostManaged
                     });
-                    if !has_root || !is_normalized_relative_path(relative_path) {
+                    let process_at_root =
+                        effect.risk == ToolRisk::Process && relative_path.is_empty();
+                    if !has_root || !(process_at_root || is_normalized_relative_path(relative_path))
+                    {
                         return PolicyDecision::deny(PolicyDecisionCode::PathDenied);
                     }
                     root_id.as_str()

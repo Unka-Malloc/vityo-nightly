@@ -106,7 +106,7 @@ impl AcpHost {
                             .meta(extension_metadata(VITYO_WORKSPACE_CHANGE_PROPOSAL));
                     }
                     responder.respond(
-                        InitializeResponse::new(request.protocol_version)
+                        InitializeResponse::new(agent_client_protocol::schema::ProtocolVersion::V1)
                             .agent_capabilities(agent_capabilities)
                             .agent_info(Implementation::new(AGENT_NAME, AGENT_VERSION)),
                     )

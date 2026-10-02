@@ -72,7 +72,7 @@ fn packaged_cli_runs_the_real_acp_stdio_lifecycle_with_explicit_configuration() 
     let output = run_stdio_agent(
         &provider_config,
         &sessions,
-        &[initialize, new_session, supported_session],
+        &[initialize.clone(), new_session, supported_session],
     );
     assert!(output.status.success());
     let responses = parse_json_lines(&output.stdout);
@@ -81,6 +81,7 @@ fn packaged_cli_runs_the_real_acp_stdio_lifecycle_with_explicit_configuration() 
         .find(|message| message.get("id") == Some(&json!(1)))
         .and_then(|message| message.get("result"))
         .expect("initialize response");
+    assert_eq!(initialize_response.get("protocolVersion"), Some(&json!(1)));
     assert_eq!(
         initialize_response
             .pointer("/agentCapabilities/loadSession")
@@ -133,6 +134,18 @@ fn packaged_cli_runs_the_real_acp_stdio_lifecycle_with_explicit_configuration() 
             .is_some_and(|session_id| !session_id.is_empty())
     );
     assert!(sessions.exists());
+
+    // An unsupported client version must negotiate the latest version the
+    // Agent actually implements, rather than echoing an unsupported contract.
+    let mut future_initialize = initialize;
+    future_initialize["params"]["protocolVersion"] = json!(999);
+    let output = run_stdio_agent(&provider_config, &sessions, &[future_initialize]);
+    assert!(output.status.success());
+    let responses = parse_json_lines(&output.stdout);
+    assert_eq!(
+        responses[0].pointer("/result/protocolVersion"),
+        Some(&json!(1))
+    );
 }
 
 #[test]

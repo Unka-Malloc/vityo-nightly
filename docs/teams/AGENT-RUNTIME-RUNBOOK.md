@@ -24,6 +24,12 @@ does not launch the first-party process; the client must not infer a workspace r
 
 ## Owned Surface
 
+ACP initialization reports the implemented protocol version (`1`) even when a client
+requests an unsupported version, following the upstream initialization contract.
+Terminal creation defaults to the session workspace directory; process policy permits
+the workspace root while file operations still require a document path. Permission
+prompts distinguish terminal execution from file reads, writes, and proposal review.
+
 Primary paths:
 1. `products/vityo_coding_agent/src/` — Rust runtime, ACP host, tool/policy implementations, and application composition.
 2. `products/vityo_coding_agent/Cargo.toml` and `Cargo.lock` — Rust runtime and dependency boundary.

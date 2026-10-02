@@ -181,11 +181,16 @@ impl ReActToolRuntime for AcpToolRuntime {
 
     async fn invoke(
         &self,
-        call: crate::providers::ModelToolCall,
+        mut call: crate::providers::ModelToolCall,
         cancellation: AgentCancellationToken,
     ) -> Result<ToolObservation, RuntimeToolError> {
         if !self.operations.proposal_enabled && call.name == CHANGE_PROPOSAL {
             return Err(RuntimeToolError::CapabilityUnavailable);
+        }
+        if call.name == "terminal/create" {
+            call.arguments
+                .entry("cwd".to_owned())
+                .or_insert_with(|| json!(self.operations.path_resolver.roots[0]));
         }
         let model_call = ToolCall {
             call_id: call.id.clone(),
@@ -377,11 +382,7 @@ impl AcpToolRuntime {
         _root_id: &str,
         cancellation: &AgentCancellationToken,
     ) -> Result<PermissionDecision, RuntimeToolError> {
-        let (title, kind) = if call.name == READ_FILE {
-            ("Read workspace file", ToolKind::Read)
-        } else {
-            ("Write workspace file", ToolKind::Edit)
-        };
+        let (title, kind) = permission_presentation(&call.name);
         let options = vec![
             PermissionOption::new(
                 PermissionOptionId::new("allow-once"),
@@ -531,6 +532,15 @@ enum PermissionDecision {
     Cancelled,
 }
 
+fn permission_presentation(tool_name: &str) -> (&'static str, ToolKind) {
+    match tool_name {
+        READ_FILE => ("Read workspace file", ToolKind::Read),
+        CHANGE_PROPOSAL => ("Review workspace changes", ToolKind::Edit),
+        name if name.starts_with("terminal/") => ("Run terminal operation", ToolKind::Execute),
+        _ => ("Write workspace file", ToolKind::Edit),
+    }
+}
+
 async fn permission_response_or_cancel<T, E>(
     cancellation: &AgentCancellationToken,
     pending: impl Future<Output = Result<T, E>>,
@@ -597,9 +607,6 @@ impl ToolPathResolver for SessionPathResolver {
         for root in &self.roots {
             let normalized_root = normalize_absolute(root).ok_or(())?;
             if let Ok(relative) = normalized_path.strip_prefix(&normalized_root) {
-                if relative.as_os_str().is_empty() {
-                    return Err(());
-                }
                 return Ok(ToolPathResolution::HostManaged {
                     root_id: self.root_id.clone(),
                     relative_path: relative.to_string_lossy().replace('\\', "/"),
@@ -1077,6 +1084,142 @@ mod tests {
             .into_iter()
             .map(|descriptor| descriptor.id)
             .collect()
+    }
+
+    #[test]
+    fn permission_presentation_distinguishes_process_and_file_authority() {
+        assert_eq!(
+            permission_presentation("terminal/create").1,
+            ToolKind::Execute
+        );
+        assert_eq!(permission_presentation(READ_FILE).1, ToolKind::Read);
+        assert_eq!(permission_presentation(WRITE_FILE).1, ToolKind::Edit);
+        assert_eq!(
+            permission_presentation(CHANGE_PROPOSAL).0,
+            "Review workspace changes"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_terminal_creation_uses_session_cwd_and_authorizes_workspace_root() {
+        use agent_client_protocol::schema::v1::{
+            CreateTerminalRequest, CreateTerminalResponse, RequestPermissionResponse,
+            SelectedPermissionOutcome,
+        };
+        use agent_client_protocol::{Agent, on_receive_request};
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("provider.json");
+        std::fs::write(
+            &config,
+            json!({
+                "adapter":"openai_compatible_chat", "endpointBase":"https://api.example.test/v1",
+                "model":"fixture", "capabilities":{
+                    "contextTokens":8192,"outputTokens":512,"supportsTools":true,"maxConcurrency":1
+                },"limits":{"maxTotalTokens":9216},"auth":{"mode":"none"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let app =
+            crate::application::AgentApplication::from_paths(&config, root.path().join("sessions"))
+                .unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        let session = Arc::new(
+            app.new_session("terminal-session", workspace.clone(), &[])
+                .await
+                .unwrap(),
+        );
+        let expected_workspace = workspace.clone();
+        let client = Client
+            .builder()
+            .on_receive_request(
+                async |request: RequestPermissionRequest, responder, _| {
+                    assert_eq!(request.tool_call.fields.kind, Some(ToolKind::Execute));
+                    responder.respond(RequestPermissionResponse::new(
+                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                            "allow-once",
+                        )),
+                    ))
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: CreateTerminalRequest, responder, _| {
+                    assert!(
+                        request
+                            .cwd
+                            .as_ref()
+                            .is_some_and(|cwd| cwd == &expected_workspace
+                                || cwd == &expected_workspace.join("src"))
+                    );
+                    responder.respond(CreateTerminalResponse::new("terminal-fixture"))
+                },
+                on_receive_request!(),
+            );
+        Agent
+            .builder()
+            .connect_with(client, async move |connection: ConnectionTo<Client>| {
+                let operations = SessionOperations::new(
+                    connection,
+                    "terminal-session".to_owned(),
+                    workspace.clone(),
+                    vec![],
+                    true,
+                    false,
+                    true,
+                    false,
+                    vec![],
+                )
+                .unwrap();
+                let runtime = operations.runtime(session, "terminal-turn".to_owned());
+                for (id, cwd) in [
+                    ("default", None),
+                    ("root", Some(workspace.clone())),
+                    ("nested", Some(workspace.join("src"))),
+                ] {
+                    let mut arguments = output(json!({"command":"fixture-command"}));
+                    if let Some(cwd) = cwd {
+                        arguments.insert("cwd".to_owned(), json!(cwd));
+                    }
+                    let observed = runtime
+                        .invoke(
+                            crate::providers::ModelToolCall {
+                                id: id.to_owned(),
+                                name: "terminal/create".to_owned(),
+                                arguments,
+                            },
+                            CancellationToken::new(),
+                        )
+                        .await
+                        .unwrap();
+                    assert!(observed.successful, "{id}: {}", observed.content);
+                }
+                for (id, name, arguments) in [
+                    (
+                        "escape",
+                        "terminal/create",
+                        json!({"command":"fixture-command","cwd":workspace.join("..")}),
+                    ),
+                    ("read-root", READ_FILE, json!({"path":workspace})),
+                ] {
+                    let observed = runtime
+                        .invoke(
+                            crate::providers::ModelToolCall {
+                                id: id.to_owned(),
+                                name: name.to_owned(),
+                                arguments: output(arguments),
+                            },
+                            CancellationToken::new(),
+                        )
+                        .await
+                        .unwrap();
+                    assert!(!observed.successful, "{id}");
+                }
+                Ok::<(), agent_client_protocol::Error>(())
+            })
+            .await
+            .unwrap();
     }
 
     #[test]
