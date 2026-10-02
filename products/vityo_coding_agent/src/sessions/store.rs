@@ -16,7 +16,8 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::events::{
     SessionCheckpoint, SessionCorrelation, SessionEvent, SessionEventDraft, SessionEventKind,
-    SessionRedactor, canonical_json, canonical_utf8_len, sha256_hex,
+    SessionPermissionGrant, SessionPermissionGrantSnapshot, SessionRedactor, canonical_json,
+    canonical_utf8_len, replay_permission_event, sha256_hex,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +67,56 @@ pub trait SessionEventStore: EffectReceiptJournal + Send + Sync {
         after_sequence: u64,
         max_events: usize,
     ) -> Result<SessionEventBatch, SessionStoreError>;
+
+    async fn load_permission_grants(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionPermissionGrantSnapshot>, SessionStoreError>;
+
+    async fn append_permission_grant(
+        &self,
+        grant: SessionPermissionGrant,
+        correlation: SessionCorrelation,
+        expected_sequence: u64,
+        occurred_at: String,
+    ) -> Result<SessionAppendResult, SessionStoreError> {
+        if !grant.is_valid() || grant.session_id != correlation.session_id {
+            return Err(SessionStoreError::Encoding);
+        }
+        let session_id = grant.session_id.clone();
+        let draft = SessionEventDraft::new(
+            SessionEventKind::PermissionRecorded,
+            correlation,
+            occurred_at,
+            json!({ "action": "grant", "grant": grant }),
+        )
+        .map_err(|_| SessionStoreError::Encoding)?;
+        self.append(&session_id, expected_sequence, &[draft]).await
+    }
+
+    async fn append_permission_revocation(
+        &self,
+        session_id: &str,
+        grant_id: &str,
+        correlation: SessionCorrelation,
+        expected_sequence: u64,
+        occurred_at: String,
+    ) -> Result<SessionAppendResult, SessionStoreError> {
+        if session_id.trim().is_empty()
+            || grant_id.trim().is_empty()
+            || correlation.session_id != session_id
+        {
+            return Err(SessionStoreError::Encoding);
+        }
+        let draft = SessionEventDraft::new(
+            SessionEventKind::PermissionRecorded,
+            correlation,
+            occurred_at,
+            json!({ "action": "revoke", "grantId": grant_id }),
+        )
+        .map_err(|_| SessionStoreError::Encoding)?;
+        self.append(session_id, expected_sequence, &[draft]).await
+    }
 
     async fn save_checkpoint(&self, checkpoint: SessionCheckpoint)
     -> Result<(), SessionStoreError>;
@@ -222,6 +273,7 @@ struct MemorySession {
     receipts: BTreeMap<String, EffectReceipt>,
     pending: HashMap<String, PendingEffect>,
     request_digests: HashMap<String, String>,
+    permission_grants: BTreeMap<String, SessionPermissionGrantSnapshot>,
     checkpoint: Option<SessionCheckpoint>,
 }
 
@@ -296,6 +348,9 @@ impl SessionEventStore for InMemorySessionEventStore {
                 event
             })
             .collect::<Vec<_>>();
+        for event in &committed_events {
+            replay_permission_event(&mut log.permission_grants, event);
+        }
         log.events.extend(committed_events.clone());
         Ok(SessionAppendResult {
             outcome: SessionAppendOutcome::Committed,
@@ -332,6 +387,19 @@ impl SessionEventStore for InMemorySessionEventStore {
             events,
             corrupted_tail: false,
         })
+    }
+
+    async fn load_permission_grants(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionPermissionGrantSnapshot>, SessionStoreError> {
+        let sessions = self.sessions.lock().await;
+        let mut grants = sessions
+            .get(session_id)
+            .map(|log| log.permission_grants.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        grants.sort_by_key(|snapshot| snapshot.granted_sequence);
+        Ok(grants)
     }
 
     async fn save_checkpoint(
@@ -701,6 +769,7 @@ struct FileSessionIndex {
     receipts: BTreeMap<String, EffectReceipt>,
     pending: HashMap<String, PendingEffect>,
     request_digests: HashMap<String, String>,
+    permission_grants: BTreeMap<String, SessionPermissionGrantSnapshot>,
     corrupted_tail: bool,
 }
 
@@ -909,6 +978,27 @@ impl SessionEventStore for FileSessionEventStore {
                 events,
                 corrupted_tail: index.corrupted_tail,
             })
+        })
+        .await
+    }
+
+    async fn load_permission_grants(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionPermissionGrantSnapshot>, SessionStoreError> {
+        self.with_session(session_id.to_owned(), false, move |index, _, _| {
+            if index.corrupted_tail {
+                // A damaged tail may hide a revocation; do not restore any
+                // authority from the otherwise-valid prefix.
+                return Err(SessionStoreError::Encoding);
+            }
+            let mut grants = index
+                .permission_grants
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            grants.sort_by_key(|snapshot| snapshot.granted_sequence);
+            Ok(grants)
         })
         .await
     }
@@ -1368,6 +1458,7 @@ impl FileSessionIndex {
         for event in events {
             self.current_sequence = event.sequence;
             self.last_digest.clone_from(&event.digest);
+            replay_permission_event(&mut self.permission_grants, event);
             if let Some(intent) = event.payload.get("_effectReservation") {
                 if let (Some(key), Some(request_digest)) = (
                     intent.get("idempotencyKey").and_then(Value::as_str),

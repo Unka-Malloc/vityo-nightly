@@ -3,7 +3,7 @@
 //! The JSON field names and canonical digest input match the existing Dart
 //! session journal so the Rust runtime can continue reading persisted records.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -56,6 +56,35 @@ impl SessionCorrelation {
     pub fn is_valid(&self) -> bool {
         !self.task_id.trim().is_empty() && !self.session_id.trim().is_empty()
     }
+}
+
+/// Durable, session-bound authority restored by the existing permission event
+/// stream. Risk names are the stable identifiers used by the policy layer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPermissionGrant {
+    pub id: String,
+    pub session_id: String,
+    pub tool_id: String,
+    pub risks: BTreeSet<String>,
+    pub root_ids: BTreeSet<String>,
+}
+
+impl SessionPermissionGrant {
+    pub fn is_valid(&self) -> bool {
+        !self.id.trim().is_empty()
+            && !self.session_id.trim().is_empty()
+            && !self.tool_id.trim().is_empty()
+            && !self.risks.is_empty()
+            && self.risks.iter().all(|risk| !risk.trim().is_empty())
+            && self.root_ids.iter().all(|root| !root.trim().is_empty())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionPermissionGrantSnapshot {
+    pub grant: SessionPermissionGrant,
+    pub granted_sequence: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -351,6 +380,53 @@ impl SessionEventKind {
             Self::BudgetRecorded => "budgetRecorded",
             Self::TerminalRecorded => "terminalRecorded",
         }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "camelCase")]
+enum PermissionEventPayload {
+    Grant {
+        grant: SessionPermissionGrant,
+    },
+    Revoke {
+        #[serde(rename = "grantId")]
+        grant_id: String,
+    },
+}
+
+pub(crate) fn replay_permission_event(
+    grants: &mut BTreeMap<String, SessionPermissionGrantSnapshot>,
+    event: &SessionEvent,
+) {
+    if event.kind != SessionEventKind::PermissionRecorded
+        || event.session_id != event.correlation.session_id
+        || !event.correlation.is_valid()
+    {
+        return;
+    }
+    let Ok(payload) = serde_json::from_value::<PermissionEventPayload>(event.payload.clone())
+    else {
+        // Unknown v1 permission payloads remain valid journal events but grant
+        // no authority unless they use the defined grant/revoke record.
+        return;
+    };
+    match payload {
+        PermissionEventPayload::Grant { grant }
+            if grant.is_valid() && grant.session_id == event.session_id =>
+        {
+            grants.insert(
+                grant.id.clone(),
+                SessionPermissionGrantSnapshot {
+                    grant,
+                    granted_sequence: event.sequence,
+                },
+            );
+        }
+        PermissionEventPayload::Revoke { grant_id } if !grant_id.trim().is_empty() => {
+            grants.remove(&grant_id);
+        }
+        _ => {}
     }
 }
 

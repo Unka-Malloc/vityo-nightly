@@ -5,8 +5,9 @@ use vityo_coding_agent::sessions::{
     EffectBeginOutcome, EffectCommitOutcome, EffectExecutionOutcome, EffectExecutionReceipt,
     EffectReceiptJournal, EffectRequest, FileSessionEventStore, InMemorySessionEventStore,
     SessionAppendOutcome, SessionCheckpoint, SessionCorrelation, SessionEvent, SessionEventDraft,
-    SessionEventKind, SessionEventStore, SessionProjection, SessionProjector, SessionRecovery,
-    SessionRecoveryStatus, SessionRedactor, canonical_json, compute_projection_digest,
+    SessionEventKind, SessionEventStore, SessionPermissionGrant, SessionProjection,
+    SessionProjector, SessionRecovery, SessionRecoveryStatus, SessionRedactor, canonical_json,
+    compute_projection_digest,
 };
 
 const WHEN: &str = "2026-01-01T00:00:00.000Z";
@@ -306,6 +307,166 @@ async fn interrupted_effects_remain_uncertain_and_completed_effects_replay() {
 }
 
 #[tokio::test]
+async fn permission_grants_reopen_revoke_and_preserve_session_and_root_scope() {
+    let root = tempfile::tempdir().unwrap();
+    let store = FileSessionEventStore::new(root.path(), 8, 4_096);
+    let first = store
+        .append_permission_grant(
+            permission_grant("shared-id", "session-a", "source.edit", "write", "root-a"),
+            SessionCorrelation::new("task-a", "session-a"),
+            0,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.outcome, SessionAppendOutcome::Committed);
+    assert_eq!(
+        first.committed_events[0].kind,
+        SessionEventKind::PermissionRecorded
+    );
+    assert_eq!(first.committed_events[0].payload["action"], "grant");
+
+    let second = store
+        .append_permission_grant(
+            permission_grant("other-root", "session-a", "source.read", "read", "root-b"),
+            SessionCorrelation::new("task-a", "session-a"),
+            1,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.current_sequence, 2);
+    let regranted = store
+        .append_permission_grant(
+            permission_grant("shared-id", "session-a", "source.edit", "write", "root-a"),
+            SessionCorrelation::new("task-a", "session-a"),
+            2,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(regranted.current_sequence, 3);
+    let other_session = store
+        .append_permission_grant(
+            permission_grant("shared-id", "session-b", "source.read", "read", "root-b"),
+            SessionCorrelation::new("task-b", "session-b"),
+            0,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(other_session.current_sequence, 1);
+
+    let reopened = FileSessionEventStore::new(root.path(), 8, 4_096);
+    let session_a = reopened.load_permission_grants("session-a").await.unwrap();
+    assert_eq!(session_a.len(), 2);
+    assert_eq!(session_a[0].grant.id, "other-root");
+    assert_eq!(session_a[0].granted_sequence, 2);
+    assert_eq!(
+        session_a[0]
+            .grant
+            .root_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["root-b"]
+    );
+    assert_eq!(session_a[1].grant.id, "shared-id");
+    assert_eq!(session_a[1].granted_sequence, 3);
+    assert_eq!(
+        session_a[1]
+            .grant
+            .risks
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["write"]
+    );
+    assert_eq!(
+        session_a[1]
+            .grant
+            .root_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["root-a"]
+    );
+    let session_b = reopened.load_permission_grants("session-b").await.unwrap();
+    assert_eq!(session_b.len(), 1);
+    assert_eq!(session_b[0].grant.session_id, "session-b");
+    assert_eq!(session_b[0].grant.id, "shared-id");
+    assert_eq!(
+        session_b[0]
+            .grant
+            .root_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["root-b"]
+    );
+
+    let revoked = reopened
+        .append_permission_revocation(
+            "session-a",
+            "shared-id",
+            SessionCorrelation::new("task-a", "session-a"),
+            3,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(revoked.current_sequence, 4);
+    let recovered = FileSessionEventStore::new(root.path(), 8, 4_096);
+    let session_a_after_revoke = recovered.load_permission_grants("session-a").await.unwrap();
+    assert_eq!(session_a_after_revoke.len(), 1);
+    assert_eq!(session_a_after_revoke[0].grant.id, "other-root");
+    assert_eq!(
+        recovered.load_permission_grants("session-b").await.unwrap()[0]
+            .grant
+            .id,
+        "shared-id"
+    );
+}
+
+#[tokio::test]
+async fn in_memory_permission_grants_use_the_same_append_and_replay_contract() {
+    let store = InMemorySessionEventStore::default();
+    let appended = store
+        .append_permission_grant(
+            permission_grant("grant", "session", "source.write", "write", "root"),
+            SessionCorrelation::new("task", "session"),
+            0,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(appended.outcome, SessionAppendOutcome::Committed);
+    assert_eq!(
+        store.load_permission_grants("session").await.unwrap().len(),
+        1
+    );
+
+    let revoked = store
+        .append_permission_revocation(
+            "session",
+            "grant",
+            SessionCorrelation::new("task", "session"),
+            1,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(revoked.current_sequence, 2);
+    assert!(
+        store
+            .load_permission_grants("session")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn corrupt_final_record_is_reported_and_never_overwritten() {
     let root = tempfile::tempdir().unwrap();
     let store = FileSessionEventStore::new(root.path(), 4, 4_096);
@@ -321,6 +482,15 @@ async fn corrupt_final_record_is_reported_and_never_overwritten() {
         )
         .await
         .unwrap();
+    store
+        .append_permission_grant(
+            permission_grant("safe-grant", "safe-session", "source.read", "read", "root"),
+            SessionCorrelation::new("task", "safe-session"),
+            1,
+            WHEN.to_owned(),
+        )
+        .await
+        .unwrap();
     let file_key = "7f4adef3cae5e50f9ad9e60f06aa7adc44bf81bed0bb57438b8bf123c05fcdf6";
     let path = root.path().join(format!("{file_key}.session.jsonl"));
     let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
@@ -331,11 +501,15 @@ async fn corrupt_final_record_is_reported_and_never_overwritten() {
     let restarted = FileSessionEventStore::new(root.path(), 4, 4_096);
     let loaded = restarted.load("safe-session", 0, 4).await.unwrap();
     assert!(loaded.corrupted_tail);
-    assert_eq!(loaded.current_sequence, 1);
+    assert_eq!(loaded.current_sequence, 2);
+    assert_eq!(
+        restarted.load_permission_grants("safe-session").await,
+        Err(vityo_coding_agent::sessions::SessionStoreError::Encoding)
+    );
     let rejected = restarted
         .append(
             "safe-session",
-            1,
+            2,
             &[draft(
                 SessionCorrelation::new("task", "safe-session"),
                 SessionEventKind::TurnRecorded,
@@ -346,6 +520,22 @@ async fn corrupt_final_record_is_reported_and_never_overwritten() {
         .unwrap();
     assert_eq!(rejected.outcome, SessionAppendOutcome::CorruptedTail);
     assert_eq!(fs::read(path).unwrap(), corrupted_before);
+}
+
+fn permission_grant(
+    id: &str,
+    session_id: &str,
+    tool_id: &str,
+    risk: &str,
+    root_id: &str,
+) -> SessionPermissionGrant {
+    SessionPermissionGrant {
+        id: id.to_owned(),
+        session_id: session_id.to_owned(),
+        tool_id: tool_id.to_owned(),
+        risks: [risk.to_owned()].into_iter().collect(),
+        root_ids: [root_id.to_owned()].into_iter().collect(),
+    }
 }
 
 fn draft(
