@@ -602,8 +602,9 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void setNotation(bool flow) {
-    if (flow && !flowTabEnabled)
+    if (flow && !flowTabEnabled) {
       return; // this buffer has no program to project
+    }
     if (showFlow == flow) {
       if (flow) _graph = _buildGraphFor(activeFile);
       notifyListeners();
