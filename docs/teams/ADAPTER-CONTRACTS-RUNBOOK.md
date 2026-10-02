@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 adapter 合同、integration 层以及上游 `styio` / `pafio` handoff 文档的日常维护入口。
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Mission
 
@@ -35,6 +35,10 @@ Key SSOTs:
 4. `仓库边界 -> ../specs/REPOSITORY-MAP.md`
 
 ## Daily Workflow
+
+Maintained contracts trace to the product specification, architecture decisions, and
+test catalog. Transient external execution plans are not repository contract sources
+or required inputs to validation.
 
 1. 先判断当前变更属于产品自有合同、对上游的 handoff，还是 integration layer 的消费适配。
 2. 合同变化先改 `docs/contracts/` 或对应 schema，再改消费层和测试目录映射。

@@ -3,9 +3,9 @@
 **Purpose:** Define the product workflow contract for first launch, workspace lifecycle, editing, command routing, run/debug, diagnostics, agent review, settings, modules, hosted export, and recovery UX.
 
 **Owner:** `products/vityo_app/lib/src/` (app bootstrap, shell/runtime, workspace, editor, commands, runtime, agent, diagnostics, settings, module host, hosted lifecycle)
-**Last updated:** 2026-08-31
-**Plan traceability:** [Vityo requirements](../plan/vityo/Requirements.md)
-`REQ-IDE-002`, `REQ-IDE-003`, `REQ-IDE-004`, and `REQ-IDE-008`
+**Last updated:** 2026-10-03
+**Requirement traceability:** [Product requirements](../design/Vityo-Product-Spec.md)
+and [registered validation](../assets/workflow/TEST-CATALOG.md)
 
 ---
 

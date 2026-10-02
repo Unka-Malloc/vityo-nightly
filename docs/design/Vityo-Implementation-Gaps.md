@@ -12,8 +12,9 @@
 
 ## 1. Scope
 
-This document is the owner register for current gaps. Better Plan workflow state and execution
-ordering live only in `docs/plan/vityo/` and `docs/plan/vityo-coding-agent/`.
+This document is the owner register for current gaps. Transient Better Plan workflow state and
+execution ordering stay outside the repository; maintained engineering requirements and commands
+remain in product documents and the test catalog.
 
 Completed or accepted design baselines live in [Vityo-Delivered-Design-Baseline.md](./Vityo-Delivered-Design-Baseline.md). This document only records missing implementation, missing integration, unresolved upstream contracts, missing validation, or unsettled design decisions.
 
@@ -153,11 +154,10 @@ Use these destinations:
 |---|---|
 | Stable product/system truth | `docs/design/` |
 | Current implementation or integration fact | `docs/design/Vityo-Implementation-Gaps.md` |
-| Vityo workflow state | `docs/plan/vityo/` |
-| Vityo Coding Agent workflow state | `docs/plan/vityo-coding-agent/` |
+| Active IDE and Coding Agent execution state | External task plan; see `docs/plan/EXECUTION-RUNBOOK.md` |
 | Upstream Styio handoff | `docs/external/for-styio/` |
 | Upstream Pafio handoff | `docs/external/for-pafio/` |
-| Workspace-wide Better Plan manifest and policy | `docs/plan/` |
+| Repository execution guidance | `docs/plan/EXECUTION-RUNBOOK.md` |
 | Open risk or conflict before decision | `docs/review/` |
 | Final architecture decision | `docs/adr/` |
 

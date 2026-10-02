@@ -3,9 +3,9 @@
 **Purpose:** Define the workbench shell surface, layout, focus, command routing, capability, and responsive behavior contract for the current Vityo shell.
 
 **Owner:** `products/vityo_app/lib/src/view_render/shell/` and `products/vityo_app/lib/src/view_ide/workbench/`
-**Last updated:** 2026-07-31
-**Plan traceability:** [Vityo requirements](../plan/vityo/Requirements.md)
-`REQ-IDE-003`, `REQ-IDE-004`, and `REQ-IDE-008`
+**Last updated:** 2026-10-03
+**Requirement traceability:** [Product requirements](../design/Vityo-Product-Spec.md)
+and [registered validation](../assets/workflow/TEST-CATALOG.md)
 
 ---
 
@@ -150,8 +150,8 @@ The following source files define the workbench shell surfaces, their layout, co
 | `products/vityo_app/lib/src/app/layout/vityo_shell_scaffold.dart` | `AppCommandShortcutRegistry.shortcutIntents` to global key bindings | App-level widget that wraps the shell scaffold with shortcut dispatch |
 | `products/vityo_app/lib/src/view_ide/commands/extension_command_contributions.dart` | Merged command manifest | Extension commands enrich the static `VityoCommandRegistry` |
 | `docs/contracts/README.md` | Contract inventory index | Auto-indexed by `scripts/docs-index.py` |
-| `docs/plan/vityo/Checkpoints.json` requirements `REQ-IDE-003` and `REQ-IDE-004` | Consumes this contract for truthful developer facts and workbench behavior | Owning lifecycles trace to current shell artifacts and preserve structured capability gaps |
-| `docs/plan/vityo/Checkpoints.json` requirement `REQ-IDE-008` | Consumes focused evidence for final IDE validation | The IDE final lifecycle runs once after all implementation lifecycles close |
+| `docs/design/Vityo-Product-Spec.md` and `docs/design/Vityo-Implementation-Gaps.md` | Define truthful developer facts, workbench behavior, and outstanding capability gaps | Maintained product requirements describe the actual shell artifacts |
+| `docs/assets/workflow/TEST-CATALOG.md` and `scripts/vityo.py` | Register deterministic validation and integrated delivery | Final delivery runs after implementation, source review, and focused repairs finish |
 
 ---
 

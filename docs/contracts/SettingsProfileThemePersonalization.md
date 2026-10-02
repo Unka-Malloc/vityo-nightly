@@ -2,13 +2,13 @@
 
 **Purpose:** Define ownership, product boundaries, invariants, data flow, capability gaps, downstream consumers, and validation targets for Vityo settings, domain-specific profiles, theme, personalization, and cross-boundary redaction.
 
-**Owner:** Better Plan -- Settings Profile Theme Personalization  
+**Owner:** IDE settings, profiles, theme, and personalization
 **File:** `docs/contracts/SettingsProfileThemePersonalization.md`  
 **Status:** Current  
-**Last updated:** 2026-08-31
+**Last updated:** 2026-10-03
 
-This owner contract supplies current facts to [Vityo requirements](../plan/vityo/Requirements.md)
-`REQ-IDE-006` through `REQ-IDE-008`. Agent-runtime settings and model-provider configuration belong
+This owner contract supplies current facts to the [Vityo product requirements](../design/Vityo-Product-Spec.md)
+and [test catalog](../assets/workflow/TEST-CATALOG.md). Agent-runtime settings and model-provider configuration belong
 to the separate Vityo Coding Agent delivery track.
 
 ---
