@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import hashlib
 import json
 import os
 import pathlib
@@ -21,11 +20,10 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 from vityo_validation_receipt import (
     SUPPORTED_HOST_PLATFORMS,
-    ValidationReceiptError,
-    build_ide_failure_receipt,
-    build_ide_receipt,
+    ValidationReportError,
+    build_ide_report,
     validate_full_suite_plan,
-    write_receipt_atomic,
+    write_report_atomic,
 )
 
 
@@ -88,33 +86,7 @@ FULL_AGENT_PLAN = (
 RUST_COVERAGE_OUTPUT = "build/evidence/rust-coverage"
 RUST_COVERAGE_GATE = "scripts/rust-coverage-gate.py"
 
-_FINGERPRINT_ROOTS = (
-    "products/vityo_app/lib",
-    "products/vityo_app/test",
-    "products/vityo_app/integration_test",
-    "products/vityo_app/benchmark",
-    "products/vityo_app/native/vityod",
-    "packages/vityo_daemon_protocol",
-    "packages/vityo_agent_protocol/lib",
-    "packages/vityo_agent_protocol/test",
-    "packages/vityo_agent_protocol/schema",
-    "tests/acceptance/vityo_app",
-    "scripts",
-    "packaging",
-    ".github/workflows",
-)
-_PROTOCOL_SCHEMA_ROOT = "packages/vityo_agent_protocol/schema"
-_ACCEPTANCE_FIXTURES_ROOT = "tests/acceptance/vityo_app"
 _IDE_FULL_REQUIRED_TOOLS = ("cargo", "dart", "flutter")
-_AGENT_FINGERPRINT_ROOTS = (
-    "products/vityo_coding_agent",
-    "packages/vityo_agent_protocol",
-    "scripts",
-    "tests/acceptance/vityo_coding_agent",
-)
-_IGNORED_DIRECTORIES = frozenset(
-    {".dart_tool", "build", "target", "__pycache__", ".pytest_cache"}
-)
 
 
 def tool(name: str) -> str:
@@ -951,62 +923,6 @@ def full_suite_plan() -> list[dict[str, str]]:
     return plan
 
 
-def _digest_roots(roots: tuple[str, ...]) -> str:
-    digest = hashlib.sha256()
-    for root_name in roots:
-        root = ROOT / root_name
-        if not root.exists():
-            raise ValidationReceiptError(
-                "source_path_missing",
-                f"required validation path is missing: {root_name}",
-            )
-        entries = [root] if root.is_file() else sorted(root.rglob("*"))
-        for entry in entries:
-            relative = entry.relative_to(ROOT)
-            if any(part in _IGNORED_DIRECTORIES for part in relative.parts):
-                continue
-            if not entry.is_file():
-                continue
-            digest.update(relative.as_posix().encode("utf-8"))
-            digest.update(b"\0")
-            with entry.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(1 << 20), b""):
-                    digest.update(chunk)
-            digest.update(b"\0")
-    return digest.hexdigest()
-
-
-def _source_fingerprint(
-    roots: tuple[str, ...] = _FINGERPRINT_ROOTS,
-) -> str:
-    return _digest_roots(roots)
-
-
-def _protocol_schema_digest() -> str:
-    return _digest_roots((_PROTOCOL_SCHEMA_ROOT,))
-
-
-def _acceptance_fixtures_digest() -> str:
-    return _digest_roots((_ACCEPTANCE_FIXTURES_ROOT,))
-
-
-def _head_commit() -> str:
-    completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    commit = completed.stdout.strip().lower()
-    if completed.returncode != 0 or len(commit) not in range(40, 65):
-        raise ValidationReceiptError(
-            "commit_unavailable",
-            "full validation must be bound to a source commit",
-        )
-    return commit
-
-
 def _host_platform() -> str:
     return {
         "win32": "windows",
@@ -1015,102 +931,28 @@ def _host_platform() -> str:
     }.get(sys.platform, sys.platform)
 
 
-def _source_tree_dirty(
-    roots: tuple[str, ...] = _FINGERPRINT_ROOTS,
-) -> bool:
-    completed = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=normal", "--", *roots],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        raise ValidationReceiptError(
-            "dirty_candidate",
-            "unable to determine whether source-bearing paths are clean",
-        )
-    return bool(completed.stdout.strip())
-
-
 def _resolve_required_tools() -> None:
     for name in _IDE_FULL_REQUIRED_TOOLS:
         if shutil.which(name) is None:
-            raise ValidationReceiptError(
+            raise ValidationReportError(
                 "tool_unavailable",
                 f"required tool is not available on PATH: {name}",
             )
 
 
-def _verify_fingerprint_inputs() -> None:
-    for root_name in (
-        *_FINGERPRINT_ROOTS,
-        _PROTOCOL_SCHEMA_ROOT,
-        _ACCEPTANCE_FIXTURES_ROOT,
-    ):
-        if not (ROOT / root_name).exists():
-            raise ValidationReceiptError(
-                "source_path_missing",
-                f"required validation path is missing: {root_name}",
-            )
-
-
-def _receipt_destination_usable(destination: pathlib.Path) -> None:
-    parent = destination.parent
-    if not parent.exists() or not parent.is_dir():
-        raise ValidationReceiptError(
-            "receipt_destination_unavailable",
-            "receipt destination parent is not an existing directory",
-        )
-    if not os.access(parent, os.W_OK | os.X_OK):
-        raise ValidationReceiptError(
-            "receipt_destination_unavailable",
-            "receipt destination parent is not writable",
-        )
-    if destination.exists():
-        if not destination.is_file():
-            raise ValidationReceiptError(
-                "receipt_destination_unavailable",
-                "receipt destination exists and is not a replaceable file",
-            )
-        if not os.access(destination, os.W_OK):
-            raise ValidationReceiptError(
-                "receipt_destination_unavailable",
-                "receipt destination is not writable",
-            )
-
-
-def _existing_duplicate_receipt(
-    destination: pathlib.Path,
-    *,
-    commit: str,
-    source_fingerprint: str,
-) -> bool:
-    if not destination.is_file():
-        return False
-    try:
-        payload = json.loads(destination.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return False
-    if not isinstance(payload, dict):
-        return False
-    return (
-        payload.get("commit") == commit
-        and payload.get("source_fingerprint") == source_fingerprint
-    )
-
-
-def _placeholder_outcomes(
+def _not_run_outcomes(
     failure_code: str,
+    plan: tuple[FullSuiteEntry, ...] = FULL_IDE_PLAN,
 ) -> dict[str, dict[str, object]]:
     return {
         entry.requirement: {
-            "status": "failed",
+            "status": "not-run",
             "suite": entry.suite,
+            "runner": entry.runner_name,
             "duration_ms": 0,
             "failure_code": failure_code,
         }
-        for entry in FULL_IDE_PLAN
+        for entry in plan
     }
 
 
@@ -1125,22 +967,18 @@ def _print_json(payload: Mapping[str, object]) -> None:
     )
 
 
-def _preflight_ide_full(receipt_path: pathlib.Path) -> dict[str, object]:
-    plan: list[dict[str, str]] = []
+def _preflight_ide_full() -> dict[str, object]:
     checks: list[dict[str, object]] = []
+    plan: list[dict[str, str]] = []
     failure_code: str | None = None
-    commit: str | None = None
-    platform: str | None = None
-    source_fingerprint: str | None = None
-    protocol_digest: str | None = None
-    fixtures_digest: str | None = None
+    platform = _host_platform()
 
     def record(name: str, action) -> None:
         nonlocal failure_code
         try:
             action()
             checks.append({"name": name, "status": "passed"})
-        except ValidationReceiptError as error:
+        except ValidationReportError as error:
             checks.append(
                 {
                     "name": name,
@@ -1155,163 +993,79 @@ def _preflight_ide_full(receipt_path: pathlib.Path) -> dict[str, object]:
         nonlocal plan
         plan = full_suite_plan()
 
-    def check_source_paths() -> None:
-        _verify_fingerprint_inputs()
-
     def check_tools() -> None:
         _resolve_required_tools()
 
     def check_host() -> None:
-        nonlocal platform
-        platform = _host_platform()
         if platform not in SUPPORTED_HOST_PLATFORMS:
-            raise ValidationReceiptError(
+            raise ValidationReportError(
                 "unsupported_host",
                 "validation platform is unsupported",
             )
 
-    def check_commit() -> None:
-        nonlocal commit
-        commit = _head_commit()
-        if _source_tree_dirty():
-            raise ValidationReceiptError(
-                "dirty_candidate",
-                "source-bearing paths differ from the candidate commit",
-            )
-
-    def check_digests() -> None:
-        nonlocal source_fingerprint, protocol_digest, fixtures_digest
-        source_fingerprint = _source_fingerprint()
-        protocol_digest = _protocol_schema_digest()
-        fixtures_digest = _acceptance_fixtures_digest()
-
-    def check_duplicate() -> None:
-        if commit is None or source_fingerprint is None:
-            raise ValidationReceiptError(
-                failure_code or "validation_harness_failed",
-                "duplicate inspection requires commit and source fingerprint",
-            )
-        if _existing_duplicate_receipt(
-            receipt_path,
-            commit=commit,
-            source_fingerprint=source_fingerprint,
-        ):
-            raise ValidationReceiptError(
-                "duplicate_candidate_receipt",
-                "destination already records this commit and fingerprint",
-            )
-
-    def check_destination() -> None:
-        _receipt_destination_usable(receipt_path)
-
     record("requirement_mapping", check_requirement_mapping)
-    record("source_paths", check_source_paths)
     record("tools", check_tools)
     record("host", check_host)
-    record("commit", check_commit)
-    record("digests", check_digests)
-    record("duplicate_receipt", check_duplicate)
-    record("receipt_destination", check_destination)
 
     if not plan:
-        try:
-            plan = [
-                {
-                    "requirement": entry.requirement,
-                    "suite": entry.suite,
-                    "runner": entry.runner_name,
-                }
-                for entry in FULL_IDE_PLAN
-            ]
-        except Exception:
-            plan = []
+        plan = [
+            {
+                "requirement": entry.requirement,
+                "suite": entry.suite,
+                "runner": entry.runner_name,
+            }
+            for entry in FULL_IDE_PLAN
+        ]
 
-    ready = failure_code is None
-    report: dict[str, object] = {
+    return {
         "schema_version": 1,
         "product": "vityo",
         "suite": "full",
         "mode": "preflight",
-        "ready": ready,
+        "ready": failure_code is None,
+        "platform": platform,
         "requirements": plan,
         "checks": checks,
         "failure_code": failure_code,
-        "commit": commit,
-        "platform": platform,
-        "source_fingerprint": source_fingerprint,
-        "protocol_schema_sha256": protocol_digest,
-        "acceptance_fixtures_sha256": fixtures_digest,
     }
-    return report
 
 
-def _write_formal_receipt(
-    receipt_path: pathlib.Path,
+def _write_formal_report(
+    report_path: pathlib.Path,
     payload: Mapping[str, object],
 ) -> int:
     try:
-        write_receipt_atomic(receipt_path, payload)
+        write_report_atomic(report_path, payload)
     except Exception:
         _print_json(
             {
                 "schema_version": 1,
-                "product": "vityo",
-                "suite": "full",
+                "product": payload.get("product", "vityo"),
+                "suite": payload.get("suite", "full"),
                 "status": "failed",
-                "failure_code": "receipt_write_failed",
+                "failure_code": "report_write_failed",
             }
         )
         return 1
     return 0 if payload.get("status") == "passed" else 1
 
 
-def _ide_full_formal(receipt_path: pathlib.Path) -> int:
-    preflight = _preflight_ide_full(receipt_path)
+def _ide_full_formal(report_path: pathlib.Path) -> int:
+    preflight = _preflight_ide_full()
+    platform = str(preflight.get("platform") or _host_platform())
     if not preflight.get("ready"):
-        failure_code = str(
-            preflight.get("failure_code") or "validation_harness_failed"
-        )
-        payload = build_ide_failure_receipt(
+        failure_code = str(preflight.get("failure_code") or "preflight_failed")
+        payload = build_ide_report(
+            platform=platform,
+            outcomes=_not_run_outcomes(failure_code),
             failure_code=failure_code,
-            commit=preflight.get("commit"),
-            platform=preflight.get("platform"),
-            source_fingerprint=preflight.get("source_fingerprint"),
-            protocol_schema_sha256=preflight.get("protocol_schema_sha256"),
-            acceptance_fixtures_sha256=preflight.get(
-                "acceptance_fixtures_sha256"
-            ),
-            outcomes=_placeholder_outcomes(failure_code),
         )
-        if failure_code in {
-            "duplicate_candidate_receipt",
-            "receipt_destination_unavailable",
-        }:
-            _print_json(payload)
-            return 1
-        return _write_formal_receipt(receipt_path, payload)
+        return _write_formal_report(report_path, payload)
 
-    commit: str | None = None
-    platform: str | None = None
-    source_fingerprint: str | None = None
-    protocol_digest: str | None = None
-    fixtures_digest: str | None = None
-    outcomes = _placeholder_outcomes("validation_harness_failed")
-    suites_started = False
+    outcomes: dict[str, dict[str, object]] = {}
+    suite_failed = False
     try:
         validate_full_suite_plan(full_suite_plan())
-        platform = _host_platform()
-        if platform not in SUPPORTED_HOST_PLATFORMS:
-            raise ValidationReceiptError(
-                "unsupported_host",
-                "validation platform is unsupported",
-            )
-        commit = _head_commit()
-        source_fingerprint = _source_fingerprint()
-        protocol_digest = _protocol_schema_digest()
-        fixtures_digest = _acceptance_fixtures_digest()
-        outcomes = {}
-        suite_failed = False
-        suites_started = True
         for entry in FULL_IDE_PLAN:
             started = time.monotonic()
             runner = globals()[entry.runner_name]
@@ -1319,67 +1073,66 @@ def _ide_full_formal(receipt_path: pathlib.Path) -> int:
                 exit_code = int(runner())
             except Exception:
                 exit_code = 1
-            duration_ms = max(
-                0,
-                round((time.monotonic() - started) * 1000),
-            )
-            if exit_code == 0:
-                outcomes[entry.requirement] = {
-                    "status": "passed",
-                    "suite": entry.suite,
-                    "duration_ms": duration_ms,
-                }
-            else:
+            outcome: dict[str, object] = {
+                "status": "passed" if exit_code == 0 else "failed",
+                "suite": entry.suite,
+                "runner": entry.runner_name,
+                "duration_ms": max(
+                    0,
+                    round((time.monotonic() - started) * 1000),
+                ),
+            }
+            if exit_code != 0:
                 suite_failed = True
-                outcomes[entry.requirement] = {
-                    "status": "failed",
-                    "suite": entry.suite,
-                    "duration_ms": duration_ms,
-                    "failure_code": "suite_failed",
-                }
-        end_fingerprint = _source_fingerprint()
-        payload = build_ide_receipt(
-            start_fingerprint=source_fingerprint,
-            end_fingerprint=end_fingerprint,
-            commit=commit,
+                outcome["failure_code"] = "suite_failed"
+            outcomes[entry.requirement] = outcome
+        payload = build_ide_report(
             platform=platform,
             outcomes=outcomes,
-            protocol_schema_sha256=protocol_digest,
-            acceptance_fixtures_sha256=fixtures_digest,
             failure_code="suite_failed" if suite_failed else None,
         )
-    except ValidationReceiptError as error:
-        if not suites_started:
-            outcomes = _placeholder_outcomes(error.code)
-        payload = build_ide_failure_receipt(
-            failure_code=error.code,
-            commit=commit,
+    except ValidationReportError as error:
+        for entry in FULL_IDE_PLAN:
+            outcomes.setdefault(
+                entry.requirement,
+                {
+                    "status": "not-run",
+                    "suite": entry.suite,
+                    "runner": entry.runner_name,
+                    "duration_ms": 0,
+                    "failure_code": error.code,
+                },
+            )
+        payload = build_ide_report(
             platform=platform,
-            source_fingerprint=source_fingerprint,
-            protocol_schema_sha256=protocol_digest,
-            acceptance_fixtures_sha256=fixtures_digest,
             outcomes=outcomes,
+            failure_code=error.code,
         )
     except Exception:
-        if not suites_started:
-            outcomes = _placeholder_outcomes("validation_harness_failed")
-        payload = build_ide_failure_receipt(
-            failure_code="validation_harness_failed",
-            commit=commit,
+        for entry in FULL_IDE_PLAN:
+            outcomes.setdefault(
+                entry.requirement,
+                {
+                    "status": "not-run",
+                    "suite": entry.suite,
+                    "runner": entry.runner_name,
+                    "duration_ms": 0,
+                    "failure_code": "validation_harness_failed",
+                },
+            )
+        payload = build_ide_report(
             platform=platform,
-            source_fingerprint=source_fingerprint,
-            protocol_schema_sha256=protocol_digest,
-            acceptance_fixtures_sha256=fixtures_digest,
             outcomes=outcomes,
+            failure_code="validation_harness_failed",
         )
-    return _write_formal_receipt(receipt_path, payload)
+    return _write_formal_report(report_path, payload)
 
 
 def ide_full(
     *,
     plan_only: bool,
     preflight: bool,
-    receipt_path: pathlib.Path,
+    report_path: pathlib.Path,
 ) -> int:
     if plan_only and preflight:
         raise ValueError("plan_only and preflight are mutually exclusive")
@@ -1396,10 +1149,10 @@ def ide_full(
         )
         return 0
     if preflight:
-        report = _preflight_ide_full(receipt_path)
+        report = _preflight_ide_full()
         _print_json(report)
         return 0 if report.get("ready") else 1
-    return _ide_full_formal(receipt_path)
+    return _ide_full_formal(report_path)
 
 
 def agent_rust_coverage_command(
@@ -1420,7 +1173,7 @@ def agent_rust_coverage_command(
     ]
     for entry in FULL_AGENT_PLAN:
         if not entry.rust_source_roots:
-            raise ValidationReceiptError(
+            raise ValidationReportError(
                 "rust_coverage_mapping_missing",
                 f"{entry.requirement} has no Rust source mapping",
             )
@@ -1439,116 +1192,100 @@ def coding_agent_full(
     collect_coverage: bool = False,
     coverage_output_dir: str = RUST_COVERAGE_OUTPUT,
 ) -> int:
-    try:
-        return _coding_agent_full_inner(
-            receipt_path=receipt_path,
-            collect_coverage=collect_coverage,
-            coverage_output_dir=coverage_output_dir,
-        )
-    except Exception:
-        payload = {
-            "schema_version": 1,
-            "product": "vityo_coding_agent",
-            "suite": "full",
-            "status": "failed",
-            "failure_code": "validation_harness_failed",
-            "requirements": {
-                entry.requirement: {
-                    "status": "failed",
-                    "suite": entry.suite,
-                    "duration_ms": 0,
-                }
-                for entry in FULL_AGENT_PLAN
-            },
-        }
-        write_receipt_atomic(receipt_path, payload)
-        return 1
-
-
-def _coding_agent_full_inner(
-    *,
-    receipt_path: pathlib.Path,
-    collect_coverage: bool = False,
-    coverage_output_dir: str = RUST_COVERAGE_OUTPUT,
-) -> int:
-    start_fingerprint = _source_fingerprint(_AGENT_FINGERPRINT_ROOTS)
-    commit = _head_commit()
+    platform = _host_platform()
     outcomes: dict[str, dict[str, object]] = {}
     for entry in FULL_AGENT_PLAN:
         started = time.monotonic()
-        runner = globals()[entry.runner_name]
+        runner = globals().get(entry.runner_name)
         try:
-            exit_code = int(runner())
+            exit_code = 1 if runner is None else int(runner())
         except Exception:
             exit_code = 1
-        outcomes[entry.requirement] = {
+        outcome: dict[str, object] = {
             "status": "passed" if exit_code == 0 else "failed",
             "suite": entry.suite,
+            "runner": entry.runner_name,
             "duration_ms": max(
                 0,
                 round((time.monotonic() - started) * 1000),
             ),
         }
+        if exit_code != 0:
+            outcome["failure_code"] = (
+                "suite_runner_unavailable" if runner is None else "suite_failed"
+            )
+        outcomes[entry.requirement] = outcome
 
-    end_fingerprint = _source_fingerprint(_AGENT_FINGERPRINT_ROOTS)
-    stable = start_fingerprint == end_fingerprint
     all_passed = all(
         outcome["status"] == "passed" for outcome in outcomes.values()
     )
     rust_coverage: dict[str, object] | None = None
-    coverage_passed = True
-    if collect_coverage and all_passed and stable:
-        coverage_code = run(agent_rust_coverage_command(
-            "collect-only",
-            output_dir=coverage_output_dir,
-        ))
-        coverage_passed = coverage_code == 0
-        rust_coverage = {
-            "status": "passed" if coverage_passed else "failed",
-            "product": "coding-agent",
-            "exit_code": coverage_code,
-        }
+    failure_code = None if all_passed else "suite_failed"
+    if collect_coverage and all_passed:
+        try:
+            coverage_code = run(
+                agent_rust_coverage_command(
+                    "collect-only",
+                    output_dir=coverage_output_dir,
+                )
+            )
+            coverage_passed = coverage_code == 0
+            rust_coverage = {
+                "status": "passed" if coverage_passed else "failed",
+                "product": "coding-agent",
+                "output_dir": coverage_output_dir,
+                "exit_code": coverage_code,
+            }
+            if not coverage_passed:
+                failure_code = "coverage_collection_failed"
+        except Exception:
+            rust_coverage = {
+                "status": "failed",
+                "product": "coding-agent",
+                "output_dir": coverage_output_dir,
+                "failure_code": "coverage_collection_failed",
+            }
+            failure_code = "coverage_collection_failed"
     elif collect_coverage:
-        coverage_passed = False
         rust_coverage = {
             "status": "not-run",
             "product": "coding-agent",
-            "reason": "the legacy Agent suites or source stability check failed",
+            "output_dir": coverage_output_dir,
+            "reason": "Agent requirement suites did not pass",
         }
-    payload = {
+
+    passed = all_passed and (
+        not collect_coverage
+        or (
+            rust_coverage is not None
+            and rust_coverage.get("status") == "passed"
+        )
+    )
+    payload: dict[str, object] = {
         "schema_version": 1,
         "product": "vityo_coding_agent",
         "suite": "full",
-        "status": "passed" if all_passed and stable and coverage_passed else "failed",
-        "commit": commit,
-        "platform": _host_platform(),
-        "start_fingerprint": start_fingerprint,
-        "end_fingerprint": end_fingerprint,
+        "status": "passed" if passed else "failed",
+        "failure_code": None if passed else failure_code or "validation_harness_failed",
+        "platform": platform,
         "requirements": outcomes,
-        "protocol_schema_sha256": hashlib.sha256(
-            (
-                ROOT
-                / "packages"
-                / "vityo_agent_protocol"
-                / "schema"
-                / "acp-v1.schema.json"
-            ).read_bytes()
-        ).hexdigest(),
-        "evaluation_manifest_sha256": hashlib.sha256(
-            (
-                ROOT
-                / "products"
-                / "vityo_coding_agent"
-                / "fixtures"
-                / "evaluation"
-                / "manifest.json"
-            ).read_bytes()
-        ).hexdigest(),
     }
     if rust_coverage is not None:
         payload["rust_coverage"] = rust_coverage
-    write_receipt_atomic(receipt_path, payload)
-    return 0 if payload["status"] == "passed" else 1
+    try:
+        write_report_atomic(receipt_path, payload)
+    except Exception:
+        _print_json(
+            {
+                "schema_version": 1,
+                "product": "vityo_coding_agent",
+                "suite": "full",
+                "status": "failed",
+                "failure_code": "report_write_failed",
+            }
+        )
+        return 1
+    return 0 if passed else 1
 
 
 def main() -> int:
@@ -1573,9 +1310,6 @@ def main() -> int:
         parser.error("--preflight is supported only for ide/full")
     if args.coverage and (args.product, args.suite) != ("coding-agent", "full"):
         parser.error("--coverage is supported only for coding-agent/full")
-    if (args.product, args.suite) == ("ide", "source-fingerprint"):
-        print(_source_fingerprint())
-        return 0
     if (args.product, args.suite) == ("ide", "cutover"):
         return cutover()
     if (args.product, args.suite) == ("coding-agent", "headless-runtime"):
@@ -1597,14 +1331,14 @@ def main() -> int:
     if (args.product, args.suite) == ("coding-agent", "protocol-integration"):
         return protocol_integration()
     if (args.product, args.suite) == ("coding-agent", "full"):
-        receipt = args.receipt or (
+        report_path = args.receipt or (
             ROOT
             / "artifacts"
             / "validation"
             / "vityo-coding-agent-full.json"
         )
         return coding_agent_full(
-            receipt_path=receipt.resolve(),
+            receipt_path=report_path.resolve(),
             collect_coverage=args.coverage,
             coverage_output_dir=args.coverage_output_dir,
         )
@@ -1635,13 +1369,13 @@ def main() -> int:
     if (args.product, args.suite) == ("ide", "ide-quality"):
         return ide_quality()
     if (args.product, args.suite) == ("ide", "full"):
-        receipt = args.receipt or (
+        report_path = args.receipt or (
             ROOT / "artifacts" / "validation" / "vityo-full.json"
         )
         return ide_full(
             plan_only=args.plan_only,
             preflight=args.preflight,
-            receipt_path=receipt.resolve(),
+            report_path=report_path.resolve(),
         )
     parser.error(f"unsupported suite: {args.product}/{args.suite}")
 

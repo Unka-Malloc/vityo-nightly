@@ -1,8 +1,4 @@
-"""Focused unit freeze for bounded IDE validation receipts.
-
-Adjacent to acceptance_paths for digest/oracle edge cases on
-build_ide_receipt and atomic write failure cleanup.
-"""
+"""Tests for current-invocation validation reports and atomic persistence."""
 
 from __future__ import annotations
 
@@ -21,7 +17,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "vityo_validation_receipt.py"
 
 def load_module():
     spec = importlib.util.spec_from_file_location(
-        "vityo_validation_receipt_test_target",
+        "vityo_validation_report_test_target",
         SCRIPT_PATH,
     )
     if spec is None or spec.loader is None:
@@ -32,15 +28,16 @@ def load_module():
     return module
 
 
-class VityoValidationReceiptTest(unittest.TestCase):
+class VityoValidationReportTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.receipt = load_module()
+        self.reports = load_module()
 
     def _plan(self) -> list[dict[str, object]]:
         return [
             {
                 "requirement": f"REQ-IDE-{index:03d}",
                 "suite": f"suite-{index}",
+                "runner": f"runner_{index}",
             }
             for index in range(1, 9)
         ]
@@ -50,223 +47,115 @@ class VityoValidationReceiptTest(unittest.TestCase):
             f"REQ-IDE-{index:03d}": {
                 "status": "passed",
                 "suite": f"suite-{index}",
+                "runner": f"runner_{index}",
                 "duration_ms": index,
             }
             for index in range(1, 9)
         }
 
-    def _digests(self) -> dict[str, str]:
-        return {
-            "protocol_schema_sha256": "d" * 64,
-            "acceptance_fixtures_sha256": "e" * 64,
-        }
-
     def test_full_suite_plan_requires_canonical_unique_mapping(self) -> None:
-        self.receipt.validate_full_suite_plan(self._plan())
-
+        self.reports.validate_full_suite_plan(self._plan())
         invalid_plans = []
-        missing_type = self._plan()
-        missing_type[0]["requirement"] = 1
-        invalid_plans.append(missing_type)
+        missing = self._plan()
+        missing[0]["runner"] = None
+        invalid_plans.append(missing)
         duplicate = self._plan()
         duplicate[-1]["requirement"] = "REQ-IDE-007"
         invalid_plans.append(duplicate)
-        duplicate_suite = self._plan()
-        duplicate_suite[-1]["suite"] = "suite-7"
-        invalid_plans.append(duplicate_suite)
-        empty_suite = self._plan()
-        empty_suite[-1]["suite"] = " "
-        invalid_plans.append(empty_suite)
-
+        duplicate_runner = self._plan()
+        duplicate_runner[-1]["runner"] = "runner_7"
+        invalid_plans.append(duplicate_runner)
         for plan in invalid_plans:
             with self.subTest(plan=plan):
                 with self.assertRaisesRegex(
-                    self.receipt.ValidationReceiptError,
+                    self.reports.ValidationReportError,
                     "invalid_requirement_mapping",
                 ):
-                    self.receipt.validate_full_suite_plan(plan)
+                    self.reports.validate_full_suite_plan(plan)
 
-    def test_receipt_builds_passed_and_failed_terminal_results(self) -> None:
+    def test_ide_report_records_pass_fail_and_not_run_outcomes(self) -> None:
         outcomes = self._outcomes()
-        digests = self._digests()
-        passed = self.receipt.build_ide_receipt(
-            start_fingerprint="a" * 64,
-            end_fingerprint="a" * 64,
-            commit="b" * 40,
+        passed = self.reports.build_ide_report(
             platform="linux",
             outcomes=outcomes,
-            **digests,
         )
-        self.assertEqual(passed["status"], "passed")
-        self.assertEqual(passed["product"], "vityo")
-        self.assertEqual(passed["failure_code"], None)
-        self.assertEqual(passed["protocol_schema_sha256"], "d" * 64)
-        self.assertEqual(passed["acceptance_fixtures_sha256"], "e" * 64)
-        self.assertEqual(tuple(passed["requirements"]), tuple(outcomes))
-
-        outcomes["REQ-IDE-008"]["status"] = "blocked"
-        failed = self.receipt.build_ide_receipt(
-            start_fingerprint="a" * 64,
-            end_fingerprint="a" * 64,
-            commit="b" * 64,
-            platform="windows",
-            outcomes=outcomes,
-            failure_code="suite_failed",
-            **digests,
-        )
-        self.assertEqual(failed["status"], "failed")
-        self.assertEqual(failed["failure_code"], "suite_failed")
-
-    def test_receipt_rejects_invalid_identity_outcomes_and_digests(self) -> None:
-        cases = []
-
-        cases.append(
-            (
-                "invalid_source_fingerprint",
-                {
-                    "start_fingerprint": "not-a-hash",
-                    "end_fingerprint": "not-a-hash",
-                },
-            )
-        )
-        cases.append(
-            (
-                "source_fingerprint_drift",
-                {
-                    "start_fingerprint": "a" * 64,
-                    "end_fingerprint": "c" * 64,
-                },
-            )
-        )
-        cases.append(("invalid_commit", {"commit": "short"}))
-        cases.append(("invalid_platform", {"platform": "fixture"}))
-
-        missing = self._outcomes()
-        missing.pop("REQ-IDE-008")
-        cases.append(("missing_requirement_outcome", {"outcomes": missing}))
-
-        invalid_status = self._outcomes()
-        invalid_status["REQ-IDE-001"]["status"] = "unknown"
-        cases.append(
-            (
-                "invalid_requirement_outcome",
-                {"outcomes": invalid_status},
-            )
-        )
-
-        invalid_suite = self._outcomes()
-        invalid_suite["REQ-IDE-001"]["suite"] = None
-        cases.append(
-            (
-                "invalid_requirement_outcome",
-                {"outcomes": invalid_suite},
-            )
-        )
-        cases.append(
-            (
-                "invalid_evidence_digest",
-                {"protocol_schema_sha256": "bad"},
-            )
-        )
-        cases.append(
-            (
-                "invalid_evidence_digest",
-                {"acceptance_fixtures_sha256": "bad"},
-            )
-        )
-
-        defaults = {
-            "start_fingerprint": "a" * 64,
-            "end_fingerprint": "a" * 64,
-            "commit": "b" * 40,
-            "platform": "macos",
-            "outcomes": self._outcomes(),
-            **self._digests(),
-        }
-        for expected_code, overrides in cases:
-            with self.subTest(expected_code=expected_code, overrides=overrides):
-                with self.assertRaisesRegex(
-                    self.receipt.ValidationReceiptError,
-                    expected_code,
-                ):
-                    self.receipt.build_ide_receipt(
-                        **{**defaults, **overrides}
-                    )
-
-    def test_early_failure_receipt_allows_null_identity_fields(self) -> None:
-        payload = self.receipt.build_ide_failure_receipt(
-            failure_code="validation_harness_failed",
-            commit=None,
-            platform="linux",
-            source_fingerprint=None,
-            protocol_schema_sha256=None,
-            acceptance_fixtures_sha256=None,
-            outcomes={
-                f"REQ-IDE-{index:03d}": {
-                    "status": "failed",
-                    "suite": f"suite-{index}",
-                    "duration_ms": 0,
-                    "failure_code": "validation_harness_failed",
-                }
-                for index in range(1, 9)
+        self.assertEqual(
+            passed,
+            {
+                "schema_version": 1,
+                "product": "vityo",
+                "suite": "full",
+                "status": "passed",
+                "failure_code": None,
+                "platform": "linux",
+                "requirements": outcomes,
             },
         )
-        self.assertEqual(payload["status"], "failed")
-        self.assertEqual(payload["failure_code"], "validation_harness_failed")
-        self.assertIsNone(payload["commit"])
-        self.assertIsNone(payload["source_fingerprint"])
-        self.assertIsNone(payload["protocol_schema_sha256"])
-        self.assertIsNone(payload["acceptance_fixtures_sha256"])
-        self.assertEqual(len(payload["requirements"]), 8)
 
-    def test_atomic_write_persists_and_cleans_up_failures(self) -> None:
-        payload = {
-            "schema_version": 1,
-            "product": "vityo",
-            "status": "passed",
-        }
-        with tempfile.TemporaryDirectory(
-            prefix="vityo-receipt-",
-        ) as tmp_name:
-            root = Path(tmp_name)
-            destination = root / "nested" / "receipt.json"
-            self.receipt.write_receipt_atomic(destination, payload)
+        outcomes["REQ-IDE-008"]["status"] = "not-run"
+        outcomes["REQ-IDE-008"]["failure_code"] = "tool_unavailable"
+        failed = self.reports.build_ide_report(
+            platform="macos",
+            outcomes=outcomes,
+            failure_code="tool_unavailable",
+        )
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["failure_code"], "tool_unavailable")
+        self.assertEqual(failed["requirements"]["REQ-IDE-008"]["status"], "not-run")
+
+    def test_ide_report_requires_every_mapped_requirement_and_valid_outcomes(self) -> None:
+        incomplete = self._outcomes()
+        incomplete.pop("REQ-IDE-008")
+        with self.assertRaisesRegex(
+            self.reports.ValidationReportError,
+            "missing_requirement_outcome",
+        ):
+            self.reports.build_ide_report(platform="linux", outcomes=incomplete)
+
+        invalid = self._outcomes()
+        invalid["REQ-IDE-001"]["duration_ms"] = -1
+        with self.assertRaisesRegex(
+            self.reports.ValidationReportError,
+            "invalid_requirement_outcome",
+        ):
+            self.reports.build_ide_report(platform="linux", outcomes=invalid)
+
+    def test_atomic_write_creates_and_overwrites_current_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "nested" / "report.json"
+            self.reports.write_report_atomic(destination, {"status": "failed"})
+            self.reports.write_report_atomic(destination, {"status": "passed"})
             self.assertEqual(
                 json.loads(destination.read_text(encoding="utf-8")),
-                payload,
+                {"status": "passed"},
             )
-            self.assertEqual(
-                list(destination.parent.glob(".*.tmp")),
-                [],
-            )
+            self.assertEqual(list(destination.parent.glob(".*.tmp")), [])
 
-            with mock.patch.object(
-                self.receipt.os,
-                "replace",
-                side_effect=OSError("synthetic replace failure"),
+    def test_atomic_write_cleans_up_after_replace_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "report.json"
+            with (
+                mock.patch.object(
+                    self.reports.os,
+                    "replace",
+                    side_effect=OSError("synthetic replace failure"),
+                ),
+                self.assertRaises(OSError),
             ):
-                with self.assertRaisesRegex(
-                    OSError,
-                    "synthetic replace failure",
-                ):
-                    self.receipt.write_receipt_atomic(
-                        root / "failed.json",
-                        payload,
-                    )
-            self.assertEqual(list(root.glob(".*.tmp")), [])
+                self.reports.write_report_atomic(destination, {"status": "passed"})
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(destination.parent.glob(".*.tmp")), [])
 
-    def test_atomic_write_rejects_oversized_receipt(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="vityo-receipt-",
-        ) as tmp_name:
-            destination = Path(tmp_name) / "receipt.json"
+    def test_atomic_write_keeps_report_size_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "report.json"
             with self.assertRaisesRegex(
-                self.receipt.ValidationReceiptError,
-                "receipt_too_large",
+                self.reports.ValidationReportError,
+                "report_too_large",
             ):
-                self.receipt.write_receipt_atomic(
+                self.reports.write_report_atomic(
                     destination,
-                    {"payload": "x" * self.receipt.MAX_RECEIPT_BYTES},
+                    {"payload": "x" * self.reports.MAX_REPORT_BYTES},
                 )
             self.assertFalse(destination.exists())
 
