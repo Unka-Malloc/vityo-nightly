@@ -735,6 +735,8 @@ def _native_desktop_test_command(flutter: str) -> list[str]:
 
 
 def native_desktop() -> int:
+    if _host_platform() not in {"linux", "macos"}:
+        raise RuntimeError("desktop reconnect integration requires Linux or macOS")
     flutter = tool("flutter")
     return run(
         _native_desktop_test_command(flutter),

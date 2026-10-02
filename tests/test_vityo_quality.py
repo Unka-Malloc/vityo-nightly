@@ -116,7 +116,9 @@ class VityoQualityTest(unittest.TestCase):
                         self.quality,
                         "run",
                         return_value=0,
-                    ) as run:
+                    ) as run, mock.patch.object(
+                        self.quality, "_host_platform", return_value="macos"
+                    ):
                         self.assertEqual(runner(), 0)
                 self.assertGreater(run.call_count, 0)
 
@@ -130,7 +132,9 @@ class VityoQualityTest(unittest.TestCase):
                         self.quality,
                         "run",
                         return_value=9,
-                    ) as run:
+                    ) as run, mock.patch.object(
+                        self.quality, "_host_platform", return_value="macos"
+                    ):
                         self.assertEqual(runner(), 9)
                 self.assertEqual(run.call_count, 1)
 
@@ -148,6 +152,8 @@ class VityoQualityTest(unittest.TestCase):
                     side_effect=lambda command, cwd, *_args: (
                         commands.append((command, Path(cwd))) or 0
                     ),
+                ), mock.patch.object(
+                    self.quality, "_host_platform", return_value="macos"
                 ):
                     self.assertEqual(getattr(self.quality, name)(), 0)
 
@@ -176,8 +182,24 @@ class VityoQualityTest(unittest.TestCase):
                     self.assertIn(test_path.name, runner_source)
 
         macos_paths = self.quality._macos_native_ui_test_paths(product)
-        self.assertEqual(len(macos_paths), 14)
+        self.assertEqual(
+            set(macos_paths),
+            set(integration_dir.glob("*_native_ui_test.dart"))
+            | {
+                integration_dir / "editor_native_input_test.dart",
+                integration_dir / "platform_secure_credential_storage_test.dart",
+                integration_dir / "workbench_visual_capture_test.dart",
+            },
+        )
         self.assertTrue(all(path.is_file() for path in macos_paths))
+
+    def test_native_desktop_rejects_unsupported_host_before_running_tools(self) -> None:
+        with mock.patch.object(
+            self.quality, "_host_platform", return_value="windows"
+        ), mock.patch.object(self.quality, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, "requires Linux or macOS"):
+                self.quality.native_desktop()
+        run.assert_not_called()
 
     def test_macos_native_ui_runner_targets_all_macos_integration_tests(self) -> None:
         with mock.patch.object(

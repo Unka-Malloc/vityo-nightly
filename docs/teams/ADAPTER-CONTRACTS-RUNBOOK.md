@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 adapter 合同、integration 层以及上游 `styio` / `pafio` handoff 文档的日常维护入口。
 
-**Last updated:** 2026-08-11
+**Last updated:** 2026-10-02
 
 ## Mission
 
@@ -60,6 +60,11 @@ Key SSOTs:
     `VityodMcpGateway` only as typed projections, while `vityod-agent-host` owns ACP process/session
     supervision and MCP authority. Do not restore Dart process supervisors, root registries,
     context-export hosts, or tool-policy compatibility adapters.
+17. Interactive Flow Hero consumes revision-bound Styio semantic flow facts and source-edit
+    proposals through the language-service boundary. Pafio metadata is not program data flow.
+    Source transactions remain authoritative through rewire validation, rejection, cancellation,
+    undo, and stale-result handling. These are selected targets in ADR-0020, not implemented
+    adapter capabilities; connect deterministic acceptance with each later implementation.
 
 ## Change Classes
 

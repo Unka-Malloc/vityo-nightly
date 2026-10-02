@@ -181,7 +181,7 @@ jobs:
         working-directory: vityo-nightly
         shell: bash
         run: >-
-          "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite native-desktop
+          xvfb-run -a "$PYTHON_BIN" scripts/vityo_quality.py --product ide --suite native-desktop
 
       - name: Validate pinned Linux developer-loop report
         working-directory: vityo-nightly

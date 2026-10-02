@@ -80,6 +80,11 @@ class ProjectCoverageGateTest(unittest.TestCase):
             "  macos-native:", 1
         )[0]
         self.assertNotIn("ilammy/msvc-dev-cmd", linux_job)
+        self.assertIn(
+            'xvfb-run -a "$PYTHON_BIN" scripts/vityo_quality.py '
+            '--product ide --suite native-desktop',
+            linux_job,
+        )
         self.assertNotIn("--suite native-desktop", windows_job)
         self.assertNotIn("--suite macos-native-ui", windows_job)
 
