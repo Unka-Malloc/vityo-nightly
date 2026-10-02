@@ -2,7 +2,7 @@
 
 **Purpose:** Define the canonical local verification flow, test-suite-to-CI requirements, and evidence boundaries for GitHub Actions and later acceptance.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Test Connection Is Part Of The Change
 
@@ -22,16 +22,23 @@ It runs privacy, architecture/documentation, test collection, coverage evaluatio
 
 ### Test And Coverage Scope
 
-The `test` stage runs Flutter analysis; discovers Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; collects instrumented locked Cargo tests for the Coding Agent and `vityod`; invokes the registered Coding Agent and nine portable IDE selectors; runs Prototype governance and editor checks; and validates the declared language fixtures using a pinned Styio executable. `coverage` evaluates the Python, Flutter, Coding Agent, and daemon reports collected during `test` without rerunning those suites. Rust reports remain separate by product and require executed first-party source coverage; the Agent report also requires mapped requirement-module coverage. Neither has a default percentage floor.
-
-The current Coding Agent test registry still exercises the current Dart runtime. Rust runtime completion requires deterministic coverage for provider requests, tool behavior, policy, sessions, protocol, and the IDE consumer path; a Rust `--version` probe or wire-contract test alone is not runtime evidence.
+Before collecting tests, `test` prepares `llvm-tools-preview` and verifies or installs the pinned
+`cargo-llvm-cov` `0.9.0`; setup failure fails the stage. It then runs Flutter analysis; discovers
+Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; executes
+the Rust Coding Agent's nine-requirement suite with one instrumented locked workspace collection;
+collects the instrumented `vityod` workspace once; invokes nine portable IDE selectors; runs
+Prototype governance and editor checks; and validates the declared language fixtures with a pinned
+Styio executable. `coverage` evaluates the Python, Flutter, Coding Agent, and daemon reports without
+rerunning those suites. Rust reports remain separate by product and require executed first-party
+source coverage; the Agent report also requires mapped coverage for all nine requirement areas.
+Neither Rust report has a default percentage floor.
 
 | Suite | Pipeline mapping | What a pass establishes |
 |---|---|---|
 | Python repository and tooling tests | `test` stage; `tests/test_*.py` discovery with coverage collection | Discovered repository-tool tests passed. |
 | Flutter IDE unit/widget/contract tests | `test` stage; Flutter test discovery under `products/vityo_app/test/` with coverage collection | Discovered app tests passed; does not establish live provider or user behavior. |
 | Rust daemon and daemon protocol | `test` stage; instrumented locked `vityod` workspace tests plus registered `ide/daemon-core` suite | Daemon Rust and shared protocol behavior is exercised without launching the desktop UI. |
-| Coding Agent fixtures and Rust coverage | `test` stage; registered `coding-agent/full` suite with instrumented locked Rust workspace collection | The behavior registry still covers the current Dart runtime while the separate Rust report exercises Rust test paths; neither calls a real model provider or proves the Rust production cutover. |
+| Coding Agent behavior and Rust coverage | `test` stage; registered `coding-agent/full` nine-requirement suite with instrumented locked Rust workspace collection | Exercises the current Rust ACP-stdio runtime and records each requirement outcome plus coverage. It does not call a live provider or prove a user-assigned task. |
 | Portable IDE integration | `test` stage; nine registered `ide/<suite>` selectors | Deterministic local IDE and protocol seams passed. |
 | Native desktop reconnect | `ide/native-desktop` on Linux and macOS CI | The supported `vityod_reconnect_test.dart` host integration passed. It is not run on Windows. |
 | macOS native UI and credential integration | `ide/macos-native-ui` on macOS CI | Eleven `*_native_ui_test.dart` files plus three explicitly registered tests passed (14 files total). |

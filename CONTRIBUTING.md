@@ -2,7 +2,7 @@
 
 **Purpose:** Give contributors a direct path from the owned requirement to implementation, tests, CI, source review, and delivery evidence.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Start Here
 
@@ -22,7 +22,11 @@ Start with the [contributor and Agent workflow](docs/specs/CONTRIBUTOR-AND-AGENT
 
 The architecture gate protects these directions: `lib/src/view_ide/` owns presentation-independent IDE services and contracts; `lib/src/ide/` owns editor, document/workspace, Agent Client, and collaboration state; `lib/src/app/` composes shared services; and `lib/src/view_render/` owns Flutter presentation. Presentation may import only narrow registered public model, adapter, or projection files from their actual owners, not arbitrary implementation files. Removed top-level roots are not compatibility surfaces. See the release checklist and `scripts/check_architecture_boundaries.py` for current registrations.
 
-The shared product boundaries remain: `products/vityo_app/` is the IDE, `products/vityo_coding_agent/` is the companion runtime, and `packages/vityo_agent_protocol/` is the runtime-neutral shared protocol and Dart client binding. The Coding Agent's Rust migration is in progress; the Dart implementation remains current until the Rust runtime and IDE consumer path have complete deterministic coverage. The IDE does not import Agent runtime implementation or connect directly to a model provider.
+The shared product boundaries are `products/vityo_app/` for the IDE, `products/vityo_coding_agent/` for the independent Rust Coding Agent, and `packages/vityo_agent_protocol/` for the runtime-neutral protocol and Dart client binding. The Agent uses one ACP stdio process entry with explicit provider-config and session-directory paths; both graphical and non-graphical ACP hosts use that same entry. The IDE does not import Agent implementation or connect directly to a model provider. MCP library support does not imply production ACP attachment support: non-empty `mcpServers` are rejected with `-32003`.
+
+The selected Flow Hero client launches the packaged Agent only when a non-empty `VITYO_WORKSPACE`
+is explicitly supplied. Without that workspace scope, the route remains in demo mode and does not
+start a Coding Agent process.
 
 ## Implementation And Test Workflow
 
@@ -53,10 +57,11 @@ python3 scripts/vityo.py install
 python3 scripts/vityo.py launch
 ```
 
-`test` collects Python and Flutter coverage and runs instrumented locked Cargo tests for the Coding
-Agent and `vityod`, along with the registered Agent/IDE fixture suites, retained Prototype checks,
-and pinned Styio language fixtures. The current Agent behavior suite still exercises the Dart
-runtime; Rust test coverage does not by itself establish production cutover or IDE consumer wiring.
+`test` collects Python, Flutter, Coding Agent, and `vityod` coverage while running each suite once.
+The Rust Coding Agent suite executes the maintained Agent requirement scenarios and its locked
+workspace tests; the registered IDE suites and Flutter test root cover client consumers. Coverage
+evaluation is report-only and does not rerun suites. None of these deterministic checks contacts a
+real provider or performs a user-assigned coding task.
 The test stage prepares the exact pinned Styio toolchain when no matching executable is available;
 an invalid explicit override or failed build fails the stage. It never uses an unpinned fallback.
 The optional real Pafio/Styio product matrix runs in CI and when `VITYO_PRODUCT_GATE=1` is set.

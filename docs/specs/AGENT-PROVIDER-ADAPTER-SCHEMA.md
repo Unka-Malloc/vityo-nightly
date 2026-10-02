@@ -3,10 +3,10 @@
 **Purpose:** Define the non-secret configuration contract for the first-party Coding Agent's
 OpenAI-compatible chat provider.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
-**Status:** Selected contract; Rust provider implementation is in progress. A config parser or
-provider adapter does not establish that the CLI, packaged client, or a live provider is connected.
+**Status:** Current Rust provider contract. A deterministic provider test does not establish live
+provider availability, account authorization, or user acceptance.
 
 ## Ownership And Scope
 
@@ -16,11 +16,18 @@ connects directly to a model provider. This contract selects one provider adapte
 `openai_compatible_chat`; it does not define a provider registry, adapter-module format, local
 bridge, fallback chain, or provider-specific IDE settings.
 
-The selected runtime interface accepts `--provider-config ABSOLUTE_PATH`. The first-party packaged
-descriptor supplies the file under the application's support directory at
-`vityo-coding-agent/provider.json`; standalone callers supply an explicit absolute path. The Rust
-binary's argument and package composition are still in progress, so these paths describe the
-selected interface, not a completed production startup route.
+The only product process command is
+`vityo-coding-agent --stdio-agent --provider-config ABSOLUTE_PATH --session-dir ABSOLUTE_PATH`.
+ACP stdio is the same control surface for GUI and non-GUI hosts; there is no separate
+inspect-only/headless CLI. `--version` and `--help` do not need runtime paths. The packaged Vityo
+descriptor resolves both paths under the application support directory:
+`vityo-coding-agent/provider.json` and `vityo-coding-agent/sessions`. Standalone callers provide
+both absolute paths explicitly. The session store path is independent of the configuration file;
+the configuration can be read-only or stored elsewhere.
+
+The selected Flow Hero client attaches this descriptor only when a non-empty `VITYO_WORKSPACE` is
+explicitly configured. Without that workspace scope, the client remains in demo mode and launches
+no first-party Agent process; the workspace root is not inferred from either runtime path.
 
 ## JSON Shape
 
@@ -87,6 +94,15 @@ credential-store failures; they never produce a fabricated Agent completion. The
 may pass only the explicitly approved session variables needed to reach the native secret service;
 it must not forward arbitrary environment values or credential contents.
 
+## ACP Session Attachments
+
+The current first-party ACP host supports standard filesystem and terminal operations plus the
+correlated `_vityo.dev/workspace-change-proposal` extension. `session/new` and `session/load`
+explicitly reject non-empty `mcpServers` with JSON-RPC error `-32003`; empty attachment lists are
+accepted. The Rust MCP client library, tool catalog, and peer tests are maintained, but they do not
+provide a production MCP server attachment lifecycle. The runtime does not silently ignore an
+attachment request.
+
 ## Deterministic Verification And Live Acceptance
 
 The production configuration parser accepts HTTPS endpoints only. Rust unit tests use a private
@@ -97,9 +113,10 @@ certificate-trust override. Synthetic credentials keep fixture values out of the
 store. The cases cover multi-turn tool-call/result history, streamed frame assembly, cancellation,
 malformed responses, provider errors, and configuration/credential failures.
 
-The real executable's configuration/ACP-readiness check uses a valid HTTPS configuration with
-`auth.mode: none` and makes no provider request. No deterministic engineering test contacts an
-external provider.
+The executable's ACP readiness checks use explicit absolute provider and session paths with a valid
+HTTPS `auth.mode: none` configuration and make no provider request. Deterministic Agent tests cover
+the actual provider stream/tool continuation through an isolated test transport, not an external
+service. No deterministic engineering test contacts an external provider.
 
 Real provider conversations and real development tasks remain a separate user-authorized workflow.
 This configuration contract, an adapter test, a package, or a successful client startup probe does

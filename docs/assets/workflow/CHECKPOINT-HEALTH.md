@@ -2,7 +2,7 @@
 
 **Purpose:** Describe deterministic test collection, native integration reach, and coverage evaluation in the canonical Vityo delivery pipeline.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Commands
 
@@ -18,18 +18,21 @@ After the test stage succeeds, evaluate the saved reports with:
 python3 scripts/vityo.py coverage
 ```
 
-The `test` stage collects Python and Flutter coverage and runs instrumented locked Cargo tests for
-the Coding Agent and `vityod` once. The separate `coverage` stage evaluates the Python, Flutter,
-Coding Agent, and daemon reports without rerunning the suites. Rust reports are kept separate by
-product; both require valid executed first-party source coverage, the Agent report additionally
-requires mapped requirement-module coverage, and neither has a default percentage floor.
+The `test` stage collects Python and Flutter coverage and runs the Rust Coding Agent requirement
+suite and instrumented locked workspace tests for the Coding Agent and `vityod` once. Before test
+collection it prepares `llvm-tools-preview` and verifies or installs the pinned
+`cargo-llvm-cov` `0.9.0`; failed Rust toolchain installation fails the stage. The separate
+`coverage` stage evaluates the Python, Flutter, Coding Agent, and daemon reports without rerunning
+the suites. Rust reports are kept separate by product; both require valid executed first-party
+source coverage, the Agent report additionally requires mapped coverage for all nine requirements,
+and neither has a default percentage floor.
 A full local delivery runs both stages in order through `python3 scripts/vityo.py deliver`.
 The Rust LCOV reports are `build/evidence/rust-coverage/coding-agent.lcov` and
 `build/evidence/rust-coverage/vityod.lcov`.
 
 ## Test Stage Scope
 
-The current `test` implementation runs Flutter analysis; discovers Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; runs instrumented locked Cargo tests for the Coding Agent and `vityod`; invokes the registered Coding Agent and nine portable IDE selectors; runs retained Prototype governance and editor checks; and validates the declared language fixtures with the pinned Styio executable.
+The current `test` implementation runs Flutter analysis; discovers Python tests under `tests/test_*.py`; runs Flutter tests under `products/vityo_app/test/`; runs the Rust `coding-agent/full` requirement suite with one locked coverage collection plus the instrumented `vityod` workspace; invokes nine portable IDE selectors; runs retained Prototype governance and editor checks; and validates the declared language fixtures with the pinned Styio executable.
 
 The test stage resolves Styio from an explicit `--styio-bin`, `VITYO_STYIO_BIN`/`STYIO`, or a
 built sibling executable at the exact product-matrix revision. If none is available, it fetches and
@@ -37,10 +40,11 @@ builds that pinned revision under ignored `build/toolchains/`; it does not accep
 binary. An invalid explicit override or failed pinned build fails the stage. CI and a local run with
 `VITYO_PRODUCT_GATE=1` additionally require the real Styio/Pafio product matrix.
 
-The current Coding Agent runtime and deterministic behavior suite are still Dart. Rust unit/integration
-tests are instrumented for separate coverage, but that report does not establish that Rust is the
-current production runtime or that the Rust Agent is connected through the IDE consumer path. Do
-not present a `--version` identity probe or package file as behavioral coverage.
+The current Coding Agent is an independent Rust ACP-stdio runtime. Its `coding-agent/full` suite
+executes the maintained nine-requirement behavior plan and collects the Rust report once; the IDE
+client integration tests separately exercise host operation and permission/proposal consumers.
+The production ACP host rejects non-empty `mcpServers` with `-32003`; MCP library tests do not imply
+server attachment support. Deterministic tests do not call a live provider or complete a user task.
 
 ## Integration Test Mapping
 

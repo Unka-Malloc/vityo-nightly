@@ -64,8 +64,8 @@ python3 scripts/release-readiness-gate.py --skip-build
 后端拥有：
 
 1. `lib/src/view_ide/language/` 作为 IDE 语言智能、语法、高亮、symbol/refactor 预检的第一核心功能边界
-2. `lib/src/view_ide/editor/` 作为文档状态、选择状态和 editor controller 的功能边界
-3. `lib/src/view_ide/workspace/` 作为 workspace/project selection 与 document store 的功能边界
+2. `lib/src/ide/editor/` 作为文档状态、选择状态和 editor controller 的功能边界
+3. `lib/src/ide/workspace/` 作为 workspace/project selection 与 document store 的功能边界
 4. `lib/src/view_ide/module_host/` 作为 module manifest、capability matrix 和 lifecycle policy 的功能边界
 5. `lib/src/view_ide/shell_runtime/` 作为 shell runtime、命令执行、阻塞原因、日志、运行会话和 workflow state 的功能边界
 6. `lib/src/view_ide/backend_toolchain/` 作为工具链后端与 adapter 实现的显式入口边界
@@ -116,7 +116,7 @@ python3 scripts/release-readiness-gate.py --skip-build
 20. `Runtime Surface` 已复用同一份 execution route summary，并能显示最近一次执行的 `unit range / stdout / stderr / diagnostics` 统计
 21. 工作区侧栏新增 `Required Handoffs` 卡，只表达 `Vityo` 还需要 `styio` / `pafio` 提供哪些 machine contract，不替上游做内部实现规划
 22. 项目视图细化到 `workspace members / packages / dependencies / targets` 四层展示，缺少 metadata 时稳定阻塞，不再从 canonical files 推断 package facts
-23. `lib/src/view_ide/` 已承载 language、editor core、workspace、module host、runtime model、shell runtime、Agent Client、commands、platform target 与 backend toolchain
+23. `lib/src/view_ide/` 承载 language、module host、runtime model、shell runtime、commands、platform target 与 backend toolchain；`lib/src/ide/` 承载 editor core、workspace、Agent Client 与协作投影
 24. `lib/src/view_render/` 已承载 shell、editor surface、runtime/debug surface、Agent Workbench、theme 和 viewport profile
 
 ## 生成六端 runner

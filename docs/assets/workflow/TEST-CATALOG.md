@@ -2,7 +2,7 @@
 
 **Purpose:** Map current deterministic test ownership and CI reach, and define the future Flow Hero acceptance evidence without treating plans as results.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Test To CI Contract
 
@@ -18,9 +18,10 @@ The canonical contributor entrypoint is `python3 scripts/vityo.py deliver`; test
 |---|---|---|
 | Vityo IDE unit, widget, contract, model, and performance-budget tests: `products/vityo_app/test/**/*_test.dart` | Flutter test discovery with coverage collection in `python3 scripts/vityo.py test`; evaluation is `python3 scripts/vityo.py coverage` | Portable tests against the Flutter implementation; does not establish provider or real-user behavior. Current Flow Hero model/layout tests cover their fixtures only. |
 | Repository and development-tool tests: `tests/test_*.py` | Python test discovery and coverage collection in `python3 scripts/vityo.py test`; evaluation is `python3 scripts/vityo.py coverage` | Newly named tests under `tests/` are discovered. Prototype's server-security module remains an explicit additional test target. |
-| Coding Agent runtime: Dart implementation and tests plus Rust implementation under `products/vityo_coding_agent/` | `coding-agent/full` plus instrumented locked Cargo workspace tests from the `test` stage; `coverage` evaluates the separate Rust report | The deterministic behavior registry still exercises the current Dart runtime. Rust tests provide instrumented first-party source coverage and mapped requirement-module coverage but do not establish production cutover or IDE consumer wiring. No suite calls a real provider or proves a user-assigned task. |
+| Coding Agent runtime: Rust implementation under `products/vityo_coding_agent/src/` | The `test` stage runs the `coding-agent/full` requirement suite with one instrumented locked Cargo workspace collection; `coverage` evaluates the separate Agent report | The suite maps all nine Agent requirements to executed runtime modules and reports current-platform source coverage without a default Rust percentage floor. Provider/tool/protocol fixtures are deterministic; no suite calls a real provider or proves a user-assigned task. |
 | Local daemon core: `products/vityo_app/native/vityod/` and `packages/vityo_daemon_protocol/` | Locked Cargo workspace tests plus `ide/daemon-core`, invoked by the `test` stage | Runs Rust daemon workspace tests and daemon-protocol analysis/tests. It does not launch the desktop UI. |
 | Portable IDE integration: workspace transactions, developer loop, Agent client protocol, MCP host, IDE security, Agent Workbench, quality runtime, and recovery isolation | Nine `ide/<suite>` selectors in the registered quality runner, invoked by the `test` stage | Exercises selected local IDE and protocol integration seams with deterministic fixtures. It does not prove an external Agent conversation. |
+| Flow Hero Agent-neutral operations and review: `flow_hero_workspace_operations_test.dart`, `flow_hero_agent_review_test.dart`, plus workspace replace/search and vityod file-system integration tests | Flutter test discovery in the `test` stage; focused command: `cd products/vityo_app && flutter test test/flow_hero_workspace_operations_test.dart test/flow_hero_agent_review_test.dart test/workspace_replace_controller_test.dart test/workspace_search_service_test.dart test/local_service/vityod_file_system_integration_test.dart` | Exercises the selected client operation port, exact supplied permission choices, source reads/writes, correlated proposal review, and real daemon transaction outcomes. It does not establish Styio-derived graph semantics or graph rewiring. |
 | Native desktop reconnection: `products/vityo_app/integration_test/vityod_reconnect_test.dart` | `ide/native-desktop` through the `test` stage on Linux and macOS CI | Runs the supported desktop reconnect integration. This host suite is not run on Windows. |
 | macOS native UI and credential tests: all 11 `integration_test/*_native_ui_test.dart` files plus `editor_native_input_test.dart`, `platform_secure_credential_storage_test.dart`, and `workbench_visual_capture_test.dart` (14 files) | `ide/macos-native-ui` through the `test` stage on macOS CI | Discovers the 11-file native UI glob and explicitly registers the three remaining macOS-specific integration tests. |
 | Windows platform integration | No Windows-target native app integration test exists in the current app integration root. Standard Flutter unit/widget coverage and Windows build evidence remain separate. | Treat this as absent coverage, not a passing native integration suite. Do not run the Linux/macOS reconnect test on Windows. |
@@ -31,14 +32,14 @@ The quality-runner test compares every file under the app's standalone integrati
 
 ## Flow Hero Future Acceptance
 
-These are target requirements for the later production wiring milestone. The current Flow Hero preview/model and styled upstream component spike do not satisfy them. Add each applicable test with the implementation that first provides its behavior.
+These remaining requirements concern source-authoritative graph behavior. The current Flow Hero preview/model and connected Agent operation/review path do not establish Styio graph semantics. Add each applicable test with the implementation that first provides its behavior.
 
 | Scenario | Deterministic acceptance evidence |
 |---|---|
 | Styio-backed graph and edge direction | Parse valid current Styio syntax and derive a directed source-to-target graph from language-service facts. Reject fabricated keywords and metadata-only project graph facts as program semantics. |
 | Source-to-graph updates | Edit the actual source document, re-analyze its revision, and assert that node/edge content follows only the latest accepted revision. Cover invalid syntax, asynchronous stale results, and Unicode source ranges. |
 | Graph-to-source edits | Move a node without changing program semantics; apply a supported rewire through a source transaction; verify cancel, rejected validation, undo, and invalid rewrites preserve the original source and graph. |
-| Agent proposal and application | Drive the shared Agent protocol fixture through proposal, permission, transaction result, applied revision, ordered observations, verification, and recovery. Assert pending or rejected changes never appear as applied graph state. |
+| Applied source revision reaches the graph | After an accepted Agent proposal returns a committed revision, analyze that exact source revision and assert the semantic graph follows it. Rejected, conflicted, or unavailable proposals must leave the prior graph state intact. |
 | Visual parity and motion | Compare representative light and dark graph frames against the tagged current visual baseline. Add deterministic drag, rewire, and Agent-change animation checks without making layout jitter or animation timing a semantic result. |
 | Performance and revision churn | Exercise realistic node/edge counts and rapid source/Agent updates through the real projection path; assert stale work is discarded and measure the agreed rendering budget. |
 

@@ -2,7 +2,7 @@
 
 **Purpose:** Record accepted, planned, and deferred dependencies across the Vityo IDE and its first-party companion Agent runtime.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## 1. 已接受依赖
 
@@ -22,16 +22,16 @@ maintained in [Dependency Usage](../../DEPENDENCY-USAGE.md). The selected Rust i
 | Dependency | Status | Role | Notes |
 |------------|--------|------|-------|
 | `agent-client-protocol` 2.2.0 | Accepted | ACP process/session protocol for the independent Coding Agent | Uses the standard Agent Client Protocol boundary; it does not replace the Vityo-owned IDE-side client. |
-| `rmcp` 3.5.0 | Accepted | MCP client and child-process transport in the Coding Agent | Reuses the Rust MCP SDK for the Agent's tool-host responsibilities. |
-| `async-openai` 0.42.1 | Selected; implementation in progress | OpenAI-compatible chat request and streaming adapter | This selects an adapter implementation, not a hosted endpoint, account, or model. Rust unit fixtures exercise local HTTP/SSE behavior through a test-only transport seam; live provider acceptance remains separate. |
+| `rmcp` 3.5.0 | Accepted | MCP client library and child-process transport in the Coding Agent | The SDK and tool adapters are implemented and covered with deterministic peer tests. Production ACP `session/new` and `session/load` reject non-empty `mcpServers` with `-32003`; no production attachment lifecycle is claimed. |
+| `async-openai` 0.42.1 | Accepted | OpenAI-compatible chat request and streaming adapter | The Rust runtime uses the configured adapter, not a bundled endpoint, account, or model. Unit fixtures exercise local HTTP/SSE behavior through a test-only transport seam; live provider acceptance remains separate. |
 | `reqwest` 0.13.5 | Accepted | TLS HTTP transport | Native TLS backend is selected for the configured Rust provider request path. |
-| `keyring` 4.2.0 and `secrecy` 0.10.3 | Selected; implementation in progress | Native credential lookup and in-memory secret handling | Provider configuration contains a credential-service/account reference, not a raw credential. |
-| `cargo-llvm-cov` 0.9.0 | Accepted | Rust test coverage instrumentation | Requires `llvm-tools-preview` for the selected Rust toolchain. |
+| `keyring` 4.2.0 and `secrecy` 0.10.3 | Accepted | Native credential lookup and in-memory secret handling | Provider configuration contains a credential-service/account reference, not a raw credential. |
+| `cargo-llvm-cov` 0.9.0 | Accepted | Rust test coverage instrumentation | `python3 scripts/vityo.py test` prepares `llvm-tools-preview` and verifies or installs this exact tool version; direct helper calls require both prerequisites already available. |
 | `cargo-about` 0.9.2 | Accepted | Locked dependency license analysis and third-party notices | The repository wrapper installs it project-locally and checks the supported desktop-target dependency graphs. |
 
-The Coding Agent migration remains in progress. The Dart implementation remains current until Rust
-provider, tool, policy, session, protocol, and IDE-consumer behavior has deterministic coverage.
-These package selections do not establish a completed runtime cutover or live provider acceptance.
+The first-party Rust Coding Agent is the current runtime. The independent Dart protocol client
+binding remains under `packages/vityo_agent_protocol`; it is not an Agent runtime. These package
+selections and deterministic fixtures do not establish live provider acceptance.
 
 ## 1.2 UI 字体与预设来源
 

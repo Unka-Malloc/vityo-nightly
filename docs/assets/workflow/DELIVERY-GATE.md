@@ -2,7 +2,7 @@
 
 **Purpose:** Describe the shared local and CI stage pipeline for privacy, architecture, deterministic verification, native package delivery, installation, and launch.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Entrypoints
 
@@ -32,7 +32,7 @@ CI calls the same stage implementation with its resolved event range, platform, 
 |---|---|
 | `privacy` | Runs the privacy scan and repository hygiene check. |
 | `architecture` | Checks the architecture model and generated views, documentation and contributor contracts, security/license policy, architecture and product boundaries, import boundaries, dependency/supply-chain policy, and static release readiness. |
-| `test` | Runs Flutter analysis, Python and Flutter coverage collection, instrumented locked Cargo tests for the Coding Agent and daemon, registered Coding Agent and nine portable IDE selectors, Prototype checks, required pinned Styio language fixtures, and the CI-only native and product-matrix suites. |
+| `test` | Prepares the pinned Rust coverage tools, then runs Flutter analysis, Python and Flutter coverage collection, the Rust Coding Agent full requirement suite with one instrumented locked Cargo collection, the daemon workspace tests, nine portable IDE selectors, Prototype checks, required pinned Styio language fixtures, and the CI-only native and product-matrix suites. |
 | `coverage` | Evaluates the Python, Flutter, Coding Agent, and daemon reports produced by `test`; it does not collect or rerun the suites. Rust reports remain separate by product and require executed first-party source coverage; the Agent report also requires mapped module coverage. Neither Rust report has a default percentage floor. |
 | `build` | Builds the host's Flutter release target and creates/verifies its nightly package candidate, including required companion executables. |
 | `install` | Installs the verified candidate to a per-user local location or CI's isolated `--install-root`, then checks the installed client and Agent executable. |
@@ -52,6 +52,11 @@ resolved or provisioned for that matrix only; the matrix creates its project thr
 new` without importing sibling repository scripts.
 
 The Rust Coding Agent and `vityod` daemon require Cargo/Rust `1.88` or newer; hosted jobs pin `1.88.0`. Existing developer bootstrap scripts do not install Rust. The Linux host-readiness script does not detect Cargo, so verify this prerequisite separately before running Rust suites or builds.
+
+The canonical `test` stage requires `rustup` and Cargo on `PATH`, installs or verifies
+`llvm-tools-preview` for the selected toolchain, and verifies or installs `cargo-llvm-cov` `0.9.0`.
+If Rust coverage tool setup fails, `test` fails rather than skipping collection. Direct calls to
+the lower-level Rust coverage helper require the component and pinned collector already available.
 
 ## CI Platform Lanes
 

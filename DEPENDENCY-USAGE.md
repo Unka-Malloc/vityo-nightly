@@ -2,7 +2,7 @@
 
 **Purpose:** Record dependency authorization boundaries for `Vityo`.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 `Vityo` is an Apache-2.0 Flutter/Dart application with independent Rust Coding Agent and daemon
 workspaces and a permanent JavaScript prototype source asset. Product dependencies and direct
@@ -48,7 +48,7 @@ the [Security and Supply Chain policy](docs/governance/SECURITY-AND-SUPPLY-CHAIN
 | `futures` | ^0.3.32 → 0.3.34 | MIT OR Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | Stream composition for provider events and asynchronous Agent operations | Runtime |
 | `keyring` | =4.2.0 → 4.2.0 | MIT OR Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | Resolve bearer credentials by native credential-service/account reference; no raw credential is stored in provider configuration | Runtime |
 | `reqwest` | =0.13.5 → 0.13.5 | MIT OR Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | TLS-enabled HTTP transport used by the configured OpenAI-compatible provider adapter | Runtime |
-| `rmcp` | =3.5.0 → 3.5.0 | Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | MCP client types and child-process transport for Agent tool discovery and execution | Runtime |
+| `rmcp` | =3.5.0 → 3.5.0 | Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | MCP client types, adapters, and child-process transport; deterministic peer tests cover the library, while production ACP rejects non-empty `mcpServers` with `-32003` | Runtime |
 | `secrecy` | =0.10.3 → 0.10.3 | Apache-2.0 OR MIT | `products/vityo_coding_agent/Cargo.toml` | Keep resolved secret values in secret-marked runtime types and prevent accidental display | Runtime |
 | `serde` | ^1.0 → 1.0.229 | MIT OR Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | Typed protocol, provider, session, policy, and tool serialization | Runtime |
 | `serde_json` | ^1.0 → 1.0.151 | MIT OR Apache-2.0 | `products/vityo_coding_agent/Cargo.toml` | JSON serialization for ACP messages and Agent-owned persisted state | Runtime |
@@ -77,8 +77,8 @@ the [Security and Supply Chain policy](docs/governance/SECURITY-AND-SUPPLY-CHAIN
 | Dependency | Version | Source / Installation | Classification |
 |---|---|---|---|
 | Rust / Cargo | CI pin 1.88.0; local 1.88 or newer | System toolchain; bootstrap scripts do not install Rust | Build / Test |
-| `llvm-tools-preview` | Matching selected Rust toolchain | `rustup component add llvm-tools-preview` | Coverage |
-| `cargo-llvm-cov` | 0.9.0 | `cargo install cargo-llvm-cov --version 0.9.0 --locked` | Coverage |
+| `llvm-tools-preview` | Matching selected Rust toolchain | Prepared by `python3 scripts/vityo.py test`; direct coverage-helper callers must provide the component | Coverage |
+| `cargo-llvm-cov` | 0.9.0 | `vityo.py test` verifies the exact version and installs it with Cargo when needed; direct coverage-helper callers must provide version 0.9.0 on `PATH` | Coverage |
 | `cargo-about` | 0.9.2 | `cargo install --locked --version 0.9.2 --features cli --root build/tools/cargo-about-0.9.2 cargo-about`; notice generation installs it project-locally | License / Notices |
 | CMake | System / CI image | Platform toolchain | Build |
 | PkgConfig | System / CI image | Platform toolchain | Build |

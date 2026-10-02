@@ -2,7 +2,7 @@
 
 **Purpose:** Define the required technology-stack, internal-component, open-source-component, and dependency-manifest inventory for `Vityo`.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 This document is the repository-local maintenance rule for the manifest inventory audited by `styio-audit`. The canonical audit module must list the same surfaces in `for-vityo/module.json`; if this document and the audit manifest diverge, the change is not closed.
 
@@ -22,7 +22,7 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 ### Technology Stack
 
 - Flutter and Dart frontend workspace.
-- Rust/Cargo workspaces for the `vityod` daemon and the in-progress independent Coding Agent runtime; the existing Dart Agent runtime remains current until Rust behavior and IDE-consumer coverage complete the cutover.
+- Rust/Cargo workspaces for the current independent Coding Agent runtime and the separately owned `vityod` daemon.
 - Android, iOS, macOS, Linux, Windows, and web platform runners.
 - CMake native runner integration for desktop platforms.
 - JavaScript, HTML, and CSS prototype with Playwright screenshot tooling.
@@ -43,7 +43,8 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 #### Security, Permission, And Audit Components
 
 - **Agent Client registry** (`ide/agent_client/agent_client_registry.dart`): thin typed gateway for
-  daemon-owned sessions, one-shot permission presentation, reconnect, and failure projection.
+  daemon-owned sessions, supplied ACP permission-option presentation and exact-ID response,
+  reconnect, and failure projection.
 - **Daemon ACP host** (`native/vityod/crates/vityod-agent-host/src/acp.rs`): argv-based stdio
   launch, bounded frames, correlation, cancellation, capability enforcement, and orphan cleanup.
 - **Daemon MCP gateway** (`ide/agent_client/mcp/vityod_mcp_gateway.dart` plus native `vityod`
@@ -56,7 +57,8 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 - **Execution sandbox** (`execution_sandbox.dart`): Local execution policy with workspace containment, path traversal/symlink detection, environment allowlisting, network policy, timeout, and output bounds.
 - **Log redactor** (`log_redactor.dart`): Pattern-based and field-based credential redaction for all log, diagnostic, runtime, and agent-context output.
 - **Secret store** (`secret_store.dart`): Credential reference lookup and local secret resolution.
-- **Rust Coding Agent migration** (`products/vityo_coding_agent/src/`): Rust runtime implementation in progress; the Dart runtime under `lib/src/` remains current until provider, tool, policy, session, protocol, and IDE-consumer behavior has deterministic coverage.
+- **Rust Coding Agent** (`products/vityo_coding_agent/src/`): current independent ACP-stdio runtime with ReAct execution, provider, tool catalog/executor, policy, durable sessions, and the correlated host-operation adapter. The old Dart Agent runtime has been removed; the Dart shared-protocol client binding remains.
+- **Production MCP attachment boundary**: the Rust MCP client library/tool adapters are maintained, but ACP session creation/loading returns `-32003` for non-empty `mcpServers`; no first-party production attachment lifecycle is available.
 - **Rust dependency notices** (`scripts/vityo_rust_notices.py`, `toolchain/licenses/`): License evaluation and third-party notice generation for both Rust workspaces across the supported native desktop-target union.
 - **Rust coverage** (`scripts/rust-coverage-gate.py`): Locked workspace coverage collection for the Coding Agent and `vityod`, with separate report-only evaluation, current-platform source labels, and Coding Agent module-coverage evidence.
 - **Module manifest security** (`module_manifest_security.dart`): Module manifest trust validation — schema, signature, checksum, permission allowlist, engine compatibility, quarantine, and rollback.
@@ -83,7 +85,7 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
   versions, SPDX expressions, and usage boundaries in [Dependency Usage](../../DEPENDENCY-USAGE.md):
   ACP Rust SDK, RMCP, OpenAI-compatible chat SDK, `reqwest` with native TLS, native `keyring`,
   `secrecy`, Tokio, Serde, SQLite (`rusqlite`), and `portable-pty`.
-- Rust/Cargo `1.88.0` in CI, `cargo-llvm-cov` `0.9.0`, and matching `llvm-tools-preview` coverage tools.
+- Rust/Cargo `1.88.0` in CI. The `vityo.py test` stage provisions matching `llvm-tools-preview` and `cargo-llvm-cov` `0.9.0` before coverage collection.
 - `cargo-about` `0.9.2` for locked dependency notice generation.
 - `cupertino_icons`.
 - `shared_preferences`.

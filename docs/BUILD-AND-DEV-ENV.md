@@ -2,7 +2,7 @@
 
 **Purpose:** Provide the repository-level entry point for bootstrapping a fresh machine, installing shared GUI toolchains, and routing contributors to the correct implementation surface.
 
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-03
 
 ## Who This Is For
 
@@ -84,7 +84,7 @@ Device verification stays host-driven:
 5. Python `3.13.5` for docs and repository hygiene scripts.
 6. On macOS, full iOS add-on support also requires Xcode. The script can validate and wire it, but Apple-controlled Xcode installation may still require App Store or Apple developer authentication.
 7. Rust/Cargo `1.88` or newer is required to build and test the Coding Agent and local daemon. The existing bootstrap scripts do not install Rust; install the toolchain separately before running those stages. CI pins `1.88.0`.
-8. Rust coverage collection requires the `llvm-tools-preview` component and `cargo-llvm-cov` `0.9.0`. Install the selected toolchain component with `rustup component add llvm-tools-preview` and the locked tool with `cargo install cargo-llvm-cov --version 0.9.0 --locked`. CI installs the matching component alongside Rust `1.88.0`.
+8. `python3 scripts/vityo.py test` prepares the selected Rust toolchain's `llvm-tools-preview` component and verifies `cargo-llvm-cov` `0.9.0`, installing the locked version when it is missing or different. Direct calls to `scripts/rust-coverage-gate.py` require those tools to be present already. If the selected toolchain or pinned tool cannot be installed or verified, the test stage fails; it does not skip Rust coverage.
 9. On Windows, native desktop builds require Visual Studio 2022 Build Tools with the C++ desktop workload. `bootstrap-dev-env-windows.ps1` installs this through `winget`; hosted `windows-latest` CI already includes the required build environment.
 
 ## Typical Build And Test Commands
@@ -254,9 +254,10 @@ python3 scripts/check-linux-host-readiness-gate.py --check flutter
 
 This gate detects and reports blocked states for Python, Dart/Flutter, npm,
 Chrome/Chromium, Docker image Flutter availability, and CRLF shell-script
-line-ending blockers. It does not detect Rust/Cargo or `llvm-tools-preview`; verify Rust `1.88`
-or newer and install the coverage component separately before Coding Agent or daemon
-tests/builds/coverage. The gate never attempts to
+line-ending blockers. It does not detect Rust/Cargo or Rust coverage prerequisites; run
+`python3 scripts/vityo.py test` to verify Rust `1.88` or newer and prepare the selected toolchain's
+coverage component and pinned collector. Direct lower-level Rust build or coverage helpers still
+require their documented Rust/Cargo tools on `PATH`. The readiness gate never attempts to
 repair external SDKs or install packages. Exit codes: 0 all clear, 1 blocked
 items found, 2 warnings only.
 Unit tests:

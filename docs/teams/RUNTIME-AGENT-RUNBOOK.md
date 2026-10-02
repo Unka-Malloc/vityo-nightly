@@ -2,7 +2,7 @@
 
 **Purpose:** Define ownership for runtime/debug surfaces and the IDE-side Agent Workbench without assigning Agent-runtime execution to the IDE.
 
-**Last updated:** 2026-08-11
+**Last updated:** 2026-10-03
 
 ## Mission
 
@@ -26,7 +26,7 @@ Primary paths:
    - `runtime_event_log.dart` — append-only runtime event log with ring buffer projection
 Review dependency, not an owned path:
 
-1. `products/vityo_coding_agent/lib/src/`
+1. `products/vityo_coding_agent/src/` — independent Rust runtime; see the [Agent Runtime Runbook](./AGENT-RUNTIME-RUNBOOK.md).
 2. `packages/vityo_agent_protocol/`
 
 Key SSOTs:
@@ -46,14 +46,18 @@ Key SSOTs:
    runtime surface. Do not add model/provider credentials or Agent-runtime prompt configuration to
    IDE-owned state.
 5. Do not add provider routes, provider SDKs, model credentials, tool loops, policy stores,
-   durable-session stores, or multi-Agent orchestration to the IDE.
+   durable-session stores, or multi-Agent orchestration to the IDE. The Coding Agent is the
+   independent Rust ACP process; the shared Dart protocol package remains its client binding.
 6. runtime replay、debug lane 和 hosted execution 摘要必须消费 `view_ide/backend_toolchain` adapter payload，不得回读已移除入口或上游 human stderr。
 7. IDE-side Agent presentation belongs to `ide/agent_client`, collaboration projections to
    `ide/workbench/agent_collaboration`, and Flutter presentation to
-   `presentation/agent_workbench`; `vityod` owns IDE-side ACP supervision and MCP authority, while
-   durable model, provider, coding-loop, and multi-Agent state belongs to the companion Agent runtime.
-8. UI surfaces may display only redacted protocol context and receipt summaries. Accepted source
-   changes must pass through IDE-owned workspace transactions.
+   `presentation/agent_workbench`; `vityod` supervises the ACP process and owns daemon workspace
+   and process services, while the independent Rust Agent owns provider, policy, loop, and session
+   state.
+8. UI surfaces may display only redacted protocol context and receipt summaries. Preserve supplied
+   ACP permission `optionId`/`name`/`kind` and return the selected ID exactly. Review source-change
+   proposals as a correlated diff and commit through the existing workspace transaction owner;
+   details live in the [security and supply-chain policy](../governance/SECURITY-AND-SUPPLY-CHAIN.md).
 9. Protocol permission/change semantics or IDE MCP/tool-security changes must update
    [../governance/SECURITY-AND-SUPPLY-CHAIN.md](../governance/SECURITY-AND-SUPPLY-CHAIN.md).
 

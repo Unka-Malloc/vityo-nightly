@@ -43,9 +43,16 @@ Vityo 是本仓唯一对外产品。Vityo Coding Agent 是可独立运行、也�
   语言/编译/运行事实、Agent Workbench、权限呈现、变更审查和 workspace transaction。
 - `products/vityo_coding_agent/` 是第一方配套 Agent 运行时：拥有模型/provider、上下文选择、
   工具与策略、coding loop、持久会话和 multi-Agent 编排。
-- Coding Agent 的 Rust 运行时迁移仍在进行；当前 Dart 实现保留为现行运行时，直至 Rust 实现
-  具备完整行为、协议和消费者覆盖。Rust 二进制的身份探针不代表 Agent 已完成接线；现状与
-  切换证据见 [Agent Runtime Runbook](docs/teams/AGENT-RUNTIME-RUNBOOK.md)。
+- Coding Agent 是通过 ACP stdio 独立运行的 Rust 进程。Vityo 用同一个
+  `vityo-coding-agent --stdio-agent --provider-config ABSOLUTE_PATH --session-dir ABSOLUTE_PATH`
+  入口启动它；兼容 host 可在没有 GUI 的环境中使用相同协议入口，不存在另一个 headless
+  产品 CLI。ReAct 是默认执行循环，Agent 自己持有 provider、工具策略与持久权限；IDE 提供
+  workspace 操作、权限选项呈现和显式变更审查。
+- 当前 Flow Hero 仅在显式提供非空 `VITYO_WORKSPACE` 时连接真实 Agent 与 workspace；未设置时
+  保持演示会话，不自动推断或创建工作区。
+- Rust RMCP 客户端与工具模块不代表 ACP MCP server 附件已接入生产 session：当前
+  `session/new` 与 `session/load` 对非空 `mcpServers` 明确返回 `-32003`。详见
+  [Agent Runtime Runbook](docs/teams/AGENT-RUNTIME-RUNBOOK.md)。
 - `packages/vityo_agent_protocol/` 是双方及其它兼容 Agent 使用的纯版本化协议，不是第三个产品。
 - IDE 不直接连接模型 provider，也不导入 Agent 运行时实现；无 Agent 时仍保持完整 IDE 能力。
 
