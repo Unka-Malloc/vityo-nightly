@@ -48,10 +48,21 @@ Future<void> main() async {
     final permission = await registry.permissionRequests.first.timeout(
       const Duration(seconds: 3),
     );
-    await registry.resolvePermission(
-      permission.id,
-      AgentPermissionDecision.allowOnce,
-    );
+    final allowOnceOptions = permission.options
+        .where((option) => option.kind == AgentPermissionOptionKind.allowOnce)
+        .toList(growable: false);
+    if (allowOnceOptions.length != 2 ||
+        allowOnceOptions[0].optionId == allowOnceOptions[1].optionId ||
+        !permission.options.any(
+          (option) => option.kind == AgentPermissionOptionKind.allowAlways,
+        ) ||
+        !permission.options.any(
+          (option) => option.kind == AgentPermissionOptionKind.rejectAlways,
+        )) {
+      throw StateError('offered permission options were not preserved');
+    }
+    final selectedOption = allowOnceOptions[1];
+    await registry.resolvePermission(permission.id, selectedOption.optionId);
     if ((await prompt).stopReason != 'end_turn' ||
         !session.snapshot.updates.any(
           (update) => update.text == 'approved:integration',

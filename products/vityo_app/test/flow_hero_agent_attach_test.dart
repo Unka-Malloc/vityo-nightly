@@ -11,19 +11,23 @@ void main() {
   const bool enabled = bool.fromEnvironment('VITYO_LIVE_AGENT_ACCEPTANCE');
   const String socketPath = String.fromEnvironment('VITYO_ACCEPTANCE_SOCKET');
   const String workspace = String.fromEnvironment('VITYO_ACCEPTANCE_WORKSPACE');
-  const String agentPackage = String.fromEnvironment(
-    'VITYO_ACCEPTANCE_AGENT_PACKAGE',
+  const String agentExecutable = String.fromEnvironment(
+    'VITYO_ACCEPTANCE_AGENT_EXECUTABLE',
   );
-  const String dartExecutable = String.fromEnvironment(
-    'VITYO_ACCEPTANCE_DART',
-    defaultValue: 'dart',
+  const String providerConfig = String.fromEnvironment(
+    'VITYO_ACCEPTANCE_PROVIDER_CONFIG',
+  );
+  const String sessionDirectory = String.fromEnvironment(
+    'VITYO_ACCEPTANCE_SESSION_DIRECTORY',
   );
   test(
     'agent bridge attaches against the live local service',
     () async {
       expect(socketPath, isNotEmpty);
       expect(workspace, isNotEmpty);
-      expect(agentPackage, isNotEmpty);
+      expect(agentExecutable, isNotEmpty);
+      expect(providerConfig, isNotEmpty);
+      expect(sessionDirectory, isNotEmpty);
       // Direct socket construction: the probe targets the already-running
       // daemon, bypassing the path_provider/plugin and platform-policy gates
       // that only make sense inside the real app process.
@@ -39,13 +43,15 @@ void main() {
         descriptors: <String, AgentLaunchDescriptor>{
           'vityo-coding-agent': AgentLaunchDescriptor(
             id: 'vityo-coding-agent',
-            executable: dartExecutable,
+            executable: agentExecutable,
             arguments: const <String>[
-              'run',
-              'bin/vityo_coding_agent.dart',
               '--stdio-agent',
+              '--provider-config',
+              providerConfig,
+              '--session-dir',
+              sessionDirectory,
             ],
-            workingDirectory: agentPackage,
+            workingDirectory: workspace,
           ),
         },
         client: client,

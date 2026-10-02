@@ -34,6 +34,32 @@ pub struct AcpEvent {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcpPermissionOptionKind {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+}
+
+impl AcpPermissionOptionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AllowOnce => "allow_once",
+            Self::AllowAlways => "allow_always",
+            Self::RejectOnce => "reject_once",
+            Self::RejectAlways => "reject_always",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcpPermissionOption {
+    pub option_id: String,
+    pub name: String,
+    pub kind: AcpPermissionOptionKind,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcpPermissionRequest {
     pub permission_id: String,
@@ -42,7 +68,7 @@ pub struct AcpPermissionRequest {
     pub tool_call_id: String,
     pub tool_call_title: Option<String>,
     pub tool_call_kind: Option<String>,
-    pub options: Vec<String>,
+    pub options: Vec<AcpPermissionOption>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -141,7 +167,7 @@ struct PendingPermission {
     tool_call_id: String,
     tool_call_title: Option<String>,
     tool_call_kind: Option<String>,
-    option_ids: HashMap<String, String>,
+    options: Vec<AcpPermissionOption>,
 }
 
 impl Default for AcpRuntime {
@@ -682,36 +708,33 @@ impl AcpRuntime {
     pub fn resolve_permission(
         &mut self,
         permission_id: &str,
-        decision: &str,
+        option_id: &str,
     ) -> Result<(), AcpError> {
         let permission = self
             .permissions
-            .remove(permission_id)
+            .get(permission_id)
             .ok_or(AcpError::UnknownPermission)?;
-        let option_kind = match decision {
-            "allow_once" => "allow_once",
-            "reject_once" | "deny" => "reject_once",
-            _ => {
-                self.permissions
-                    .insert(permission_id.to_owned(), permission);
-                return Err(AcpError::InvalidRequest);
-            }
-        };
-        let Some(option_id) = permission.option_ids.get(option_kind) else {
-            self.permissions
-                .insert(permission_id.to_owned(), permission);
+        if !permission
+            .options
+            .iter()
+            .any(|option| option.option_id == option_id)
+        {
             return Err(AcpError::CapabilityDenied);
-        };
+        }
+        let agent_id = permission.agent_id.clone();
+        let rpc_id = permission.rpc_id.clone();
         self.send_json(
-            &permission.agent_id,
+            &agent_id,
             json!({
                 "jsonrpc": "2.0",
-                "id": permission.rpc_id,
+                "id": rpc_id,
                 "result": {
                     "outcome": {"outcome": "selected", "optionId": option_id}
                 }
             }),
-        )
+        )?;
+        self.permissions.remove(permission_id);
+        Ok(())
     }
 
     pub fn invoke_extension(
@@ -1034,17 +1057,28 @@ impl AcpRuntime {
             .and_then(Value::as_array)
             .filter(|options| !options.is_empty() && options.len() <= 16)
             .ok_or(AcpError::MalformedMessage)?;
-        let mut option_ids = HashMap::new();
+        let mut parsed_options = Vec::with_capacity(options.len());
+        let mut option_ids = HashSet::with_capacity(options.len());
         for option in options {
             let option = option.as_object().ok_or(AcpError::MalformedMessage)?;
             let kind = required_bounded_string_object(option, "kind", 64)?;
             let option_id = required_bounded_string_object(option, "optionId", 256)?;
-            if matches!(kind.as_str(), "allow_once" | "reject_once") {
-                option_ids.insert(kind, option_id);
+            let name = required_bounded_string_object(option, "name", 512)?;
+            let kind = match kind.as_str() {
+                "allow_once" => AcpPermissionOptionKind::AllowOnce,
+                "allow_always" => AcpPermissionOptionKind::AllowAlways,
+                "reject_once" => AcpPermissionOptionKind::RejectOnce,
+                "reject_always" => AcpPermissionOptionKind::RejectAlways,
+                _ => return Err(AcpError::MalformedMessage),
+            };
+            if name.chars().any(char::is_control) || !option_ids.insert(option_id.clone()) {
+                return Err(AcpError::MalformedMessage);
             }
-        }
-        if option_ids.is_empty() {
-            return Err(AcpError::MalformedMessage);
+            parsed_options.push(AcpPermissionOption {
+                option_id,
+                name,
+                kind,
+            });
         }
         let permission_id = format!("permission:{}:{}", agent_id, rpc_id);
         if self.permissions.contains_key(&permission_id) {
@@ -1060,7 +1094,7 @@ impl AcpRuntime {
                 tool_call_id,
                 tool_call_title,
                 tool_call_kind,
-                option_ids,
+                options: parsed_options,
             },
         );
         Ok(())
@@ -1118,8 +1152,6 @@ impl AcpRuntime {
 
 impl PendingPermission {
     fn snapshot(&self) -> AcpPermissionRequest {
-        let mut options = self.option_ids.keys().cloned().collect::<Vec<_>>();
-        options.sort_unstable();
         AcpPermissionRequest {
             permission_id: self.permission_id.clone(),
             agent_id: self.agent_id.clone(),
@@ -1127,7 +1159,7 @@ impl PendingPermission {
             tool_call_id: self.tool_call_id.clone(),
             tool_call_title: self.tool_call_title.clone(),
             tool_call_kind: self.tool_call_kind.clone(),
-            options,
+            options: self.options.clone(),
         }
     }
 }
@@ -1321,8 +1353,11 @@ mod tests {
                         "sessionId": "remote",
                         "toolCall": {"toolCallId": "tool-1"},
                         "options": [
-                            {"optionId": "yes", "kind": "allow_once"},
-                            {"optionId": "no", "kind": "reject_once"}
+                            {"optionId": "yes", "name": "Allow once", "kind": "allow_once"},
+                            {"optionId": "yes-again", "name": "Also allow once", "kind": "allow_once"},
+                            {"optionId": "always", "name": "Always allow", "kind": "allow_always"},
+                            {"optionId": "no", "name": "Reject once", "kind": "reject_once"},
+                            {"optionId": "never", "name": "Always reject", "kind": "reject_always"}
                         ]
                     }
                 }),
@@ -1337,7 +1372,102 @@ mod tests {
         );
         let permission = runtime.permissions.values().next().unwrap().snapshot();
         assert_eq!(permission.session_id, "session");
-        assert_eq!(permission.options, vec!["allow_once", "reject_once"]);
+        assert_eq!(
+            permission.options,
+            vec![
+                AcpPermissionOption {
+                    option_id: "yes".to_owned(),
+                    name: "Allow once".to_owned(),
+                    kind: AcpPermissionOptionKind::AllowOnce,
+                },
+                AcpPermissionOption {
+                    option_id: "yes-again".to_owned(),
+                    name: "Also allow once".to_owned(),
+                    kind: AcpPermissionOptionKind::AllowOnce,
+                },
+                AcpPermissionOption {
+                    option_id: "always".to_owned(),
+                    name: "Always allow".to_owned(),
+                    kind: AcpPermissionOptionKind::AllowAlways,
+                },
+                AcpPermissionOption {
+                    option_id: "no".to_owned(),
+                    name: "Reject once".to_owned(),
+                    kind: AcpPermissionOptionKind::RejectOnce,
+                },
+                AcpPermissionOption {
+                    option_id: "never".to_owned(),
+                    name: "Always reject".to_owned(),
+                    kind: AcpPermissionOptionKind::RejectAlways,
+                },
+            ]
+        );
+
+        for options in [
+            json!([
+                {"optionId": "duplicate", "name": "First", "kind": "allow_once"},
+                {"optionId": "duplicate", "name": "Second", "kind": "reject_once"}
+            ]),
+            json!([
+                {"optionId": "unknown-kind", "name": "Unsupported", "kind": "allow_temporarily"}
+            ]),
+        ] {
+            assert_eq!(
+                runtime.route_value(
+                    "agent",
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": "invalid-permission",
+                        "method": "session/request_permission",
+                        "params": {
+                            "sessionId": "remote",
+                            "toolCall": {"toolCallId": "tool-invalid"},
+                            "options": options
+                        }
+                    })
+                ),
+                Err(AcpError::MalformedMessage)
+            );
+        }
+        assert_eq!(runtime.permissions.len(), 1);
+    }
+
+    #[test]
+    fn permission_resolution_rejects_unoffered_id_without_consuming_request() {
+        let permission_id = "permission:agent:request";
+        let mut runtime = AcpRuntime::default();
+        runtime.permissions.insert(
+            permission_id.to_owned(),
+            PendingPermission {
+                permission_id: permission_id.to_owned(),
+                agent_id: "agent".to_owned(),
+                session_id: "session".to_owned(),
+                rpc_id: json!("request"),
+                tool_call_id: "tool".to_owned(),
+                tool_call_title: None,
+                tool_call_kind: None,
+                options: vec![
+                    AcpPermissionOption {
+                        option_id: "allow-a".to_owned(),
+                        name: "Allow first".to_owned(),
+                        kind: AcpPermissionOptionKind::AllowOnce,
+                    },
+                    AcpPermissionOption {
+                        option_id: "allow-b".to_owned(),
+                        name: "Allow second".to_owned(),
+                        kind: AcpPermissionOptionKind::AllowOnce,
+                    },
+                ],
+            },
+        );
+
+        assert_eq!(
+            runtime.resolve_permission(permission_id, "not-offered"),
+            Err(AcpError::CapabilityDenied)
+        );
+        let pending = runtime.permissions.get(permission_id).unwrap();
+        assert_eq!(pending.options[0].option_id, "allow-a");
+        assert_eq!(pending.options[1].option_id, "allow-b");
     }
 
     #[test]

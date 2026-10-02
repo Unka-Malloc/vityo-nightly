@@ -2732,7 +2732,11 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                             "toolCallId": permission.tool_call_id,
                             "toolCallTitle": permission.tool_call_title,
                             "toolCallKind": permission.tool_call_kind,
-                            "options": permission.options,
+                            "options": permission.options.into_iter().map(|option| json!({
+                                "optionId": option.option_id,
+                                "name": option.name,
+                                "kind": option.kind.as_str(),
+                            })).collect::<Vec<_>>(),
                         })).collect::<Vec<_>>(),
                         "clientOperations": poll.client_operations.into_iter().map(|operation| json!({
                             "operationId": operation.operation_id,
@@ -2821,10 +2825,11 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
             let Some(permission_id) = required_string_param(&request, "permissionId") else {
                 return error_response(request, "invalid_permission", false, workspace_revision);
             };
-            let Some(decision) = required_string_param(&request, "decision") else {
+            let Some(option_id) = required_string_param_with_limit(&request, "optionId", 256)
+            else {
                 return error_response(
                     request,
-                    "invalid_permission_decision",
+                    "invalid_permission_option",
                     false,
                     workspace_revision,
                 );
@@ -2832,7 +2837,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
             match state
                 .runtime
                 .acp_agents
-                .resolve_permission(&permission_id, &decision)
+                .resolve_permission(&permission_id, &option_id)
             {
                 Ok(()) => json!({"permissionId": permission_id, "resolved": true}),
                 Err(error) => {

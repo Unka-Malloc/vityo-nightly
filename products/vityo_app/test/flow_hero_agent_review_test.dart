@@ -35,7 +35,7 @@ void main() {
   testWidgets(
     'review cards render the offered permission and real patch diff',
     (tester) async {
-      AgentPermissionDecision? permissionDecision;
+      String? selectedPermissionOption;
       String? resolvedReviewId;
       bool? proposalApplied;
       final proposal = VityoWorkspaceChangeProposal(
@@ -56,14 +56,40 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: FlowHeroAgentReviewPanel(
-              permissions: const <AgentPermissionRequest>[
+              permissions: <AgentPermissionRequest>[
                 AgentPermissionRequest(
                   id: 'permission-1',
                   agentId: 'fixture-agent',
                   sessionId: 'session-1',
                   toolCallId: 'tool-1',
                   toolCallTitle: 'Read source',
-                  options: <String>{'allow_once'},
+                  options: const <AgentPermissionOption>[
+                    AgentPermissionOption(
+                      optionId: 'allow-first',
+                      name: 'Allow first operation',
+                      kind: AgentPermissionOptionKind.allowOnce,
+                    ),
+                    AgentPermissionOption(
+                      optionId: 'allow-second',
+                      name: 'Allow related operation',
+                      kind: AgentPermissionOptionKind.allowOnce,
+                    ),
+                    AgentPermissionOption(
+                      optionId: 'allow-always',
+                      name: 'Always allow',
+                      kind: AgentPermissionOptionKind.allowAlways,
+                    ),
+                    AgentPermissionOption(
+                      optionId: 'reject-once',
+                      name: 'Reject once',
+                      kind: AgentPermissionOptionKind.rejectOnce,
+                    ),
+                    AgentPermissionOption(
+                      optionId: 'reject-always',
+                      name: 'Always reject',
+                      kind: AgentPermissionOptionKind.rejectAlways,
+                    ),
+                  ],
                 ),
               ],
               proposals: <FlowHeroWorkspaceChangeReview>[
@@ -87,8 +113,8 @@ void main() {
                   ],
                 ),
               ],
-              onResolvePermission: (_, decision) {
-                permissionDecision = decision;
+              onResolvePermission: (_, optionId) {
+                selectedPermissionOption = optionId;
               },
               onResolveProposal: (reviewId, apply) {
                 resolvedReviewId = reviewId;
@@ -102,21 +128,71 @@ void main() {
       expect(find.textContaining('import'), findsOneWidget);
       expect(find.textContaining('module'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('reject-permission-permission-1')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const ValueKey('allow-permission-permission-1')),
+        find.byKey(
+          const ValueKey('permission-option-permission-1-allow-first'),
+        ),
         findsOneWidget,
       );
+      expect(
+        find.byKey(
+          const ValueKey('permission-option-permission-1-allow-second'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Always allow'), findsOneWidget);
+      expect(find.text('Reject once'), findsOneWidget);
+      expect(find.text('Always reject'), findsOneWidget);
       await tester.tap(
-        find.byKey(const ValueKey('allow-permission-permission-1')),
+        find.byKey(
+          const ValueKey('permission-option-permission-1-allow-second'),
+        ),
       );
       await tester.tap(find.byKey(const ValueKey('apply-proposal-review-1')));
 
-      expect(permissionDecision, AgentPermissionDecision.allowOnce);
+      expect(selectedPermissionOption, 'allow-second');
       expect(resolvedReviewId, 'review-1');
       expect(proposalApplied, isTrue);
     },
   );
+
+  testWidgets('permission cards show only once-only supplied choices', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FlowHeroAgentReviewPanel(
+            permissions: <AgentPermissionRequest>[
+              AgentPermissionRequest(
+                id: 'once-only',
+                agentId: 'fixture-agent',
+                sessionId: 'session-1',
+                toolCallId: 'tool-1',
+                options: const <AgentPermissionOption>[
+                  AgentPermissionOption(
+                    optionId: 'allow-id',
+                    name: 'Allow this time',
+                    kind: AgentPermissionOptionKind.allowOnce,
+                  ),
+                  AgentPermissionOption(
+                    optionId: 'reject-id',
+                    name: 'Reject this time',
+                    kind: AgentPermissionOptionKind.rejectOnce,
+                  ),
+                ],
+              ),
+            ],
+            proposals: const <FlowHeroWorkspaceChangeReview>[],
+            onResolvePermission: (_, _) {},
+            onResolveProposal: (_, _) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Allow this time'), findsOneWidget);
+    expect(find.text('Reject this time'), findsOneWidget);
+    expect(find.text('Always allow'), findsNothing);
+    expect(find.text('Always reject'), findsNothing);
+  });
 }

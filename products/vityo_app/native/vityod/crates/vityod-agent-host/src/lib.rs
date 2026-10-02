@@ -8,7 +8,8 @@ mod acp;
 
 pub use acp::{
     AcpClientCapabilities, AcpClientOperation, AcpConnectionSnapshot, AcpError, AcpEvent,
-    AcpPermissionRequest, AcpPollResult, AcpRuntime, AcpSessionSnapshot,
+    AcpPermissionOption, AcpPermissionOptionKind, AcpPermissionRequest, AcpPollResult, AcpRuntime,
+    AcpSessionSnapshot,
 };
 
 #[derive(Debug, Clone)]

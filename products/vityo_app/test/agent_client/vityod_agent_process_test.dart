@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,15 +8,42 @@ import '../support/vityod_test_harness.dart';
 
 void main() {
   test(
-    'vityod supervises the standalone Coding Agent ACP handshake',
+    'vityod supervises the packaged Rust Coding Agent ACP handshake',
     () async {
-      if (Platform.isWindows) return;
       final daemonExecutable = _findDaemonExecutable();
-      final codingAgentDirectory = _findCodingAgentDirectory();
-      final dartExecutable = _findDartExecutable();
+      final codingAgentExecutable = _findCodingAgentExecutable();
       expect(daemonExecutable.existsSync(), isTrue);
-      expect(codingAgentDirectory.existsSync(), isTrue);
-      expect(dartExecutable.existsSync(), isTrue);
+      expect(codingAgentExecutable.existsSync(), isTrue);
+
+      final runtimeDirectory = await Directory.systemTemp.createTemp(
+        'vityo-rust-agent-process-',
+      );
+      addTearDown(() async {
+        if (runtimeDirectory.existsSync()) {
+          await runtimeDirectory.delete(recursive: true);
+        }
+      });
+      final providerConfig = File(
+        '${runtimeDirectory.path}${Platform.pathSeparator}provider.json',
+      );
+      await providerConfig.writeAsString(
+        jsonEncode(<String, Object?>{
+          'adapter': 'openai_compatible_chat',
+          'endpointBase': 'https://api.example.test/v1',
+          'model': 'fixture-model',
+          'capabilities': <String, Object?>{
+            'contextTokens': 8192,
+            'outputTokens': 512,
+            'supportsTools': true,
+            'maxConcurrency': 1,
+          },
+          'limits': <String, Object?>{'maxTotalTokens': 9216},
+          'auth': <String, Object?>{'mode': 'none'},
+        }),
+      );
+      final sessionDirectory = Directory(
+        '${runtimeDirectory.path}${Platform.pathSeparator}sessions',
+      );
 
       final harness = await VityodTestHarness.start(
         clientId: 'agent-supervision-test',
@@ -25,13 +53,15 @@ void main() {
         descriptors: <String, AgentLaunchDescriptor>{
           'coding-agent': AgentLaunchDescriptor(
             id: 'coding-agent',
-            executable: dartExecutable.path,
-            arguments: const <String>[
-              'run',
-              'bin/vityo_coding_agent.dart',
+            executable: codingAgentExecutable.path,
+            arguments: <String>[
               '--stdio-agent',
+              '--provider-config',
+              providerConfig.path,
+              '--session-dir',
+              sessionDirectory.path,
             ],
-            workingDirectory: codingAgentDirectory.path,
+            workingDirectory: runtimeDirectory.path,
           ),
         },
         client: harness.client,
@@ -40,13 +70,19 @@ void main() {
         await registry.close();
       });
 
-      final connection = await registry
-          .connect('coding-agent')
-          .timeout(const Duration(seconds: 10));
+      final connection = await registry.connect('coding-agent');
 
       expect(connection.agentId, 'coding-agent');
       expect(connection.protocolVersion, 1);
+      expect(connection.capabilities, contains('loadSession'));
       expect(registry.activeConnectionCount, 1);
+
+      final session = await registry.newSession(
+        agentId: 'coding-agent',
+        cwd: runtimeDirectory.uri,
+      );
+      expect(session.id, isNotEmpty);
+      expect(session.agentId, 'coding-agent');
     },
     skip: !(Platform.isMacOS || Platform.isLinux)
         ? 'Unix local-service transport only.'
@@ -59,9 +95,17 @@ File _findDaemonExecutable() {
   return File('${app.path}/native/vityod/target/debug/vityod');
 }
 
-Directory _findCodingAgentDirectory() {
+File _findCodingAgentExecutable() {
   final app = _findAppDirectory();
-  return Directory('${app.parent.path}/vityo_coding_agent');
+  final executable = Platform.isWindows
+      ? 'vityo-coding-agent.exe'
+      : 'vityo-coding-agent';
+  return File(
+    '${app.parent.path}${Platform.pathSeparator}'
+    'vityo_coding_agent${Platform.pathSeparator}'
+    'target${Platform.pathSeparator}debug${Platform.pathSeparator}'
+    '$executable',
+  );
 }
 
 Directory _findAppDirectory() {
@@ -76,12 +120,4 @@ Directory _findAppDirectory() {
     directory = parent;
   }
   return Directory.current.absolute;
-}
-
-File _findDartExecutable() {
-  final engineDirectory = File(Platform.resolvedExecutable).parent;
-  final cacheDirectory = engineDirectory.parent.parent.parent;
-  return File(
-    '${cacheDirectory.path}/dart-sdk/bin/${Platform.isWindows ? 'dart.exe' : 'dart'}',
-  );
 }

@@ -3,6 +3,29 @@ import 'package:vityo_app/src/ide/agent_client/agent_client.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
 
 void main() {
+  test(
+    'permission option preserves ACP identity and supplied presentation',
+    () {
+      final option = AgentPermissionOption.fromJson(<String, Object?>{
+        'optionId': 'opaque-option-id',
+        'name': 'Use this tool once',
+        'kind': 'allow_once',
+      });
+
+      expect(option.optionId, 'opaque-option-id');
+      expect(option.name, 'Use this tool once');
+      expect(option.kind, AgentPermissionOptionKind.allowOnce);
+      expect(
+        () => AgentPermissionOption.fromJson(<String, Object?>{
+          'optionId': 'unsupported',
+          'name': 'Not a standard option',
+          'kind': 'allow_temporarily',
+        }),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('session reducer keeps one bounded immutable projection', () async {
     final reducer = AgentSessionReducer(
       sessionId: 'session-1',
@@ -61,22 +84,34 @@ void main() {
 
   test('permission delivery remains a bounded UI projection', () async {
     final permissions = PermissionRequestQueue(maxItems: 1);
-    const first = AgentPermissionRequest(
+    final first = AgentPermissionRequest(
       id: 'permission-1',
       agentId: 'agent',
       sessionId: 'session',
       toolCallId: 'tool-1',
-      options: <String>{'allow_once'},
+      options: const <AgentPermissionOption>[
+        AgentPermissionOption(
+          optionId: 'allow-id',
+          name: 'Allow once',
+          kind: AgentPermissionOptionKind.allowOnce,
+        ),
+      ],
     );
     expect(permissions.add(first), isTrue);
     expect(
       permissions.add(
-        const AgentPermissionRequest(
+        AgentPermissionRequest(
           id: 'permission-2',
           agentId: 'agent',
           sessionId: 'session',
           toolCallId: 'tool-2',
-          options: <String>{'reject_once'},
+          options: const <AgentPermissionOption>[
+            AgentPermissionOption(
+              optionId: 'reject-id',
+              name: 'Reject',
+              kind: AgentPermissionOptionKind.rejectOnce,
+            ),
+          ],
         ),
       ),
       isFalse,

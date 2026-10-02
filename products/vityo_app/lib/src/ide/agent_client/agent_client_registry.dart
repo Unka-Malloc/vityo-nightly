@@ -264,10 +264,7 @@ final class AgentClientRegistry {
     return response.params['result'];
   }
 
-  Future<void> resolvePermission(
-    String permissionId,
-    AgentPermissionDecision decision,
-  ) async {
+  Future<void> resolvePermission(String permissionId, String optionId) async {
     final pending = _pendingPermissions[permissionId];
     if (pending == null) {
       throw AgentClientFailure(
@@ -275,11 +272,7 @@ final class AgentClientRegistry {
         'Permission request is no longer pending',
       );
     }
-    final option = switch (decision) {
-      AgentPermissionDecision.allowOnce => 'allow_once',
-      AgentPermissionDecision.rejectOnce => 'reject_once',
-    };
-    if (!pending.options.contains(option)) {
+    if (!pending.options.any((option) => option.optionId == optionId)) {
       throw AgentClientFailure(
         'invalid_permission_decision',
         'Permission option was not offered by the Agent',
@@ -289,7 +282,7 @@ final class AgentClientRegistry {
       method: 'agent.acp.permission.decide',
       params: <String, Object?>{
         'permissionId': permissionId,
-        'decision': option,
+        'optionId': optionId,
       },
       deadline: policy.requestTimeout,
     );
@@ -297,6 +290,8 @@ final class AgentClientRegistry {
     _permissionQueue.removeWhere((request) => request.id == permissionId);
   }
 
+  /// Stops one Agent process while retaining its session workspace bindings
+  /// and bounded snapshots for an explicit later [reconnectSession].
   Future<AgentShutdownReceipt> disconnect(String agentId) async {
     _connections.remove(agentId);
     final response = await _request(
@@ -312,7 +307,7 @@ final class AgentClientRegistry {
         in _sessions.values
             .where((session) => session.agentId == agentId)
             .toList(growable: false)) {
-      await session._close();
+      await session._close(preserveRecoveryRoute: true);
     }
     return AgentShutdownReceipt(
       agentId: agentId,
@@ -561,7 +556,7 @@ final class AgentClientRegistry {
         toolCallId: _requiredString(value, 'toolCallId'),
         toolCallTitle: value['toolCallTitle'] as String?,
         toolCallKind: value['toolCallKind'] as String?,
-        options: _stringSet(value, 'options'),
+        options: _permissionOptions(value, 'options'),
       );
       if (_pendingPermissions.length >= policy.maxPendingRequests ||
           !_permissionQueue.add(permission)) {
@@ -737,14 +732,19 @@ final class AgentClientRegistry {
     );
   }
 
-  Future<void> _closeSessionOperations(String sessionId) async {
+  Future<void> _closeSessionOperations(
+    String sessionId, {
+    required bool preserveRecoveryRoute,
+  }) async {
     final operationPort = _operationPort;
     if (operationPort is AgentClientOperationLifecycle) {
       await (operationPort as AgentClientOperationLifecycle)
           .closeSessionOperations(sessionId);
     }
-    _sessions.remove(sessionId);
-    _recoveryRoutes.remove(sessionId);
+    if (!preserveRecoveryRoute) {
+      _sessions.remove(sessionId);
+      _recoveryRoutes.remove(sessionId);
+    }
     _pendingPermissions.removeWhere(
       (_, permission) => permission.sessionId == sessionId,
     );
@@ -829,10 +829,13 @@ final class AgentClientSession {
     return _registry._cancel(this);
   }
 
-  Future<void> _close() async {
+  Future<void> _close({bool preserveRecoveryRoute = false}) async {
     if (_closed) return;
     _closed = true;
-    await _registry._closeSessionOperations(id);
+    await _registry._closeSessionOperations(
+      id,
+      preserveRecoveryRoute: preserveRecoveryRoute,
+    );
     await _reducer.close();
   }
 }
@@ -903,4 +906,46 @@ Set<String> _stringSet(Map<String, Object?> source, String key) {
     return Set<String>.unmodifiable(value.cast<String>());
   }
   throw AgentClientFailure('malformed_message', '$key must contain strings');
+}
+
+List<AgentPermissionOption> _permissionOptions(
+  Map<String, Object?> source,
+  String key,
+) {
+  final value = source[key];
+  if (value is! List || value.isEmpty || value.length > 16) {
+    throw AgentClientFailure(
+      'malformed_message',
+      '$key must contain between one and sixteen permission options',
+    );
+  }
+  final optionIds = <String>{};
+  final options = <AgentPermissionOption>[];
+  try {
+    for (final raw in value) {
+      if (raw is! Map<Object?, Object?>) {
+        throw const FormatException('Permission option must be an object');
+      }
+      final option = AgentPermissionOption.fromJson(
+        Map<String, Object?>.from(raw),
+      );
+      if (!optionIds.add(option.optionId)) {
+        throw const FormatException(
+          'Permission option identifiers must be unique',
+        );
+      }
+      options.add(option);
+    }
+  } on FormatException {
+    throw AgentClientFailure(
+      'malformed_message',
+      '$key contains an invalid or duplicate permission option',
+    );
+  } on TypeError {
+    throw AgentClientFailure(
+      'malformed_message',
+      '$key contains an invalid permission option object',
+    );
+  }
+  return List<AgentPermissionOption>.unmodifiable(options);
 }

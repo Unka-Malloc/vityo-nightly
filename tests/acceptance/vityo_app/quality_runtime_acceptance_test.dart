@@ -243,7 +243,7 @@ final class _Commands implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
     routedSessionIds.add(sessionId);
   }

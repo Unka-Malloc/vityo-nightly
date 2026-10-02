@@ -139,10 +139,10 @@ final class AgentCollaborationService implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
     _requireBinding(sessionId);
-    await _registry.resolvePermission(permissionId, decision);
+    await _registry.resolvePermission(permissionId, optionId);
   }
 
   Future<AgentChangeReviewProjection> proposeChange({
@@ -380,10 +380,10 @@ final class _DeferredCommandPort implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) => _port.resolvePermission(
     sessionId: sessionId,
     permissionId: permissionId,
-    decision: decision,
+    optionId: optionId,
   );
 }

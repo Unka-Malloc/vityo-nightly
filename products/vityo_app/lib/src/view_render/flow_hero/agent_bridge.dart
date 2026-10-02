@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 
+import '../../ide/agent_client/agent_launch_paths.dart';
 import '../../ide/agent_client/agent_client_models.dart';
 import '../../ide/agent_client/agent_client_registry.dart';
 import '../../ide/local_service/vityod_client.dart';
@@ -24,17 +25,10 @@ const flowHeroAgentClientPolicy = AgentClientPolicy(
 );
 
 class AgentBridge extends ChangeNotifier {
-  static const String agentId = 'vityo-coding-agent';
+  static const String agentId = firstPartyCodingAgentId;
 
-  // Explicit launch configuration; never embed a developer workstation path.
-  static const String agentPackageDir = String.fromEnvironment(
-    'VITYO_AGENT_PACKAGE',
-  );
+  // Explicit workspace selection; the Agent executable is packaged with Vityo.
   static const String workspaceDir = String.fromEnvironment('VITYO_WORKSPACE');
-  static const String dartExecutable = String.fromEnvironment(
-    'VITYO_DART_EXECUTABLE',
-    defaultValue: 'dart',
-  );
 
   AgentLinkMode mode = AgentLinkMode.demo;
   String statusLine = '演示会话';
@@ -71,13 +65,16 @@ class AgentBridge extends ChangeNotifier {
     mode = AgentLinkMode.connecting;
     statusLine = '连接本地服务…';
     notifyListeners();
-    if (agentPackageDir.isEmpty || workspaceDir.isEmpty) {
+    if (workspaceDir.isEmpty) {
       mode = AgentLinkMode.demo;
       statusLine = '未配置 Agent 工作区 · 演示会话';
       notifyListeners();
       return;
     }
     try {
+      final descriptor = await resolvePackagedCodingAgentLaunch(
+        workingDirectory: workspaceDir,
+      );
       _client = await createPlatformVityodClient();
       if (_client == null) {
         mode = AgentLinkMode.demo;
@@ -133,18 +130,7 @@ class AgentBridge extends ChangeNotifier {
         // No file or terminal capability is advertised without live owners.
       }
       _registry = AgentClientRegistry(
-        descriptors: <String, AgentLaunchDescriptor>{
-          agentId: AgentLaunchDescriptor(
-            id: agentId,
-            executable: dartExecutable,
-            arguments: const <String>[
-              'run',
-              'bin/vityo_coding_agent.dart',
-              '--stdio-agent',
-            ],
-            workingDirectory: agentPackageDir,
-          ),
-        },
+        descriptors: <String, AgentLaunchDescriptor>{agentId: descriptor},
         client: _client!,
         operationPort: operationPort,
         policy: flowHeroAgentClientPolicy,
@@ -191,11 +177,8 @@ class AgentBridge extends ChangeNotifier {
     await session.prompt(text);
   }
 
-  Future<void> decidePermission(
-    String permissionId,
-    AgentPermissionDecision decision,
-  ) async {
-    await _registry?.resolvePermission(permissionId, decision);
+  Future<void> decidePermission(String permissionId, String optionId) async {
+    await _registry?.resolvePermission(permissionId, optionId);
     _pendingPermissions.removeWhere((item) => item.id == permissionId);
     notifyListeners();
   }

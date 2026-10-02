@@ -76,11 +76,8 @@ class _ChatRailState extends State<ChatRail> {
                         permissions: permissions,
                         proposals: proposals,
                         onResolvePermission:
-                            (
-                              AgentPermissionRequest request,
-                              AgentPermissionDecision decision,
-                            ) {
-                              c.bridge.decidePermission(request.id, decision);
+                            (AgentPermissionRequest request, String optionId) {
+                              c.bridge.decidePermission(request.id, optionId);
                             },
                         onResolveProposal: (String reviewId, bool apply) {
                           c.bridge.decideWorkspaceProposal(
@@ -173,10 +170,7 @@ class FlowHeroAgentReviewPanel extends StatelessWidget {
 
   final List<AgentPermissionRequest> permissions;
   final List<FlowHeroWorkspaceChangeReview> proposals;
-  final void Function(
-    AgentPermissionRequest request,
-    AgentPermissionDecision decision,
-  )
+  final void Function(AgentPermissionRequest request, String optionId)
   onResolvePermission;
   final void Function(String reviewId, bool apply) onResolveProposal;
 
@@ -188,8 +182,8 @@ class FlowHeroAgentReviewPanel extends StatelessWidget {
         for (final permission in permissions)
           _PermissionReviewCard(
             request: permission,
-            onResolve: (AgentPermissionDecision decision) =>
-                onResolvePermission(permission, decision),
+            onResolve: (String optionId) =>
+                onResolvePermission(permission, optionId),
           ),
         for (final proposal in proposals)
           _WorkspaceProposalReviewCard(
@@ -206,7 +200,7 @@ class _PermissionReviewCard extends StatelessWidget {
   const _PermissionReviewCard({required this.request, required this.onResolve});
 
   final AgentPermissionRequest request;
-  final ValueChanged<AgentPermissionDecision> onResolve;
+  final ValueChanged<String> onResolve;
 
   @override
   Widget build(BuildContext context) {
@@ -215,22 +209,18 @@ class _PermissionReviewCard extends StatelessWidget {
     return _ReviewCardFrame(
       key: ValueKey<String>('agent-permission-${request.id}'),
       title: 'PERMISSION · $title',
-      subtitle: '一次性授权 · ${request.sessionId}',
+      subtitle: 'Agent permission · ${request.sessionId}',
       child: Wrap(
         alignment: WrapAlignment.end,
         spacing: 6,
         children: <Widget>[
-          if (request.options.contains('reject_once'))
+          for (final option in request.options)
             TextButton(
-              key: ValueKey<String>('reject-permission-${request.id}'),
-              onPressed: () => onResolve(AgentPermissionDecision.rejectOnce),
-              child: const Text('REJECT ONCE'),
-            ),
-          if (request.options.contains('allow_once'))
-            TextButton(
-              key: ValueKey<String>('allow-permission-${request.id}'),
-              onPressed: () => onResolve(AgentPermissionDecision.allowOnce),
-              child: const Text('ALLOW ONCE'),
+              key: ValueKey<String>(
+                'permission-option-${request.id}-${option.optionId}',
+              ),
+              onPressed: () => onResolve(option.optionId),
+              child: Text(option.name),
             ),
           if (request.options.isEmpty)
             Text(

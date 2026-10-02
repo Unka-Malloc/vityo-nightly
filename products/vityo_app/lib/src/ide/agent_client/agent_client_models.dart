@@ -114,18 +114,82 @@ final class AgentConnectionSnapshot {
   final Map<String, Object?> metadata;
 }
 
-enum AgentPermissionDecision { allowOnce, rejectOnce }
+enum AgentPermissionOptionKind {
+  allowOnce,
+  allowAlways,
+  rejectOnce,
+  rejectAlways,
+}
+
+extension AgentPermissionOptionKindWire on AgentPermissionOptionKind {
+  String get wireValue => switch (this) {
+    AgentPermissionOptionKind.allowOnce => 'allow_once',
+    AgentPermissionOptionKind.allowAlways => 'allow_always',
+    AgentPermissionOptionKind.rejectOnce => 'reject_once',
+    AgentPermissionOptionKind.rejectAlways => 'reject_always',
+  };
+
+  bool get isAllow => switch (this) {
+    AgentPermissionOptionKind.allowOnce ||
+    AgentPermissionOptionKind.allowAlways => true,
+    AgentPermissionOptionKind.rejectOnce ||
+    AgentPermissionOptionKind.rejectAlways => false,
+  };
+
+  static AgentPermissionOptionKind parse(String value) => switch (value) {
+    'allow_once' => AgentPermissionOptionKind.allowOnce,
+    'allow_always' => AgentPermissionOptionKind.allowAlways,
+    'reject_once' => AgentPermissionOptionKind.rejectOnce,
+    'reject_always' => AgentPermissionOptionKind.rejectAlways,
+    _ => throw const FormatException(
+      'Unsupported Agent permission option kind',
+    ),
+  };
+}
+
+final class AgentPermissionOption {
+  const AgentPermissionOption({
+    required this.optionId,
+    required this.name,
+    required this.kind,
+  });
+
+  factory AgentPermissionOption.fromJson(Map<String, Object?> json) {
+    final optionId = json['optionId'];
+    final name = json['name'];
+    final kind = json['kind'];
+    if (optionId is! String ||
+        optionId.isEmpty ||
+        optionId.length > 256 ||
+        name is! String ||
+        name.isEmpty ||
+        name.length > 512 ||
+        name.runes.any((rune) => rune <= 0x1f || rune == 0x7f) ||
+        kind is! String) {
+      throw const FormatException('Invalid Agent permission option');
+    }
+    return AgentPermissionOption(
+      optionId: optionId,
+      name: name,
+      kind: AgentPermissionOptionKindWire.parse(kind),
+    );
+  }
+
+  final String optionId;
+  final String name;
+  final AgentPermissionOptionKind kind;
+}
 
 final class AgentPermissionRequest {
-  const AgentPermissionRequest({
+  AgentPermissionRequest({
     required this.id,
     required this.agentId,
     required this.sessionId,
     required this.toolCallId,
-    required this.options,
+    required List<AgentPermissionOption> options,
     this.toolCallTitle,
     this.toolCallKind,
-  });
+  }) : options = List<AgentPermissionOption>.unmodifiable(options);
 
   final String id;
   final String agentId;
@@ -134,8 +198,7 @@ final class AgentPermissionRequest {
   final String? toolCallTitle;
   final String? toolCallKind;
 
-  /// Supported ACP permission option kinds, never opaque wire option IDs.
-  final Set<String> options;
+  final List<AgentPermissionOption> options;
 }
 
 final class AgentSessionUpdate {
