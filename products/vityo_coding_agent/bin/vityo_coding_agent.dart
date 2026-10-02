@@ -81,6 +81,11 @@ Future<void> _serveStdioAgent() async {
       maxPromptCharacters: 64 * 1024,
     ),
   );
+  // The daemon refuses sessions from agents with an empty capability set
+  // (upsert_agent_session validation), and the endpoint defaults to none.
+  // Declare loadSession so the connection negotiates a non-empty set; the
+  // session/load handler is implemented and gated on this same capability.
+  await endpoint.updateCapabilities(<String>{AcpCapability.loadSession});
   try {
     await endpoint.serve(
       StdioAgentServerTransport(

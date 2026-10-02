@@ -203,6 +203,9 @@ class ProjectCoverageGateTest(unittest.TestCase):
             root = Path(tmp_name)
             app = root / "app"
             (app / "coverage").mkdir(parents=True)
+            vityod_manifest = app / "native/vityod/Cargo.toml"
+            vityod_manifest.parent.mkdir(parents=True)
+            vityod_manifest.write_text("[workspace]\n", encoding="utf-8")
             original_root = self.gate.ROOT
             self.gate.ROOT = root
             try:
@@ -260,7 +263,25 @@ class ProjectCoverageGateTest(unittest.TestCase):
                                 ),
                                 0,
                             )
-                    self.assertEqual(run_command.call_args.args[0], ["/bin/flutter", "test", "--coverage"])
+                    self.assertEqual(
+                        run_command.call_args_list[0],
+                        mock.call(
+                            [
+                                "cargo",
+                                "build",
+                                "--locked",
+                                "--manifest-path",
+                                str(vityod_manifest),
+                                "-p",
+                                "vityod",
+                            ],
+                            cwd=root,
+                        ),
+                    )
+                    self.assertEqual(
+                        run_command.call_args_list[1],
+                        mock.call(["/bin/flutter", "test", "--coverage"], cwd=app),
+                    )
                     self.assertIn("95.00%", stdout.getvalue())
 
                     with mock.patch.object(self.gate, "resolve_flutter_binary", return_value=None):

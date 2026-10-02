@@ -14,6 +14,7 @@ PYTHON_COVERAGE_GATE = ROOT / "scripts" / "python-coverage-gate.py"
 DEFAULT_FLUTTER_DIR = Path("products/vityo_app")
 DEFAULT_FAIL_UNDER = 95
 LCOV_RELATIVE_PATH = Path("coverage/lcov.info")
+VITYOD_CARGO_MANIFEST = Path("native/vityod/Cargo.toml")
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,27 @@ def run_flutter_gate(
 
     if not use_existing_report:
         assert flutter is not None
+        vityod_manifest = app_dir / VITYOD_CARGO_MANIFEST
+        if not vityod_manifest.is_file():
+            print(
+                f"vityod Cargo manifest is missing: {vityod_manifest}",
+                file=sys.stderr,
+            )
+            return 2
+        code = run_command(
+            [
+                "cargo",
+                "build",
+                "--locked",
+                "--manifest-path",
+                str(vityod_manifest),
+                "-p",
+                "vityod",
+            ],
+            cwd=ROOT,
+        )
+        if code != 0:
+            return code
         code = run_command([flutter, "test", "--coverage"], cwd=app_dir)
         if code != 0:
             return code

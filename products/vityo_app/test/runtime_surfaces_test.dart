@@ -731,7 +731,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('debug-control-stop')));
     await tester.pump();
     expect(debugCommands, <String>['start', 'stop']);
-    expect(find.text('breakpoints 1'), findsOneWidget);
+    expect(find.text('Breakpoints · 1'), findsOneWidget);
     expect(find.text('src/main.cc:1'), findsOneWidget);
     expect(find.text('Threads'), findsOneWidget);
     expect(find.text('1 · main thread'), findsOneWidget);
@@ -759,6 +759,19 @@ void main() {
       find.textContaining('[runtime #10] 00:00:01 run.finished'),
       findsWidgets,
     );
+    final debugConsoleScrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('debug-surface-desktop')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('window 00:00:00 -> 00:00:01', skipOffstage: false),
+      500,
+      scrollable: debugConsoleScrollable,
+      maxScrolls: 24,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('window 00:00:00 -> 00:00:01'), findsOneWidget);
     expect(
       find.text(

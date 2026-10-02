@@ -15,6 +15,7 @@ import '../../view_ide/runtime/runtime_replay_summary.dart';
 import '../../view_ide/shell_runtime/shell_runtime.dart';
 import '../native_tool_result_summary.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 typedef ToolchainRecoveryActionHandler =
     Future<void> Function(ToolchainRecoveryAction action);
@@ -95,7 +96,7 @@ class RuntimeSurface extends StatelessWidget {
                   title: 'Execution Route',
                   body:
                       '${routeSelection.title} (${routeSelection.routeKind.wireValue}). ${routeSelection.detail} ${executionCapability.detail}',
-                  accent: const Color(0xFFD9E8F8),
+                  accent: VityoWorkbenchTokens.of(context).blocked,
                 ),
                 SizedBox(height: cardSpacing),
                 _ToolchainStatusSection(
@@ -108,14 +109,14 @@ class RuntimeSurface extends StatelessWidget {
                   body: runtimeEvents.isEmpty
                       ? '$laneCount lane slot(s) reserved. Runtime lanes will populate when a project session publishes replayable runtime events.'
                       : '$laneCount lane slot(s) inferred from ${runtimeEvents.length} published runtime event(s). ${replay.summarySentence}',
-                  accent: const Color(0xFFEDE6D9),
+                  accent: VityoWorkbenchTokens.of(context).region,
                 ),
                 SizedBox(height: cardSpacing),
                 _MetricSection(
                   title: 'Registry Gate',
                   body:
                       '${runtimeFeatures.length} runtime-related feature(s) mounted. Unsupported semantic subsets will continue to degrade explicitly.',
-                  accent: const Color(0xFFE4E7D2),
+                  accent: VityoWorkbenchTokens.of(context).region,
                 ),
                 SizedBox(height: cardSpacing),
                 _ExecutionSessionSection(
@@ -161,7 +162,7 @@ class RuntimeSurface extends StatelessWidget {
                   title: 'Execution Route',
                   body:
                       '${routeSelection.title} (${routeSelection.routeKind.wireValue}). ${routeSelection.detail} ${executionCapability.detail}',
-                  accent: const Color(0xFFD9E8F8),
+                  accent: VityoWorkbenchTokens.of(context).blocked,
                 ),
                 SizedBox(height: cardSpacing),
                 _ToolchainStatusSection(
@@ -178,7 +179,7 @@ class RuntimeSurface extends StatelessWidget {
                         body: runtimeEvents.isEmpty
                             ? '$laneCount lane slot(s) reserved. Local runtime capable targets expose broader lane previews once runtime events are captured.'
                             : '$laneCount lane slot(s) inferred from ${runtimeEvents.length} published runtime event(s). ${replay.summarySentence}',
-                        accent: const Color(0xFFEDE6D9),
+                        accent: VityoWorkbenchTokens.of(context).region,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -187,7 +188,7 @@ class RuntimeSurface extends StatelessWidget {
                         title: 'Registry Gate',
                         body:
                             '${runtimeFeatures.length} runtime-related feature(s) mounted. Surface features load from mounted module registry entries at startup.',
-                        accent: const Color(0xFFE4E7D2),
+                        accent: VityoWorkbenchTokens.of(context).region,
                       ),
                     ),
                   ],
@@ -275,18 +276,31 @@ class _ToolchainStatusSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accentTint = switch (status.severity) {
-      ToolchainStatusSeverity.ready => const Color(0xFFDFF0DE),
-      ToolchainStatusSeverity.unavailable => const Color(0xFFF0E8D6),
-      ToolchainStatusSeverity.blocked => const Color(0xFFF4E8D8),
-      ToolchainStatusSeverity.failed => const Color(0xFFF3D8D6),
+    final tokens = VityoWorkbenchTokens.of(context);
+    final accentWash = switch (status.severity) {
+      ToolchainStatusSeverity.ready => _runtimeSurfaceColor(
+        context,
+        tokens.success,
+      ),
+      ToolchainStatusSeverity.unavailable => _runtimeSurfaceColor(
+        context,
+        tokens.warning,
+      ),
+      ToolchainStatusSeverity.blocked => _runtimeSurfaceColor(
+        context,
+        tokens.blocked,
+      ),
+      ToolchainStatusSeverity.failed => _runtimeSurfaceColor(
+        context,
+        tokens.error,
+      ),
     };
 
     return Container(
       key: const ValueKey('toolchain-status-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, accentTint),
+        color: accentWash,
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -336,28 +350,23 @@ class _ToolchainStatusSection extends StatelessWidget {
   }
 }
 
-Color _runtimeSurfaceColor(BuildContext context, Color lightTint) {
-  final theme = Theme.of(context);
-  if (theme.brightness == Brightness.light) {
-    return lightTint;
-  }
-  return Color.alphaBlend(
-    lightTint.withValues(alpha: 0.14),
-    theme.colorScheme.surfaceContainerHigh,
-  );
+Color _runtimeSurfaceColor(BuildContext context, Color tone) {
+  final tokens = VityoWorkbenchTokens.of(context);
+  return Color.alphaBlend(tone.withValues(alpha: 0.12), tokens.region);
 }
 
 Color _runtimeAccentColor(BuildContext context, RuntimeAccent accent) {
-  final tint = switch (accent) {
-    RuntimeAccent.failed => const Color(0xFFF3D8D6),
-    RuntimeAccent.completed => const Color(0xFFDFF0DE),
-    RuntimeAccent.active => const Color(0xFFECE4CF),
-    RuntimeAccent.observed => const Color(0xFFE5E8EE),
-    RuntimeAccent.thread => const Color(0xFFE2EBF9),
-    RuntimeAccent.test => const Color(0xFFE7F2DE),
-    RuntimeAccent.log => const Color(0xFFF4E8D8),
+  final tokens = VityoWorkbenchTokens.of(context);
+  final tone = switch (accent) {
+    RuntimeAccent.failed => tokens.error,
+    RuntimeAccent.completed => tokens.success,
+    RuntimeAccent.active => tokens.accent,
+    RuntimeAccent.observed => tokens.muted,
+    RuntimeAccent.thread => tokens.blocked,
+    RuntimeAccent.test => tokens.success,
+    RuntimeAccent.log => tokens.warning,
   };
-  return _runtimeSurfaceColor(context, tint);
+  return _runtimeSurfaceColor(context, tone);
 }
 
 class _SurfaceFrame extends StatelessWidget {
@@ -449,7 +458,10 @@ class _ExecutionSessionSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFF7F2E9)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).region,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -589,7 +601,10 @@ class _NativeToolResultSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFEAF1EA)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).success,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -671,7 +686,10 @@ class _RuntimeEventSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFE8EFE6)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).success,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -769,7 +787,10 @@ class _OutputChannelSection extends StatelessWidget {
       key: const ValueKey('runtime-output-channels'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFE8ECF6)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).blocked,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -917,7 +938,10 @@ class _RuntimeLaneSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFF0E8F6)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).blocked,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -993,7 +1017,10 @@ class _RuntimeGraphSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFE5ECF6)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).blocked,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -1047,7 +1074,7 @@ class _RuntimeGraphSection extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: _runtimeSurfaceColor(
                             context,
-                            const Color(0xFFDDE8F6),
+                            VityoWorkbenchTokens.of(context).blocked,
                           ),
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -1157,7 +1184,7 @@ class _RuntimeGraphSection extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: _runtimeSurfaceColor(
                               context,
-                              const Color(0xFFD7E6EC),
+                              VityoWorkbenchTokens.of(context).blocked,
                             ),
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -1259,7 +1286,10 @@ class _RuntimeDebugLaneSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFF2ECDF)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).warning,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -1375,7 +1405,10 @@ class _ModuleChipSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: _runtimeSurfaceColor(context, const Color(0xFFF7F2E9)),
+        color: _runtimeSurfaceColor(
+          context,
+          VityoWorkbenchTokens.of(context).region,
+        ),
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),

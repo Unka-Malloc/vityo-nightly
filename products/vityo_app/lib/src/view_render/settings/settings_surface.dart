@@ -268,9 +268,9 @@ class _ExtensionMarketplaceSettingsCardState
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -413,16 +413,15 @@ class _HostedBackendSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final ready = connector.status == HostedBackendConnectorStatus.ready;
-    final stateColor = ready
-        ? const Color(0xFF26734D)
-        : theme.colorScheme.error;
+    final stateColor = ready ? tokens.success : tokens.error;
     return Container(
       key: const ValueKey('settings-hosted-backend-card'),
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFE7EBEF),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -505,7 +504,7 @@ class _HostedBackendSettingsCard extends StatelessWidget {
               result.message,
               key: const ValueKey('settings-hosted-last-result'),
               style: theme.textTheme.bodySmall?.copyWith(
-                color: result.successful ? const Color(0xFF26734D) : stateColor,
+                color: result.successful ? tokens.success : stateColor,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -534,16 +533,14 @@ class _CredentialStorageSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final stateColor = settings.productionReady
-        ? const Color(0xFF26734D)
-        : colorScheme.error;
+    final tokens = VityoWorkbenchTokens.of(context);
+    final stateColor = settings.productionReady ? tokens.success : tokens.error;
     return Container(
       key: const ValueKey('settings-credential-storage-card'),
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFE7EBEF),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -616,13 +613,12 @@ class _CredentialStorageFact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = enabled
-        ? const Color(0xFF26734D)
-        : theme.colorScheme.onSurfaceVariant;
+    final tokens = VityoWorkbenchTokens.of(context);
+    final color = enabled ? tokens.success : tokens.muted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.7),
+        color: tokens.region,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -652,12 +648,12 @@ class _PlatformManagerSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final tokens = VityoWorkbenchTokens.of(context);
     return Container(
       key: const ValueKey('settings-platform-managers-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE7EBEF),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
       ),
       padding: const EdgeInsets.all(14),
@@ -700,14 +696,12 @@ class _PlatformManagerSettingsCard extends StatelessWidget {
             const SizedBox(height: 10),
             ...settings.sections.map((section) {
               final selected = settings.activeSectionId == section.id;
-              final stateColor = section.ready
-                  ? const Color(0xFF26734D)
-                  : colorScheme.error;
+              final stateColor = section.ready ? tokens.success : tokens.error;
               return Padding(
-                padding: const EdgeInsets.only(bottom: 7),
+                padding: const EdgeInsets.only(bottom: 2),
                 child: InkWell(
                   key: ValueKey('settings-platform-section-${section.id}'),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                   onTap: onSelectSection == null
                       ? null
                       : () => onSelectSection!(section.id),
@@ -715,24 +709,20 @@ class _PlatformManagerSettingsCard extends StatelessWidget {
                     duration: const Duration(milliseconds: 160),
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
+                      horizontal: 10,
                       vertical: 9,
                     ),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? colorScheme.surface.withValues(alpha: 0.92)
-                          : colorScheme.surface.withValues(alpha: 0.56),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected
-                            ? colorScheme.primary.withValues(alpha: 0.45)
-                            : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                      ),
+                      color: selected ? tokens.hover : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Icon(
                               section.ready
@@ -741,12 +731,9 @@ class _PlatformManagerSettingsCard extends StatelessWidget {
                               size: 17,
                               color: stateColor,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                section.title,
-                                style: theme.textTheme.labelLarge,
-                              ),
+                            Text(
+                              section.title,
+                              style: theme.textTheme.labelLarge,
                             ),
                             Text(
                               section.ready ? 'Ready' : 'Needs attention',
@@ -764,7 +751,7 @@ class _PlatformManagerSettingsCard extends StatelessWidget {
                           Text(
                             section.description,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
+                              color: tokens.muted,
                             ),
                           ),
                         ],
@@ -853,9 +840,9 @@ class _CommandPaletteSettingsCardState
       key: const ValueKey('settings-command-palette-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Material(
@@ -1002,9 +989,9 @@ class _IdeCapabilityFrameworkCard extends StatelessWidget {
       key: const ValueKey('settings-ide-capability-framework'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1120,12 +1107,28 @@ extension _ThemeColorFieldX on _ThemeColorField {
     _ThemeColorField.muted => 'Muted',
   };
 
-  String get hint => switch (this) {
-    _ThemeColorField.canvas => '#F7F4EB',
-    _ThemeColorField.panel => '#FFFDF5',
-    _ThemeColorField.ink => '#2D2416',
-    _ThemeColorField.accent => '#C7522A',
-    _ThemeColorField.muted => '#A09880',
+  String hintFor(VityoThemePreset preset) => switch (preset) {
+    VityoThemePreset.obsidian => switch (this) {
+      _ThemeColorField.canvas => '#060708',
+      _ThemeColorField.panel => '#0C0E10',
+      _ThemeColorField.ink => '#E9EBED',
+      _ThemeColorField.accent => '#E5B85C',
+      _ThemeColorField.muted => '#8A929A',
+    },
+    VityoThemePreset.parchment => switch (this) {
+      _ThemeColorField.canvas => '#F7F4EB',
+      _ThemeColorField.panel => '#FFFDF5',
+      _ThemeColorField.ink => '#2D2416',
+      _ThemeColorField.accent => '#C7522A',
+      _ThemeColorField.muted => '#A09880',
+    },
+    VityoThemePreset.graphite => switch (this) {
+      _ThemeColorField.canvas => '#EDEFF2',
+      _ThemeColorField.panel => '#FFFFFF',
+      _ThemeColorField.ink => '#1E252B',
+      _ThemeColorField.accent => '#2F6F73',
+      _ThemeColorField.muted => '#62717C',
+    },
   };
 
   String get keyName => switch (this) {
@@ -1144,7 +1147,8 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   @override
   void initState() {
     super.initState();
-    _previewPreset = VityoThemePreset.parchment;
+    _previewPreset =
+        widget.themeOverride.presetValue ?? VityoThemePreset.obsidian;
     _controllers = {
       for (final field in _ThemeColorField.values)
         field: TextEditingController(
@@ -1156,6 +1160,10 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   @override
   void didUpdateWidget(covariant _ThemeSettingsCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final persistedPreset = widget.themeOverride.presetValue;
+    if (persistedPreset != null && persistedPreset != _previewPreset) {
+      _previewPreset = persistedPreset;
+    }
     for (final field in _ThemeColorField.values) {
       final controller = _controllers[field]!;
       final nextText = _colorToHex(_overrideColor(field, widget.themeOverride));
@@ -1177,7 +1185,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final draftOverride = _draftOverride();
-    final previewTheme = VityoTheme.light(
+    final previewTheme = VityoTheme.resolve(
       preset: _previewPreset,
       overrides: draftOverride,
     );
@@ -1185,9 +1193,9 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
       key: const ValueKey('settings-theme-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -1241,7 +1249,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
                         },
                         decoration: InputDecoration(
                           labelText: field.label,
-                          hintText: field.hint,
+                          hintText: field.hintFor(_previewPreset),
                         ),
                       ),
                     ),
@@ -1275,7 +1283,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
                     ? null
                     : () {
                         setState(() {
-                          _previewPreset = VityoThemePreset.parchment;
+                          _previewPreset = VityoThemePreset.obsidian;
                           for (final field in _ThemeColorField.values) {
                             _controllers[field]!.text = '';
                           }
@@ -1300,6 +1308,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
 
   VityoThemeOverride _draftOverride() {
     return VityoThemeOverride(
+      preset: _previewPreset.name,
       canvas: _resolvedColor(_ThemeColorField.canvas)?.toARGB32(),
       panel: _resolvedColor(_ThemeColorField.panel)?.toARGB32(),
       ink: _resolvedColor(_ThemeColorField.ink)?.toARGB32(),
@@ -1533,12 +1542,13 @@ class _ToolchainSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final status = settings.status;
     final accent = switch (status.severity) {
-      ToolchainStatusSeverity.ready => theme.colorScheme.primary,
-      ToolchainStatusSeverity.unavailable => theme.colorScheme.tertiary,
-      ToolchainStatusSeverity.blocked => theme.colorScheme.tertiary,
-      ToolchainStatusSeverity.failed => theme.colorScheme.error,
+      ToolchainStatusSeverity.ready => tokens.success,
+      ToolchainStatusSeverity.unavailable => tokens.warning,
+      ToolchainStatusSeverity.blocked => tokens.blocked,
+      ToolchainStatusSeverity.failed => tokens.error,
     };
     final selectClangCppVersion =
         onSelectClangCppVersion ??
@@ -1552,7 +1562,7 @@ class _ToolchainSettingsCard extends StatelessWidget {
       key: const ValueKey('settings-toolchain-status-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: accent.withValues(alpha: 0.42)),
       ),
@@ -1666,9 +1676,9 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: VityoWorkbenchTokens.of(context).region,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1698,9 +1708,11 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
+                color: VityoWorkbenchTokens.of(context).region,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
+                border: Border.all(
+                  color: VityoWorkbenchTokens.of(context).divider,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1735,13 +1747,19 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: validation.ready
-                    ? theme.colorScheme.primaryContainer.withValues(alpha: 0.22)
-                    : theme.colorScheme.errorContainer.withValues(alpha: 0.22),
+                    ? VityoWorkbenchTokens.of(context).accentSoft
+                    : VityoWorkbenchTokens.of(
+                        context,
+                      ).error.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: validation.ready
-                      ? theme.colorScheme.primary.withValues(alpha: 0.42)
-                      : theme.colorScheme.error.withValues(alpha: 0.42),
+                      ? VityoWorkbenchTokens.of(
+                          context,
+                        ).accent.withValues(alpha: 0.42)
+                      : VityoWorkbenchTokens.of(
+                          context,
+                        ).error.withValues(alpha: 0.42),
                 ),
               ),
               child: Column(

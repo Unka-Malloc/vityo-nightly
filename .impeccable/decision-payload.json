@@ -1,0 +1,115 @@
+{
+  "title": "为 Vityo 重塑视觉世界",
+  "question": "抽签指定了「夜班印坊」。保留它、采纳备选、走向品类标准，或重抽一手。",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "夜班印坊",
+      "kicker": "THE ROLL",
+      "lineage": "深夜印刷所：校样、规矩线、活字盘与烫金模",
+      "thesis": "编译器是一台印刷机：源码是活字，每次运行拉出一张校样，Agent 的改动以校样送达，信任来自套准与留痕。",
+      "palette": ["#12100E", "#1C1814", "#EDE6D8", "#D64533", "#E3B063", "#F3ECDC", "#8D8477"],
+      "materials": ["炭黑台面", "涂层校样纸", "印刷规矩线", "套准十字", "烫金箔", "纸纹"],
+      "viewport": "工作台即夜班台：炭黑印房里编辑器是字盘，四角有套准十字与页码；Agent 的 diff 以一张浅色校样沿规矩销滑入台面；运行管线是一次走纸，只有一枚移动的“当下”规矩点；验证通过即落烫金印。",
+      "risk": "印刷语汇必须保持结构性，沦为装饰怀旧即失败；朱红纪律须由法律维护；浅色校样仅限决策时刻，滥用则刺眼。",
+      "raised": [
+        { "from": "drum-machine-step-row", "raise": "追光灯：运行管线上只有一枚移动的“当下”规矩点在巡扫，强度以墨色深浅分级。" },
+        { "from": "crt-arcade-pixel-glow", "raise": "色彩即法律：朱红只属于诊断与待决事项，金只属于已验证事实，永不用于装饰。" },
+        { "from": "cloud-quarry", "raise": "切面：任何渲染块都能被切开看原料（raw source），界面无黑箱。" },
+        { "from": "console-dashboard-atmosphere", "raise": "套准即焦点：活动面板入版全墨，非活动面板如未印张退淡。" },
+        { "from": "character-goods-catalog", "raise": "点名册：模块库中每个模块是一张有名有姓的印版卡，附一行铸造厂注记。" }
+      ]
+    },
+    {
+      "id": "model-pick",
+      "label": "精密平台",
+      "kicker": "MY PICK",
+      "lineage": "计量实验室：花岗岩平台、量块、千分尺与检验章",
+      "thesis": "把 IDE 做成一张计量平台：每个面板都是被检验过的工件，信任来自测量而非风格。",
+      "palette": ["#15171A", "#22262B", "#E8E9E6", "#E3B063", "#C0402F", "#2E4A6B"],
+      "materials": ["研磨花岗岩", "机加工铝", "蓝丹划线液", "雕刻标尺", "检验章"],
+      "viewport": "工作台即平台：面板是带研磨棱边的工件置于花岗岩上；间距遵循量块堆叠的数列；编辑器行号栏是一把刻尺；状态以检验章落下，合格烫金、不合格朱红。",
+      "risk": "这是离现状最近的方向——熟悉且安全，但可能只是现有 hairline 扁平世界的精修，而非重生。"
+    },
+    {
+      "id": "challenger-orizuru",
+      "label": "一张未裁的纸",
+      "verdict": "competitive",
+      "lineage": "折纸工序谱：三十二道工序，每张折痕都留在成品里",
+      "thesis": "编译即折叠：从源码到产物是一张未裁的纸，每个结果都带着造就它的每一道折痕。",
+      "palette": ["#D03A2C", "#E8DED2", "#D8A93C", "#1A1512"],
+      "materials": ["朱红和纸", "折白痕", "金箔点", "墨"],
+      "viewport": "工作台即工序谱：左缘严格编号 1→32 对应编译工序；编辑器是那张纸本身；Agent 补丁是可逆的折叠与展开，回滚即展平；金点标记当前工序。",
+      "case": "来源可追与可回滚被“折痕永存”一语道破，产品真实性胜过指定方向；用户认同与夜班印坊打平。",
+      "risk": "朱红满版作为长时间编码的地面可能疲劳；顺序性的折叠隐喻与 IDE 多窗格的同时性存在张力。",
+      "hero": "https://impeccable.style/worlds/cards/paper-folds-pleats-deployable-orizuru-crane-sequence-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/paper-folds-pleats-deployable-orizuru-crane-sequence.webp"
+    },
+    {
+      "id": "challenger-step-row",
+      "label": "鼓机步进音序",
+      "verdict": "declined",
+      "lineage": "80 年代初鼓机：十六键步进排与追光灯",
+      "palette": ["#232322", "#C02A20", "#D06A1F", "#D8B23C", "#E8E4DA"],
+      "materials": ["炭黑面板", "糖果色步进键", "丝印白字", "LED"],
+      "case": "循环隐喻贴合 edit→run，但十六步键承载不了密集代码与权威事实。",
+      "kept": "追光灯：单一的“当下”指示沿运行管线巡扫。",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-drum-machine-step-row-hero.webp"
+    },
+    {
+      "id": "challenger-crt-arcade",
+      "label": "显像管街机",
+      "verdict": "declined",
+      "lineage": "像素街机屏：磷光、扫描线与整数缩放",
+      "palette": ["#050505", "#3CFF64", "#F2E3A0", "#2A4BD7"],
+      "materials": ["磷光黑", "十六色精灵", "扫描线", "辉光"],
+      "case": "像素法则在密集文本前失效，认同停留在怀旧玩具。",
+      "kept": "色彩即法律：语义色不可僭越。",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-crt-arcade-pixel-glow-hero.webp"
+    },
+    {
+      "id": "challenger-cloud-quarry",
+      "label": "云之采石场",
+      "verdict": "declined",
+      "lineage": "超现实采石场：切割天气、露出蓝色空腔",
+      "palette": ["#F2F1EC", "#5B93D6", "#6E7276", "#C9CDD2"],
+      "materials": ["积云白料", "切面色空腔", "雷雨灰", "银锯线"],
+      "case": "超现实梦境与“权威可信”相冲，只有托管工作区的临时性沾边。",
+      "kept": "切面：任何对象都可被切开看内部构造。",
+      "hero": "https://impeccable.style/worlds/cards/dream-surreal-impossible-worlds-cloud-quarry-hero.webp"
+    },
+    {
+      "id": "challenger-console-void",
+      "label": "虚空记忆塔",
+      "verdict": "declined",
+      "lineage": "第六世代主机菜单：黑蓝虚空中漂移的发光塔",
+      "palette": ["#04060C", "#D8DEE6", "#E0A33C"],
+      "materials": ["黑蓝虚空", "乳白透光体", "漂浮微粒", "琥珀暖光"],
+      "case": "摄像机漫游式导航与 IDE 的高密度同屏互斥。",
+      "kept": "焦点有景深：选中物向前浮现，其余退入雾中。",
+      "hero": "https://impeccable.style/worlds/cards/digital-design-canon-console-dashboard-atmosphere-hero.webp"
+    },
+    {
+      "id": "challenger-character-catalog",
+      "label": "角色图鉴",
+      "verdict": "declined",
+      "lineage": "角色商品目录：粉彩网格中的吉祥物名册",
+      "palette": ["#F6E3E8", "#FFFFFF", "#E0567E", "#4A3F45"],
+      "materials": ["粉彩底", "白色压边", "缎带色", "名札"],
+      "case": "可爱文化会瓦解权威工具的基调，仅模块库一隅可借用。",
+      "kept": "点名册：每个成员拥有姓名牌与一行实话。",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-character-goods-catalog-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "canon": true,
+  "canonCard": {
+    "label": "品类标准",
+    "thesis": "把品类默认值做到极致：深色石板、蓝色强调、活动栏+侧栏+标签页，工艺对标 Zed 与 VS Code。",
+    "palette": ["#1E1F24", "#2A2C33", "#4C8DFF", "#D6D9DE"],
+    "materials": ["石板灰面板", "1px 分隔线", "蓝色焦点环", "标准图标"],
+    "viewport": "你所预期的排布：左活动栏、文件树侧栏、编辑器标签页、底部面板，全部执行到最高工艺水准。",
+    "risk": "与竞品无法区分——这是设计目标，也是代价。"
+  },
+  "steer": true
+}

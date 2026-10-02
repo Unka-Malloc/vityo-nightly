@@ -6,6 +6,7 @@ import '../../view_ide/language/semantic_snapshot_panel.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../ide/workspace/workspace.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 class ProblemsSurface extends StatefulWidget {
   const ProblemsSurface({
@@ -364,7 +365,10 @@ class _ProblemsSurfaceState extends State<ProblemsSurface> {
                                   theme.colorScheme.primaryContainer,
                               leading: Icon(
                                 _diagnosticIcon(diagnostic.severity),
-                                color: _diagnosticColor(diagnostic.severity),
+                                color: _diagnosticColor(
+                                  context,
+                                  diagnostic.severity,
+                                ),
                               ),
                               title: Text(diagnostic.message),
                               subtitle: Text(
@@ -1161,10 +1165,11 @@ IconData _diagnosticIcon(DiagnosticSeverity severity) {
   };
 }
 
-Color _diagnosticColor(DiagnosticSeverity severity) {
+Color _diagnosticColor(BuildContext context, DiagnosticSeverity severity) {
+  final tokens = VityoWorkbenchTokens.of(context);
   return switch (severity) {
-    DiagnosticSeverity.error => const Color(0xFFC8473A),
-    DiagnosticSeverity.warning => const Color(0xFFB7791F),
-    DiagnosticSeverity.hint => const Color(0xFF2F6F87),
+    DiagnosticSeverity.error => tokens.error,
+    DiagnosticSeverity.warning => tokens.warning,
+    DiagnosticSeverity.hint => tokens.muted,
   };
 }

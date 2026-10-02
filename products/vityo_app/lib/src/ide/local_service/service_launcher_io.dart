@@ -81,12 +81,21 @@ Future<void> _waitForEndpoint(String endpoint) async {
       }
     }
   }
-  while (!File(endpoint).existsSync()) {
-    if (DateTime.now().isAfter(deadline)) {
-      throw TimeoutException(
-        'The packaged vityod endpoint did not become ready.',
+  while (true) {
+    try {
+      final probe = await Socket.connect(
+        InternetAddress(endpoint, type: InternetAddressType.unix),
+        0,
       );
+      await probe.close();
+      return;
+    } on SocketException {
+      if (DateTime.now().isAfter(deadline)) {
+        throw TimeoutException(
+          'The packaged vityod endpoint did not become ready.',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 25));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 25));
   }
 }

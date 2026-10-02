@@ -57,6 +57,7 @@ import '../ide/workspace/workspace_document_store.dart';
 import '../ide/workspace/workspace_file_explorer_state_store.dart';
 import '../ide/workspace/workspace_search_service.dart';
 import '../ide/workspace/workspace_controller.dart';
+import '../view_render/shell/shell_layout_plan.dart';
 
 typedef AppHostedControlPlaneClientProvider =
     Future<HostedControlPlaneClient?> Function({
@@ -273,6 +274,7 @@ class AppBootstrap {
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
     this.workspaceFileExplorerStateStore,
+    this.shellLayoutPreferencesStore,
     this.refreshActiveLanguageService,
     this.styioServiceSubscriptionController,
     this.languageServiceStatusController,
@@ -326,6 +328,7 @@ class AppBootstrap {
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
   final WorkspaceFileExplorerStateStore? workspaceFileExplorerStateStore;
+  final ShellLayoutPreferencesStore? shellLayoutPreferencesStore;
   final ToolchainManager? toolchainManager;
   final ClangCppVersionPreference? clangCppVersionPreference;
   final Future<void> Function()? refreshActiveLanguageService;
@@ -529,6 +532,13 @@ class AppBootstrap {
           recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
+          serviceId: 'presentation.shell-layout-store',
+          ownerLayer: 'presentation',
+          requiredInjection: false,
+          capabilityGapCode: 'presentation.shell-layout.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
           serviceId: 'language.refresh-active-service',
           ownerLayer: 'service',
           requiredInjection: false,
@@ -644,6 +654,7 @@ class AppBootstrap {
       'command-palette.preferences-store':
           commandPalettePreferencesStore != null,
       'theme.override-store': themeOverrideStore != null,
+      'presentation.shell-layout-store': shellLayoutPreferencesStore != null,
       'language.refresh-active-service': refreshActiveLanguageService != null,
       'language.subscription-controller':
           styioServiceSubscriptionController != null,
@@ -778,6 +789,10 @@ class AppBootstrap {
         );
     final workspaceFileExplorerStateStore =
         WorkspaceFileExplorerStateStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
+    final shellLayoutPreferencesStore =
+        ShellLayoutPreferencesStore.fromDataStore(
           dataStore: foundationDataStore,
         );
     final debugBreakpointStore = DebugBreakpointStore.fromDataStore(
@@ -1028,6 +1043,7 @@ class AppBootstrap {
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,
       workspaceFileExplorerStateStore: workspaceFileExplorerStateStore,
+      shellLayoutPreferencesStore: shellLayoutPreferencesStore,
       refreshActiveLanguageService: refreshActiveLanguageService,
       styioServiceSubscriptionController: styioServiceSubscriptionController,
       languageServiceStatusController: languageServiceStatusController,

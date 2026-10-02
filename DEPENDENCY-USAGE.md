@@ -2,7 +2,7 @@
 
 **Purpose:** Record dependency authorization boundaries for `Vityo`.
 
-**Last updated:** 2026-08-31
+**Last updated:** 2026-09-04
 
 `Vityo` is an Apache-2.0 Flutter/Dart application source project. Its current app, prototype, runner, docs, and test dependency boundary is:
 
@@ -54,6 +54,13 @@
 ## UI Assets
 
 UI assets must remain covered by documented open-source asset evidence before promotion into product surfaces. Asset sources and licenses are tracked in `docs/assets/INDEX.md`.
+
+Bundled product fonts (declared in `products/vityo_app/pubspec.yaml`, stored in `products/vityo_app/assets/fonts/` with their license texts):
+
+| Asset | Version | License | Source Boundary | Usage Boundary | Classification |
+|---|---|---|---|---|---|
+| Plus Jakarta Sans (TTF 400/500/600/700/800) | google/fonts `ofl/plusjakartasans` | OFL-1.1 (`assets/fonts/OFL-PlusJakartaSans.txt`) | Google Fonts distribution of the Tokotype release | Product UI text family across desktop, web, and mobile surfaces | Runtime asset |
+| Azeret Mono (TTF 400/500/600) | google/fonts `ofl/azeretmono` | OFL-1.1 (`assets/fonts/OFL-AzeretMono.txt`) | Google Fonts distribution | Code, terminal, status-bar, and keycap text | Runtime asset |
 
 ## Policy Rules
 

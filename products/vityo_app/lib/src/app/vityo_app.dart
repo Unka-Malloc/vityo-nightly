@@ -83,6 +83,7 @@ class _VityoAppState extends State<VityoApp> {
           widget.bootstrap.commandPalettePreferencesStore,
       workspaceFileExplorerStateStore:
           widget.bootstrap.workspaceFileExplorerStateStore,
+      shellLayoutPreferencesStore: widget.bootstrap.shellLayoutPreferencesStore,
       workspaceDiagnosticsController:
           widget.bootstrap.workspaceDiagnosticsController,
       testingSessionController: widget.bootstrap.testingSessionController,
@@ -97,6 +98,7 @@ class _VityoAppState extends State<VityoApp> {
       ),
     );
     unawaited(_shellModel.loadExtensionMarketplace());
+    unawaited(_shellModel.loadShellLayoutPreferences());
   }
 
   @override
@@ -116,8 +118,10 @@ class _VityoAppState extends State<VityoApp> {
           child: MaterialApp(
             title: 'Vityo',
             debugShowCheckedModeBanner: false,
-            theme: VityoTheme.light(
-              preset: VityoThemePreset.graphite,
+            theme: VityoTheme.resolve(
+              preset:
+                  _shellModel.themeOverride.presetValue ??
+                  VityoThemePreset.obsidian,
               overrides: _shellModel.themeOverride,
             ),
             initialRoute: _editorInitialRoute(widget.initialPath),

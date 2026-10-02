@@ -268,7 +268,7 @@ class EditorSurface extends StatelessWidget {
                     child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.62),
+                        color: VityoWorkbenchTokens.of(context).editor,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: theme.dividerColor),
                       ),
@@ -553,13 +553,14 @@ class _IdeEditorSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final serviceStatus = languageServiceStatus;
     final serviceColor = switch (serviceStatus?.severity) {
-      LanguageServiceStatusSeverity.ready => const Color(0xFF277447),
-      LanguageServiceStatusSeverity.refreshing => const Color(0xFFA35A12),
-      LanguageServiceStatusSeverity.degraded => const Color(0xFFA35A12),
-      LanguageServiceStatusSeverity.unavailable => const Color(0xFF7A5269),
-      LanguageServiceStatusSeverity.failed => theme.colorScheme.error,
+      LanguageServiceStatusSeverity.ready => tokens.success,
+      LanguageServiceStatusSeverity.refreshing => tokens.warning,
+      LanguageServiceStatusSeverity.degraded => tokens.warning,
+      LanguageServiceStatusSeverity.unavailable => tokens.blocked,
+      LanguageServiceStatusSeverity.failed => tokens.error,
       null => theme.disabledColor,
     };
 
@@ -893,8 +894,10 @@ class _OpenDocumentTab extends StatelessWidget {
                   _documentTabLabel(documentId),
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    color: theme.colorScheme.onSurface,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                    color: active
+                        ? theme.colorScheme.onSurface
+                        : theme.textTheme.bodySmall?.color,
                   ),
                 ),
               ),

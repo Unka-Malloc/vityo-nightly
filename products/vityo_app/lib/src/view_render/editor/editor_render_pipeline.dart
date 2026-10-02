@@ -414,8 +414,17 @@ List<InlineSpan> _buildLineSpans(
 }) {
   final spans = <InlineSpan>[];
   final resolvedGlobalLineRange = globalLineRange ?? lineRange;
-  final caretOffset = selection.isCollapsed
+  // A collapsed selection resolves to a line-local offset, but it is only
+  // paintable on the line that actually contains it. Without this guard the
+  // surrogate snapping below clamps an out-of-line caret to this line's end,
+  // which paints a caret at the end of every rendered line.
+  final requestedCaret = selection.isCollapsed
       ? selection.end - sourceOffsetBase
+      : null;
+  final caretOffset = requestedCaret != null &&
+          requestedCaret >= lineRange.start &&
+          requestedCaret <= lineRange.end
+      ? requestedCaret
       : null;
   final selectionRange = selection.isCollapsed
       ? null
@@ -461,7 +470,7 @@ List<InlineSpan> _buildLineSpans(
         caretOffset: paintCaretOffset,
         boundary: localPosition,
       );
-      spans.add(_inlayHintSpan(hint));
+      spans.add(_inlayHintSpan(context, hint));
       inlayHintIndex += 1;
     }
   }
@@ -641,12 +650,13 @@ List<InlineSpan> _buildLineSpans(
   return spans;
 }
 
-InlineSpan _inlayHintSpan(InlayHint hint) {
+InlineSpan _inlayHintSpan(BuildContext context, InlayHint hint) {
+  final tokens = VityoWorkbenchTokens.of(context);
   return TextSpan(
     text: '${hint.label} ',
-    style: const TextStyle(
-      color: Color(0xFF6E5F49),
-      backgroundColor: Color(0xFFECE4D8),
+    style: TextStyle(
+      color: tokens.muted,
+      backgroundColor: tokens.region,
       fontSize: 11,
       fontWeight: FontWeight.w700,
       letterSpacing: 0,
@@ -675,7 +685,11 @@ List<InlineSpan> _inlineSpansForToken(
     diagnosticSeverity: diagnosticSeverity,
     semanticThemeBinding: semanticThemeBinding,
   );
-  final referenceHighlightColor = _referenceHighlightColor(activeReference);
+  final tokens = VityoWorkbenchTokens.of(context);
+  final referenceHighlightColor = _referenceHighlightColor(
+    activeReference,
+    tokens,
+  );
 
   if (enableGlyphSubstitution && token.kind == TokenKind.operator) {
     final glyph = _glyphForOperator(token.lexeme);
@@ -686,7 +700,7 @@ List<InlineSpan> _inlineSpansForToken(
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: activeToken
-                  ? const Color(0xFFE6E0F5)
+                  ? tokens.selection
                   : referenceHighlightColor ?? Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -709,7 +723,7 @@ List<InlineSpan> _inlineSpansForToken(
     style: selectionRange == null
         ? style.copyWith(
             backgroundColor: activeToken
-                ? const Color(0xFFE6E0F5)
+                ? tokens.selection
                 : referenceHighlightColor,
           )
         : style,
@@ -735,17 +749,21 @@ ReferenceSpan? _referenceForRange(
   return null;
 }
 
-Color? _referenceHighlightColor(ReferenceSpan? reference) {
+Color? _referenceHighlightColor(
+  ReferenceSpan? reference,
+  VityoWorkbenchTokens tokens,
+) {
   if (reference == null) {
     return null;
   }
+  Color wash(Color color) => color.withValues(alpha: 0.18);
   if (reference.isDeclaration) {
-    return const Color(0xFFF5DA91);
+    return wash(tokens.warning);
   }
   return switch (reference.access) {
-    ReferenceAccess.declaration => const Color(0xFFF5DA91),
-    ReferenceAccess.read => const Color(0xFFDDEACB),
-    ReferenceAccess.write => const Color(0xFFD8EAF6),
+    ReferenceAccess.declaration => wash(tokens.warning),
+    ReferenceAccess.read => wash(tokens.success),
+    ReferenceAccess.write => wash(tokens.blocked),
   };
 }
 
@@ -924,7 +942,9 @@ void _appendCaretAwareText(
       TextSpan(
         text: slice,
         style: selected
-            ? style.copyWith(backgroundColor: const Color(0xFFCFD8F8))
+            ? style.copyWith(
+                backgroundColor: VityoWorkbenchTokens.of(context).selection,
+              )
             : style,
       ),
     );
@@ -977,26 +997,27 @@ Color _diagnosticStripeColor(
   List<Diagnostic> diagnostics,
 ) {
   if (diagnostics.any((item) => item.severity == DiagnosticSeverity.error)) {
-    return _severityColor(DiagnosticSeverity.error);
+    return _severityColor(context, DiagnosticSeverity.error);
   }
   if (diagnostics.any((item) => item.severity == DiagnosticSeverity.warning)) {
-    return _severityColor(DiagnosticSeverity.warning);
+    return _severityColor(context, DiagnosticSeverity.warning);
   }
   if (diagnostics.any((item) => item.severity == DiagnosticSeverity.hint)) {
-    return _severityColor(DiagnosticSeverity.hint);
+    return _severityColor(context, DiagnosticSeverity.hint);
   }
   return Colors.transparent;
 }
 
-Color _severityColor(DiagnosticSeverity severity) {
-  switch (severity) {
-    case DiagnosticSeverity.error:
-      return const Color(0xFFCB4D45);
-    case DiagnosticSeverity.warning:
-      return const Color(0xFFD5962A);
-    case DiagnosticSeverity.hint:
-      return const Color(0xFF6980B5);
-  }
+Color _severityColor(BuildContext context, DiagnosticSeverity severity) {
+  final dark = Theme.brightnessOf(context) == Brightness.dark;
+  return switch (severity) {
+    DiagnosticSeverity.error =>
+      dark ? const Color(0xFFF2857A) : const Color(0xFFCB4D45),
+    DiagnosticSeverity.warning =>
+      dark ? const Color(0xFFEFBE6A) : const Color(0xFFD5962A),
+    DiagnosticSeverity.hint =>
+      dark ? const Color(0xFF82A6D8) : const Color(0xFF6980B5),
+  };
 }
 
 TextStyle _textStyleForToken(
@@ -1008,9 +1029,10 @@ TextStyle _textStyleForToken(
 }) {
   return EditorFlutterTextStyleBinding(
     semanticThemeBinding: semanticThemeBinding,
+    brightness: Theme.brightnessOf(context),
   ).styleForToken(
     baseStyle: Theme.of(context).textTheme.bodyMedium!.copyWith(
-      fontFamily: 'monospace',
+      fontFamily: VityoTheme.monoFontFamily,
       fontSize: 13.5,
       height: 1.5,
     ),
@@ -1152,9 +1174,9 @@ class _CollapsedBlockSummary extends StatelessWidget {
         margin: const EdgeInsets.only(left: 62, top: 2, bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFF7F2E9),
+          color: VityoWorkbenchTokens.of(context).region,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: const Color(0xFFD8D0C2)),
+          border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
         ),
         child: Text(
           '$hiddenLineCount folded ${hiddenLineCount == 1 ? 'line' : 'lines'}',

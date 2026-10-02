@@ -458,7 +458,10 @@ List<ModuleDefinition> createSmokeModuleDefinitions() {
   ];
 }
 
-Future<AppBootstrap> createLiveWorkflowBootstrap(PlatformTarget target) async {
+Future<AppBootstrap> createLiveWorkflowBootstrap(
+  PlatformTarget target, {
+  ShellLayoutPreferencesStore? shellLayoutPreferencesStore,
+}) async {
   final projectSnapshot = createProjectSnapshot(target).copyWith(
     activeCompiler: const CompilerHandshakeSnapshot(
       binaryPath: '/toolchains/styio/bin/styio',
@@ -606,6 +609,7 @@ Future<AppBootstrap> createLiveWorkflowBootstrap(PlatformTarget target) async {
     dependencySourceAdapter: const _LiveDependencySourceAdapter(),
     deploymentAdapter: const _LiveDeploymentAdapter(),
     toolchainStatusReport: toolchainStatusReport,
+    shellLayoutPreferencesStore: shellLayoutPreferencesStore,
   );
 }
 

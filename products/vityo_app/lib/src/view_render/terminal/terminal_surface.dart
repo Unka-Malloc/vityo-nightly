@@ -4,6 +4,7 @@ import '../../view_ide/environment/environment.dart';
 import '../../view_ide/runtime/runtime.dart';
 import '../../view_ide/toolchain/toolchain.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 class TerminalSurface extends StatelessWidget {
   const TerminalSurface({
@@ -319,7 +320,7 @@ class TerminalSurface extends StatelessWidget {
                     key: const ValueKey('terminal-output-buffer'),
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF111A1F),
+                      color: VityoWorkbenchTokens.of(context).editor,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     padding: const EdgeInsets.all(12),
@@ -329,8 +330,8 @@ class TerminalSurface extends StatelessWidget {
                         return Text(
                           combinedEntries[index],
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: const Color(0xFFD9E7DE),
-                            fontFamily: 'monospace',
+                            color: VityoWorkbenchTokens.of(context).ink,
+                            fontFamily: VityoTheme.monoFontFamily,
                           ),
                         );
                       },

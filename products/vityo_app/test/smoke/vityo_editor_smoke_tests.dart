@@ -86,15 +86,17 @@ void _registerEditorSmokeTests() {
 
     await tester.pumpWidget(VityoApp(bootstrap: bootstrap));
 
+    final workbenchTokens = VityoTheme.resolve()
+        .extension<VityoWorkbenchTokens>()!;
     expect(
       backgroundsForTextOnLine(tester, lineIndex: 0, text: 'value'),
-      contains(const Color(0xFFF5DA91)),
+      contains(workbenchTokens.warning.withValues(alpha: 0.18)),
     );
     bootstrap.editorController.selectCollapsed(2);
     await tester.pump();
     expect(
       backgroundsForTextOnLine(tester, lineIndex: 0, text: 'value'),
-      contains(const Color(0xFFDDEACB)),
+      contains(workbenchTokens.success.withValues(alpha: 0.18)),
     );
   });
 

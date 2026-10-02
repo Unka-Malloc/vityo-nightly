@@ -2011,7 +2011,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                         ),
                         border: Border.all(
                           color: _focusNode.hasFocus
-                              ? const Color(0xFF8B7CC5)
+                              ? VityoWorkbenchTokens.of(context).focus
                               : Colors.transparent,
                           width: 1.5,
                         ),
@@ -2243,7 +2243,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-quick-fix-lookup'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2321,9 +2321,9 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
       key: const ValueKey('source-quick-fix-preview'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E9),
+        color: VityoWorkbenchTokens.of(context).region,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFD8D0C2)),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -2394,7 +2394,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-symbol-lookup'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2434,9 +2434,11 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
               decoration: BoxDecoration(
-                color: const Color(0xFFF7F2E9),
+                color: VityoWorkbenchTokens.of(context).region,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFD8D0C2)),
+                border: Border.all(
+                  color: VityoWorkbenchTokens.of(context).divider,
+                ),
               ),
               child: Text(
                 queryLabel,
@@ -2498,7 +2500,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-inline-rename-panel'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2592,7 +2594,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-introduce-variable-panel'),
-      color: const Color(0xFFF0F7F4),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2692,7 +2694,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-extract-function-panel'),
-      color: const Color(0xFFF0F7F4),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2817,7 +2819,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-change-signature-panel'),
-      color: const Color(0xFFF4F5FB),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2931,7 +2933,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     final references = widget.controller.referencesAtSelection;
     return Material(
       key: const ValueKey('source-usages-panel'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -2998,7 +3000,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     final conflicts = plan?.conflicts ?? const <SafeDeleteConflict>[];
     return Material(
       key: const ValueKey('source-safe-delete-panel'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3093,7 +3095,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
     final conflicts = plan?.conflicts ?? const <InlineVariableConflict>[];
     return Material(
       key: const ValueKey('source-inline-variable-panel'),
-      color: const Color(0xFFF0F7F4),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3211,7 +3213,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-quick-doc-panel'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3318,7 +3320,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-completion-lookup'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3394,9 +3396,9 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
       key: const ValueKey('source-completion-preview'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F2E9),
+        color: VityoWorkbenchTokens.of(context).region,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFD8D0C2)),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -3450,7 +3452,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-surround-lookup'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3521,7 +3523,7 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
 
     return Material(
       key: const ValueKey('source-parameter-info-panel'),
-      color: const Color(0xFFFDF8EE),
+      color: VityoWorkbenchTokens.of(context).elevated,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -3677,7 +3679,9 @@ class _UsageResultTile extends StatelessWidget {
     final theme = Theme.of(context);
     final accessLabel = _referenceAccessLabel(reference);
     return Material(
-      color: selected ? const Color(0xFFE6E0F5) : Colors.transparent,
+      color: selected
+          ? VityoWorkbenchTokens.of(context).selection
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -3891,7 +3895,9 @@ class _QuickFixLookupTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: selected ? const Color(0xFFE6E0F5) : Colors.transparent,
+      color: selected
+          ? VityoWorkbenchTokens.of(context).selection
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -3961,7 +3967,9 @@ class _SymbolLookupTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: selected ? const Color(0xFFE6E0F5) : Colors.transparent,
+      color: selected
+          ? VityoWorkbenchTokens.of(context).selection
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -4048,7 +4056,9 @@ class _CompletionLookupTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: selected ? const Color(0xFFE6E0F5) : Colors.transparent,
+      color: selected
+          ? VityoWorkbenchTokens.of(context).selection
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -4116,7 +4126,9 @@ class _SurroundTemplateTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: selected ? const Color(0xFFE6E0F5) : Colors.transparent,
+      color: selected
+          ? VityoWorkbenchTokens.of(context).selection
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -4183,7 +4195,9 @@ class _ParameterInfoParameterTile extends StatelessWidget {
     final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: active ? const Color(0xFFE6E0F5) : Colors.transparent,
+        color: active
+            ? VityoWorkbenchTokens.of(context).selection
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),

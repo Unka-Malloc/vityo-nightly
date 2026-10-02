@@ -251,6 +251,7 @@ void main() {
     expect(savedOverride?.ink, isNull);
     expect(savedOverride?.muted, isNull);
     expect(savedOverride?.toJson(), <String, Object?>{
+      'preset': 'graphite',
       'canvas': 0xFF101820,
       'panel': 0xFFFAFAFA,
       'accent': 0xFF00A878,

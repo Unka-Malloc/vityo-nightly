@@ -36,6 +36,41 @@ flutter:
   assets:
     - assets/module_manifests/
     - assets/capability_matrices/
+  fonts:
+    - family: Plus Jakarta Sans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-400.ttf
+          weight: 400
+        - asset: assets/fonts/PlusJakartaSans-500.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-600.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-700.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-800.ttf
+          weight: 800
+    - family: Azeret Mono
+      fonts:
+        - asset: assets/fonts/AzeretMono-400.ttf
+          weight: 400
+        - asset: assets/fonts/AzeretMono-500.ttf
+          weight: 500
+        - asset: assets/fonts/AzeretMono-600.ttf
+          weight: 600
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/plex/IBMPlexMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/plex/IBMPlexMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/plex/IBMPlexMono-SemiBold.ttf
+          weight: 600
+    - family: IBM Plex Sans Condensed
+      fonts:
+        - asset: assets/fonts/plex/IBMPlexSansCondensed-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/plex/IBMPlexSansCondensed-Bold.ttf
+          weight: 700
 
 dependency_overrides:
   lints: 5.1.1

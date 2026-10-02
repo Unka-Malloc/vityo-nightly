@@ -62,7 +62,7 @@ class _HighlightedLineRow extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: caretOnLine
-                ? theme.colorScheme.primary.withValues(alpha: 0.08)
+                ? theme.colorScheme.onSurface.withValues(alpha: 0.04)
                 : Colors.transparent,
           ),
           child: Padding(
@@ -76,7 +76,7 @@ class _HighlightedLineRow extends StatelessWidget {
                     '${lineIndex + 1}',
                     textAlign: TextAlign.end,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
+                      fontFamily: VityoTheme.monoFontFamily,
                     ),
                   ),
                 ),
@@ -154,7 +154,7 @@ class _InlineLanguageFeedback extends StatelessWidget {
 
     if (compact) {
       final diagnostic = diagnostics.first;
-      final severityColor = _severityColor(diagnostic.severity);
+      final severityColor = _severityColor(context, diagnostic.severity);
       return Padding(
         padding: const EdgeInsets.only(left: 60, right: 10, bottom: 4),
         child: Container(
@@ -204,7 +204,7 @@ class _InlineLanguageFeedback extends StatelessWidget {
       padding: const EdgeInsets.only(left: 68, right: 8, bottom: 10),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFFF5EFE4),
+          color: VityoWorkbenchTokens.of(context).region,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Theme.of(context).dividerColor),
         ),
@@ -425,28 +425,27 @@ class _InlineFeedbackHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = VityoWorkbenchTokens.of(context);
     final pills = <Widget>[];
 
     if (diagnostics.isNotEmpty) {
       pills.add(
         _InlineFeedbackBadge(
           label: diagnostics.first.severity.name,
-          color: _severityColor(diagnostics.first.severity),
+          color: _severityColor(context, diagnostics.first.severity),
         ),
       );
     }
 
     if (hover != null) {
-      pills.add(
-        const _InlineFeedbackBadge(label: 'hover', color: Color(0xFF6A85B6)),
-      );
+      pills.add(_InlineFeedbackBadge(label: 'hover', color: tokens.accent));
     }
 
     if (completions.isNotEmpty) {
       pills.add(
         _InlineFeedbackBadge(
           label: '${completions.length} suggestions',
-          color: const Color(0xFF6B7B3E),
+          color: tokens.success,
         ),
       );
     }
@@ -455,7 +454,7 @@ class _InlineFeedbackHeader extends StatelessWidget {
       pills.add(
         _InlineFeedbackBadge(
           label: '${formattingEdits.length} format edit',
-          color: const Color(0xFF8D6C3B),
+          color: tokens.warning,
         ),
       );
     }
@@ -464,7 +463,7 @@ class _InlineFeedbackHeader extends StatelessWidget {
       pills.add(
         _InlineFeedbackBadge(
           label: '${quickFixes.length} quick fix',
-          color: const Color(0xFF8A5A3B),
+          color: tokens.error,
         ),
       );
     }
@@ -473,17 +472,14 @@ class _InlineFeedbackHeader extends StatelessWidget {
       pills.add(
         _InlineFeedbackBadge(
           label: 'token ${activeToken!.kind.name}',
-          color: const Color(0xFF57676B),
+          color: tokens.muted,
         ),
       );
     }
 
     if (pills.isEmpty) {
       pills.add(
-        const _InlineFeedbackBadge(
-          label: 'active line',
-          color: Color(0xFF7C736C),
-        ),
+        _InlineFeedbackBadge(label: 'active line', color: tokens.muted),
       );
     }
 
@@ -511,7 +507,7 @@ class _InlineActionChip extends StatelessWidget {
       onTap: onTap,
       child: Ink(
         decoration: BoxDecoration(
-          color: const Color(0xFFEDE6D9),
+          color: VityoWorkbenchTokens.of(context).elevated,
           borderRadius: BorderRadius.circular(999),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -953,7 +949,7 @@ class _LanguageServicePaneState extends State<_LanguageServicePane> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Material(
                   color: _isRangeSelected(diagnostic.range)
-                      ? const Color(0xFFE6E0F5)
+                      ? VityoWorkbenchTokens.of(context).selection
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                   child: InkWell(
@@ -1037,13 +1033,14 @@ class _LanguageServicePaneState extends State<_LanguageServicePane> {
   }
 
   Color _diagnosticColor(DiagnosticSeverity severity) {
+    final tokens = VityoWorkbenchTokens.of(context);
     switch (severity) {
       case DiagnosticSeverity.error:
-        return const Color(0xFFB3261E);
+        return tokens.error;
       case DiagnosticSeverity.warning:
-        return const Color(0xFF8A5A00);
+        return tokens.warning;
       case DiagnosticSeverity.hint:
-        return const Color(0xFF496184);
+        return tokens.muted;
     }
   }
 
@@ -1123,7 +1120,7 @@ class _LanguageServicePaneState extends State<_LanguageServicePane> {
               padding: const EdgeInsets.only(bottom: 6),
               child: Material(
                 color: _isSymbolSelected(symbol)
-                    ? const Color(0xFFE6E0F5)
+                    ? VityoWorkbenchTokens.of(context).selection
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
                 child: InkWell(

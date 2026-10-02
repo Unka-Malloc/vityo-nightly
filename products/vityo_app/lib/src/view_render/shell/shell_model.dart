@@ -7,27 +7,11 @@ import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/shell_runtime/shell_runtime.dart';
 import 'shell_layout_plan.dart';
 
-enum BottomSurfaceTab {
+enum WorkbenchRoute {
   runtime,
-  commands,
   navigate,
-  locations,
-  documentLinks,
-  documentHighlights,
-  codeLenses,
-  declarations,
-  definitions,
-  typeDefinitions,
-  implementations,
-  typeHierarchy,
-  outline,
-  rename,
-  symbols,
-  usages,
-  calls,
   search,
   problems,
-  actions,
   terminal,
   agent,
   sourceControl,
@@ -96,6 +80,7 @@ class ShellModel extends ShellRuntimeModel {
     super.workspaceQuickFixTelemetryWorkspaceId,
     super.workspaceTextSearchProvider,
     ShellLayoutPreferenceController? shellLayoutPreferenceController,
+    this.shellLayoutPreferencesStore,
   }) : vityodClient = vityodClient,
        shellLayoutPreferenceController =
            shellLayoutPreferenceController ??
@@ -110,9 +95,14 @@ class ShellModel extends ShellRuntimeModel {
   }
 
   final ShellLayoutPreferenceController shellLayoutPreferenceController;
+  final ShellLayoutPreferencesStore? shellLayoutPreferencesStore;
   final VityodClient? vityodClient;
   StreamSubscription<VityodConnectionState>? _vityodStateSubscription;
+  Future<void> _shellLayoutSaveQueue = Future<void>.value();
+  Future<void>? _shellLayoutLoadFuture;
+  String? _shellLayoutLoadingWorkspaceId;
   bool _editorLanguageInspectorVisible = false;
+  bool _shellLayoutDisposed = false;
 
   VityodConnectionState get localServiceConnection =>
       vityodClient?.state ?? const VityodConnectionState.disconnected();
@@ -140,20 +130,21 @@ class ShellModel extends ShellRuntimeModel {
   ) async {
     final result = await super.executeHostedBackendAction(action);
     if (action.kind == HostedBackendRetryActionKind.openSettings) {
-      selectBottomTab(BottomSurfaceTab.settings);
+      selectWorkbenchRoute(WorkbenchRoute.settings);
     }
     return result;
   }
 
   @override
   void dispose() {
+    _shellLayoutDisposed = true;
     unawaited(_vityodStateSubscription?.cancel());
     _vityodStateSubscription = null;
     super.dispose();
   }
 
-  BottomSurfaceTab get activeBottomTab =>
-      shellLayoutPreferenceController.preferences.activeBottomTab;
+  WorkbenchRoute get activeWorkbenchRoute =>
+      shellLayoutPreferenceController.preferences.activeWorkbenchRoute;
 
   bool get editorLanguageInspectorVisible => _editorLanguageInspectorVisible;
 
@@ -162,23 +153,134 @@ class ShellModel extends ShellRuntimeModel {
     notifyListeners();
   }
 
-  void selectBottomTab(BottomSurfaceTab tab) {
-    if (activeBottomTab == tab) {
-      if (_isDockedBottomTab(tab)) {
+  void selectWorkbenchRoute(WorkbenchRoute route) {
+    if (activeWorkbenchRoute == route) {
+      if (_isDockedWorkbenchRoute(route)) {
         final expanded =
             shellLayoutPreferenceController.preferences.bottomPanelExpanded;
         shellLayoutPreferenceController.setBottomPanelExpanded(!expanded);
         appendLog('Bottom surface ${expanded ? "collapsed" : "expanded"}.');
+        unawaited(persistShellLayoutPreferences());
       }
       return;
     }
-    shellLayoutPreferenceController.selectBottomTab(tab);
+    shellLayoutPreferenceController.selectWorkbenchRoute(route);
     // Mobile presents every workbench destination through the bottom surface,
     // while desktop routes some destinations into the primary sidebar. Keeping
     // the preference expanded here serves both layouts without coupling the
     // shared model to a viewport family.
     shellLayoutPreferenceController.setBottomPanelExpanded(true);
-    appendLog('Bottom surface switched to ${tab.name}.');
+    appendLog('Workbench route switched to ${route.name}.');
+    unawaited(persistShellLayoutPreferences());
+  }
+
+  Future<void> loadShellLayoutPreferences() {
+    final store = shellLayoutPreferencesStore;
+    if (store == null) {
+      return Future<void>.value();
+    }
+    final workspaceId = workspaceController.activeProject.id;
+    final inFlight = _shellLayoutLoadFuture;
+    if (_shellLayoutLoadingWorkspaceId == workspaceId && inFlight != null) {
+      return inFlight;
+    }
+    late final Future<void> loadFuture;
+    loadFuture =
+        _restoreShellLayoutPreferences(
+          store: store,
+          workspaceId: workspaceId,
+        ).whenComplete(() {
+          if (identical(_shellLayoutLoadFuture, loadFuture)) {
+            _shellLayoutLoadFuture = null;
+            _shellLayoutLoadingWorkspaceId = null;
+          }
+        });
+    _shellLayoutLoadingWorkspaceId = workspaceId;
+    _shellLayoutLoadFuture = loadFuture;
+    return loadFuture;
+  }
+
+  Future<void> _restoreShellLayoutPreferences({
+    required ShellLayoutPreferencesStore store,
+    required String workspaceId,
+  }) async {
+    final revisionBeforeLoad = shellLayoutPreferenceController.revision;
+    try {
+      final preferences = await store.readPreferences(workspaceId: workspaceId);
+      if (shellLayoutPreferenceController.revision == revisionBeforeLoad) {
+        shellLayoutPreferenceController.hydrate(preferences);
+        appendLog('Workbench layout restored for $workspaceId.');
+      } else {
+        await persistShellLayoutPreferences();
+      }
+    } on Object catch (error) {
+      appendLog('Workbench layout restore failed: $error');
+    }
+  }
+
+  Future<void> persistShellLayoutPreferences() {
+    final store = shellLayoutPreferencesStore;
+    if (store == null) {
+      return Future<void>.value();
+    }
+    final snapshot = shellLayoutPreferenceController.preferences.copyWith(
+      workspaceId: workspaceController.activeProject.id,
+    );
+    _shellLayoutSaveQueue = _shellLayoutSaveQueue.then((_) async {
+      try {
+        await store.savePreferences(snapshot);
+      } on Object catch (error) {
+        if (!_shellLayoutDisposed) {
+          appendLog('Workbench layout save failed: $error');
+        }
+      }
+    });
+    return _shellLayoutSaveQueue;
+  }
+
+  void setPrimarySidebarVisible(bool visible) {
+    if (!shellLayoutPreferenceController.setPrimarySidebarVisible(visible)) {
+      return;
+    }
+    appendLog('Primary sidebar ${visible ? "opened" : "closed"}.');
+    unawaited(persistShellLayoutPreferences());
+  }
+
+  void activatePrimarySidebar(WorkbenchRoute route) {
+    final preferences = shellLayoutPreferenceController.preferences;
+    if (activeWorkbenchRoute == route && preferences.primarySidebarVisible) {
+      setPrimarySidebarVisible(false);
+      return;
+    }
+    shellLayoutPreferenceController.selectWorkbenchRoute(route);
+    shellLayoutPreferenceController.setPrimarySidebarVisible(true);
+    appendLog('Primary sidebar switched to ${route.name}.');
+    unawaited(persistShellLayoutPreferences());
+  }
+
+  void resizePrimarySidebar(double width) {
+    if (shellLayoutPreferenceController.setPrimarySidebarWidth(width)) {
+      notifyListeners();
+    }
+  }
+
+  void resizeBottomPanel(double height) {
+    if (shellLayoutPreferenceController.setBottomPanelHeight(height)) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> commitShellLayoutResize() {
+    appendLog('Workbench layout dimensions updated.');
+    return persistShellLayoutPreferences();
+  }
+
+  void setBottomPanelExpanded(bool expanded) {
+    if (!shellLayoutPreferenceController.setBottomPanelExpanded(expanded)) {
+      return;
+    }
+    appendLog('Bottom surface ${expanded ? "expanded" : "collapsed"}.');
+    unawaited(persistShellLayoutPreferences());
   }
 
   @override
@@ -187,12 +289,12 @@ class ShellModel extends ShellRuntimeModel {
   ) async {
     await super.handleToolchainRecoveryAction(action);
     if (action.id == 'show-toolchain-logs') {
-      selectBottomTab(BottomSurfaceTab.debug);
+      selectWorkbenchRoute(WorkbenchRoute.debug);
     } else if (action.id == 'select-existing-toolchain' ||
         action.id == 'configure-managed-download' ||
         action.id == 'enable-toolchain-installation' ||
         action.id == 'install-managed-toolchain') {
-      selectBottomTab(BottomSurfaceTab.settings);
+      selectWorkbenchRoute(WorkbenchRoute.settings);
     }
   }
 
@@ -200,20 +302,20 @@ class ShellModel extends ShellRuntimeModel {
   Future<void> executeCommand(AppCommandId commandId) async {
     switch (commandId) {
       case AppCommandId.showRuntime:
-        selectBottomTab(BottomSurfaceTab.runtime);
+        selectWorkbenchRoute(WorkbenchRoute.runtime);
         return;
       case AppCommandId.showAgent:
-        selectBottomTab(BottomSurfaceTab.agent);
+        selectWorkbenchRoute(WorkbenchRoute.agent);
         return;
       case AppCommandId.searchWorkspace:
-        selectBottomTab(BottomSurfaceTab.search);
+        selectWorkbenchRoute(WorkbenchRoute.search);
         appendLog('Workspace search surface opened.');
         return;
       case AppCommandId.showDebug:
-        selectBottomTab(BottomSurfaceTab.debug);
+        selectWorkbenchRoute(WorkbenchRoute.debug);
         return;
       case AppCommandId.openSettings:
-        selectBottomTab(BottomSurfaceTab.settings);
+        selectWorkbenchRoute(WorkbenchRoute.settings);
         appendLog('Settings surface opened.');
         return;
       case AppCommandId.openFile:
@@ -221,87 +323,45 @@ class ShellModel extends ShellRuntimeModel {
       case AppCommandId.commandPalette:
       case AppCommandId.acceptExternalChange:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.commandPalette);
+        selectWorkbenchRoute(WorkbenchRoute.commandPalette);
         return;
       case AppCommandId.quickOpen:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.navigate);
+        selectWorkbenchRoute(WorkbenchRoute.navigate);
         return;
       case AppCommandId.showRecentLocations:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.locations);
-        return;
       case AppCommandId.showWorkspaceDocumentLinks:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.documentLinks);
-        return;
       case AppCommandId.showWorkspaceDocumentHighlights:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.documentHighlights);
-        return;
       case AppCommandId.showWorkspaceCodeLenses:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.codeLenses);
-        return;
       case AppCommandId.goToWorkspaceDeclaration:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.declarations);
-        return;
       case AppCommandId.goToWorkspaceDefinition:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.definitions);
-        return;
       case AppCommandId.goToWorkspaceTypeDefinition:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.typeDefinitions);
-        return;
       case AppCommandId.goToWorkspaceImplementation:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.implementations);
-        return;
       case AppCommandId.showWorkspaceTypeHierarchy:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.typeHierarchy);
-        return;
       case AppCommandId.navigateBack:
       case AppCommandId.navigateForward:
-        await super.executeCommand(commandId);
-        return;
       case AppCommandId.showWorkspaceOutline:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.outline);
-        return;
       case AppCommandId.renameWorkspaceSymbol:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.rename);
-        return;
       case AppCommandId.searchWorkspaceSymbols:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.symbols);
-        return;
       case AppCommandId.findWorkspaceReferences:
-        await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.usages);
-        return;
       case AppCommandId.showWorkspaceCallHierarchy:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.calls);
         return;
       case AppCommandId.save:
       case AppCommandId.saveAll:
       case AppCommandId.run:
         await super.executeCommand(commandId);
         if (commandId == AppCommandId.run) {
-          selectBottomTab(BottomSurfaceTab.runtime);
+          selectWorkbenchRoute(WorkbenchRoute.runtime);
         }
         return;
       case AppCommandId.showWorkspaceProblems:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.problems);
+        selectWorkbenchRoute(WorkbenchRoute.problems);
         return;
       case AppCommandId.showWorkspaceCodeActions:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.actions);
+        selectWorkbenchRoute(WorkbenchRoute.problems);
         return;
       case AppCommandId.toggleBreakpoint:
       case AppCommandId.startDebugging:
@@ -355,7 +415,7 @@ class ShellModel extends ShellRuntimeModel {
         return;
       case AppCommandId.runSelectedTarget:
         await super.executeCommand(commandId);
-        selectBottomTab(BottomSurfaceTab.runtime);
+        selectWorkbenchRoute(WorkbenchRoute.runtime);
         return;
       default:
         await super.executeCommand(commandId);
@@ -364,15 +424,15 @@ class ShellModel extends ShellRuntimeModel {
   }
 }
 
-bool _isDockedBottomTab(BottomSurfaceTab tab) {
-  return switch (tab) {
-    BottomSurfaceTab.runtime ||
-    BottomSurfaceTab.terminal ||
-    BottomSurfaceTab.commandPalette ||
-    BottomSurfaceTab.problems ||
-    BottomSurfaceTab.testing ||
-    BottomSurfaceTab.debug ||
-    BottomSurfaceTab.agent => true,
+bool _isDockedWorkbenchRoute(WorkbenchRoute route) {
+  return switch (route) {
+    WorkbenchRoute.runtime ||
+    WorkbenchRoute.terminal ||
+    WorkbenchRoute.commandPalette ||
+    WorkbenchRoute.problems ||
+    WorkbenchRoute.testing ||
+    WorkbenchRoute.debug ||
+    WorkbenchRoute.agent => true,
     _ => false,
   };
 }

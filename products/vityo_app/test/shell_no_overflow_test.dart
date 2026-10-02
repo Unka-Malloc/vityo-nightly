@@ -7,7 +7,7 @@ void main() {
       'desktop layout plan defines fixed-width regions with no overflow risk',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: BottomSurfaceTab.runtime,
+          activeWorkbenchRoute: WorkbenchRoute.runtime,
           compact: false,
         );
 
@@ -20,29 +20,26 @@ void main() {
 
     test('compact layout removes activity rail to prevent narrow overflow', () {
       final plan = ShellLayoutPlan.forViewport(
-        activeBottomTab: BottomSurfaceTab.debug,
+        activeWorkbenchRoute: WorkbenchRoute.debug,
         compact: true,
       );
 
       expect(plan.mode, ShellLayoutMode.compact);
       expect(plan.panelById('activity-rail')?.visible, isFalse);
-      expect(
-        plan.panelById('activity-rail')?.todo,
-        contains('compact activity'),
-      );
+      expect(plan.panelById('activity-rail')?.todo, isEmpty);
       expect(plan.renderBinding().compactActivityFallback, isTrue);
       expect(plan.renderBinding().viewportKey, 'shell-viewport-mobile');
     });
 
     test('all core bottom panels have bounded height within layout', () {
-      for (final tab in BottomSurfaceTab.values) {
+      for (final tab in WorkbenchRoute.values) {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: tab,
+          activeWorkbenchRoute: tab,
           compact: false,
         );
         final binding = plan.renderBinding();
         expect(
-          binding.activeBottomPanelId,
+          binding.activePanelId,
           isNotEmpty,
           reason: 'Each bottom tab must map to a panel ID',
         );
@@ -73,15 +70,15 @@ void main() {
       'screen-reader semantics keys are stable across plan serialization',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: BottomSurfaceTab.problems,
+          activeWorkbenchRoute: WorkbenchRoute.problems,
           compact: false,
         );
         final json = plan.toJson();
         final restored = ShellLayoutPlan.fromJson(json);
 
-        expect(restored.activeBottomTab, BottomSurfaceTab.problems);
+        expect(restored.activeWorkbenchRoute, WorkbenchRoute.problems);
         expect(restored.renderBinding().visiblePanelIds, isNotEmpty);
-        expect(restored.renderBinding().activeBottomPanelId, 'bottom.problems');
+        expect(restored.renderBinding().activePanelId, 'bottom.problems');
 
         // Verify viewport key is deterministic
         expect(plan.renderBinding().viewportKey, 'shell-viewport-desktop');
@@ -90,9 +87,9 @@ void main() {
     );
 
     test('compact render binding uses mobile key consistently', () {
-      for (final tab in BottomSurfaceTab.values) {
+      for (final tab in WorkbenchRoute.values) {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: tab,
+          activeWorkbenchRoute: tab,
           compact: true,
         );
         expect(

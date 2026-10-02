@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/frontend_shell/frontend_shell.dart';
+import 'package:vityo_app/src/view_render/theme/vityo_theme.dart';
 import 'package:vityo_app/src/ide/editor/editor_controller.dart';
 import 'package:vityo_app/src/ide/editor/document_state.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/adapter_contracts.dart';

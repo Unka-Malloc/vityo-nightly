@@ -672,15 +672,18 @@ class _WorkspaceReplacePreviewView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
               child: Text(
                 'Apply uses this preview only if document revisions still match.',
                 style: theme.textTheme.bodySmall,
               ),
             ),
-            const SizedBox(width: 10),
             FilledButton.icon(
               key: const ValueKey('workspace-replace-apply-submit'),
               onPressed:

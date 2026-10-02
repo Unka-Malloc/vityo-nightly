@@ -125,7 +125,7 @@ extension _HighVolumeViewportBuilder on _SourcePreviewPaneState {
           _textInputClient.provisionalText,
           key: const ValueKey('source-composition-range'),
           style: theme.textTheme.bodyMedium?.copyWith(
-            backgroundColor: const Color(0x337A65B3),
+            backgroundColor: VityoWorkbenchTokens.of(context).selection,
             decoration: TextDecoration.underline,
           ),
         ),

@@ -108,13 +108,14 @@ class _ExplorerSidebarState extends State<_ExplorerSidebar> {
     WorkspaceFileExplorerState state,
   ) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final watch = snapshot.watch;
     final telemetry = watch?.telemetry;
     final statusColor = switch (watch?.plan.status) {
-      WorkspaceFileExplorerWatchStatus.active => const Color(0xFF4A8A68),
-      WorkspaceFileExplorerWatchStatus.blocked => theme.colorScheme.error,
-      WorkspaceFileExplorerWatchStatus.pending => const Color(0xFFB07A2B),
-      null => theme.colorScheme.outline,
+      WorkspaceFileExplorerWatchStatus.active => tokens.success,
+      WorkspaceFileExplorerWatchStatus.blocked => tokens.error,
+      WorkspaceFileExplorerWatchStatus.pending => tokens.warning,
+      null => tokens.muted,
     };
     final statusLabel = switch (watch?.plan.status) {
       WorkspaceFileExplorerWatchStatus.active => 'watching',
@@ -325,7 +326,7 @@ class _ExplorerSidebarState extends State<_ExplorerSidebar> {
             icon: Icon(
               expanded ? Icons.folder_open_rounded : Icons.folder_outlined,
               size: 17,
-              color: const Color(0xFFC18D3D),
+              color: VityoWorkbenchTokens.of(context).accent,
             ),
             label: node.name,
           ),
@@ -696,14 +697,16 @@ class _ExplorerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final selectedColor = active
-        ? theme.colorScheme.primaryContainer.withValues(alpha: 0.62)
+        ? tokens.hover
         : selected
-        ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.42)
+        ? tokens.hover.withValues(alpha: 0.03)
         : Colors.transparent;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
+      hoverColor: tokens.hover.withValues(alpha: 0.6),
       child: Ink(
         height: 29,
         padding: EdgeInsets.only(left: 4 + depth * 12, right: 3),
@@ -720,7 +723,8 @@ class _ExplorerRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  color: active ? tokens.ink : null,
                 ),
               ),
             ),
@@ -741,16 +745,22 @@ class _ExplorerWatchAlert extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     return Container(
       key: const ValueKey('explorer-watch-alert'),
-      color: theme.colorScheme.errorContainer.withValues(alpha: 0.55),
-      padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
+      decoration: BoxDecoration(
+        color: tokens.error.withValues(alpha: 0.06),
+        border: Border(
+          bottom: BorderSide(color: tokens.error.withValues(alpha: 0.18)),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
       child: Row(
         children: [
           Icon(
             Icons.warning_amber_rounded,
-            size: 16,
-            color: theme.colorScheme.error,
+            size: 13,
+            color: tokens.error.withValues(alpha: 0.9),
           ),
           const SizedBox(width: 7),
           Expanded(
@@ -758,15 +768,23 @@ class _ExplorerWatchAlert extends StatelessWidget {
               message,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: tokens.ink.withValues(alpha: 0.78),
+                letterSpacing: 0,
+              ),
             ),
           ),
           IconButton(
             key: const ValueKey('explorer-watch-alert-refresh'),
             tooltip: 'Rebuild file snapshot',
             visualDensity: VisualDensity.compact,
+            hoverColor: tokens.hover,
             onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded, size: 16),
+            icon: Icon(
+              Icons.refresh_rounded,
+              size: 14,
+              color: tokens.muted,
+            ),
           ),
         ],
       ),

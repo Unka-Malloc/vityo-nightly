@@ -4,6 +4,7 @@ import '../../ide/workspace/source_control_commit_draft_store.dart';
 import '../../ide/workspace/source_control_merge_editor.dart';
 import '../../ide/workspace/source_control_status.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 class SourceControlSurface extends StatelessWidget {
   const SourceControlSurface({
@@ -745,7 +746,7 @@ class _SourceControlMergeWorkflowState
                 minLines: widget.viewportProfile.isMobile ? 6 : 8,
                 maxLines: widget.viewportProfile.isMobile ? 10 : 14,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+                  fontFamily: VityoTheme.monoFontFamily,
                 ),
                 decoration: const InputDecoration(
                   labelText: 'Resolved result',
@@ -917,7 +918,7 @@ class _MergeSourcePane extends StatelessWidget {
               child: SelectableText(
                 available ? text : 'File is deleted on this side.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+                  fontFamily: VityoTheme.monoFontFamily,
                   color: available ? null : theme.colorScheme.onSurfaceVariant,
                 ),
               ),

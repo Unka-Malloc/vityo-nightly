@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../ide/local_service/vityod_client.dart';
@@ -24,6 +26,7 @@ import '../settings/settings_surface.dart';
 import '../source_control/source_control.dart';
 import '../terminal/terminal.dart';
 import '../testing/testing.dart';
+import '../theme/vityo_theme.dart';
 import '../../ide/workspace/workspace.dart';
 
 import 'hosted_workspace_lifecycle_banner.dart';
@@ -92,8 +95,8 @@ class VityoShellScaffold extends StatelessWidget {
                         status: servicePresentation.status,
                         actions: _buildTitleCommandActions(context, shell),
                         onOpenCommands: () {
-                          shell.selectBottomTab(
-                            BottomSurfaceTab.commandPalette,
+                          shell.selectWorkbenchRoute(
+                            WorkbenchRoute.commandPalette,
                           );
                         },
                       ),
@@ -103,14 +106,21 @@ class VityoShellScaffold extends StatelessWidget {
                         onRecover: shell.recoverServiceConnection,
                       ),
                     if (hostedClosePlan != null) ...[
-                      HostedWorkspaceLifecycleBanner(
-                        plan: hostedClosePlan,
-                        connectorReport: shell.hostedBackendConnectorReport,
-                        onRetryAction: shell.hostedBackendActionRunning
-                            ? null
-                            : (action) async {
-                                await shell.executeHostedBackendAction(action);
-                              },
+                      Padding(
+                        padding: viewportProfile.isMobile
+                            ? EdgeInsets.zero
+                            : const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                        child: HostedWorkspaceLifecycleBanner(
+                          plan: hostedClosePlan,
+                          connectorReport: shell.hostedBackendConnectorReport,
+                          onRetryAction: shell.hostedBackendActionRunning
+                              ? null
+                              : (action) async {
+                                  await shell.executeHostedBackendAction(
+                                    action,
+                                  );
+                                },
+                        ),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -174,6 +184,7 @@ class VityoShellScaffold extends StatelessWidget {
     ShellModel shell,
   ) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     const titleCommandIds = <AppCommandId>{
       AppCommandId.save,
       AppCommandId.saveAll,
@@ -193,6 +204,7 @@ class VityoShellScaffold extends StatelessWidget {
           child: IconButton(
             key: ValueKey('command-strip-${command.id.name}'),
             visualDensity: VisualDensity.compact,
+            hoverColor: tokens.hover,
             onPressed: shell.blockedReasonForCommand(command.id) == null
                 ? () => shell.executeCommand(command.id)
                 : null,
@@ -200,7 +212,7 @@ class VityoShellScaffold extends StatelessWidget {
               _commandIcon(command.id),
               size: 17,
               color: shell.blockedReasonForCommand(command.id) == null
-                  ? theme.colorScheme.primary
+                  ? tokens.muted
                   : theme.disabledColor,
             ),
           ),
@@ -210,11 +222,12 @@ class VityoShellScaffold extends StatelessWidget {
         child: IconButton(
           key: const ValueKey('command-strip-openSettings'),
           visualDensity: VisualDensity.compact,
+          hoverColor: tokens.hover,
           onPressed: () => shell.executeCommand(AppCommandId.openSettings),
           icon: Icon(
             Icons.settings_outlined,
             size: 17,
-            color: theme.colorScheme.primary,
+            color: tokens.muted,
           ),
         ),
       ),
@@ -225,8 +238,8 @@ class VityoShellScaffold extends StatelessWidget {
     ShellModel shell,
     ViewportProfile viewportProfile,
   ) {
-    switch (shell.activeBottomTab) {
-      case BottomSurfaceTab.runtime:
+    switch (shell.activeWorkbenchRoute) {
+      case WorkbenchRoute.runtime:
         return RuntimeSurface(
           platformTarget: shell.platformTarget,
           viewportProfile: viewportProfile,
@@ -247,7 +260,7 @@ class VityoShellScaffold extends StatelessWidget {
           outputSnapshot: shell.runtimeOutputBuffer.snapshot,
           onOpenNativeToolDiagnostics: shell.openFirstNativeToolDiagnostic,
         );
-      case BottomSurfaceTab.terminal:
+      case WorkbenchRoute.terminal:
         return TerminalSurface(
           viewportProfile: viewportProfile,
           logEntries: shell.debugLog,
@@ -258,17 +271,16 @@ class VityoShellScaffold extends StatelessWidget {
             return shell.executeCommand(AppCommandId.run);
           },
         );
-      case BottomSurfaceTab.commands:
-      case BottomSurfaceTab.commandPalette:
+      case WorkbenchRoute.commandPalette:
         return CommandPaletteSurface(
           viewportProfile: viewportProfile,
           onExecuteCommand: shell.executeCommand,
           onExecuteCommandWithInput: shell.executeCommandWithInput,
           blockedReasonForCommand: shell.blockedReasonForCommand,
         );
-      case BottomSurfaceTab.agent:
+      case WorkbenchRoute.agent:
         return TaskCenter(collaboration: shell.agentCollaboration);
-      case BottomSurfaceTab.sourceControl:
+      case WorkbenchRoute.sourceControl:
         final sourceControlController = shell.sourceControlStatusController;
         Widget buildSourceControlSurface() {
           return SourceControlSurface(
@@ -332,7 +344,7 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: sourceControlController,
           builder: (_, _) => buildSourceControlSurface(),
         );
-      case BottomSurfaceTab.search:
+      case WorkbenchRoute.search:
         return WorkspaceSearchSurface(
           viewportProfile: viewportProfile,
           workspaceFileCount: shell.workspaceController.files.length,
@@ -358,7 +370,7 @@ class VityoShellScaffold extends StatelessWidget {
           onOpenSymbolMatch: (match) =>
               shell.openWorkspaceFile(match.documentId),
         );
-      case BottomSurfaceTab.problems:
+      case WorkbenchRoute.problems:
         final diagnosticsController = shell.workspaceDiagnosticsController;
         Widget buildProblemsSurface() {
           return ProblemsSurface(
@@ -407,7 +419,7 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: diagnosticsController,
           builder: (_, _) => buildProblemsSurface(),
         );
-      case BottomSurfaceTab.testing:
+      case WorkbenchRoute.testing:
         final testingController = shell.testingSessionController;
         Widget buildTestingSurface() {
           return TestingSurface(
@@ -426,7 +438,7 @@ class VityoShellScaffold extends StatelessWidget {
             onRunConfiguration: shell.runTestConfiguration,
             onDebugConfiguration: (configuration) async {
               await shell.debugTestConfiguration(configuration);
-              shell.selectBottomTab(BottomSurfaceTab.debug);
+              shell.selectWorkbenchRoute(WorkbenchRoute.debug);
             },
             onCancelFailedTestDebug: shell.cancelFailedTestDebug,
             onRerunFailed: () {
@@ -449,7 +461,7 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: testingController,
           builder: (_, _) => buildTestingSurface(),
         );
-      case BottomSurfaceTab.extensions:
+      case WorkbenchRoute.extensions:
         return ExtensionsSurface(
           viewportProfile: viewportProfile,
           visibleModules: shell.visibleModules,
@@ -477,7 +489,7 @@ class VityoShellScaffold extends StatelessWidget {
           onInstallExtension: shell.installMarketplaceExtension,
           onUpdateExtension: shell.updateMarketplaceExtension,
         );
-      case BottomSurfaceTab.debug:
+      case WorkbenchRoute.debug:
         return DebugConsoleSurface(
           viewportProfile: viewportProfile,
           entries: shell.debugLog,
@@ -515,7 +527,7 @@ class VityoShellScaffold extends StatelessWidget {
             shell.selectDebugThread(threadId);
           },
         );
-      case BottomSurfaceTab.settings:
+      case WorkbenchRoute.settings:
         return SettingsSurface(
           viewportProfile: viewportProfile,
           toolchainStatus: shell.toolchainStatusSurface,
@@ -561,9 +573,7 @@ class VityoShellScaffold extends StatelessWidget {
           onSaveCommandPalettePreferences: shell.saveCommandPalettePreferences,
           onSaveThemeOverride: shell.saveThemeOverride,
         );
-      case BottomSurfaceTab.navigate:
-      case BottomSurfaceTab.locations:
-      default:
+      case WorkbenchRoute.navigate:
         return const SizedBox.shrink();
     }
   }
@@ -585,30 +595,37 @@ class _DesktopShellBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final denseDesktop = viewportProfile.width < 1440;
-    final primarySidebarVisible = viewportProfile.width >= 760;
-    final primaryToolSurface = _usesPrimarySidebar(shell.activeBottomTab);
-    final workspaceWidth = primaryToolSurface
-        ? denseDesktop
-              ? 264.0
-              : 288.0
-        : denseDesktop
-        ? 220.0
-        : 240.0;
-    final bottomSurfaceHeight = viewportProfile.height >= 840
-        ? 250.0
-        : viewportProfile.height >= 680
-        ? 200.0
-        : 160.0;
+    final primarySidebarVisible =
+        viewportProfile.width >= 760 && layoutBinding.primarySidebarVisible;
+    final primaryToolSurface = _usesPrimarySidebar(shell.activeWorkbenchRoute);
+    final primarySidebarMaximum = viewportProfile.width * 0.42;
+    final workspaceWidth = layoutBinding.primarySidebarWidth
+        .clamp(
+          ShellLayoutPreferences.minPrimarySidebarWidth,
+          primarySidebarMaximum < ShellLayoutPreferences.maxPrimarySidebarWidth
+              ? primarySidebarMaximum
+              : ShellLayoutPreferences.maxPrimarySidebarWidth,
+        )
+        .toDouble();
+    final bottomPanelMaximum = viewportProfile.height * 0.62;
+    final bottomSurfaceHeight = layoutBinding.bottomPanelHeight
+        .clamp(
+          ShellLayoutPreferences.minBottomPanelHeight,
+          bottomPanelMaximum < ShellLayoutPreferences.maxBottomPanelHeight
+              ? bottomPanelMaximum
+              : ShellLayoutPreferences.maxBottomPanelHeight,
+        )
+        .toDouble();
     final agentUsesAuxiliaryPanel =
         viewportProfile.width >= 1320 &&
-        shell.activeBottomTab == BottomSurfaceTab.agent;
+        shell.activeWorkbenchRoute == WorkbenchRoute.agent;
     final primaryToolUsesBottomPanel =
         !primarySidebarVisible && primaryToolSurface;
     final bottomSurfaceVisible =
         layoutBinding.bottomPanelExpanded &&
         (primaryToolUsesBottomPanel ||
             _usesBottomPanel(
-              shell.activeBottomTab,
+              shell.activeWorkbenchRoute,
               agentUsesAuxiliaryPanel: agentUsesAuxiliaryPanel,
             ));
 
@@ -626,77 +643,94 @@ class _DesktopShellBody extends StatelessWidget {
         ),
         child: Row(
           children: [
-            WorkbenchActivityRail(
-              destinations: const <WorkbenchDestination>[
-                WorkbenchDestination(
-                  label: 'Explorer',
-                  icon: Icons.folder_outlined,
-                ),
-                WorkbenchDestination(label: 'Search', icon: Icons.search),
-                WorkbenchDestination(
-                  label: 'Source control',
-                  icon: Icons.fork_right,
-                ),
-                WorkbenchDestination(
-                  label: 'Coding Agent',
-                  icon: Icons.auto_awesome_outlined,
-                ),
-                WorkbenchDestination(
-                  label: 'Extensions',
-                  icon: Icons.extension_outlined,
-                ),
-                WorkbenchDestination(
-                  label: 'Settings',
-                  icon: Icons.settings_outlined,
-                ),
-              ],
-              selectedIndex: switch (shell.activeBottomTab) {
-                BottomSurfaceTab.search => 1,
-                BottomSurfaceTab.sourceControl => 2,
-                BottomSurfaceTab.agent => 3,
-                BottomSurfaceTab.extensions => 4,
-                BottomSurfaceTab.settings => 5,
-                _ => 0,
-              },
-              onSelected: (index) {
-                switch (index) {
-                  case 1:
-                    shell.selectBottomTab(BottomSurfaceTab.search);
-                    break;
-                  case 2:
-                    shell.selectBottomTab(BottomSurfaceTab.sourceControl);
-                    break;
-                  case 3:
-                    shell.selectBottomTab(
-                      shell.activeBottomTab == BottomSurfaceTab.agent
-                          ? BottomSurfaceTab.navigate
-                          : BottomSurfaceTab.agent,
-                    );
-                    break;
-                  case 4:
-                    shell.selectBottomTab(BottomSurfaceTab.extensions);
-                    break;
-                  case 5:
-                    shell.selectBottomTab(BottomSurfaceTab.settings);
-                    break;
-                  default:
-                    shell.selectBottomTab(BottomSurfaceTab.navigate);
-                    break;
-                }
-              },
-            ),
+            if (layoutBinding.isPanelVisible('activity-rail'))
+              WorkbenchActivityRail(
+                destinations: const <WorkbenchDestination>[
+                  WorkbenchDestination(
+                    label: 'Explorer',
+                    icon: Icons.folder_outlined,
+                  ),
+                  WorkbenchDestination(label: 'Search', icon: Icons.search),
+                  WorkbenchDestination(
+                    label: 'Source control',
+                    icon: Icons.fork_right,
+                  ),
+                  WorkbenchDestination(
+                    label: 'Coding Agent',
+                    icon: Icons.auto_awesome_outlined,
+                  ),
+                  WorkbenchDestination(
+                    label: 'Extensions',
+                    icon: Icons.extension_outlined,
+                  ),
+                  WorkbenchDestination(
+                    label: 'Settings',
+                    icon: Icons.settings_outlined,
+                  ),
+                ],
+                selectedIndex: switch (shell.activeWorkbenchRoute) {
+                  WorkbenchRoute.search => 1,
+                  WorkbenchRoute.sourceControl => 2,
+                  WorkbenchRoute.agent => 3,
+                  WorkbenchRoute.extensions => 4,
+                  WorkbenchRoute.settings => 5,
+                  _ => 0,
+                },
+                onSelected: (index) {
+                  switch (index) {
+                    case 1:
+                      shell.activatePrimarySidebar(WorkbenchRoute.search);
+                      break;
+                    case 2:
+                      shell.activatePrimarySidebar(
+                        WorkbenchRoute.sourceControl,
+                      );
+                      break;
+                    case 3:
+                      shell.selectWorkbenchRoute(
+                        shell.activeWorkbenchRoute == WorkbenchRoute.agent
+                            ? WorkbenchRoute.navigate
+                            : WorkbenchRoute.agent,
+                      );
+                      break;
+                    case 4:
+                      shell.activatePrimarySidebar(WorkbenchRoute.extensions);
+                      break;
+                    case 5:
+                      shell.activatePrimarySidebar(WorkbenchRoute.settings);
+                      break;
+                    default:
+                      shell.activatePrimarySidebar(WorkbenchRoute.navigate);
+                      break;
+                  }
+                },
+              ),
             if (primarySidebarVisible)
               SizedBox(
+                key: const ValueKey('workbench-primary-sidebar'),
                 width: workspaceWidth,
                 child: WorkbenchRegionSurface(
-                  label: _primarySidebarLabel(shell.activeBottomTab),
+                  label: _primarySidebarLabel(shell.activeWorkbenchRoute),
                   child: primaryToolSurface
                       ? bottomSurface
                       : _ExplorerSidebar(shell: shell),
                 ),
               ),
             if (primarySidebarVisible)
-              const VerticalDivider(width: 1, thickness: 1),
+              _WorkbenchResizeHandle.vertical(
+                key: const ValueKey('workbench-primary-sidebar-resize-handle'),
+                semanticsLabel: 'Resize primary sidebar',
+                onDelta: (delta) {
+                  shell.resizePrimarySidebar(
+                    shell
+                            .shellLayoutPreferenceController
+                            .preferences
+                            .primarySidebarWidth +
+                        delta,
+                  );
+                },
+                onEnd: shell.commitShellLayoutResize,
+              ),
             Expanded(
               child: Column(
                 children: [
@@ -757,19 +791,51 @@ class _DesktopShellBody extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Divider(height: 1, thickness: 1),
-                  _BottomSurfaceTabs(
+                  _WorkbenchRoutes(
                     shell: shell,
                     viewportProfile: viewportProfile,
                   ),
                   if (bottomSurfaceVisible) ...[
-                    const Divider(height: 1, thickness: 1),
+                    _WorkbenchResizeHandle.horizontal(
+                      key: const ValueKey(
+                        'workbench-bottom-panel-resize-handle',
+                      ),
+                      semanticsLabel: 'Resize bottom panel',
+                      onDelta: (delta) {
+                        shell.resizeBottomPanel(
+                          shell
+                                  .shellLayoutPreferenceController
+                                  .preferences
+                                  .bottomPanelHeight -
+                              delta,
+                        );
+                      },
+                      onEnd: shell.commitShellLayoutResize,
+                    ),
                     SizedBox(
                       key: const ValueKey('workbench-bottom-panel'),
                       height: bottomSurfaceHeight,
-                      child: KeyedSubtree(
-                        key: ValueKey(layoutBinding.activeBottomPanelId),
-                        child: bottomSurface,
+                      child: AnimatedSwitcher(
+                        duration: VityoMotion.of(context).surface,
+                        switchInCurve: VityoMotion.of(context).emphasized,
+                        switchOutCurve: VityoMotion.of(context).standard,
+                        transitionBuilder: (child, animation) {
+                          final slide = Tween<Offset>(
+                            begin: const Offset(0, 0.02),
+                            end: Offset.zero,
+                          ).animate(animation);
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: slide,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: KeyedSubtree(
+                          key: ValueKey(layoutBinding.activePanelId),
+                          child: bottomSurface,
+                        ),
                       ),
                     ),
                   ],
@@ -784,6 +850,106 @@ class _DesktopShellBody extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkbenchResizeHandle extends StatefulWidget {
+  const _WorkbenchResizeHandle.vertical({
+    required this.semanticsLabel,
+    required this.onDelta,
+    required this.onEnd,
+    super.key,
+  }) : axis = Axis.vertical;
+
+  const _WorkbenchResizeHandle.horizontal({
+    required this.semanticsLabel,
+    required this.onDelta,
+    required this.onEnd,
+    super.key,
+  }) : axis = Axis.horizontal;
+
+  final Axis axis;
+  final String semanticsLabel;
+  final ValueChanged<double> onDelta;
+  final Future<void> Function() onEnd;
+
+  @override
+  State<_WorkbenchResizeHandle> createState() => _WorkbenchResizeHandleState();
+}
+
+class _WorkbenchResizeHandleState extends State<_WorkbenchResizeHandle> {
+  bool _active = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = VityoWorkbenchTokens.of(context);
+    final motion = VityoMotion.of(context);
+    final vertical = widget.axis == Axis.vertical;
+    void commit() {
+      unawaited(widget.onEnd());
+    }
+
+    return Semantics(
+      label: widget.semanticsLabel,
+      slider: true,
+      onIncrease: () {
+        widget.onDelta(vertical ? 16 : -16);
+        commit();
+      },
+      onDecrease: () {
+        widget.onDelta(vertical ? -16 : 16);
+        commit();
+      },
+      child: MouseRegion(
+        cursor: vertical
+            ? SystemMouseCursors.resizeLeftRight
+            : SystemMouseCursors.resizeUpDown,
+        onEnter: (_) => setState(() => _active = true),
+        onExit: (_) => setState(() => _active = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragUpdate: vertical
+              ? (details) => widget.onDelta(details.delta.dx)
+              : null,
+          onHorizontalDragStart: vertical
+              ? (_) => setState(() => _active = true)
+              : null,
+          onHorizontalDragEnd: vertical
+              ? (_) {
+                  setState(() => _active = false);
+                  commit();
+                }
+              : null,
+          onVerticalDragUpdate: vertical
+              ? null
+              : (details) => widget.onDelta(details.delta.dy),
+          onVerticalDragStart: vertical
+              ? null
+              : (_) => setState(() => _active = true),
+          onVerticalDragEnd: vertical
+              ? null
+              : (_) {
+                  setState(() => _active = false);
+                  commit();
+                },
+          child: SizedBox(
+            width: vertical ? 7 : double.infinity,
+            height: vertical ? double.infinity : 7,
+            child: Center(
+              child: AnimatedContainer(
+                duration: motion.micro,
+                curve: motion.standard,
+                width: vertical ? (_active ? 3 : 1) : double.infinity,
+                height: vertical ? double.infinity : (_active ? 3 : 1),
+                color: _active
+                    ? tokens.accent.withValues(alpha: 0.55)
+                    : tokens.divider,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -808,7 +974,12 @@ class _MobileShellBody extends StatelessWidget {
     final editorHeight = viewportProfile.height >= 820 ? 460.0 : 400.0;
     final workspaceHeight = viewportProfile.height >= 820 ? 320.0 : 280.0;
     final moduleHeight = viewportProfile.height >= 820 ? 320.0 : 280.0;
-    final bottomSurfaceHeight = viewportProfile.height >= 820 ? 220.0 : 180.0;
+    final bottomSurfaceHeight = layoutBinding.bottomPanelHeight
+        .clamp(
+          ShellLayoutPreferences.minBottomPanelHeight,
+          viewportProfile.height * 0.55,
+        )
+        .toDouble();
 
     return KeyedSubtree(
       key: ValueKey(layoutBinding.viewportKey),
@@ -862,13 +1033,13 @@ class _MobileShellBody extends StatelessWidget {
             child: _ModuleSidebar(shell: shell),
           ),
           const SizedBox(height: 16),
-          _BottomSurfaceTabs(shell: shell, viewportProfile: viewportProfile),
+          _WorkbenchRoutes(shell: shell, viewportProfile: viewportProfile),
           if (layoutBinding.bottomPanelExpanded) ...[
             const SizedBox(height: 10),
             SizedBox(
               height: bottomSurfaceHeight,
               child: KeyedSubtree(
-                key: ValueKey(layoutBinding.activeBottomPanelId),
+                key: ValueKey(layoutBinding.activePanelId),
                 child: bottomSurface,
               ),
             ),
@@ -879,6 +1050,15 @@ class _MobileShellBody extends StatelessWidget {
   }
 }
 
+TextStyle _sidebarSectionStyle(BuildContext context) {
+  final tokens = VityoWorkbenchTokens.of(context);
+  return Theme.of(context).textTheme.labelSmall!.copyWith(
+    color: tokens.muted,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.5,
+  );
+}
+
 class _WorkspaceSidebar extends StatelessWidget {
   const _WorkspaceSidebar({required this.shell});
 
@@ -886,7 +1066,6 @@ class _WorkspaceSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final project = shell.workspaceController.activeProject;
 
     return Card(
@@ -895,7 +1074,7 @@ class _WorkspaceSidebar extends StatelessWidget {
         child: ListView(
           key: const ValueKey('workspace-sidebar-scroll'),
           children: [
-            Text('Project Graph', style: theme.textTheme.titleMedium),
+            Text('Project Graph', style: _sidebarSectionStyle(context)),
             const SizedBox(height: 12),
             _ProjectSummaryCard(project: project),
             const SizedBox(height: 12),
@@ -926,7 +1105,7 @@ class _WorkspaceSidebar extends StatelessWidget {
             ),
             if (project.workspaceMembers.isNotEmpty) ...[
               const SizedBox(height: 18),
-              Text('Workspace Members', style: theme.textTheme.titleMedium),
+              Text('Workspace Members', style: _sidebarSectionStyle(context)),
               const SizedBox(height: 12),
               for (final member in project.workspaceMembers)
                 Padding(
@@ -936,7 +1115,7 @@ class _WorkspaceSidebar extends StatelessWidget {
             ],
             if (project.packages.isNotEmpty) ...[
               const SizedBox(height: 18),
-              Text('Packages', style: theme.textTheme.titleMedium),
+              Text('Packages', style: _sidebarSectionStyle(context)),
               const SizedBox(height: 12),
               for (final package in project.packages)
                 Padding(
@@ -946,7 +1125,7 @@ class _WorkspaceSidebar extends StatelessWidget {
             ],
             if (project.dependencies.isNotEmpty) ...[
               const SizedBox(height: 18),
-              Text('Dependencies', style: theme.textTheme.titleMedium),
+              Text('Dependencies', style: _sidebarSectionStyle(context)),
               const SizedBox(height: 12),
               for (final dependency in project.dependencies)
                 Padding(
@@ -956,7 +1135,7 @@ class _WorkspaceSidebar extends StatelessWidget {
             ],
             if (shell.workspaceController.targets.isNotEmpty) ...[
               const SizedBox(height: 18),
-              Text('Targets', style: theme.textTheme.titleMedium),
+              Text('Targets', style: _sidebarSectionStyle(context)),
               const SizedBox(height: 12),
               for (final target in shell.workspaceController.targets)
                 Padding(
@@ -971,7 +1150,7 @@ class _WorkspaceSidebar extends StatelessWidget {
                 ),
             ],
             const SizedBox(height: 18),
-            Text('Files', style: theme.textTheme.titleMedium),
+            Text('Files', style: _sidebarSectionStyle(context)),
             const SizedBox(height: 12),
             for (final file in shell.workspaceController.files)
               Padding(
@@ -997,49 +1176,44 @@ class _ProjectSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1ECE3),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(project.title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(project.workspaceRoot, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text(project.kind.label)),
-                Chip(label: Text('lock ${project.lockState.label}')),
-                Chip(label: Text('vendor ${project.vendorState.label}')),
-                Chip(label: Text('${project.packageCount} package')),
-                Chip(label: Text('${project.workspaceMemberCount} member')),
-                Chip(label: Text('${project.dependencyCount} dependency')),
-                Chip(label: Text('${project.targetCount} target')),
-                Chip(label: Text('${project.editorFileCount} file')),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(project.toolchain.detail, style: theme.textTheme.bodySmall),
-            if (project.manifestPath != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'manifest ${project.manifestPath}',
-                style: theme.textTheme.bodySmall,
+    return WorkbenchCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(project.title, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(project.workspaceRoot, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              WorkbenchMetaPill(label: project.kind.label),
+              WorkbenchMetaPill(label: 'lock ${project.lockState.label}'),
+              WorkbenchMetaPill(label: 'vendor ${project.vendorState.label}'),
+              WorkbenchMetaPill(label: '${project.packageCount} package'),
+              WorkbenchMetaPill(
+                label: '${project.workspaceMemberCount} member',
               ),
+              WorkbenchMetaPill(label: '${project.dependencyCount} dependency'),
+              WorkbenchMetaPill(label: '${project.targetCount} target'),
+              WorkbenchMetaPill(label: '${project.editorFileCount} file'),
             ],
-            if (project.notes.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(project.notes.first, style: theme.textTheme.bodySmall),
-            ],
+          ),
+          const SizedBox(height: 10),
+          Text(project.toolchain.detail, style: theme.textTheme.bodySmall),
+          if (project.manifestPath != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'manifest ${project.manifestPath}',
+              style: theme.textTheme.bodySmall,
+            ),
           ],
-        ),
+          if (project.notes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(project.notes.first, style: theme.textTheme.bodySmall),
+          ],
+        ],
       ),
     );
   }
@@ -1070,43 +1244,38 @@ class _ProjectWorkflowCard extends StatelessWidget {
       adapterCapabilities: adapterCapabilities,
     );
 
-    return DecoratedBox(
+    return WorkbenchCard(
       key: const ValueKey('project-workflow-card'),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF0E5),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Project Workflow', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(selection.title, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Text(selection.detail, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text(selection.adapterKind.label)),
-                Chip(label: Text(selection.routeKind.wireValue)),
-                Chip(
-                  label: Text(selection.allowed ? 'live-capable' : 'blocked'),
-                ),
-                if (project.compilePlanConsumerAdvertised)
-                  const Chip(label: Text('compile-plan detected')),
-                Chip(
-                  label: Text(
-                    summary.jitRoute.blocked ? 'JIT blocked' : 'JIT live',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Project Workflow', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(selection.title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Text(selection.detail, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              WorkbenchMetaPill(label: selection.adapterKind.label),
+              WorkbenchMetaPill(label: selection.routeKind.wireValue),
+              WorkbenchMetaPill(
+                label: selection.allowed ? 'live-capable' : 'blocked',
+                color: selection.allowed
+                    ? VityoWorkbenchTokens.of(context).success
+                    : VityoWorkbenchTokens.of(context).error,
+                filled: true,
+              ),
+              if (project.compilePlanConsumerAdvertised)
+                const WorkbenchMetaPill(label: 'compile-plan detected'),
+              WorkbenchMetaPill(
+                label: summary.jitRoute.blocked ? 'JIT blocked' : 'JIT live',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1122,57 +1291,48 @@ class _CompilerHandshakeCard extends StatelessWidget {
     final theme = Theme.of(context);
     final compiler = project.activeCompiler;
 
-    return DecoratedBox(
+    return WorkbenchCard(
       key: const ValueKey('compiler-handshake-card'),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8EDF5),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Compiler Handshake', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            if (compiler == null)
-              Text(
-                'No local styio machine-info handshake has been resolved yet.',
-                style: theme.textTheme.bodySmall,
-              )
-            else ...[
-              Text(
-                '${compiler.tool} ${compiler.compilerVersion} · ${compiler.channel}',
-                style: theme.textTheme.titleSmall,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'variant ${compiler.variant} · phase ${compiler.integrationPhase}',
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              Text(compiler.contractSummary, style: theme.textTheme.bodySmall),
-              const SizedBox(height: 6),
-              Text(
-                compiler.capabilitySummary,
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text(project.toolchain.source.label)),
-                if (project.toolchain.channel != null)
-                  Chip(label: Text('channel ${project.toolchain.channel}')),
-                if (compiler != null &&
-                    compiler.supportsContract('compile_plan'))
-                  const Chip(label: Text('compile-plan ready')),
-              ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Compiler Handshake', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          if (compiler == null)
+            Text(
+              'No local styio machine-info handshake has been resolved yet.',
+              style: theme.textTheme.bodySmall,
+            )
+          else ...[
+            Text(
+              '${compiler.tool} ${compiler.compilerVersion} · ${compiler.channel}',
+              style: theme.textTheme.titleSmall,
             ),
+            const SizedBox(height: 6),
+            Text(
+              'variant ${compiler.variant} · phase ${compiler.integrationPhase}',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Text(compiler.contractSummary, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 6),
+            Text(compiler.capabilitySummary, style: theme.textTheme.bodySmall),
           ],
-        ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              WorkbenchMetaPill(label: project.toolchain.source.label),
+              if (project.toolchain.channel != null)
+                WorkbenchMetaPill(
+                  label: 'channel ${project.toolchain.channel}',
+                ),
+              if (compiler != null && compiler.supportsContract('compile_plan'))
+                const WorkbenchMetaPill(label: 'compile-plan ready'),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1205,46 +1365,45 @@ class _RequiredHandoffsCard extends StatelessWidget {
         .where((handoff) => handoff.owner == HandoffOwner.pafio)
         .length;
 
-    return DecoratedBox(
+    return WorkbenchCard(
       key: const ValueKey('required-handoffs-card'),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3ECE7),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Required Handoffs', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Required Handoffs', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            'This card only states what `Vityo` still needs from upstream machine contracts. It does not prescribe upstream internals.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              WorkbenchMetaPill(
+                label: '$blockingCount blocking',
+                color: blockingCount > 0
+                    ? VityoWorkbenchTokens.of(context).warning
+                    : null,
+                filled: blockingCount > 0,
+              ),
+              WorkbenchMetaPill(label: '$styioCount styio'),
+              WorkbenchMetaPill(label: '$pafioCount pafio'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (handoffs.isEmpty)
             Text(
-              'This card only states what `Vityo` still needs from upstream machine contracts. It does not prescribe upstream internals.',
+              'No product-side handoffs are currently outstanding for this route.',
               style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(label: Text('$blockingCount blocking')),
-                Chip(label: Text('$styioCount styio')),
-                Chip(label: Text('$pafioCount pafio')),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (handoffs.isEmpty)
-              Text(
-                'No product-side handoffs are currently outstanding for this route.',
-                style: theme.textTheme.bodySmall,
-              )
-            else
-              for (var index = 0; index < handoffs.length; index += 1) ...[
-                if (index > 0) const SizedBox(height: 10),
-                _RequiredHandoffTile(handoff: handoffs[index]),
-              ],
-          ],
-        ),
+            )
+          else
+            for (var index = 0; index < handoffs.length; index += 1) ...[
+              if (index > 0) const SizedBox(height: 10),
+              _RequiredHandoffTile(handoff: handoffs[index]),
+            ],
+        ],
       ),
     );
   }
@@ -1278,22 +1437,23 @@ class _ProjectOperationsCard extends StatelessWidget {
   }
 
   Color _laneColor(BuildContext context, String status) {
+    final tokens = VityoWorkbenchTokens.of(context);
     switch (status) {
       case 'succeeded':
       case 'resolved':
       case 'ready':
-        return const Color(0xFFE3F1E1);
+        return tokens.success;
       case 'failed':
-        return const Color(0xFFF5E1DE);
+        return tokens.error;
       case 'blocked':
-        return const Color(0xFFF6E9D7);
+        return tokens.warning;
       case 'running':
-        return const Color(0xFFE3ECF6);
+        return tokens.accent;
       case 'idle':
       case 'pending':
-        return const Color(0xFFEEE9F2);
+        return tokens.muted;
       default:
-        return Theme.of(context).colorScheme.surfaceContainerHighest;
+        return tokens.muted;
     }
   }
 
@@ -1402,145 +1562,135 @@ class _ProjectOperationsCard extends StatelessWidget {
         )
         .length;
 
-    return DecoratedBox(
+    return WorkbenchCard(
       key: const ValueKey('project-operations-card'),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEDE7F0),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Project Workflow', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              'One shell-owned surface for execution, dependency materialization, toolchain routing, and deployment preflight.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _WorkflowStatusChip(
-                  label: 'execution $executionStatus',
-                  color: _laneColor(context, executionStatus),
-                ),
-                _WorkflowStatusChip(
-                  label: 'dependencies $dependencyStatus',
-                  color: _laneColor(context, dependencyStatus),
-                ),
-                _WorkflowStatusChip(
-                  label: 'environment $toolchainStatus',
-                  color: _laneColor(context, toolchainStatus),
-                ),
-                _WorkflowStatusChip(
-                  label: 'deployment $deploymentStatus',
-                  color: _laneColor(context, deploymentStatus),
-                ),
-                Chip(
-                  label: Text(
-                    activeCompiler == null
-                        ? 'compiler unresolved'
-                        : 'compiler ${activeCompiler.compilerVersion}',
-                  ),
-                ),
-                Chip(label: Text('publishable $publishablePackages')),
-                Chip(label: Text('blocked $blockedPackages')),
-                Chip(
-                  label: Text(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Project Workflow', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            'One shell-owned surface for execution, dependency materialization, toolchain routing, and deployment preflight.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _WorkflowStatusChip(
+                label: 'execution $executionStatus',
+                color: _laneColor(context, executionStatus),
+              ),
+              _WorkflowStatusChip(
+                label: 'dependencies $dependencyStatus',
+                color: _laneColor(context, dependencyStatus),
+              ),
+              _WorkflowStatusChip(
+                label: 'environment $toolchainStatus',
+                color: _laneColor(context, toolchainStatus),
+              ),
+              _WorkflowStatusChip(
+                label: 'deployment $deploymentStatus',
+                color: _laneColor(context, deploymentStatus),
+              ),
+              WorkbenchMetaPill(
+                label: activeCompiler == null
+                    ? 'compiler unresolved'
+                    : 'compiler ${activeCompiler.compilerVersion}',
+              ),
+              WorkbenchMetaPill(label: 'publishable $publishablePackages'),
+              WorkbenchMetaPill(label: 'blocked $blockedPackages'),
+              WorkbenchMetaPill(
+                label:
                     'workflow blockers ${VityoCommandRegistry.workflowCommands.where((command) => shell.blockedReasonForCommand(command.id) != null).length}',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (blockedWorkflowPreview.isNotEmpty) ...[
-              Text('Current Blockers', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              for (final blocker in blockedWorkflowPreview) ...[
-                Text(blocker, style: theme.textTheme.bodySmall),
-                const SizedBox(height: 4),
-              ],
-              const SizedBox(height: 8),
+              ),
             ],
-            _WorkflowLanePanel(
-              title: 'Execution',
-              statusLabel: executionStatus,
-              statusColor: _laneColor(context, executionStatus),
-              detail: lastExecution == null
-                  ? 'Run has not been routed through the active project shell yet.'
-                  : '${lastExecution.kind} ${lastExecution.status.name}: ${lastExecution.statusMessage}',
-              metaLabels: [
-                'runtime ${shell.lastRuntimeEvents.length}',
-                if (lastExecution != null) ...[
-                  'diagnostics ${lastExecution.diagnostics.length}',
-                  'stdout ${lastExecution.stdoutEvents.length}',
-                  'stderr ${lastExecution.stderrEvents.length}',
-                ],
-              ],
-              actions: VityoCommandRegistry.executionCommands
-                  .map((command) => _buildCommandChip(context, theme, command))
-                  .toList(growable: false),
-            ),
-            const SizedBox(height: 12),
-            _WorkflowLanePanel(
-              title: 'Dependencies',
-              statusLabel: dependencyStatus,
-              statusColor: _laneColor(context, dependencyStatus),
-              detail: lastDependency == null
-                  ? 'Sync/vendor has not been materialized in this shell session yet.'
-                  : '${lastDependency.command} ${lastDependency.status.name}: ${lastDependency.statusMessage}',
-              metaLabels: [
-                'git $gitDependencies',
-                'registry $registryDependencies',
-                'vendor ${project.vendorState.label}',
-                if (dependencyPackages is num)
-                  'packages ${dependencyPackages.toInt()}',
-                if (vendorRoot != null) 'vendor root',
-                if (vendorMetadata != null) 'vendor metadata',
-              ],
-              actions: VityoCommandRegistry.dependencyCommands
-                  .map((command) => _buildCommandChip(context, theme, command))
-                  .toList(growable: false),
-            ),
-            const SizedBox(height: 12),
-            _WorkflowLanePanel(
-              title: 'Environment',
-              statusLabel: toolchainStatus,
-              statusColor: _laneColor(context, toolchainStatus),
-              detail: project.toolchain.detail,
-              metaLabels: [
-                'source ${project.toolchain.source.label}',
-                if (activeCompiler != null) 'channel ${activeCompiler.channel}',
-              ],
-              actions: VityoCommandRegistry.toolchainCommands
-                  .map((command) => _buildCommandChip(context, theme, command))
-                  .toList(growable: false),
-            ),
-            const SizedBox(height: 12),
-            _WorkflowLanePanel(
-              title: 'Deployment',
-              statusLabel: deploymentStatus,
-              statusColor: _laneColor(context, deploymentStatus),
-              detail: lastDeployment == null
-                  ? 'Pack and publish preflight are ready to route through the active project shell.'
-                  : '${lastDeployment.command} ${lastDeployment.status.name}: ${lastDeployment.statusMessage}',
-              metaLabels: [
-                'packages ${distribution?.packages.length ?? 0}',
-                'publishable $publishablePackages',
-                'blocked $blockedPackages',
-                if (deploymentPackage != null) 'package $deploymentPackage',
-                if (deploymentArchive != null) 'archive ready',
-              ],
-              actions: VityoCommandRegistry.deploymentCommands
-                  .map((command) => _buildCommandChip(context, theme, command))
-                  .toList(growable: false),
-            ),
+          ),
+          const SizedBox(height: 12),
+          if (blockedWorkflowPreview.isNotEmpty) ...[
+            Text('Current Blockers', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            for (final blocker in blockedWorkflowPreview) ...[
+              Text(blocker, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 4),
+            ],
+            const SizedBox(height: 8),
           ],
-        ),
+          _WorkflowLanePanel(
+            title: 'Execution',
+            statusLabel: executionStatus,
+            statusColor: _laneColor(context, executionStatus),
+            detail: lastExecution == null
+                ? 'Run has not been routed through the active project shell yet.'
+                : '${lastExecution.kind} ${lastExecution.status.name}: ${lastExecution.statusMessage}',
+            metaLabels: [
+              'runtime ${shell.lastRuntimeEvents.length}',
+              if (lastExecution != null) ...[
+                'diagnostics ${lastExecution.diagnostics.length}',
+                'stdout ${lastExecution.stdoutEvents.length}',
+                'stderr ${lastExecution.stderrEvents.length}',
+              ],
+            ],
+            actions: VityoCommandRegistry.executionCommands
+                .map((command) => _buildCommandChip(context, theme, command))
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 12),
+          _WorkflowLanePanel(
+            title: 'Dependencies',
+            statusLabel: dependencyStatus,
+            statusColor: _laneColor(context, dependencyStatus),
+            detail: lastDependency == null
+                ? 'Sync/vendor has not been materialized in this shell session yet.'
+                : '${lastDependency.command} ${lastDependency.status.name}: ${lastDependency.statusMessage}',
+            metaLabels: [
+              'git $gitDependencies',
+              'registry $registryDependencies',
+              'vendor ${project.vendorState.label}',
+              if (dependencyPackages is num)
+                'packages ${dependencyPackages.toInt()}',
+              if (vendorRoot != null) 'vendor root',
+              if (vendorMetadata != null) 'vendor metadata',
+            ],
+            actions: VityoCommandRegistry.dependencyCommands
+                .map((command) => _buildCommandChip(context, theme, command))
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 12),
+          _WorkflowLanePanel(
+            title: 'Environment',
+            statusLabel: toolchainStatus,
+            statusColor: _laneColor(context, toolchainStatus),
+            detail: project.toolchain.detail,
+            metaLabels: [
+              'source ${project.toolchain.source.label}',
+              if (activeCompiler != null) 'channel ${activeCompiler.channel}',
+            ],
+            actions: VityoCommandRegistry.toolchainCommands
+                .map((command) => _buildCommandChip(context, theme, command))
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 12),
+          _WorkflowLanePanel(
+            title: 'Deployment',
+            statusLabel: deploymentStatus,
+            statusColor: _laneColor(context, deploymentStatus),
+            detail: lastDeployment == null
+                ? 'Pack and publish preflight are ready to route through the active project shell.'
+                : '${lastDeployment.command} ${lastDeployment.status.name}: ${lastDeployment.statusMessage}',
+            metaLabels: [
+              'packages ${distribution?.packages.length ?? 0}',
+              'publishable $publishablePackages',
+              'blocked $blockedPackages',
+              if (deploymentPackage != null) 'package $deploymentPackage',
+              if (deploymentArchive != null) 'archive ready',
+            ],
+            actions: VityoCommandRegistry.deploymentCommands
+                .map((command) => _buildCommandChip(context, theme, command))
+                .toList(growable: false),
+          ),
+        ],
       ),
     );
   }
@@ -1566,11 +1716,12 @@ class _WorkflowLanePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.62),
+        color: tokens.canvas,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1592,7 +1743,7 @@ class _WorkflowLanePanel extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: metaLabels
-                    .map((label) => Chip(label: Text(label)))
+                    .map((label) => WorkbenchMetaPill(label: label))
                     .toList(growable: false),
               ),
             ],
@@ -1615,16 +1766,7 @@ class _WorkflowStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ),
-    );
+    return WorkbenchMetaPill(label: label, color: color, filled: true);
   }
 }
 
@@ -1636,11 +1778,12 @@ class _RequiredHandoffTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.68),
+        color: tokens.canvas,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1652,8 +1795,12 @@ class _RequiredHandoffTile extends StatelessWidget {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Chip(label: Text(handoff.owner.label)),
-                Chip(label: Text(handoff.blocking ? 'blocking' : 'follow-up')),
+                WorkbenchMetaPill(label: handoff.owner.label),
+                WorkbenchMetaPill(
+                  label: handoff.blocking ? 'blocking' : 'follow-up',
+                  color: handoff.blocking ? tokens.warning : null,
+                  filled: handoff.blocking,
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1683,21 +1830,23 @@ class _WorkspaceFileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
 
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       onTap: onTap,
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFF1ECE3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          color: active ? tokens.selection : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
             Icon(
               active ? Icons.article_rounded : Icons.article_outlined,
               size: 18,
+              color: active ? tokens.ink : tokens.muted,
             ),
             const SizedBox(width: 10),
             Expanded(child: Text(file, style: theme.textTheme.bodyMedium)),
@@ -1722,13 +1871,14 @@ class _WorkspaceFileCommandConfirmationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final plan = pending.confirmationPlan;
     final request = pending.request;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF2D7),
+        color: tokens.warning.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5A93B)),
+        border: Border.all(color: tokens.warning.withValues(alpha: 0.40)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1798,19 +1948,24 @@ class _ProjectTargetTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
 
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       onTap: onTap,
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFF1ECE3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          color: active ? tokens.selection : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
-            const Icon(Icons.track_changes_rounded, size: 18),
+            Icon(
+              Icons.track_changes_rounded,
+              size: 18,
+              color: active ? tokens.ink : tokens.muted,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -1836,11 +1991,13 @@ class _ProjectPackageTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F4ED),
+        color: tokens.elevated,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1855,7 +2012,7 @@ class _ProjectPackageTile extends StatelessWidget {
                     style: theme.textTheme.titleSmall,
                   ),
                 ),
-                Chip(label: Text(package.version)),
+                WorkbenchMetaPill(label: package.version),
               ],
             ),
             const SizedBox(height: 6),
@@ -1865,14 +2022,14 @@ class _ProjectPackageTile extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                Chip(label: Text('${package.targets.length} target')),
-                Chip(label: Text('${package.dependencies.length} dependency')),
-                Chip(
-                  label: Text(
-                    package.isWorkspaceMember
-                        ? 'workspace member'
-                        : 'root package',
-                  ),
+                WorkbenchMetaPill(label: '${package.targets.length} target'),
+                WorkbenchMetaPill(
+                  label: '${package.dependencies.length} dependency',
+                ),
+                WorkbenchMetaPill(
+                  label: package.isWorkspaceMember
+                      ? 'workspace member'
+                      : 'root package',
                 ),
               ],
             ),
@@ -1891,17 +2048,19 @@ class _WorkspaceMemberTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F3EA),
+        color: tokens.elevated,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            const Icon(Icons.folder_open_rounded, size: 18),
+            Icon(Icons.folder_open_rounded, size: 18, color: tokens.muted),
             const SizedBox(width: 10),
             Expanded(
               child: Text(memberPath, style: theme.textTheme.bodyMedium),
@@ -1921,11 +2080,13 @@ class _ProjectDependencyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F0E8),
+        color: tokens.elevated,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1936,9 +2097,9 @@ class _ProjectDependencyTile extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                Chip(label: Text(dependency.kind.label)),
+                WorkbenchMetaPill(label: dependency.kind.label),
                 if (dependency.isWorkspaceReference)
-                  const Chip(label: Text('workspace ref')),
+                  const WorkbenchMetaPill(label: 'workspace ref'),
               ],
             ),
             const SizedBox(height: 8),
@@ -1969,7 +2130,7 @@ class _ModuleSidebar extends StatelessWidget {
         padding: const EdgeInsets.all(18),
         child: ListView(
           children: [
-            Text('Adapter Routes', style: theme.textTheme.titleMedium),
+            Text('Adapter Routes', style: _sidebarSectionStyle(context)),
             const SizedBox(height: 6),
             Text(
               'Product-owned capability surface across CLI, FFI, and Cloud adapters.',
@@ -1982,7 +2143,7 @@ class _ModuleSidebar extends StatelessWidget {
                 child: _AdapterCapabilityTile(capability: capability),
               ),
             const SizedBox(height: 8),
-            Text('Module Host', style: theme.textTheme.titleMedium),
+            Text('Module Host', style: _sidebarSectionStyle(context)),
             const SizedBox(height: 6),
             Text(
               'Capability matrix filtered for ${shell.platformTarget.label}.',
@@ -2017,11 +2178,12 @@ class _AdapterCapabilityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F4ED),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.dividerColor),
+        color: tokens.elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: tokens.divider),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -2051,11 +2213,8 @@ class _AdapterCapabilityTile extends StatelessWidget {
   }
 }
 
-class _BottomSurfaceTabs extends StatelessWidget {
-  const _BottomSurfaceTabs({
-    required this.shell,
-    required this.viewportProfile,
-  });
+class _WorkbenchRoutes extends StatelessWidget {
+  const _WorkbenchRoutes({required this.shell, required this.viewportProfile});
 
   final ShellModel shell;
   final ViewportProfile viewportProfile;
@@ -2066,129 +2225,183 @@ class _BottomSurfaceTabs extends StatelessWidget {
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-runtime'),
         label: 'Runtime',
-        active: shell.activeBottomTab == BottomSurfaceTab.runtime,
-        onTap: () => shell.selectBottomTab(BottomSurfaceTab.runtime),
+        active: shell.activeWorkbenchRoute == WorkbenchRoute.runtime,
+        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.runtime),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-terminal'),
         label: 'Terminal',
-        active: shell.activeBottomTab == BottomSurfaceTab.terminal,
-        onTap: () => shell.selectBottomTab(BottomSurfaceTab.terminal),
+        active: shell.activeWorkbenchRoute == WorkbenchRoute.terminal,
+        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.terminal),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-problems'),
         label: 'Problems',
-        active: shell.activeBottomTab == BottomSurfaceTab.problems,
-        onTap: () => shell.selectBottomTab(BottomSurfaceTab.problems),
+        active: shell.activeWorkbenchRoute == WorkbenchRoute.problems,
+        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.problems),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-tests'),
         label: 'Tests',
-        active: shell.activeBottomTab == BottomSurfaceTab.testing,
-        onTap: () => shell.selectBottomTab(BottomSurfaceTab.testing),
+        active: shell.activeWorkbenchRoute == WorkbenchRoute.testing,
+        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.testing),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-debug'),
         label: 'Debug',
-        active: shell.activeBottomTab == BottomSurfaceTab.debug,
-        onTap: () => shell.selectBottomTab(BottomSurfaceTab.debug),
+        active: shell.activeWorkbenchRoute == WorkbenchRoute.debug,
+        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.debug),
       ),
+      if (!viewportProfile.isMobile && viewportProfile.width < 1320)
+        _SurfaceTabChip(
+          key: const ValueKey('bottom-tab-agent'),
+          label: 'Agent',
+          active: shell.activeWorkbenchRoute == WorkbenchRoute.agent,
+          onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.agent),
+        ),
     ];
     final tabs = viewportProfile.isMobile
         ? <Widget>[
             ...bottomToolTabs,
             _SurfaceTabChip(
               label: 'Commands',
-              active: shell.activeBottomTab == BottomSurfaceTab.commandPalette,
+              active:
+                  shell.activeWorkbenchRoute == WorkbenchRoute.commandPalette,
               onTap: () =>
-                  shell.selectBottomTab(BottomSurfaceTab.commandPalette),
+                  shell.selectWorkbenchRoute(WorkbenchRoute.commandPalette),
             ),
             _SurfaceTabChip(
               label: 'Agent',
-              active: shell.activeBottomTab == BottomSurfaceTab.agent,
-              onTap: () => shell.selectBottomTab(BottomSurfaceTab.agent),
+              active: shell.activeWorkbenchRoute == WorkbenchRoute.agent,
+              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.agent),
             ),
             _SurfaceTabChip(
               label: 'SCM',
-              active: shell.activeBottomTab == BottomSurfaceTab.sourceControl,
+              active:
+                  shell.activeWorkbenchRoute == WorkbenchRoute.sourceControl,
               onTap: () =>
-                  shell.selectBottomTab(BottomSurfaceTab.sourceControl),
+                  shell.selectWorkbenchRoute(WorkbenchRoute.sourceControl),
             ),
             _SurfaceTabChip(
               label: 'Search',
-              active: shell.activeBottomTab == BottomSurfaceTab.search,
-              onTap: () => shell.selectBottomTab(BottomSurfaceTab.search),
+              active: shell.activeWorkbenchRoute == WorkbenchRoute.search,
+              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.search),
             ),
             _SurfaceTabChip(
               label: 'Extensions',
-              active: shell.activeBottomTab == BottomSurfaceTab.extensions,
-              onTap: () => shell.selectBottomTab(BottomSurfaceTab.extensions),
+              active: shell.activeWorkbenchRoute == WorkbenchRoute.extensions,
+              onTap: () =>
+                  shell.selectWorkbenchRoute(WorkbenchRoute.extensions),
             ),
             _SurfaceTabChip(
               label: 'Settings',
-              active: shell.activeBottomTab == BottomSurfaceTab.settings,
-              onTap: () => shell.selectBottomTab(BottomSurfaceTab.settings),
+              active: shell.activeWorkbenchRoute == WorkbenchRoute.settings,
+              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.settings),
             ),
           ]
         : bottomToolTabs;
 
     if (viewportProfile.isMobile) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(spacing: 10, runSpacing: 10, children: tabs),
-          const SizedBox(height: 8),
-          Text(
-            'Mobile shell keeps runtime, terminal, commands, agent, source control, search, problems, testing, extensions, debug, and settings on one vertical route. Hardware keyboard shortcuts remain optional.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+      return Semantics(
+        container: true,
+        label: 'Compact workbench navigation',
+        child: Column(
+          key: const ValueKey('compact-workbench-navigation'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(spacing: 10, runSpacing: 10, children: tabs),
+            const SizedBox(height: 8),
+            Text(
+              'Choose an IDE tool; the active surface opens below while hardware shortcuts remain available.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       );
     }
 
-    return SizedBox(
+    final expanded =
+        shell.shellLayoutPreferenceController.preferences.bottomPanelExpanded;
+    final dockedRoute = _usesBottomPanel(
+      shell.activeWorkbenchRoute,
+      agentUsesAuxiliaryPanel:
+          viewportProfile.width >= 1320 &&
+          shell.activeWorkbenchRoute == WorkbenchRoute.agent,
+    );
+    final tokens = VityoWorkbenchTokens.of(context);
+    return Container(
+      key: const ValueKey('workbench-bottom-panel-header'),
       width: double.infinity,
-      height: 32,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 6),
-          child: Row(children: tabs),
-        ),
+      height: 36,
+      decoration: BoxDecoration(
+        color: tokens.region,
+        border: Border(top: BorderSide(color: tokens.divider)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Row(children: tabs),
+              ),
+            ),
+          ),
+          Tooltip(
+            message: expanded ? 'Hide bottom panel' : 'Show bottom panel',
+            child: IconButton(
+              key: const ValueKey('workbench-bottom-panel-toggle'),
+              onPressed: dockedRoute
+                  ? () => shell.setBottomPanelExpanded(!expanded)
+                  : null,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+              icon: Icon(
+                expanded
+                    ? Icons.keyboard_arrow_down_rounded
+                    : Icons.keyboard_arrow_up_rounded,
+                size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
     );
   }
 }
 
-bool _usesPrimarySidebar(BottomSurfaceTab tab) {
-  return tab == BottomSurfaceTab.search ||
-      tab == BottomSurfaceTab.sourceControl ||
-      tab == BottomSurfaceTab.extensions ||
-      tab == BottomSurfaceTab.settings;
+bool _usesPrimarySidebar(WorkbenchRoute tab) {
+  return tab == WorkbenchRoute.search ||
+      tab == WorkbenchRoute.sourceControl ||
+      tab == WorkbenchRoute.extensions ||
+      tab == WorkbenchRoute.settings;
 }
 
-String _primarySidebarLabel(BottomSurfaceTab tab) {
+String _primarySidebarLabel(WorkbenchRoute tab) {
   return switch (tab) {
-    BottomSurfaceTab.search => 'Search',
-    BottomSurfaceTab.sourceControl => 'Source Control',
-    BottomSurfaceTab.extensions => 'Extensions',
-    BottomSurfaceTab.settings => 'Settings',
+    WorkbenchRoute.search => 'Search',
+    WorkbenchRoute.sourceControl => 'Source Control',
+    WorkbenchRoute.extensions => 'Extensions',
+    WorkbenchRoute.settings => 'Settings',
     _ => 'Explorer',
   };
 }
 
 bool _usesBottomPanel(
-  BottomSurfaceTab tab, {
+  WorkbenchRoute tab, {
   required bool agentUsesAuxiliaryPanel,
 }) {
   return switch (tab) {
-    BottomSurfaceTab.runtime ||
-    BottomSurfaceTab.terminal ||
-    BottomSurfaceTab.commandPalette ||
-    BottomSurfaceTab.problems ||
-    BottomSurfaceTab.testing ||
-    BottomSurfaceTab.debug => true,
-    BottomSurfaceTab.agent => !agentUsesAuxiliaryPanel,
+    WorkbenchRoute.runtime ||
+    WorkbenchRoute.terminal ||
+    WorkbenchRoute.commandPalette ||
+    WorkbenchRoute.problems ||
+    WorkbenchRoute.testing ||
+    WorkbenchRoute.debug => true,
+    WorkbenchRoute.agent => !agentUsesAuxiliaryPanel,
     _ => false,
   };
 }
@@ -2274,38 +2487,58 @@ class _ServiceStateBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = switch (presentation.status) {
-      WorkbenchStatus.ready => theme.colorScheme.primaryContainer,
-      WorkbenchStatus.reconnecting => const Color(0xFFFFE0A3),
-      WorkbenchStatus.blocked => const Color(0xFFF2D7C9),
-      WorkbenchStatus.error => theme.colorScheme.errorContainer,
+    final tokens = VityoWorkbenchTokens.of(context);
+    final tone = switch (presentation.status) {
+      WorkbenchStatus.ready => tokens.success,
+      WorkbenchStatus.reconnecting => tokens.warning,
+      WorkbenchStatus.blocked => tokens.blocked,
+      WorkbenchStatus.error => tokens.error,
     };
     return Container(
       key: ValueKey('service-state-${presentation.status.name}'),
       width: double.infinity,
-      color: color,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: tone.withValues(alpha: 0.07),
+        border: Border(bottom: BorderSide(color: tone.withValues(alpha: 0.20))),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
       child: Row(
         children: [
           Icon(
             presentation.status == WorkbenchStatus.reconnecting
                 ? Icons.sync_rounded
                 : Icons.cloud_off_outlined,
-            size: 16,
+            size: 13,
+            color: tone,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '${presentation.label} — ${presentation.detail}',
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: tokens.ink.withValues(alpha: 0.82),
+                letterSpacing: 0,
+              ),
             ),
           ),
-          TextButton(
+          InkWell(
             key: const ValueKey('service-state-recover'),
-            onPressed: onRecover,
-            child: const Text('Reconnect'),
+            onTap: () => onRecover(),
+            borderRadius: BorderRadius.circular(6),
+            hoverColor: tokens.hover,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              child: Text(
+                'Reconnect',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: tone,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -2463,28 +2696,32 @@ class _SurfaceTabChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: onTap,
-      child: Ink(
-        decoration: BoxDecoration(
-          color: active
-              ? theme.colorScheme.primary.withValues(alpha: 0.08)
-              : Colors.transparent,
-          border: Border(
-            bottom: BorderSide(
-              color: active ? theme.colorScheme.primary : Colors.transparent,
-              width: 2,
+    final tokens = VityoWorkbenchTokens.of(context);
+    final motion = VityoMotion.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(7),
+        hoverColor: tokens.hover,
+        child: AnimatedContainer(
+          duration: motion.fast,
+          curve: motion.emphasized,
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+          decoration: BoxDecoration(
+            color: active ? tokens.elevated : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: active ? tokens.divider : Colors.transparent,
             ),
           ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Text(
-          label,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: active
-                ? theme.colorScheme.onSurface
-                : theme.colorScheme.onSurface.withValues(alpha: 0.68),
-            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          child: Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: active ? tokens.ink : tokens.muted,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              letterSpacing: 0,
+            ),
           ),
         ),
       ),
@@ -2548,13 +2785,18 @@ class _ModuleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final rule = module.ruleFor(platformTarget);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: mounted ? const Color(0xFFF3ECDD) : const Color(0xFFF8F4ED),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.dividerColor),
+        color: mounted ? tokens.accentSoft : tokens.elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: mounted
+              ? tokens.accent.withValues(alpha: 0.30)
+              : tokens.divider,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -2569,7 +2811,11 @@ class _ModuleTile extends StatelessWidget {
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
-                Chip(label: Text(mounted ? 'Mounted' : 'Visible')),
+                WorkbenchMetaPill(
+                  label: mounted ? 'Mounted' : 'Visible',
+                  color: mounted ? tokens.accent : null,
+                  filled: mounted,
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -2579,9 +2825,9 @@ class _ModuleTile extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                Chip(label: Text(module.manifest.kind.wireValue)),
-                Chip(label: Text(module.manifest.slot.wireValue)),
-                Chip(label: Text(rule.distributionChannel)),
+                WorkbenchMetaPill(label: module.manifest.kind.wireValue),
+                WorkbenchMetaPill(label: module.manifest.slot.wireValue),
+                WorkbenchMetaPill(label: rule.distributionChannel),
               ],
             ),
             const SizedBox(height: 10),

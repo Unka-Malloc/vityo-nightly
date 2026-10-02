@@ -6,6 +6,7 @@ import '../../view_ide/debugger/debug_launch_contract.dart';
 import '../../view_ide/debugger/debug_launch_telemetry_store.dart';
 import '../../view_ide/runtime/runtime_execution_plan.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 import '../../view_ide/runtime/runtime_replay_summary.dart';
 import '../../view_ide/shell_runtime/shell_runtime.dart';
 
@@ -340,18 +341,18 @@ class DebugConsoleSurface extends StatelessWidget {
                     child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF29282B),
+                        color: VityoWorkbenchTokens.of(context).editor,
                         borderRadius: BorderRadius.circular(18),
                       ),
                       padding: const EdgeInsets.all(14),
                       child: combinedEntries.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
                                 'No debug output yet.',
-                                key: ValueKey('debug-output-empty'),
+                                key: const ValueKey('debug-output-empty'),
                                 style: TextStyle(
-                                  color: Color(0xFFB8B5BD),
-                                  fontFamily: 'monospace',
+                                  color: VityoWorkbenchTokens.of(context).muted,
+                                  fontFamily: VityoTheme.monoFontFamily,
                                 ),
                               ),
                             )
@@ -361,12 +362,13 @@ class DebugConsoleSurface extends StatelessWidget {
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 8),
                               itemBuilder: (context, index) {
+                                final tokens = VityoWorkbenchTokens.of(context);
                                 return Text(
                                   combinedEntries[index],
-                                  style: const TextStyle(
-                                    color: Color(0xFFF2F0EC),
+                                  style: TextStyle(
+                                    color: tokens.ink,
                                     height: 1.35,
-                                    fontFamily: 'monospace',
+                                    fontFamily: VityoTheme.monoFontFamily,
                                   ),
                                 );
                               },

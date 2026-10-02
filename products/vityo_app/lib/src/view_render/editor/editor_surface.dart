@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/language/language_contract.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 import '../../ide/editor/document_state.dart';
 import '../../ide/editor/editor_controller.dart';
 import '../../ide/editor/render_plan/render_plan.dart';

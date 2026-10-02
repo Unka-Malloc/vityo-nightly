@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-09-08
 
 ## Mission
 
@@ -78,6 +78,11 @@ Key SSOTs:
     child traversal. Preview-host security tests execute the non-zero loopback rejection on POSIX
     hosts and verify the same shell contract statically on Windows, where Python-to-Git-Bash
     subprocess startup is not a product security boundary.
+25. Shell layout preferences are constructed from the foundation data store during app bootstrap,
+    exposed as an optional `presentation.shell-layout-store` service, injected into `ShellModel`,
+    and loaded during app startup. Theme construction resolves the persisted override when one is
+    present and otherwise starts from the Obsidian preset. The `frontend_shell` barrel exports the
+    layout preference contract used by this bootstrap path.
 
 ## Change Classes
 

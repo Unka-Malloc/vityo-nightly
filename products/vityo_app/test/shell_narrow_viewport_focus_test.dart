@@ -7,7 +7,7 @@ void main() {
       'compact mode hides activity rail and produces mobile viewport key',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: BottomSurfaceTab.agent,
+          activeWorkbenchRoute: WorkbenchRoute.agent,
           compact: true,
         );
 
@@ -22,7 +22,7 @@ void main() {
       'desktop mode shows activity rail and produces desktop viewport key',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: BottomSurfaceTab.agent,
+          activeWorkbenchRoute: WorkbenchRoute.agent,
           compact: false,
         );
 
@@ -35,11 +35,11 @@ void main() {
 
     test('narrow viewport stacks panels in ListView instead of Row', () {
       final compactPlan = ShellLayoutPlan.forViewport(
-        activeBottomTab: BottomSurfaceTab.search,
+        activeWorkbenchRoute: WorkbenchRoute.search,
         compact: true,
       );
       final desktopPlan = ShellLayoutPlan.forViewport(
-        activeBottomTab: BottomSurfaceTab.search,
+        activeWorkbenchRoute: WorkbenchRoute.search,
         compact: false,
       );
 
@@ -50,21 +50,24 @@ void main() {
     });
 
     test('bottom panel tab selection works independently of viewport mode', () {
-      for (final tab in BottomSurfaceTab.values) {
+      final registry = ShellPanelContributionRegistry.defaultIdePanels();
+      for (final tab in WorkbenchRoute.values) {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: tab,
+          activeWorkbenchRoute: tab,
           compact: false,
         );
         final compactPlan = ShellLayoutPlan.forViewport(
-          activeBottomTab: tab,
+          activeWorkbenchRoute: tab,
           compact: true,
         );
 
         // Same tab active in both modes
-        expect(plan.activeBottomTab, tab);
-        expect(compactPlan.activeBottomTab, tab);
+        expect(plan.activeWorkbenchRoute, tab);
+        expect(compactPlan.activeWorkbenchRoute, tab);
         // Panel for this tab is active
-        final panelId = 'bottom.${tab.name}';
+        final panelId = registry.contributions
+            .singleWhere((contribution) => contribution.route == tab)
+            .id;
         expect(plan.panelById(panelId)?.active, isTrue);
         expect(compactPlan.panelById(panelId)?.active, isTrue);
       }
@@ -78,14 +81,14 @@ void main() {
         final controller = ShellLayoutPreferenceController(
           initialPreferences: const ShellLayoutPreferences(
             workspaceId: 'demo',
-            activeBottomTab: BottomSurfaceTab.problems,
+            activeWorkbenchRoute: WorkbenchRoute.problems,
             bottomPanelExpanded: true,
           ),
         );
 
         expect(
-          controller.preferences.activeBottomTab,
-          BottomSurfaceTab.problems,
+          controller.preferences.activeWorkbenchRoute,
+          WorkbenchRoute.problems,
         );
         expect(controller.preferences.bottomPanelExpanded, isTrue);
 
@@ -94,8 +97,8 @@ void main() {
         expect(controller.preferences.bottomPanelExpanded, isFalse);
         // Active tab is preserved
         expect(
-          controller.preferences.activeBottomTab,
-          BottomSurfaceTab.problems,
+          controller.preferences.activeWorkbenchRoute,
+          WorkbenchRoute.problems,
         );
 
         // Toggle back
@@ -105,7 +108,7 @@ void main() {
         // Panel visible state reflects expanded + active tab
         final binding = controller.renderBindingForViewport(compact: false);
         expect(binding.bottomPanelExpanded, isTrue);
-        expect(binding.activeBottomPanelId, 'bottom.problems');
+        expect(binding.activePanelId, 'bottom.problems');
       },
     );
 
@@ -113,7 +116,7 @@ void main() {
       final controller = ShellLayoutPreferenceController(
         initialPreferences: const ShellLayoutPreferences(
           workspaceId: 'demo',
-          activeBottomTab: BottomSurfaceTab.debug,
+          activeWorkbenchRoute: WorkbenchRoute.debug,
         ),
       );
       controller.setPanelPinned('bottom.debug', pinned: true);
@@ -123,7 +126,7 @@ void main() {
 
       // Recalculate binding
       final binding = controller.renderBindingForViewport(compact: false);
-      expect(binding.activeBottomPanelId, 'bottom.debug');
+      expect(binding.activePanelId, 'bottom.debug');
     });
 
     test('preference controller aggregates revision count', () {
@@ -133,10 +136,10 @@ void main() {
 
       expect(controller.revision, 0);
 
-      controller.selectBottomTab(BottomSurfaceTab.search);
+      controller.selectWorkbenchRoute(WorkbenchRoute.search);
       expect(controller.revision, 1);
 
-      controller.setPanelPinned('bottom.search', pinned: true);
+      controller.setPanelPinned('primary.search', pinned: true);
       expect(controller.revision, 2);
 
       controller.setPanelVisible('bottom.runtime', visible: false);
@@ -150,26 +153,26 @@ void main() {
   group('Shell layout plan roundtrip', () {
     test('plan serialization roundtrips active tab and panel visibility', () {
       final plan = ShellLayoutPlan.forViewport(
-        activeBottomTab: BottomSurfaceTab.search,
+        activeWorkbenchRoute: WorkbenchRoute.search,
         compact: true,
       );
       final json = plan.toJson();
       final restored = ShellLayoutPlan.fromJson(json);
 
-      expect(restored.activeBottomTab, BottomSurfaceTab.search);
+      expect(restored.activeWorkbenchRoute, WorkbenchRoute.search);
       expect(restored.mode, ShellLayoutMode.compact);
-      expect(restored.panelById('bottom.search')?.active, isTrue);
+      expect(restored.panelById('primary.search')?.active, isTrue);
       expect(restored.renderBinding().viewportKey, 'shell-viewport-mobile');
 
       // Edit, serialize, restore again
       final edited = ShellLayoutPlan.forViewport(
-        activeBottomTab: BottomSurfaceTab.extensions,
+        activeWorkbenchRoute: WorkbenchRoute.extensions,
         compact: false,
       );
       final editedJson = edited.toJson();
       final restoredEdited = ShellLayoutPlan.fromJson(editedJson);
 
-      expect(restoredEdited.activeBottomTab, BottomSurfaceTab.extensions);
+      expect(restoredEdited.activeWorkbenchRoute, WorkbenchRoute.extensions);
       expect(restoredEdited.mode, ShellLayoutMode.desktop);
       expect(
         restoredEdited.renderBinding().viewportKey,
@@ -180,28 +183,28 @@ void main() {
 
   group('Focus model verification', () {
     test(
-      'ShellLayoutPreferenceController selectBottomTab preserves focus intent',
+      'ShellLayoutPreferenceController selectWorkbenchRoute preserves focus intent',
       () {
         final controller = ShellLayoutPreferenceController(
           initialPreferences: const ShellLayoutPreferences(
             workspaceId: 'demo',
-            activeBottomTab: BottomSurfaceTab.runtime,
+            activeWorkbenchRoute: WorkbenchRoute.runtime,
           ),
         );
 
         // Selecting the same tab is a no-op
-        controller.selectBottomTab(BottomSurfaceTab.runtime);
+        controller.selectWorkbenchRoute(WorkbenchRoute.runtime);
         expect(
-          controller.preferences.activeBottomTab,
-          BottomSurfaceTab.runtime,
+          controller.preferences.activeWorkbenchRoute,
+          WorkbenchRoute.runtime,
         );
         expect(controller.revision, 0);
 
         // Switching tabs
-        controller.selectBottomTab(BottomSurfaceTab.problems);
+        controller.selectWorkbenchRoute(WorkbenchRoute.problems);
         expect(
-          controller.preferences.activeBottomTab,
-          BottomSurfaceTab.problems,
+          controller.preferences.activeWorkbenchRoute,
+          WorkbenchRoute.problems,
         );
         expect(controller.revision, 1);
       },
@@ -211,7 +214,7 @@ void main() {
       // The editor is always active in both desktop and compact modes
       for (final compact in [true, false]) {
         final plan = ShellLayoutPlan.forViewport(
-          activeBottomTab: BottomSurfaceTab.runtime,
+          activeWorkbenchRoute: WorkbenchRoute.runtime,
           compact: compact,
         );
         expect(
