@@ -807,6 +807,7 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     return ObservedExecutionRun(
       session: session,
       runtimeEventsPath: artifactPath,
+      temporaryDirectory: preparedInput.temporaryDirectory,
       release: deferCleanup ? releaseOverlay : null,
     );
   } on Object catch (error) {
@@ -822,6 +823,7 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     );
     return ObservedExecutionRun(
       session: session,
+      temporaryDirectory: preparedInput.temporaryDirectory,
       release: deferCleanup ? releaseOverlay : null,
     );
   } finally {

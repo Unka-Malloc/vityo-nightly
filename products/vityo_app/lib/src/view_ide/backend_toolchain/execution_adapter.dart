@@ -283,12 +283,21 @@ class ObservedExecutionRun {
   ObservedExecutionRun({
     required this.session,
     this.runtimeEventsPath,
+    this.temporaryDirectory,
     this.unavailableReason,
     Future<void> Function()? release,
   }) : release = release ?? _noopRelease;
 
   final ExecutionSession session;
   final String? runtimeEventsPath;
+
+  /// Root of the execution overlay scratch tree when the run prepared one.
+  ///
+  /// The overlay is allocated under the platform manager's system temporary path
+  /// and removed by [release]. Exposing the path lets a caller or a test observe
+  /// that scratch state directly instead of inferring it from a directory
+  /// listing, which would also depend on where the platform puts temporary data.
+  final String? temporaryDirectory;
   final ObservableReasonCode? unavailableReason;
   final Future<void> Function() release;
 

@@ -2513,22 +2513,17 @@ raise SystemExit(64)
           ),
         );
     expect(run.session.status, ExecutionSessionStatus.succeeded);
-    final workspaceName = tempRoot.uri.pathSegments.lastWhere(
-      (segment) => segment.isNotEmpty,
-    );
-    final overlayPrefix = '.Vityo-$workspaceName-';
-    final overlays = Directory(tempRoot.parent.path)
-        .listSync()
-        .whereType<Directory>()
-        .where(
-          (directory) => directory.uri.pathSegments
-              .lastWhere((segment) => segment.isNotEmpty)
-              .startsWith(overlayPrefix),
-        )
-        .toList();
-    expect(overlays, isNotEmpty);
-    final overlay = overlays.single;
+    // The overlay is allocated under the platform manager's system temporary
+    // path, which this test makes the current working directory, rather than
+    // beside the workspace. The run reports the scratch tree it prepared, so the
+    // test asserts the real lifetime instead of guessing a sibling name.
+    final overlayPath = run.temporaryDirectory;
+    expect(overlayPath, isNotNull);
+    final overlay = Directory(overlayPath!);
     expect(overlay.existsSync(), isTrue);
+    // The overlay is a copy for the run, not the caller's workspace: the
+    // workspace source keeps its original content.
+    expect(sourceFile.readAsStringSync(), contains('>_("dirty")'));
     await run.release();
     expect(overlay.existsSync(), isFalse);
   });

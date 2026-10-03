@@ -19,6 +19,15 @@ import 'package:vityo_app/src/view_render/workbench_demo/workbench_demo.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // The goldens beside the web reference shots are design-surface captures
+  // rendered with real bundled fonts, and text shaping plus anti-aliasing differ
+  // between operating systems. They were captured on macOS, so pixel comparison
+  // is meaningful only on that host; other hosts would report a rendering
+  // difference as a regression. Recapture with
+  // `flutter test test/workbench_demo_capture_test.dart --update-goldens` on the
+  // host whose rendering is being recorded, then enable that host here.
+  final bool hostMismatch = !Platform.isMacOS;
+
   testWidgets('captures workbench demo states', (tester) async {
     await _loadDemoFonts();
     tester.view.devicePixelRatio = 1;
@@ -70,7 +79,7 @@ void main() {
     c.setNotation(true);
     await tester.pump(const Duration(milliseconds: 300));
     await _capture('util-flow');
-  }, timeout: const Timeout(Duration(minutes: 4)));
+  }, timeout: const Timeout(Duration(minutes: 4)), skip: hostMismatch);
 }
 
 const String _reviewDir = '../../../.impeccable/review';
