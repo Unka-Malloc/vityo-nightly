@@ -142,6 +142,22 @@ def build_vityod(config: dict[str, object]) -> Path | None:
     return require_file(ROOT / str(component.get("source_relative_path", "")))
 
 
+def require_contained_relative_path(relative: str, label: str) -> Path:
+    """Reject a declared package path that can escape the application directory.
+
+    A bare ``is_absolute()`` check is not enough on Windows: ``/tmp/vityod`` has
+    a root but no drive, so it is not absolute there while joining it to
+    ``D:/bundle/Vityo.app`` still resolves to ``D:/tmp/vityod``. Testing the
+    parsed anchor covers rooted paths, drive-absolute paths, and drive-relative
+    paths on every platform, so a declared component path can only ever name a
+    location inside the application directory.
+    """
+    path = Path(relative)
+    if not path.parts or ".." in path.parts or path.anchor:
+        raise ValueError(f"{label} path must stay inside the application")
+    return path
+
+
 def stage_vityod(config: dict[str, object], destination_root: Path) -> Path | None:
     component = config.get("vityod")
     if component is None:
@@ -149,9 +165,9 @@ def stage_vityod(config: dict[str, object], destination_root: Path) -> Path | No
     if not isinstance(component, dict):
         raise ValueError("vityod package contract must be an object")
     source = require_file(ROOT / str(component.get("source_relative_path", "")))
-    relative = Path(str(component.get("package_relative_path", "")))
-    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-        raise ValueError("vityod package path must stay inside the application")
+    relative = require_contained_relative_path(
+        str(component.get("package_relative_path", "")), "vityod package"
+    )
     destination = destination_root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
@@ -223,9 +239,9 @@ def stage_coding_agent(config: dict[str, object], destination_root: Path) -> Pat
     if not isinstance(component, dict):
         raise ValueError("Coding Agent package contract is missing")
     source = require_file(ROOT / str(component.get("source_relative_path", "")))
-    relative = Path(str(component.get("package_relative_path", "")))
-    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-        raise ValueError("Coding Agent package path must stay inside the application")
+    relative = require_contained_relative_path(
+        str(component.get("package_relative_path", "")), "Coding Agent package"
+    )
     destination = destination_root / relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)

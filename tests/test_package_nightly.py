@@ -223,6 +223,32 @@ class PackageNightlyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "contract is missing"):
             self.packager.stage_coding_agent({}, Path("application"))
 
+    def test_stage_coding_agent_rejects_rooted_escape_paths(self) -> None:
+        """A rooted path without a drive still escapes on Windows.
+
+        ``Path('/tmp/vityod').is_absolute()`` is false on Windows, so joining it
+        to ``D:/bundle/Vityo.app`` previously resolved to ``D:/tmp/vityod`` and
+        the containment check accepted it.
+        """
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            source = root / "source/vityo-coding-agent"
+            source.parent.mkdir()
+            source.write_bytes(b"agent")
+            destination_root = root / "application"
+            self.packager.ROOT = root
+            for escaped in ("/tmp/vityod", "/etc/passwd", "../outside", ""):
+                with self.subTest(package_relative_path=escaped):
+                    config = {
+                        "coding_agent": {
+                            "source_relative_path": "source/vityo-coding-agent",
+                            "package_relative_path": escaped,
+                        }
+                    }
+                    with self.assertRaisesRegex(ValueError, "must stay inside"):
+                        self.packager.stage_coding_agent(config, destination_root)
+            self.assertFalse((root / "tmp").exists())
+
     def test_stage_rust_notices_requires_nonempty_generated_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
