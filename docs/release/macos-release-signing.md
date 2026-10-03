@@ -42,18 +42,27 @@ signed artifact can exist:
    macOS stages it under `Contents/Resources`; other platforms keep the manifest
    beside the daemon. The desktop matrix gate discovers it by recursive search and
    still requires exactly one record per package.
-2. **The Flutter frameworks are not in a form `codesign` will seal.**
-   `Contents/Frameworks/FlutterMacOS.framework` fails with `bundle format is
-   ambiguous (could be app or framework)`, and the same applies to
-   `App.framework`. On disk these frameworks carry a top-level binary alongside a
-   `Versions/` tree, which is not a layout `codesign` accepts for a framework
-   bundle. This originates in the Flutter macOS build output, so the resolution
-   belongs to the build configuration rather than to the seal step.
+2. **`codesign --verify --strict` reports the Flutter frameworks as ambiguous.**
+   `Contents/Frameworks/FlutterMacOS.framework` and `App.framework` carry a
+   top-level binary alongside a `Versions/` tree, which `--strict` reads as
+   `bundle format is ambiguous (could be app or framework)`. This is a property of
+   the Flutter macOS build output, not of the seal: the unmodified Flutter build on
+   this host reports the identical message at the same subcomponent, so the seal
+   step neither introduces nor can remove it. It does not prevent signing or
+   notarization, and it is the reason the verification below uses Gatekeeper
+   assessment rather than `--strict` alone.
 
-Until both are resolved, package builds keep recording the explicit signing gap,
-which is the honest state: the seal step refuses to report success for a bundle it
-cannot verify. `--deep` is deliberately not used, because it is deprecated for
-signing and reports the framework problem with a less specific message.
+`--deep` is deliberately not used, because it is deprecated for signing and
+reports the framework problem with a less specific message.
+
+**Observed signing result.** Sealing the staged bundle with a real Developer ID
+certificate produced a correctly signed application: the bundle carries
+`flags=0x10000(runtime)` (hardened runtime), `Authority=Developer ID Application`,
+and a team identifier, and each helper keeps its own hardened-runtime signature.
+At that point Gatekeeper reports `rejected` with `source=Unnotarized Developer ID`,
+which is the expected state for a correctly signed but not yet notarized bundle;
+notarization and stapling move it to `accepted`. So the missing input for a
+distributable artifact is the notarization credential, not the seal.
 
 ## 2. Sealing Order
 

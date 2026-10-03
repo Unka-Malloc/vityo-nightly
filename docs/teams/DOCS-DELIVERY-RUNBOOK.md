@@ -260,6 +260,13 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Sealed the staged bundle with a real Developer ID certificate and recorded the
+observed result: the application carries the hardened runtime, a Developer ID authority, and a
+team identifier, and Gatekeeper reports `rejected` with `source=Unnotarized Developer ID`, which
+is the expected pre-notarization state. Clarified that the frameworks' `--strict` ambiguity is a
+property of the Flutter build output and is reproducible on the unmodified build, so verification
+uses Gatekeeper assessment. Missing input is the notarization credential. No `prototype/` change.
+
 2026-10-03: Resolved the first macOS sealing blocker. The package definition now declares
 where the `vityod-component.json` identity record is staged, and macOS moves it to
 `Contents/Resources` so `codesign` no longer sees unsigned JSON inside the nested-code
