@@ -137,6 +137,9 @@ def run(
 def cutover() -> int:
     dart = tool("dart")
     flutter = tool("flutter")
+    code = ensure_dart_package(dart, ROOT / "packages" / "vityo_agent_protocol")
+    if code:
+        return code
     commands = (
         ([sys.executable, "scripts/check_product_line_boundaries.py"], ROOT),
         (
@@ -512,9 +515,27 @@ def recovery_isolation() -> int:
     )
 
 
+def ensure_dart_package(dart: str, package: pathlib.Path) -> int:
+    """Resolve a Dart package's dependencies before analysing or testing it.
+
+    The protocol packages are analysed with bare `dart analyze` and `dart test`,
+    which need a resolved `.dart_tool/package_config.json`. A warm checkout has
+    one, so this is invisible locally, but a clean CI checkout does not: the
+    analyzer then cannot resolve `package:test`, `package:lints`, or the
+    package's own libraries and reports them as undefined names. Resolving first
+    keeps both entrypoints working on a clean tree.
+    """
+    if (package / ".dart_tool" / "package_config.json").is_file():
+        return 0
+    return run([dart, "pub", "get"], package)
+
+
 def daemon_core() -> int:
     dart = tool("dart")
     daemon_protocol = ROOT / "packages" / "vityo_daemon_protocol"
+    code = ensure_dart_package(dart, daemon_protocol)
+    if code:
+        return code
     commands = (
         ([dart, "analyze"], daemon_protocol),
         ([dart, "test"], daemon_protocol),

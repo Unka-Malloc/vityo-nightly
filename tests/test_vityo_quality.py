@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import pathlib
 import sys
 import tempfile
 import unittest
@@ -291,6 +292,72 @@ class VityoQualityTest(unittest.TestCase):
             ["/tools/flutter", "test", "--no-pub", "test/agent_workbench"],
             commands,
         )
+
+    def test_dart_package_preparation_resolves_a_clean_checkout(self) -> None:
+        """A clean checkout has no package config, so resolution must run first.
+
+        The protocol packages are analysed with bare `dart analyze`/`dart test`.
+        With a warm `.dart_tool` that works, but on a clean CI checkout the
+        analyzer cannot resolve `package:test` or `package:lints` and reports the
+        package's own libraries as undefined names.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            package = pathlib.Path(tmp) / "protocol"
+            (package / ".dart_tool").mkdir(parents=True)
+            (package / ".dart_tool" / "package_config.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
+            with mock.patch.object(self.quality, "run") as run:
+                self.assertEqual(
+                    self.quality.ensure_dart_package("/tools/dart", package), 0
+                )
+            run.assert_not_called()
+
+            (package / ".dart_tool" / "package_config.json").unlink()
+            with mock.patch.object(self.quality, "run", return_value=0) as run:
+                self.assertEqual(
+                    self.quality.ensure_dart_package("/tools/dart", package), 0
+                )
+            run.assert_called_once_with(["/tools/dart", "pub", "get"], package)
+
+            with mock.patch.object(self.quality, "run", return_value=65):
+                self.assertEqual(
+                    self.quality.ensure_dart_package("/tools/dart", package), 65
+                )
+
+    def test_daemon_core_prepares_the_package_before_analyzing(self) -> None:
+        """Resolution is wired ahead of analysis, on the daemon package."""
+        recorded: list[list[str]] = []
+
+        def record(command, cwd=None, environment=None):
+            recorded.append(list(command))
+            return 0
+
+        with mock.patch.object(
+            self.quality, "tool", return_value="/tools/dart"
+        ), mock.patch.object(
+            self.quality, "ensure_dart_package", return_value=0
+        ) as prepare, mock.patch.object(
+            self.quality, "run", side_effect=record
+        ):
+            self.assertEqual(self.quality.daemon_core(), 0)
+        self.assertEqual(
+            prepare.call_args.args[1],
+            self.quality.ROOT / "packages" / "vityo_daemon_protocol",
+        )
+        self.assertEqual(recorded[0], ["/tools/dart", "analyze"])
+        self.assertEqual(recorded[1], ["/tools/dart", "test"])
+
+    def test_daemon_core_stops_when_the_package_cannot_be_resolved(self) -> None:
+        with mock.patch.object(
+            self.quality, "tool", return_value="/tools/dart"
+        ), mock.patch.object(
+            self.quality, "ensure_dart_package", return_value=65
+        ), mock.patch.object(self.quality, "run") as run:
+            self.assertEqual(self.quality.daemon_core(), 65)
+        run.assert_not_called()
 
     def test_mcp_runners_analyze_only_cutover_authority(self) -> None:
         expected = {
