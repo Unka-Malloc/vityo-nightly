@@ -298,6 +298,11 @@ class ProjectCoverageGateTest(unittest.TestCase):
             vityod_manifest = app / "native/vityod/Cargo.toml"
             vityod_manifest.parent.mkdir(parents=True)
             vityod_manifest.write_text("[workspace]\n", encoding="utf-8")
+            # The packaged-Agent handshake needs the Coding Agent built first,
+            # so the collection path resolves this manifest too.
+            agent_manifest = root / "products/vityo_coding_agent/Cargo.toml"
+            agent_manifest.parent.mkdir(parents=True)
+            agent_manifest.write_text("[package]\n", encoding="utf-8")
             original_root = self.gate.ROOT
             self.gate.ROOT = root
             try:
@@ -372,6 +377,21 @@ class ProjectCoverageGateTest(unittest.TestCase):
                     )
                     self.assertEqual(
                         run_command.call_args_list[1],
+                        mock.call(
+                            [
+                                "cargo",
+                                "build",
+                                "--locked",
+                                "--manifest-path",
+                                str(agent_manifest),
+                                "--bin",
+                                "vityo-coding-agent",
+                            ],
+                            cwd=root,
+                        ),
+                    )
+                    self.assertEqual(
+                        run_command.call_args_list[2],
                         mock.call(["/bin/flutter", "test", "--coverage"], cwd=app),
                     )
                     self.assertIn("95.00%", stdout.getvalue())

@@ -2521,9 +2521,10 @@ raise SystemExit(64)
     expect(overlayPath, isNotNull);
     final overlay = Directory(overlayPath!);
     expect(overlay.existsSync(), isTrue);
-    // The overlay is a copy for the run, not the caller's workspace: the
-    // workspace source keeps its original content.
-    expect(sourceFile.readAsStringSync(), contains('>_("dirty")'));
+    // The overlay is a copy for the run, not the caller's workspace: the run
+    // executes the in-memory document revision, and the workspace file keeps the
+    // on-disk text it had before the run.
+    expect(sourceFile.readAsStringSync(), '>_("demo")\n');
     await run.release();
     expect(overlay.existsSync(), isFalse);
   });

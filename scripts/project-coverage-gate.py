@@ -17,6 +17,7 @@ DEFAULT_FLUTTER_DIR = Path("products/vityo_app")
 DEFAULT_FAIL_UNDER = 95
 LCOV_RELATIVE_PATH = Path("coverage/lcov.info")
 VITYOD_CARGO_MANIFEST = Path("native/vityod/Cargo.toml")
+CODING_AGENT_CARGO_MANIFEST = Path("products/vityo_coding_agent/Cargo.toml")
 DEFAULT_RUST_COVERAGE_DIR = Path("build/evidence/rust-coverage")
 DEFAULT_AGENT_RECEIPT = Path("build/evidence/vityo-coding-agent-full.json")
 
@@ -131,6 +132,31 @@ def run_flutter_gate(
                 str(vityod_manifest),
                 "-p",
                 "vityod",
+            ],
+            cwd=ROOT,
+        )
+        if code != 0:
+            return code
+        # The packaged-Agent handshake test drives the real Coding Agent
+        # executable, so it needs the same kind of prerequisite the daemon test
+        # already has. Without this the test has nothing to launch and fails on
+        # every host instead of exercising the protocol.
+        agent_manifest = ROOT / CODING_AGENT_CARGO_MANIFEST
+        if not agent_manifest.is_file():
+            print(
+                f"Coding Agent Cargo manifest is missing: {agent_manifest}",
+                file=sys.stderr,
+            )
+            return 2
+        code = run_command(
+            [
+                "cargo",
+                "build",
+                "--locked",
+                "--manifest-path",
+                str(agent_manifest),
+                "--bin",
+                "vityo-coding-agent",
             ],
             cwd=ROOT,
         )

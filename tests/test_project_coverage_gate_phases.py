@@ -149,12 +149,16 @@ class ProjectCoverageGatePhaseTest(unittest.TestCase):
             manifest = app / "native/vityod/Cargo.toml"
             manifest.parent.mkdir(parents=True)
             manifest.write_text("[workspace]\n", encoding="utf-8")
+            # Collection also builds the Coding Agent for the packaged handshake.
+            agent_manifest = root / "products/vityo_coding_agent/Cargo.toml"
+            agent_manifest.parent.mkdir(parents=True)
+            agent_manifest.write_text("[package]\n", encoding="utf-8")
             with mock.patch.object(self.gate, "ROOT", root):
                 with mock.patch.object(
                     self.gate, "resolve_flutter_binary", return_value="/bin/flutter"
                 ):
                     with mock.patch.object(
-                        self.gate, "run_command", side_effect=[0, 11]
+                        self.gate, "run_command", side_effect=[0, 0, 11]
                     ) as run_command:
                         self.assertEqual(
                             self.gate.run_flutter_gate(
@@ -167,9 +171,24 @@ class ProjectCoverageGatePhaseTest(unittest.TestCase):
 
         self.assertEqual(
             run_command.call_args_list[1],
+            mock.call(
+                [
+                    "cargo",
+                    "build",
+                    "--locked",
+                    "--manifest-path",
+                    str(agent_manifest),
+                    "--bin",
+                    "vityo-coding-agent",
+                ],
+                cwd=root,
+            ),
+        )
+        self.assertEqual(
+            run_command.call_args_list[2],
             mock.call(["/bin/flutter", "test", "--coverage"], cwd=app),
         )
-        self.assertEqual(len(run_command.call_args_list), 2)
+        self.assertEqual(len(run_command.call_args_list), 3)
 
     def test_run_flutter_gate_skips_reporting_when_only_collection_was_requested(self) -> None:
         with tempfile.TemporaryDirectory(prefix="project-coverage-phases-") as tmp_name:
@@ -178,6 +197,10 @@ class ProjectCoverageGatePhaseTest(unittest.TestCase):
             manifest = app / "native/vityod/Cargo.toml"
             manifest.parent.mkdir(parents=True)
             manifest.write_text("[workspace]\n", encoding="utf-8")
+            # Collection also builds the Coding Agent for the packaged handshake.
+            agent_manifest = root / "products/vityo_coding_agent/Cargo.toml"
+            agent_manifest.parent.mkdir(parents=True)
+            agent_manifest.write_text("[package]\n", encoding="utf-8")
             with mock.patch.object(self.gate, "ROOT", root):
                 with mock.patch.object(
                     self.gate, "resolve_flutter_binary", return_value="/bin/flutter"
