@@ -35,9 +35,6 @@ class _EditorHighVolumeViewport extends StatelessWidget {
             controller: controller,
             itemCount: lineCount,
             itemExtent: lineExtent,
-            scrollCacheExtent: ScrollCacheExtent.pixels(
-              lineExtent * cacheLineCount,
-            ),
             semanticChildCount: lineCount,
             itemBuilder: lineBuilder,
           ),

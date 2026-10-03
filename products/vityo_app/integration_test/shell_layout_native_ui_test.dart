@@ -82,7 +82,7 @@ void main() {
 
     await shell.persistShellLayoutPreferences();
     final restored = await store.readPreferences(workspaceId: workspaceId);
-    expect(restored.activeWorkbenchRoute, WorkbenchRoute.problems);
+    expect(restored.activeWorkbenchRoute, BottomSurfaceTab.problems);
     expect(restored.primarySidebarWidth, greaterThanOrEqualTo(300));
     expect(restored.bottomPanelHeight, greaterThanOrEqualTo(270));
     expect(restored.bottomPanelExpanded, isTrue);

@@ -34,15 +34,15 @@ void main() {
 
     await _capture(tester, 'obsidian-editor');
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.commandPalette);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.commandPalette);
     await tester.pumpAndSettle();
     await _capture(tester, 'obsidian-command-palette');
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.settings);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.settings);
     await tester.pumpAndSettle();
     await _capture(tester, 'obsidian-settings');
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.navigate);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.navigate);
     await tester.pumpAndSettle();
   });
 }
