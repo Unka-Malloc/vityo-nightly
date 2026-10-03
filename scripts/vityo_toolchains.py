@@ -212,14 +212,33 @@ def _build_commands(product: str, source: Path) -> tuple[tuple[str, ...], tuple[
     return tuple(configure), build_command
 
 
+def _locate_built_cli(source: Path, executable_name: str) -> Path | None:
+    """Find the built CLI, tolerating single- and multi-configuration layouts.
+
+    Visual Studio is a multi-configuration generator and writes the binary to a
+    per-configuration directory such as `bin/Debug/<name>` or `bin/Release/<name>`
+    instead of straight into `bin/`. Single-configuration generators such as
+    Makefiles and Ninja use the flat layout. Accept either rather than assuming
+    one, and require the executable bit where the platform has one.
+    """
+    candidates = [source / "build/default/bin" / executable_name]
+    candidates.extend(
+        sorted((source / "build/default/bin").glob(f"*/{executable_name}"))
+    )
+    for candidate in candidates:
+        if candidate.is_file() and (os.name == "nt" or os.access(candidate, os.X_OK)):
+            return candidate
+    return None
+
+
 def provision(product: str, *, root: Path = ROOT, runner: CommandRunner = _run) -> Path:
     if product not in PRODUCTS:
         raise ToolchainError(f"unsupported pinned product tool: {product}")
     commit = _matrix_commit(product, root=root)
     source = ensure_pinned_checkout(product, root=root, runner=runner)
     executable_name = str(PRODUCTS[product]["executable"])
-    executable = source / "build/default/bin" / executable_name
-    if executable.is_file() and (os.name == "nt" or os.access(executable, os.X_OK)):
+    executable = _locate_built_cli(source, executable_name)
+    if executable is not None:
         if runner((str(executable), "--version"), source) != 0:
             raise ToolchainError(f"the pinned {product} CLI failed its version check")
         return executable
@@ -230,7 +249,8 @@ def provision(product: str, *, root: Path = ROOT, runner: CommandRunner = _run) 
     print(f"[vityo-toolchains] build pinned {product} CLI", flush=True)
     if runner(build, source) != 0:
         raise ToolchainError(f"building the pinned {product} CLI failed")
-    if not executable.is_file() or (os.name != "nt" and not os.access(executable, os.X_OK)):
+    executable = _locate_built_cli(source, executable_name)
+    if executable is None:
         raise ToolchainError(f"the pinned {product} build did not produce its CLI executable")
     if runner((str(executable), "--version"), source) != 0:
         raise ToolchainError(f"the pinned {product} CLI failed its version check")

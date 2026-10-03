@@ -116,6 +116,35 @@ class VityoToolchainsTest(unittest.TestCase):
         managed_parent = self.root / "build/toolchains/styio-nightly"
         self.assertEqual(list(managed_parent.iterdir()), [])
 
+    def test_locate_built_cli_accepts_flat_and_multiconfig_layouts(self) -> None:
+        """Visual Studio writes to `bin/<Config>/<name>`, Makefiles to `bin/<name>`.
+
+        The pinned Styio build succeeds on Windows but the CLI lands in
+        `build/default/bin/Debug/styio.exe`, so a flat-only lookup reported that
+        the build produced no executable.
+        """
+        import tempfile
+
+        name = str(self.toolchains.PRODUCTS["styio"]["executable"])
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            binary_dir = source / "build/default/bin"
+            binary_dir.mkdir(parents=True)
+
+            self.assertIsNone(self.toolchains._locate_built_cli(source, name))
+
+            flat = binary_dir / name
+            flat.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            flat.chmod(0o755)
+            self.assertEqual(self.toolchains._locate_built_cli(source, name), flat)
+
+            flat.unlink()
+            nested = binary_dir / "Debug" / name
+            nested.parent.mkdir(parents=True)
+            nested.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            nested.chmod(0o755)
+            self.assertEqual(self.toolchains._locate_built_cli(source, name), nested)
+
     def test_provision_builds_only_pinned_cli_and_reuses_valid_binary(self) -> None:
         calls: list[tuple[str, ...]] = []
         expected_source = self.root / "build/toolchains/styio-nightly" / self.commit
