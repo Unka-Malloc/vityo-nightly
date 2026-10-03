@@ -169,7 +169,11 @@ Future<void> main() async {
           'revision=${receipt.workspaceRevision},'
           'exit=${receipt.exitCode},'
           'provenance=${receipt.provenance.length},'
-          'message=${receipt.message}').join(' | ')}'
+          'message=${receipt.message},'
+          // Include the captured streams: a failing analyzer reports why on
+          // stdout, and without it the exit code alone cannot be diagnosed.
+          'stdout=${receipt.output.text.trim()},'
+          'stderr=${receipt.errorOutput.text.trim()}').join(' | ')}'
       ' (expected revision $editedRevision)',
     );
     _expect(
