@@ -700,16 +700,24 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
                 "coding_agent": {"package_relative_path": "Contents/Helpers/vityo-coding-agent"},
             }
             output = root / "Vityo.dmg"
+            expected_signing = {
+                "status": "explicit-gap",
+                "reason": packaging.vityo_macos_signing.SIGNING_GAP_REASON,
+            }
             with (
                 mock.patch.object(packaging, "ROOT", root),
                 mock.patch.object(packaging.subprocess, "run") as run,
                 mock.patch.object(packaging, "stage_coding_agent") as stage_agent,
                 mock.patch.object(packaging, "stage_rust_notices") as stage_notices,
             ):
-                self.assertEqual(packaging.package_macos(config, output), output)
+                # The DMG is written to `output`; the call returns the signing
+                # block that packaging records in the artifact evidence.
+                self.assertEqual(packaging.package_macos(config, output), expected_signing)
                 config["vityod"] = {"component": "vityod"}
                 with mock.patch.object(packaging, "stage_vityod") as stage:
-                    self.assertEqual(packaging.package_macos(config, output), output)
+                    self.assertEqual(
+                        packaging.package_macos(config, output), expected_signing
+                    )
                 stage.assert_called_once()
             self.assertEqual(stage_agent.call_count, 2)
             self.assertEqual(stage_notices.call_count, 2)
