@@ -29,6 +29,17 @@ def load_delivery():
     return module
 
 
+def _load_docs_gate_module():
+    path = ROOT / "scripts" / "docs_gate.py"
+    spec = importlib.util.spec_from_file_location("docs_gate_under_test", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class DeliveryStageTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.delivery = load_delivery()
@@ -232,7 +243,10 @@ class GitModeCommandsTest(DeliveryStageTestCase):
         hygiene, docs = self.delivery._git_mode_commands(self.options(mode="local"))
         self.assertIn("--mode", hygiene)
         self.assertEqual(hygiene[hygiene.index("--mode") + 1], "tracked")
-        self.assertEqual(docs[:2], ["bash", "scripts/docs-gate.sh"])
+        # Delivery runs the Python gate implementation so the docs gate works on
+        # Windows, where `bash` can resolve to a WSL launcher with no distro.
+        self.assertEqual(docs[1], "scripts/docs_gate.py")
+        self.assertIn("--python-bin", docs)
         self.assertEqual(docs[docs.index("--mode") + 1], "worktree")
 
     def test_ci_mode_uses_event_range(self) -> None:
@@ -1981,3 +1995,44 @@ class LinuxLaunchTest(DeliveryStageTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DocsGateCompositionTest(unittest.TestCase):
+    """The gate runs the same three tools from either entrypoint."""
+
+    def setUp(self) -> None:
+        self.gate = _load_docs_gate_module()
+
+    def test_worktree_mode_runs_team_gate_audit_and_ecosystem(self) -> None:
+        commands = self.gate.docs_gate_commands("worktree", None, False, "/py")
+        self.assertEqual(commands[0][0], ["/py", "scripts/team-docs-gate.py"])
+        self.assertEqual(commands[1][0], ["/py", "scripts/docs-audit.py"])
+        self.assertEqual(
+            commands[2][0],
+            ["/py", "scripts/ecosystem-cli-doc-gate.py", "--non-blocking"],
+        )
+
+    def test_audit_suppresses_the_team_gate_it_already_ran(self) -> None:
+        commands = self.gate.docs_gate_commands("worktree", None, False, "/py")
+        audit_env = commands[1][1] or {}
+        self.assertEqual(audit_env.get("VITYO_SKIP_TEAM_DOC_GATE"), "1")
+
+    def test_staged_and_push_modes_select_the_change_source(self) -> None:
+        staged = self.gate.docs_gate_commands("staged", None, False, "/py")
+        self.assertEqual(
+            staged[0][0], ["/py", "scripts/team-docs-gate.py", "--mode", "staged"]
+        )
+        pushed = self.gate.docs_gate_commands("push", "origin/nightly", False, "/py")
+        self.assertEqual(
+            pushed[0][0],
+            ["/py", "scripts/team-docs-gate.py", "--base", "origin/nightly"],
+        )
+
+    def test_push_mode_without_a_base_fails_closed(self) -> None:
+        with mock.patch.object(self.gate, "_upstream_base", return_value=None):
+            with self.assertRaisesRegex(ValueError, "push mode requires --base"):
+                self.gate.docs_gate_commands("push", None, False, "/py")
+
+    def test_skip_ecosystem_drops_the_third_command(self) -> None:
+        commands = self.gate.docs_gate_commands("worktree", None, True, "/py")
+        self.assertEqual(len(commands), 2)

@@ -367,10 +367,28 @@ def _git_mode_commands(options: DeliveryOptions) -> tuple[list[str], list[str]]:
             "--range",
             options.revision_range,
         )
-        docs = ("bash", "scripts/docs-gate.sh", "--mode", "push", "--base", options.base)
+        # The gate runs through its Python implementation rather than
+        # `bash scripts/docs-gate.sh`: on Windows `bash` in PATH can resolve to a
+        # WSL launcher, which fails when no distribution is installed. The shell
+        # script stays the documented convenience entrypoint and forwards here.
+        docs = _python(
+            "scripts/docs_gate.py",
+            "--mode",
+            "push",
+            "--base",
+            options.base,
+            "--python-bin",
+            sys.executable,
+        )
     else:
         hygiene = _python("scripts/repo-hygiene-gate.py", "--mode", "tracked")
-        docs = ("bash", "scripts/docs-gate.sh", "--mode", "worktree")
+        docs = _python(
+            "scripts/docs_gate.py",
+            "--mode",
+            "worktree",
+            "--python-bin",
+            sys.executable,
+        )
     return list(hygiene), list(docs)
 
 

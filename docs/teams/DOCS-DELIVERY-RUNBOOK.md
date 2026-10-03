@@ -260,6 +260,12 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Moved the docs/process gate composition into `scripts/docs_gate.py` and had
+delivery invoke that implementation directly. `scripts/docs-gate.sh` remains the documented
+convenience entrypoint and forwards to it, so the two cannot drift. The reason is platform
+reach: on Windows `bash` in PATH can resolve to a WSL launcher, which fails the architecture
+stage with "Windows Subsystem for Linux has no installed distributions". No `prototype/` change.
+
 2026-10-03: Sealed the staged bundle with a real Developer ID certificate and recorded the
 observed result: the application carries the hardened runtime, a Developer ID authority, and a
 team identifier, and Gatekeeper reports `rejected` with `source=Unnotarized Developer ID`, which
