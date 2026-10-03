@@ -136,7 +136,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `IdeCapabilityFramework` | `products/vityo_app/lib/src/view_ide/foundation/ide_capability_framework.dart` | 12 layers, 32 required capabilities. |
 | `IdeCapabilityRegistry` | `products/vityo_app/lib/src/view_ide/workbench/ide_capability_registry.dart` | Single truth for capability metadata. |
 | `SurfaceRegistry` | `products/vityo_app/lib/src/view_ide/workbench/surface_registry.dart` | Surface registry with placement types. |
-| `BottomSurfaceTab` enum | `products/vityo_app/lib/src/view_render/shell/shell_model.dart` | 27 bottom-surface tabs. |
+| `BottomSurfaceTab` enum | `products/vityo_app/lib/src/view_render/shell/shell_model.dart` | 29 bottom-surface tabs. |
 
 ---
 
@@ -359,7 +359,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 - Barrel files: `workspace.dart`, `runtime.dart`, `commands.dart`, `module_host.dart`, `app_bootstrap.dart`
 - `AppCommandId` enum: 80+ unique command IDs.
 - `requiredVityoIdeCapabilityIds`: 32 capabilities, 12 layers.
-- `BottomSurfaceTab`: 27 unique tabs.
+- `BottomSurfaceTab`: 29 unique tabs.
 - `RuntimeOutputChannelKind`: 7 channel kinds.
 - `IdeCapabilityLayer`: 12 layers.
 
@@ -403,7 +403,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 ### Invariant Coverage
 - [x] All 43 invariants in Section 3 backed by test assertions.
 - [x] All `AppCommandId` values (80+) unique.
-- [x] All 27 `BottomSurfaceTab` values map to `ShellPanelDescriptor`.
+- [x] All 29 `BottomSurfaceTab` values map to `ShellPanelDescriptor`.
 - [x] Single implementation path enforced by barrel exports and no duplicates.
 - [x] All 7 `RuntimeOutputChannelKind` values consumed by runtime/debug surfaces.
 - [x] All 32 required capabilities documented.

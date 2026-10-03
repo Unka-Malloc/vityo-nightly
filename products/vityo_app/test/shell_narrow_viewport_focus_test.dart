@@ -7,7 +7,7 @@ void main() {
       'compact mode hides activity rail and produces mobile viewport key',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeWorkbenchRoute: WorkbenchRoute.agent,
+          activeWorkbenchRoute: BottomSurfaceTab.agent,
           compact: true,
         );
 
@@ -22,7 +22,7 @@ void main() {
       'desktop mode shows activity rail and produces desktop viewport key',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeWorkbenchRoute: WorkbenchRoute.agent,
+          activeWorkbenchRoute: BottomSurfaceTab.agent,
           compact: false,
         );
 
@@ -35,11 +35,11 @@ void main() {
 
     test('narrow viewport stacks panels in ListView instead of Row', () {
       final compactPlan = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.search,
+        activeWorkbenchRoute: BottomSurfaceTab.search,
         compact: true,
       );
       final desktopPlan = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.search,
+        activeWorkbenchRoute: BottomSurfaceTab.search,
         compact: false,
       );
 
@@ -51,7 +51,7 @@ void main() {
 
     test('bottom panel tab selection works independently of viewport mode', () {
       final registry = ShellPanelContributionRegistry.defaultIdePanels();
-      for (final tab in WorkbenchRoute.values) {
+      for (final tab in BottomSurfaceTab.values) {
         final plan = ShellLayoutPlan.forViewport(
           activeWorkbenchRoute: tab,
           compact: false,
@@ -81,14 +81,14 @@ void main() {
         final controller = ShellLayoutPreferenceController(
           initialPreferences: const ShellLayoutPreferences(
             workspaceId: 'demo',
-            activeWorkbenchRoute: WorkbenchRoute.problems,
+            activeWorkbenchRoute: BottomSurfaceTab.problems,
             bottomPanelExpanded: true,
           ),
         );
 
         expect(
           controller.preferences.activeWorkbenchRoute,
-          WorkbenchRoute.problems,
+          BottomSurfaceTab.problems,
         );
         expect(controller.preferences.bottomPanelExpanded, isTrue);
 
@@ -98,7 +98,7 @@ void main() {
         // Active tab is preserved
         expect(
           controller.preferences.activeWorkbenchRoute,
-          WorkbenchRoute.problems,
+          BottomSurfaceTab.problems,
         );
 
         // Toggle back
@@ -116,7 +116,7 @@ void main() {
       final controller = ShellLayoutPreferenceController(
         initialPreferences: const ShellLayoutPreferences(
           workspaceId: 'demo',
-          activeWorkbenchRoute: WorkbenchRoute.debug,
+          activeWorkbenchRoute: BottomSurfaceTab.debug,
         ),
       );
       controller.setPanelPinned('bottom.debug', pinned: true);
@@ -136,7 +136,7 @@ void main() {
 
       expect(controller.revision, 0);
 
-      controller.selectWorkbenchRoute(WorkbenchRoute.search);
+      controller.selectWorkbenchRoute(BottomSurfaceTab.search);
       expect(controller.revision, 1);
 
       controller.setPanelPinned('primary.search', pinned: true);
@@ -153,26 +153,26 @@ void main() {
   group('Shell layout plan roundtrip', () {
     test('plan serialization roundtrips active tab and panel visibility', () {
       final plan = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.search,
+        activeWorkbenchRoute: BottomSurfaceTab.search,
         compact: true,
       );
       final json = plan.toJson();
       final restored = ShellLayoutPlan.fromJson(json);
 
-      expect(restored.activeWorkbenchRoute, WorkbenchRoute.search);
+      expect(restored.activeWorkbenchRoute, BottomSurfaceTab.search);
       expect(restored.mode, ShellLayoutMode.compact);
       expect(restored.panelById('primary.search')?.active, isTrue);
       expect(restored.renderBinding().viewportKey, 'shell-viewport-mobile');
 
       // Edit, serialize, restore again
       final edited = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.extensions,
+        activeWorkbenchRoute: BottomSurfaceTab.extensions,
         compact: false,
       );
       final editedJson = edited.toJson();
       final restoredEdited = ShellLayoutPlan.fromJson(editedJson);
 
-      expect(restoredEdited.activeWorkbenchRoute, WorkbenchRoute.extensions);
+      expect(restoredEdited.activeWorkbenchRoute, BottomSurfaceTab.extensions);
       expect(restoredEdited.mode, ShellLayoutMode.desktop);
       expect(
         restoredEdited.renderBinding().viewportKey,
@@ -188,23 +188,23 @@ void main() {
         final controller = ShellLayoutPreferenceController(
           initialPreferences: const ShellLayoutPreferences(
             workspaceId: 'demo',
-            activeWorkbenchRoute: WorkbenchRoute.runtime,
+            activeWorkbenchRoute: BottomSurfaceTab.runtime,
           ),
         );
 
         // Selecting the same tab is a no-op
-        controller.selectWorkbenchRoute(WorkbenchRoute.runtime);
+        controller.selectWorkbenchRoute(BottomSurfaceTab.runtime);
         expect(
           controller.preferences.activeWorkbenchRoute,
-          WorkbenchRoute.runtime,
+          BottomSurfaceTab.runtime,
         );
         expect(controller.revision, 0);
 
         // Switching tabs
-        controller.selectWorkbenchRoute(WorkbenchRoute.problems);
+        controller.selectWorkbenchRoute(BottomSurfaceTab.problems);
         expect(
           controller.preferences.activeWorkbenchRoute,
-          WorkbenchRoute.problems,
+          BottomSurfaceTab.problems,
         );
         expect(controller.revision, 1);
       },
@@ -214,7 +214,7 @@ void main() {
       // The editor is always active in both desktop and compact modes
       for (final compact in [true, false]) {
         final plan = ShellLayoutPlan.forViewport(
-          activeWorkbenchRoute: WorkbenchRoute.runtime,
+          activeWorkbenchRoute: BottomSurfaceTab.runtime,
           compact: compact,
         );
         expect(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../../ide/editor/document_state.dart';
 import '../environment/system_compatibility/file_system/file_system.dart';
@@ -15,6 +16,9 @@ import 'project_graph_contract.dart';
 import 'runtime_event_adapter.dart';
 import 'pafio_cli_discovery.dart';
 import 'pafio_cli_support.dart';
+import '../services/observable_topology/observable_runtime_decoder.dart';
+import '../services/observable_topology/observable_runtime_model.dart';
+import '../services/observable_topology/observable_snapshot_model.dart';
 
 const AdapterCapabilitySnapshot
 _iosLocalCliExecutionCapabilitySnapshot = AdapterCapabilitySnapshot(
@@ -212,7 +216,7 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
 }
 
 class _LocalCliExecutionAdapter
-    implements ExecutionAdapter, CancellableExecutionAdapter {
+    implements ExecutionAdapter, CancellableExecutionAdapter, ObservedExecutionAdapter {
   const _LocalCliExecutionAdapter({
     required this.platformTarget,
     required this.projectGraph,
@@ -364,6 +368,72 @@ class _LocalCliExecutionAdapter
       processHandleId,
     );
   }
+
+  @override
+  Future<ObservedExecutionRun> runActiveDocumentObserved({
+    required PlatformTarget platformTarget,
+    required ProjectGraphSnapshot projectGraph,
+    required DocumentState document,
+    required String activeFilePath,
+    required RuntimeObservationRequest observation,
+  }) async {
+    switch (platformTarget) {
+      case PlatformTarget.ios:
+        return ObservedExecutionRun(
+          session: _iosCloudOnlyExecutionSession,
+          unavailableReason: ObservableReasonCode.unsupportedPlatform,
+        );
+      case PlatformTarget.web:
+      case PlatformTarget.windows:
+      case PlatformTarget.linux:
+      case PlatformTarget.android:
+      case PlatformTarget.macos:
+      case PlatformTarget.unknown:
+        break;
+    }
+
+    final resolvedCompiler = compiler;
+    final managers = platformManagers;
+    if (resolvedCompiler == null || managers == null) {
+      return ObservedExecutionRun(
+        session: _blockedRunExecutionSession(
+          sessionId: 'missing-styio-binary',
+          message: _missingLocalStyioBinaryMessage,
+        ),
+        unavailableReason: ObservableReasonCode.noToolchain,
+      );
+    }
+
+    if (!projectGraph.hasManifest) {
+      return ObservedExecutionRun(
+        session: _blockedRunExecutionSession(
+          sessionId: 'missing-manifest',
+          message: 'Project execution requires a resolved pafio manifest.',
+        ),
+        unavailableReason: ObservableReasonCode.noManifest,
+      );
+    }
+
+    if (!resolvedCompiler.supportsContract('compile_plan')) {
+      return ObservedExecutionRun(
+        session: _blockedRunExecutionSession(
+          sessionId: 'compile-plan-preview-only',
+          message:
+              'Project build/run is blocked because the active styio binary does not advertise compile-plan support.',
+        ),
+        unavailableReason: ObservableReasonCode.unsupportedPlatform,
+      );
+    }
+
+    return _runProjectWorkflowObserved(
+      compiler: resolvedCompiler,
+      projectGraph: projectGraph,
+      document: document,
+      activeFilePath: activeFilePath,
+      platformManagers: managers,
+      observation: observation,
+    );
+  }
 }
 
 AdapterCapabilitySnapshot _localCliExecutionCapabilitySnapshot({
@@ -430,7 +500,10 @@ AdapterCapabilitySnapshot _localCliExecutionCapabilitySnapshot({
           ? 'Runtime events route through the published styio runtime_events contract.'
           : 'Runtime events stay unavailable until styio publishes a runtime event machine contract.',
       supportedContractVersions: hasRuntimeEvents
-          ? const <int>[1]
+          ? List<int>.unmodifiable(
+              compiler.supportedContractVersions[kRuntimeEventsContractVersionsKey] ??
+                  const <int>[],
+            )
           : const <int>[],
     ),
   );
@@ -574,19 +647,62 @@ Future<ExecutionSession> _runProjectWorkflow({
   required PlatformManagerBundle platformManagers,
   ExecutionProcessStartedCallback? onProcessStarted,
 }) async {
+  final outcome = await _executeProjectWorkflow(
+    compiler: compiler,
+    projectGraph: projectGraph,
+    document: document,
+    activeFilePath: activeFilePath,
+    platformManagers: platformManagers,
+    onProcessStarted: onProcessStarted,
+  );
+  return outcome.session;
+}
+
+Future<ObservedExecutionRun> _runProjectWorkflowObserved({
+  required CompilerHandshakeSnapshot compiler,
+  required ProjectGraphSnapshot projectGraph,
+  required DocumentState document,
+  required String activeFilePath,
+  required PlatformManagerBundle platformManagers,
+  required RuntimeObservationRequest observation,
+}) async {
+  return _executeProjectWorkflow(
+    compiler: compiler,
+    projectGraph: projectGraph,
+    document: document,
+    activeFilePath: activeFilePath,
+    platformManagers: platformManagers,
+    observation: observation,
+  );
+}
+
+Future<ObservedExecutionRun> _executeProjectWorkflow({
+  required CompilerHandshakeSnapshot compiler,
+  required ProjectGraphSnapshot projectGraph,
+  required DocumentState document,
+  required String activeFilePath,
+  required PlatformManagerBundle platformManagers,
+  RuntimeObservationRequest? observation,
+  ExecutionProcessStartedCallback? onProcessStarted,
+}) async {
   final manifestPath = projectGraph.manifestPath;
   if (manifestPath == null) {
-    return _blockedRunExecutionSession(
-      sessionId: 'missing-manifest',
-      message: 'Project execution requires a resolved pafio manifest.',
+    return ObservedExecutionRun(
+      session: _blockedRunExecutionSession(
+        sessionId: 'missing-manifest',
+        message: 'Project execution requires a resolved pafio manifest.',
+      ),
+      unavailableReason: ObservableReasonCode.noManifest,
     );
   }
 
   final pafioBinary = await resolvePafioBinary(platformManagers);
   if (pafioBinary == null) {
-    return _blockedRunExecutionSession(
-      sessionId: 'missing-pafio-binary',
-      message: missingLocalPafioBinaryMessage,
+    return ObservedExecutionRun(
+      session: _blockedRunExecutionSession(
+        sessionId: 'missing-pafio-binary',
+        message: missingLocalPafioBinaryMessage,
+      ),
     );
   }
   final workflow = _selectProjectWorkflow(
@@ -603,26 +719,44 @@ Future<ExecutionSession> _runProjectWorkflow({
       platformManagers: platformManagers,
     );
   } on _ExecutionOverlayException catch (error) {
-    return _blockedRunExecutionSession(
-      sessionId: 'execution-overlay-blocked',
-      message: error.message,
+    return ObservedExecutionRun(
+      session: _blockedRunExecutionSession(
+        sessionId: 'execution-overlay-blocked',
+        message: error.message,
+      ),
     );
   }
   final normalizedPath = preparedInput.pathOverlay?.normalize;
+  final deferCleanup = observation != null;
+
+  Future<void> releaseOverlay() => _cleanupPreparedProjectWorkflowInput(
+    preparedInput,
+    fileSystem: platformManagers.fileSystem,
+  );
 
   try {
+    final command = <String>[
+      '--json',
+      workflow.command,
+      '--manifest-path',
+      preparedInput.manifestPath,
+      '--styio-bin',
+      compiler.binaryPath,
+      ...workflow.args,
+    ];
+    if (observation != null) {
+      command.add('$kRuntimePafioEmitOption=$kRuntimeEventsSchemaVersion');
+      command.add(kRuntimePafioModeOption);
+      command.add(observation.mode.wireValue);
+      for (final name in observation.requiredCapabilities) {
+        command.add(kRuntimePafioCapabilityOption);
+        command.add(name);
+      }
+    }
     final result = await platformManagers.process.run(
       ProcessCommandRequest(
         executablePath: pafioBinary,
-        arguments: <String>[
-          '--json',
-          workflow.command,
-          '--manifest-path',
-          preparedInput.manifestPath,
-          '--styio-bin',
-          compiler.binaryPath,
-          ...workflow.args,
-        ],
+        arguments: command,
         workingDirectory: preparedInput.workspaceRoot,
         serviceKind: ProcessServiceKind.pafio,
         onStarted: onProcessStarted,
@@ -631,8 +765,14 @@ Future<ExecutionSession> _runProjectWorkflow({
 
     final stdout = result.stdout;
     final stderr = result.stderr;
+    final artifactPath = _locateRuntimeEventsArtifact(
+      stdout: stdout,
+      stderr: stderr,
+      workspaceRoot: preparedInput.workspaceRoot,
+    );
+    ExecutionSession? session;
     if (result.succeeded) {
-      final session = await _sessionFromWorkflowSuccessPayload(
+      session = await _sessionFromWorkflowSuccessPayload(
         stdout: stdout,
         stderr: stderr,
         workflow: workflow,
@@ -643,75 +783,34 @@ Future<ExecutionSession> _runProjectWorkflow({
         fileSystem: platformManagers.fileSystem,
         processMetadata: result.metadata,
       );
-      if (session != null) {
-        return session;
-      }
     }
-    final failurePayload =
-        parseJsonObjectPayload(stderr) ?? parseJsonObjectPayload(stdout);
-    final sessionId =
-        _workflowSessionIdFromPayload(failurePayload) ??
-        DateTime.now().microsecondsSinceEpoch.toString();
-    final runtimeEvents = await _readWorkflowRuntimeEvents(
-      rawRuntimeEvents: failurePayload == null
-          ? null
-          : failurePayload['runtime_events'],
-      runtimeEventsPath: failurePayload == null
-          ? null
-          : failurePayload['runtime_events_path'],
-      sessionId: sessionId,
-      workspaceRoot: preparedInput.workspaceRoot,
+    session ??= _sessionFromWorkflowFailurePayload(
+      stdout: stdout,
+      stderr: stderr,
+      workflow: workflow,
+      document: document,
+      activeFilePath: activeFilePath,
       normalizePath: normalizedPath,
-      fileSystem: platformManagers.fileSystem,
+      // A null exit code means the managed process never reported a status
+      // (for example a cancelled or killed run), which is always a failure.
+      exitCode: result.exitCode ?? -1,
+    );
+    final runtimeEvents = await readRuntimeEventsV2ForSession(
+      artifactPath: artifactPath,
+      sessionId: session.sessionId,
     );
     if (runtimeEvents.isEmpty) {
-      clearRuntimeEventsForSession(sessionId);
+      clearRuntimeEventsForSession(session.sessionId);
     } else {
-      recordRuntimeEventsForSession(sessionId, runtimeEvents);
+      recordRuntimeEventsForSession(session.sessionId, runtimeEvents);
     }
-    final payloadDiagnostics = _parsePayloadDiagnostics(
-      failurePayload?['diagnostics'],
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizedPath,
-    );
-    final stdoutChannel = _parseOutputChannel(
-      stdout,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizedPath,
-    );
-    final stderrChannel = _parseOutputChannel(
-      stderr,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizedPath,
-    );
-    return ExecutionSession(
-      sessionId: sessionId,
-      kind: workflow.kind,
-      status: result.succeeded
-          ? ExecutionSessionStatus.succeeded
-          : ExecutionSessionStatus.failed,
-      statusMessage: result.succeeded
-          ? workflow.successMessage
-          : (failurePayload?['message'] as String? ??
-                'pafio ${workflow.command} exited with code ${result.exitCode}.'),
-      diagnostics: <Diagnostic>[
-        ...payloadDiagnostics.diagnostics,
-        ...stdoutChannel.diagnostics,
-        ...stderrChannel.diagnostics,
-      ],
-      stdoutEvents: stdoutChannel.logEvents,
-      stderrEvents: <ExecutionLogEvent>[
-        ...payloadDiagnostics.logEvents,
-        ...stderrChannel.logEvents,
-      ],
-      unitRange: SourceRange(start: 0, end: document.length),
-      metadata: result.metadata,
+    return ObservedExecutionRun(
+      session: session,
+      runtimeEventsPath: artifactPath,
+      release: deferCleanup ? releaseOverlay : null,
     );
   } on Object catch (error) {
-    return ExecutionSession(
+    final session = ExecutionSession(
       sessionId: 'pafio-process-error',
       kind: workflow.kind,
       status: ExecutionSessionStatus.failed,
@@ -721,11 +820,17 @@ Future<ExecutionSession> _runProjectWorkflow({
       stderrEvents: const <ExecutionLogEvent>[],
       unitRange: SourceRange(start: 0, end: document.length),
     );
-  } finally {
-    await _cleanupPreparedProjectWorkflowInput(
-      preparedInput,
-      fileSystem: platformManagers.fileSystem,
+    return ObservedExecutionRun(
+      session: session,
+      release: deferCleanup ? releaseOverlay : null,
     );
+  } finally {
+    if (!deferCleanup) {
+      await _cleanupPreparedProjectWorkflowInput(
+        preparedInput,
+        fileSystem: platformManagers.fileSystem,
+      );
+    }
   }
 }
 
@@ -775,19 +880,6 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
         unitRange: SourceRange(start: 0, end: document.length),
         metadata: processMetadata,
       );
-    }
-    final runtimeEvents = await _readWorkflowRuntimeEvents(
-      rawRuntimeEvents: decoded['runtime_events'],
-      runtimeEventsPath: decoded['runtime_events_path'],
-      sessionId: sessionId,
-      workspaceRoot: workspaceRoot,
-      normalizePath: normalizePath,
-      fileSystem: fileSystem,
-    );
-    if (runtimeEvents.isEmpty) {
-      clearRuntimeEventsForSession(sessionId);
-    } else {
-      recordRuntimeEventsForSession(sessionId, runtimeEvents);
     }
     final payloadStdout = decoded['stdout'] as String? ?? '';
     final payloadStderr = decoded['stderr'] as String? ?? '';
@@ -845,6 +937,62 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
   }
 }
 
+ExecutionSession _sessionFromWorkflowFailurePayload({
+  required String stdout,
+  required String stderr,
+  required _ProjectWorkflowSelection workflow,
+  required DocumentState document,
+  required String activeFilePath,
+  required int exitCode,
+  String Function(String path)? normalizePath,
+}) {
+  final failurePayload =
+      parseJsonObjectPayload(stderr) ?? parseJsonObjectPayload(stdout);
+  final sessionId =
+      _workflowSessionIdFromPayload(failurePayload) ??
+      DateTime.now().microsecondsSinceEpoch.toString();
+  final payloadDiagnostics = _parsePayloadDiagnostics(
+    failurePayload?['diagnostics'],
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+  );
+  final stdoutChannel = _parseOutputChannel(
+    stdout,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+  );
+  final stderrChannel = _parseOutputChannel(
+    stderr,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+  );
+  return ExecutionSession(
+    sessionId: sessionId,
+    kind: workflow.kind,
+    status: exitCode == 0
+        ? ExecutionSessionStatus.succeeded
+        : ExecutionSessionStatus.failed,
+    statusMessage: exitCode == 0
+        ? workflow.successMessage
+        : (failurePayload?['message'] as String? ??
+              'pafio ${workflow.command} exited with code $exitCode.'),
+    diagnostics: <Diagnostic>[
+      ...payloadDiagnostics.diagnostics,
+      ...stdoutChannel.diagnostics,
+      ...stderrChannel.diagnostics,
+    ],
+    stdoutEvents: stdoutChannel.logEvents,
+    stderrEvents: <ExecutionLogEvent>[
+      ...payloadDiagnostics.logEvents,
+      ...stderrChannel.logEvents,
+    ],
+    unitRange: SourceRange(start: 0, end: document.length),
+  );
+}
+
 Future<_ParsedDiagnostics> _readWorkflowDiagnostics({
   required Object? rawDiagnostics,
   required Object? diagnosticsPath,
@@ -890,138 +1038,115 @@ Future<_ParsedDiagnostics> _readWorkflowDiagnostics({
   return _ParsedDiagnostics(diagnostics: diagnostics, logEvents: logEvents);
 }
 
-Future<List<RuntimeEventEnvelope>> _readWorkflowRuntimeEvents({
-  required Object? rawRuntimeEvents,
-  required Object? runtimeEventsPath,
-  required String sessionId,
+String? _locateRuntimeEventsArtifact({
+  required String stdout,
+  required String stderr,
   required String workspaceRoot,
-  required FileSystemManager fileSystem,
-  String Function(String path)? normalizePath,
-}) async {
-  final inlineEvents = _parsePayloadRuntimeEvents(
-    rawRuntimeEvents,
-    sessionId: sessionId,
-    normalizePath: normalizePath,
-  );
-  if (inlineEvents.isNotEmpty) {
-    return inlineEvents;
-  }
-
-  final resolvedRuntimeEventsPath = _resolveWorkflowArtifactPath(
-    runtimeEventsPath,
-    workspaceRoot: workspaceRoot,
-  );
-  if (resolvedRuntimeEventsPath == null) {
-    return const <RuntimeEventEnvelope>[];
-  }
-
-  try {
-    if (!await fileSystem.exists(resolvedRuntimeEventsPath)) {
-      return const <RuntimeEventEnvelope>[];
-    }
-    return _parseRuntimeEventLines(
-      await fileSystem.readText(resolvedRuntimeEventsPath),
-      sessionId: sessionId,
-      normalizePath: normalizePath,
-    );
-  } on Object {
-    return const <RuntimeEventEnvelope>[];
-  }
-}
-
-List<RuntimeEventEnvelope> _parsePayloadRuntimeEvents(
-  Object? rawRuntimeEvents, {
-  required String sessionId,
-  String Function(String path)? normalizePath,
 }) {
-  if (rawRuntimeEvents is! List) {
-    return const <RuntimeEventEnvelope>[];
-  }
-
-  final events = <RuntimeEventEnvelope>[];
-  for (final item in rawRuntimeEvents) {
-    if (item is! Map<String, dynamic>) {
-      continue;
-    }
-    final event = _parseRuntimeEventObject(
-      item,
-      sessionId: sessionId,
-      normalizePath: normalizePath,
-    );
-    if (event != null) {
-      events.add(event);
-    }
-  }
-  return events;
-}
-
-List<RuntimeEventEnvelope> _parseRuntimeEventLines(
-  String text, {
-  required String sessionId,
-  String Function(String path)? normalizePath,
-}) {
-  final events = <RuntimeEventEnvelope>[];
-  for (final line in text.split('\n')) {
-    final trimmed = line.trim();
-    if (trimmed.isEmpty || !trimmed.startsWith('{')) {
-      continue;
-    }
-    try {
-      final decoded = jsonDecode(trimmed);
-      if (decoded is! Map<String, dynamic>) {
-        continue;
-      }
-      final event = _parseRuntimeEventObject(
-        decoded,
-        sessionId: sessionId,
-        normalizePath: normalizePath,
-      );
-      if (event != null) {
-        events.add(event);
-      }
-    } on FormatException {
-      continue;
-    }
-  }
-  return events;
-}
-
-RuntimeEventEnvelope? _parseRuntimeEventObject(
-  Map<String, dynamic> decoded, {
-  required String sessionId,
-  String Function(String path)? normalizePath,
-}) {
-  final eventKind =
-      _stringValue(decoded['eventKind']) ?? _stringValue(decoded['event_kind']);
-  if (eventKind == null || eventKind.isEmpty) {
+  final payload =
+      parseJsonObjectPayload(stdout) ?? parseJsonObjectPayload(stderr);
+  if (payload == null) {
     return null;
   }
-
-  final resolvedSessionId =
-      _stringValue(decoded['session_id']) ??
-      _stringValue(decoded['sessionId']) ??
-      sessionId;
-  final timestampValue = _stringValue(decoded['timestamp']);
-  final payload = decoded['payload'];
-  final payloadMap = payload is Map<String, dynamic>
-      ? Map<String, Object?>.from(payload)
-      : <String, Object?>{};
-  final rawFilePath = payloadMap['file'];
-  if (rawFilePath is String && normalizePath != null) {
-    payloadMap['file'] = normalizePath(rawFilePath);
+  final plan = payload['plan'];
+  if (plan is! Map) {
+    return null;
   }
-  return RuntimeEventEnvelope(
-    schemaVersion:
-        _intValue(decoded['schema_version'] ?? decoded['schemaVersion']) ?? 1,
-    sessionId: resolvedSessionId,
-    sequence: _intValue(decoded['sequence']) ?? 0,
-    timestamp:
-        DateTime.tryParse(timestampValue ?? '')?.toUtc() ??
-        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-    eventKind: eventKind,
-    origin: _stringValue(decoded['origin']) ?? 'styio.runtime',
-    payload: payloadMap,
-  );
+  final buildRootRaw = _stringValue(plan['build_root']);
+  if (buildRootRaw == null) {
+    return null;
+  }
+  final buildRoot = _isAbsolutePath(buildRootRaw)
+      ? buildRootRaw
+      : _joinPath(workspaceRoot, buildRootRaw);
+  if (!_runtimePathContained(buildRoot, workspaceRoot)) {
+    return null;
+  }
+  final receiptFile = File(_joinPath(buildRoot, 'receipt.json'));
+  if (!receiptFile.existsSync()) {
+    return null;
+  }
+  Map<String, dynamic>? receipt;
+  try {
+    final decoded = jsonDecode(receiptFile.readAsStringSync());
+    if (decoded is Map<String, dynamic>) {
+      receipt = decoded;
+    }
+  } on FormatException {
+    return null;
+  }
+  if (receipt == null) {
+    return null;
+  }
+  final schema = _intValue(receipt['schema_version']);
+  if (schema != 1) {
+    return null;
+  }
+  final outputs = receipt['outputs'];
+  if (outputs is! Map) {
+    return null;
+  }
+  final namedPath = _stringValue(outputs[kRuntimeEventsReceiptPathField]);
+  if (namedPath == null) {
+    return null;
+  }
+  final resolved = _isAbsolutePath(namedPath)
+      ? namedPath
+      : _joinPath(buildRoot, namedPath);
+  if (!_runtimePathContained(resolved, workspaceRoot) ||
+      !_runtimePathContained(resolved, buildRoot)) {
+    return null;
+  }
+  if (!File(resolved).existsSync()) {
+    return null;
+  }
+  return resolved;
+}
+
+bool _runtimePathContained(String path, String root) {
+  if (_pathIsWithinRoot(path, root)) {
+    return true;
+  }
+  final pafioTree = _joinPath(root, '.pafio');
+  return _pathIsWithinRoot(path, pafioTree);
+}
+
+Future<List<RuntimeEventEnvelope>> readRuntimeEventsV2ForSession({
+  required String? artifactPath,
+  required String sessionId,
+}) async {
+  if (artifactPath == null || artifactPath.isEmpty) {
+    return const <RuntimeEventEnvelope>[];
+  }
+  final file = File(artifactPath);
+  if (!await file.exists()) {
+    return const <RuntimeEventEnvelope>[];
+  }
+  late final String text;
+  try {
+    text = await file.readAsString();
+  } on FileSystemException {
+    return const <RuntimeEventEnvelope>[];
+  }
+  final decoded = decodeRuntimeStream(text.split('\n'));
+  if (!decoded.isOk) {
+    return const <RuntimeEventEnvelope>[];
+  }
+  return [
+    for (final record in decoded.records)
+      RuntimeEventEnvelope(
+        schemaVersion: kRuntimeEventsSchemaVersion,
+        sessionId: sessionId,
+        sequence: 0,
+        timestamp: DateTime.fromMicrosecondsSinceEpoch(
+          runtimeRecordMonotonicNs(record) ~/ 1000,
+          isUtc: true,
+        ),
+        eventKind: runtimeRecordEventKind(record),
+        origin: kRuntimeEventsContract,
+        payload: runtimeRecordEnvelopePayload(record),
+      ),
+  ];
 }
 
 _ParsedDiagnostics _parsePayloadDiagnostics(

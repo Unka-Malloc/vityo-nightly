@@ -39,7 +39,7 @@ void _registerShellSmokeTests() {
     final shell = ShellScope.of(
       tester.element(find.byType(VityoShellScaffold)),
     );
-    expect(shell.activeWorkbenchRoute, WorkbenchRoute.navigate);
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.navigate);
     expect(find.byKey(const ValueKey('workbench-bottom-panel')), findsNothing);
 
     final commandLauncher = find.byKey(
@@ -47,7 +47,7 @@ void _registerShellSmokeTests() {
     );
     await tester.tap(commandLauncher);
     await tester.pumpAndSettle();
-    expect(shell.activeWorkbenchRoute, WorkbenchRoute.commandPalette);
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
     expect(
       find.byKey(const ValueKey('command-palette-surface')),
       findsOneWidget,
@@ -63,7 +63,7 @@ void _registerShellSmokeTests() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('language-pane-desktop')), findsOneWidget);
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.runtime);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.runtime);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('runtime-surface-desktop')),
@@ -360,7 +360,7 @@ void _registerShellSmokeTests() {
     await shell.executeCommand(AppCommandId.showAgent);
     await tester.pumpAndSettle();
 
-    expect(shell.activeWorkbenchRoute, WorkbenchRoute.agent);
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.agent);
   });
 
   testWidgets('builds every bottom surface tab in desktop viewport family', (
@@ -378,7 +378,7 @@ void _registerShellSmokeTests() {
     final shell = ShellScope.of(
       tester.element(find.byType(VityoShellScaffold)),
     );
-    for (final tab in WorkbenchRoute.values) {
+    for (final tab in BottomSurfaceTab.values) {
       shell.selectWorkbenchRoute(tab);
       await tester.pump();
       expect(shell.activeWorkbenchRoute, tab);
@@ -445,7 +445,7 @@ void _registerShellSmokeTests() {
     );
 
     final preferences = shell.shellLayoutPreferenceController.preferences;
-    expect(preferences.activeWorkbenchRoute, WorkbenchRoute.problems);
+    expect(preferences.activeWorkbenchRoute, BottomSurfaceTab.problems);
     expect(preferences.primarySidebarWidth, greaterThan(290));
     expect(preferences.bottomPanelHeight, greaterThan(250));
     expect(preferences.bottomPanelExpanded, isTrue);
@@ -467,8 +467,8 @@ void _registerShellSmokeTests() {
     final shell = ShellScope.of(
       tester.element(find.byType(VityoShellScaffold)),
     );
-    final scrollableTabs = WorkbenchRoute.values.where(
-      (tab) => tab != WorkbenchRoute.runtime && tab != WorkbenchRoute.debug,
+    final scrollableTabs = BottomSurfaceTab.values.where(
+      (tab) => tab != BottomSurfaceTab.runtime && tab != BottomSurfaceTab.debug,
     );
     for (final tab in scrollableTabs) {
       shell.selectWorkbenchRoute(tab);
@@ -492,7 +492,7 @@ void _registerShellSmokeTests() {
       tester.element(find.byType(VityoShellScaffold)),
     );
 
-    Future<void> tapTab(String label, WorkbenchRoute expectedTab) async {
+    Future<void> tapTab(String label, BottomSurfaceTab expectedTab) async {
       final chipText = find.text(label);
       expect(chipText, findsWidgets);
       final tab = find.ancestor(
@@ -507,7 +507,7 @@ void _registerShellSmokeTests() {
       expect(shell.activeWorkbenchRoute, expectedTab);
     }
 
-    Future<void> tapActivity(String label, WorkbenchRoute expectedTab) async {
+    Future<void> tapActivity(String label, BottomSurfaceTab expectedTab) async {
       final destination = find.byTooltip(label);
       expect(destination, findsOneWidget);
       await tester.tap(destination);
@@ -515,16 +515,16 @@ void _registerShellSmokeTests() {
       expect(shell.activeWorkbenchRoute, expectedTab);
     }
 
-    await tapTab('Runtime', WorkbenchRoute.runtime);
-    await tapTab('Terminal', WorkbenchRoute.terminal);
-    await tapTab('Problems', WorkbenchRoute.problems);
-    await tapTab('Tests', WorkbenchRoute.testing);
-    await tapTab('Debug', WorkbenchRoute.debug);
-    await tapActivity('Search', WorkbenchRoute.search);
-    await tapActivity('Source control', WorkbenchRoute.sourceControl);
-    await tapActivity('Coding Agent', WorkbenchRoute.agent);
-    await tapActivity('Extensions', WorkbenchRoute.extensions);
-    await tapActivity('Settings', WorkbenchRoute.settings);
+    await tapTab('Runtime', BottomSurfaceTab.runtime);
+    await tapTab('Terminal', BottomSurfaceTab.terminal);
+    await tapTab('Problems', BottomSurfaceTab.problems);
+    await tapTab('Tests', BottomSurfaceTab.testing);
+    await tapTab('Debug', BottomSurfaceTab.debug);
+    await tapActivity('Search', BottomSurfaceTab.search);
+    await tapActivity('Source control', BottomSurfaceTab.sourceControl);
+    await tapActivity('Coding Agent', BottomSurfaceTab.agent);
+    await tapActivity('Extensions', BottomSurfaceTab.extensions);
+    await tapActivity('Settings', BottomSurfaceTab.settings);
   });
 
   testWidgets('keeps the explorer available in a medium desktop window', (
@@ -579,7 +579,7 @@ void _registerShellSmokeTests() {
     await tester.tap(tab.first);
     await tester.pumpAndSettle();
 
-    expect(shell.activeWorkbenchRoute, WorkbenchRoute.settings);
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.settings);
     expect(
       find.byKey(const ValueKey('settings-surface'), skipOffstage: false),
       findsOneWidget,
@@ -605,12 +605,12 @@ void _registerShellSmokeTests() {
       tester.element(find.byType(VityoShellScaffold)),
     );
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.runtime);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.runtime);
     await tester.pumpAndSettle();
     expect(find.text('Mounted Runtime Modules'), findsOneWidget);
     expect(find.text('Smoke Runtime Bridge'), findsWidgets);
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.agent);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.agent);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('agent-workbench-surface')),
@@ -662,15 +662,15 @@ void _registerShellSmokeTests() {
       tester.element(find.byType(VityoShellScaffold)),
     );
 
-    Future<void> showTab(WorkbenchRoute tab, String resultKey) async {
+    Future<void> showTab(BottomSurfaceTab tab, String resultKey) async {
       shell.selectWorkbenchRoute(tab);
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey<String>(resultKey)), findsOneWidget);
     }
 
-    await showTab(WorkbenchRoute.search, 'workspace-search-surface');
-    await showTab(WorkbenchRoute.problems, 'problems-surface');
-    await showTab(WorkbenchRoute.commandPalette, 'command-palette-surface');
+    await showTab(BottomSurfaceTab.search, 'workspace-search-surface');
+    await showTab(BottomSurfaceTab.problems, 'problems-surface');
+    await showTab(BottomSurfaceTab.commandPalette, 'command-palette-surface');
   });
 
   testWidgets('renders populated workspace bottom surfaces', (tester) async {
@@ -737,15 +737,15 @@ fn blend(left: f64, right: f64): f64 {
       tester.element(find.byType(VityoShellScaffold)),
     );
 
-    Future<void> renderTab(WorkbenchRoute tab) async {
+    Future<void> renderTab(BottomSurfaceTab tab) async {
       shell.selectWorkbenchRoute(tab);
       await tester.pump();
       expect(shell.activeWorkbenchRoute, tab);
     }
 
     await shell.previewWorkspaceReplace(query: 'blend', replacement: 'mix');
-    await renderTab(WorkbenchRoute.search);
-    await renderTab(WorkbenchRoute.problems);
+    await renderTab(BottomSurfaceTab.search);
+    await renderTab(BottomSurfaceTab.problems);
   });
 
   testWidgets(
@@ -772,7 +772,7 @@ fn blend(left: f64, right: f64): f64 {
         }, description: 'key prefix $prefix');
       }
 
-      Future<void> showTab(WorkbenchRoute tab) async {
+      Future<void> showTab(BottomSurfaceTab tab) async {
         shell.selectWorkbenchRoute(tab);
         await tester.pumpAndSettle();
         expect(shell.activeWorkbenchRoute, tab);
@@ -810,11 +810,11 @@ fn blend(left: f64, right: f64): f64 {
         await tester.pumpAndSettle();
       }
 
-      await showTab(WorkbenchRoute.commandPalette);
+      await showTab(BottomSurfaceTab.commandPalette);
       await submitField('command-palette-query-input', 'run');
       await tapFirstKeyPrefixIfPresent('command-palette-');
 
-      await showTab(WorkbenchRoute.search);
+      await showTab(BottomSurfaceTab.search);
       await submitField('workspace-search-query-input', 'blend');
       await tapFirstKeyPrefixIfPresent('workspace-search-match-');
       await tester.enterText(
@@ -826,7 +826,7 @@ fn blend(left: f64, right: f64): f64 {
       await tapKeyIfPresent('workspace-replace-preview-submit');
       await tapFirstKeyPrefixIfPresent('workspace-replace-preview-');
       await tapKeyIfPresent('workspace-search-run');
-      await showTab(WorkbenchRoute.problems);
+      await showTab(BottomSurfaceTab.problems);
       expect(find.byKey(const ValueKey('problems-surface')), findsOneWidget);
     },
   );
@@ -848,7 +848,7 @@ fn blend(left: f64, right: f64): f64 {
     );
     expect(find.byKey(const ValueKey('shell-viewport-mobile')), findsOneWidget);
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.commandPalette);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.commandPalette);
     await tester.pumpAndSettle();
     await revealMobileBottomSurface(tester);
     expect(
@@ -879,7 +879,7 @@ fn blend(left: f64, right: f64): f64 {
       findsOneWidget,
     );
 
-    shell.selectWorkbenchRoute(WorkbenchRoute.search);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.search);
     await tester.pumpAndSettle();
     await revealMobileBottomSurface(tester);
     expect(

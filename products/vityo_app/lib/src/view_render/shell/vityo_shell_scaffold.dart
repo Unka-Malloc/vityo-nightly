@@ -27,6 +27,8 @@ import '../source_control/source_control.dart';
 import '../terminal/terminal.dart';
 import '../testing/testing.dart';
 import '../theme/vityo_theme.dart';
+import '../observable/observable.dart';
+import '../../view_ide/services/observable_topology/observable_topology.dart';
 import '../../ide/workspace/workspace.dart';
 
 import 'hosted_workspace_lifecycle_banner.dart';
@@ -96,7 +98,7 @@ class VityoShellScaffold extends StatelessWidget {
                         actions: _buildTitleCommandActions(context, shell),
                         onOpenCommands: () {
                           shell.selectWorkbenchRoute(
-                            WorkbenchRoute.commandPalette,
+                            BottomSurfaceTab.commandPalette,
                           );
                         },
                       ),
@@ -239,7 +241,7 @@ class VityoShellScaffold extends StatelessWidget {
     ViewportProfile viewportProfile,
   ) {
     switch (shell.activeWorkbenchRoute) {
-      case WorkbenchRoute.runtime:
+      case BottomSurfaceTab.runtime:
         return RuntimeSurface(
           platformTarget: shell.platformTarget,
           viewportProfile: viewportProfile,
@@ -260,7 +262,7 @@ class VityoShellScaffold extends StatelessWidget {
           outputSnapshot: shell.runtimeOutputBuffer.snapshot,
           onOpenNativeToolDiagnostics: shell.openFirstNativeToolDiagnostic,
         );
-      case WorkbenchRoute.terminal:
+      case BottomSurfaceTab.terminal:
         return TerminalSurface(
           viewportProfile: viewportProfile,
           logEntries: shell.debugLog,
@@ -271,16 +273,16 @@ class VityoShellScaffold extends StatelessWidget {
             return shell.executeCommand(AppCommandId.run);
           },
         );
-      case WorkbenchRoute.commandPalette:
+      case BottomSurfaceTab.commandPalette:
         return CommandPaletteSurface(
           viewportProfile: viewportProfile,
           onExecuteCommand: shell.executeCommand,
           onExecuteCommandWithInput: shell.executeCommandWithInput,
           blockedReasonForCommand: shell.blockedReasonForCommand,
         );
-      case WorkbenchRoute.agent:
+      case BottomSurfaceTab.agent:
         return TaskCenter(collaboration: shell.agentCollaboration);
-      case WorkbenchRoute.sourceControl:
+      case BottomSurfaceTab.sourceControl:
         final sourceControlController = shell.sourceControlStatusController;
         Widget buildSourceControlSurface() {
           return SourceControlSurface(
@@ -344,7 +346,7 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: sourceControlController,
           builder: (_, _) => buildSourceControlSurface(),
         );
-      case WorkbenchRoute.search:
+      case BottomSurfaceTab.search:
         return WorkspaceSearchSurface(
           viewportProfile: viewportProfile,
           workspaceFileCount: shell.workspaceController.files.length,
@@ -370,7 +372,7 @@ class VityoShellScaffold extends StatelessWidget {
           onOpenSymbolMatch: (match) =>
               shell.openWorkspaceFile(match.documentId),
         );
-      case WorkbenchRoute.problems:
+      case BottomSurfaceTab.problems:
         final diagnosticsController = shell.workspaceDiagnosticsController;
         Widget buildProblemsSurface() {
           return ProblemsSurface(
@@ -419,7 +421,7 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: diagnosticsController,
           builder: (_, _) => buildProblemsSurface(),
         );
-      case WorkbenchRoute.testing:
+      case BottomSurfaceTab.testing:
         final testingController = shell.testingSessionController;
         Widget buildTestingSurface() {
           return TestingSurface(
@@ -438,7 +440,7 @@ class VityoShellScaffold extends StatelessWidget {
             onRunConfiguration: shell.runTestConfiguration,
             onDebugConfiguration: (configuration) async {
               await shell.debugTestConfiguration(configuration);
-              shell.selectWorkbenchRoute(WorkbenchRoute.debug);
+              shell.selectWorkbenchRoute(BottomSurfaceTab.debug);
             },
             onCancelFailedTestDebug: shell.cancelFailedTestDebug,
             onRerunFailed: () {
@@ -461,7 +463,52 @@ class VityoShellScaffold extends StatelessWidget {
           listenable: testingController,
           builder: (_, _) => buildTestingSurface(),
         );
-      case WorkbenchRoute.extensions:
+      case BottomSurfaceTab.observable:
+        final observableController = shell.observableGraphController;
+        Widget buildObservableSurface() {
+          return ObservableGraphSurface(
+            viewportProfile: viewportProfile,
+            state: shell.observableGraphState,
+            onRefresh: observableController == null
+                ? null
+                : () {
+                    observableController.refreshNow();
+                  },
+            onSelectNode: observableController?.selectNode,
+            onOpenAnchor: observableController == null
+                ? null
+                : (nodeId) {
+                    final path = observableController.resolvedAnchorPath(
+                      nodeId,
+                    );
+                    if (path != null) {
+                      shell.openWorkspaceFile(path);
+                    }
+                  },
+            onRunObserved: observableController == null
+                ? null
+                : (mode) {
+                    shell.runObservedProgram(mode);
+                  },
+            observationUnavailableReason:
+                observableController == null ||
+                    observableController.runtimeObservationDecision.available
+                ? null
+                : observableController
+                      .runtimeObservationDecision
+                      .reason
+                      ?.wireValue,
+          );
+        }
+
+        if (observableController == null) {
+          return buildObservableSurface();
+        }
+        return ListenableBuilder(
+          listenable: observableController,
+          builder: (_, _) => buildObservableSurface(),
+        );
+      case BottomSurfaceTab.extensions:
         return ExtensionsSurface(
           viewportProfile: viewportProfile,
           visibleModules: shell.visibleModules,
@@ -489,7 +536,7 @@ class VityoShellScaffold extends StatelessWidget {
           onInstallExtension: shell.installMarketplaceExtension,
           onUpdateExtension: shell.updateMarketplaceExtension,
         );
-      case WorkbenchRoute.debug:
+      case BottomSurfaceTab.debug:
         return DebugConsoleSurface(
           viewportProfile: viewportProfile,
           entries: shell.debugLog,
@@ -527,7 +574,7 @@ class VityoShellScaffold extends StatelessWidget {
             shell.selectDebugThread(threadId);
           },
         );
-      case WorkbenchRoute.settings:
+      case BottomSurfaceTab.settings:
         return SettingsSurface(
           viewportProfile: viewportProfile,
           toolchainStatus: shell.toolchainStatusSurface,
@@ -573,7 +620,9 @@ class VityoShellScaffold extends StatelessWidget {
           onSaveCommandPalettePreferences: shell.saveCommandPalettePreferences,
           onSaveThemeOverride: shell.saveThemeOverride,
         );
-      case WorkbenchRoute.navigate:
+      case BottomSurfaceTab.navigate:
+      case BottomSurfaceTab.locations:
+      default:
         return const SizedBox.shrink();
     }
   }
@@ -618,7 +667,7 @@ class _DesktopShellBody extends StatelessWidget {
         .toDouble();
     final agentUsesAuxiliaryPanel =
         viewportProfile.width >= 1320 &&
-        shell.activeWorkbenchRoute == WorkbenchRoute.agent;
+        shell.activeWorkbenchRoute == BottomSurfaceTab.agent;
     final primaryToolUsesBottomPanel =
         !primarySidebarVisible && primaryToolSurface;
     final bottomSurfaceVisible =
@@ -669,38 +718,38 @@ class _DesktopShellBody extends StatelessWidget {
                   ),
                 ],
                 selectedIndex: switch (shell.activeWorkbenchRoute) {
-                  WorkbenchRoute.search => 1,
-                  WorkbenchRoute.sourceControl => 2,
-                  WorkbenchRoute.agent => 3,
-                  WorkbenchRoute.extensions => 4,
-                  WorkbenchRoute.settings => 5,
+                  BottomSurfaceTab.search => 1,
+                  BottomSurfaceTab.sourceControl => 2,
+                  BottomSurfaceTab.agent => 3,
+                  BottomSurfaceTab.extensions => 4,
+                  BottomSurfaceTab.settings => 5,
                   _ => 0,
                 },
                 onSelected: (index) {
                   switch (index) {
                     case 1:
-                      shell.activatePrimarySidebar(WorkbenchRoute.search);
+                      shell.activatePrimarySidebar(BottomSurfaceTab.search);
                       break;
                     case 2:
                       shell.activatePrimarySidebar(
-                        WorkbenchRoute.sourceControl,
+                        BottomSurfaceTab.sourceControl,
                       );
                       break;
                     case 3:
                       shell.selectWorkbenchRoute(
-                        shell.activeWorkbenchRoute == WorkbenchRoute.agent
-                            ? WorkbenchRoute.navigate
-                            : WorkbenchRoute.agent,
+                        shell.activeWorkbenchRoute == BottomSurfaceTab.agent
+                            ? BottomSurfaceTab.navigate
+                            : BottomSurfaceTab.agent,
                       );
                       break;
                     case 4:
-                      shell.activatePrimarySidebar(WorkbenchRoute.extensions);
+                      shell.activatePrimarySidebar(BottomSurfaceTab.extensions);
                       break;
                     case 5:
-                      shell.activatePrimarySidebar(WorkbenchRoute.settings);
+                      shell.activatePrimarySidebar(BottomSurfaceTab.settings);
                       break;
                     default:
-                      shell.activatePrimarySidebar(WorkbenchRoute.navigate);
+                      shell.activatePrimarySidebar(BottomSurfaceTab.navigate);
                       break;
                   }
                 },
@@ -2225,39 +2274,51 @@ class _WorkbenchRoutes extends StatelessWidget {
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-runtime'),
         label: 'Runtime',
-        active: shell.activeWorkbenchRoute == WorkbenchRoute.runtime,
-        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.runtime),
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.runtime,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.runtime),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-terminal'),
         label: 'Terminal',
-        active: shell.activeWorkbenchRoute == WorkbenchRoute.terminal,
-        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.terminal),
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.terminal,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.terminal),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-problems'),
         label: 'Problems',
-        active: shell.activeWorkbenchRoute == WorkbenchRoute.problems,
-        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.problems),
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.problems,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.problems),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-tests'),
         label: 'Tests',
-        active: shell.activeWorkbenchRoute == WorkbenchRoute.testing,
-        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.testing),
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.testing,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.testing),
+      ),
+      _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-observable'),
+        label: 'Observable',
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.observable,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.observable),
+      ),
+      _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-extensions'),
+        label: 'Extensions',
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.extensions,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.extensions),
       ),
       _SurfaceTabChip(
         key: const ValueKey('bottom-tab-debug'),
         label: 'Debug',
-        active: shell.activeWorkbenchRoute == WorkbenchRoute.debug,
-        onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.debug),
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.debug,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.debug),
       ),
       if (!viewportProfile.isMobile && viewportProfile.width < 1320)
         _SurfaceTabChip(
           key: const ValueKey('bottom-tab-agent'),
           label: 'Agent',
-          active: shell.activeWorkbenchRoute == WorkbenchRoute.agent,
-          onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.agent),
+          active: shell.activeWorkbenchRoute == BottomSurfaceTab.agent,
+          onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.agent),
         ),
     ];
     final tabs = viewportProfile.isMobile
@@ -2266,37 +2327,37 @@ class _WorkbenchRoutes extends StatelessWidget {
             _SurfaceTabChip(
               label: 'Commands',
               active:
-                  shell.activeWorkbenchRoute == WorkbenchRoute.commandPalette,
+                  shell.activeWorkbenchRoute == BottomSurfaceTab.commandPalette,
               onTap: () =>
-                  shell.selectWorkbenchRoute(WorkbenchRoute.commandPalette),
+                  shell.selectWorkbenchRoute(BottomSurfaceTab.commandPalette),
             ),
             _SurfaceTabChip(
               label: 'Agent',
-              active: shell.activeWorkbenchRoute == WorkbenchRoute.agent,
-              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.agent),
+              active: shell.activeWorkbenchRoute == BottomSurfaceTab.agent,
+              onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.agent),
             ),
             _SurfaceTabChip(
               label: 'SCM',
               active:
-                  shell.activeWorkbenchRoute == WorkbenchRoute.sourceControl,
+                  shell.activeWorkbenchRoute == BottomSurfaceTab.sourceControl,
               onTap: () =>
-                  shell.selectWorkbenchRoute(WorkbenchRoute.sourceControl),
+                  shell.selectWorkbenchRoute(BottomSurfaceTab.sourceControl),
             ),
             _SurfaceTabChip(
               label: 'Search',
-              active: shell.activeWorkbenchRoute == WorkbenchRoute.search,
-              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.search),
+              active: shell.activeWorkbenchRoute == BottomSurfaceTab.search,
+              onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.search),
             ),
             _SurfaceTabChip(
               label: 'Extensions',
-              active: shell.activeWorkbenchRoute == WorkbenchRoute.extensions,
+              active: shell.activeWorkbenchRoute == BottomSurfaceTab.extensions,
               onTap: () =>
-                  shell.selectWorkbenchRoute(WorkbenchRoute.extensions),
+                  shell.selectWorkbenchRoute(BottomSurfaceTab.extensions),
             ),
             _SurfaceTabChip(
               label: 'Settings',
-              active: shell.activeWorkbenchRoute == WorkbenchRoute.settings,
-              onTap: () => shell.selectWorkbenchRoute(WorkbenchRoute.settings),
+              active: shell.activeWorkbenchRoute == BottomSurfaceTab.settings,
+              onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.settings),
             ),
           ]
         : bottomToolTabs;
@@ -2312,7 +2373,7 @@ class _WorkbenchRoutes extends StatelessWidget {
             Wrap(spacing: 10, runSpacing: 10, children: tabs),
             const SizedBox(height: 8),
             Text(
-              'Choose an IDE tool; the active surface opens below while hardware shortcuts remain available.',
+              'Mobile shell keeps runtime, terminal, commands, agent, source control, search, problems, testing, observable, extensions, debug, and settings on one vertical route. Hardware keyboard shortcuts remain optional.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -2326,7 +2387,7 @@ class _WorkbenchRoutes extends StatelessWidget {
       shell.activeWorkbenchRoute,
       agentUsesAuxiliaryPanel:
           viewportProfile.width >= 1320 &&
-          shell.activeWorkbenchRoute == WorkbenchRoute.agent,
+          shell.activeWorkbenchRoute == BottomSurfaceTab.agent,
     );
     final tokens = VityoWorkbenchTokens.of(context);
     return Container(
@@ -2373,35 +2434,35 @@ class _WorkbenchRoutes extends StatelessWidget {
   }
 }
 
-bool _usesPrimarySidebar(WorkbenchRoute tab) {
-  return tab == WorkbenchRoute.search ||
-      tab == WorkbenchRoute.sourceControl ||
-      tab == WorkbenchRoute.extensions ||
-      tab == WorkbenchRoute.settings;
+bool _usesPrimarySidebar(BottomSurfaceTab tab) {
+  return tab == BottomSurfaceTab.search ||
+      tab == BottomSurfaceTab.sourceControl ||
+      tab == BottomSurfaceTab.extensions ||
+      tab == BottomSurfaceTab.settings;
 }
 
-String _primarySidebarLabel(WorkbenchRoute tab) {
+String _primarySidebarLabel(BottomSurfaceTab tab) {
   return switch (tab) {
-    WorkbenchRoute.search => 'Search',
-    WorkbenchRoute.sourceControl => 'Source Control',
-    WorkbenchRoute.extensions => 'Extensions',
-    WorkbenchRoute.settings => 'Settings',
+    BottomSurfaceTab.search => 'Search',
+    BottomSurfaceTab.sourceControl => 'Source Control',
+    BottomSurfaceTab.extensions => 'Extensions',
+    BottomSurfaceTab.settings => 'Settings',
     _ => 'Explorer',
   };
 }
 
 bool _usesBottomPanel(
-  WorkbenchRoute tab, {
+  BottomSurfaceTab tab, {
   required bool agentUsesAuxiliaryPanel,
 }) {
   return switch (tab) {
-    WorkbenchRoute.runtime ||
-    WorkbenchRoute.terminal ||
-    WorkbenchRoute.commandPalette ||
-    WorkbenchRoute.problems ||
-    WorkbenchRoute.testing ||
-    WorkbenchRoute.debug => true,
-    WorkbenchRoute.agent => !agentUsesAuxiliaryPanel,
+    BottomSurfaceTab.runtime ||
+    BottomSurfaceTab.terminal ||
+    BottomSurfaceTab.commandPalette ||
+    BottomSurfaceTab.problems ||
+    BottomSurfaceTab.testing ||
+    BottomSurfaceTab.debug => true,
+    BottomSurfaceTab.agent => !agentUsesAuxiliaryPanel,
     _ => false,
   };
 }

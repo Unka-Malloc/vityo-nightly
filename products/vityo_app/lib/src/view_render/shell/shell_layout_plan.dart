@@ -127,7 +127,7 @@ class ShellPanelContribution {
     required String surfaceId,
     required List<String> capabilities,
     required ShellPanelContributionStatus status,
-    required WorkbenchRoute route,
+    required BottomSurfaceTab route,
     Map<String, Object?> metadata = const <String, Object?>{},
     String todo = '',
   }) {
@@ -150,13 +150,13 @@ class ShellPanelContribution {
   final String surfaceId;
   final List<String> capabilities;
   final ShellPanelContributionStatus status;
-  final WorkbenchRoute? route;
+  final BottomSurfaceTab? route;
   final bool defaultVisible;
   final Map<String, Object?> metadata;
   final String todo;
 
   ShellPanelDescriptor toPanelDescriptor({
-    required WorkbenchRoute activeWorkbenchRoute,
+    required BottomSurfaceTab activeWorkbenchRoute,
   }) {
     return ShellPanelDescriptor(
       id: id,
@@ -310,7 +310,7 @@ class ShellLayoutPlan {
   }
 
   factory ShellLayoutPlan.forViewport({
-    required WorkbenchRoute activeWorkbenchRoute,
+    required BottomSurfaceTab activeWorkbenchRoute,
     required bool compact,
     ShellPanelContributionRegistry? panelRegistry,
   }) {
@@ -320,7 +320,7 @@ class ShellLayoutPlan {
     final activePrimaryRoute =
         _panelRegion(activeWorkbenchRoute) == ShellLayoutRegion.primarySidebar
         ? activeWorkbenchRoute
-        : WorkbenchRoute.navigate;
+        : BottomSurfaceTab.navigate;
     final panels = <ShellPanelDescriptor>[
       const ShellPanelDescriptor(
         id: 'top-bar',
@@ -368,13 +368,13 @@ class ShellLayoutPlan {
   }
 
   final ShellLayoutMode mode;
-  final WorkbenchRoute activeWorkbenchRoute;
+  final BottomSurfaceTab activeWorkbenchRoute;
   final List<ShellPanelDescriptor> panels;
   final String todo;
 
   ShellLayoutPlan copyWith({
     ShellLayoutMode? mode,
-    WorkbenchRoute? activeWorkbenchRoute,
+    BottomSurfaceTab? activeWorkbenchRoute,
     List<ShellPanelDescriptor>? panels,
     String? todo,
   }) {
@@ -418,7 +418,7 @@ class ShellLayoutPlan {
 }
 
 List<ShellPanelContribution> _defaultPanelContributions() {
-  return WorkbenchRoute.values
+  return BottomSurfaceTab.values
       .map((tab) {
         final region = _panelRegion(tab);
         final panelId = _panelId(tab);
@@ -443,7 +443,7 @@ List<ShellPanelContribution> _defaultPanelContributions() {
 class ShellLayoutPreferences {
   const ShellLayoutPreferences({
     required this.workspaceId,
-    this.activeWorkbenchRoute = WorkbenchRoute.navigate,
+    this.activeWorkbenchRoute = BottomSurfaceTab.navigate,
     this.hiddenPanelIds = const <String>{},
     this.pinnedPanelIds = const <String>{},
     this.primarySidebarVisible = true,
@@ -485,7 +485,7 @@ class ShellLayoutPreferences {
   }
 
   final String workspaceId;
-  final WorkbenchRoute activeWorkbenchRoute;
+  final BottomSurfaceTab activeWorkbenchRoute;
   final Set<String> hiddenPanelIds;
   final Set<String> pinnedPanelIds;
   final bool primarySidebarVisible;
@@ -496,7 +496,7 @@ class ShellLayoutPreferences {
 
   ShellLayoutPreferences copyWith({
     String? workspaceId,
-    WorkbenchRoute? activeWorkbenchRoute,
+    BottomSurfaceTab? activeWorkbenchRoute,
     Set<String>? hiddenPanelIds,
     Set<String>? pinnedPanelIds,
     bool? primarySidebarVisible,
@@ -523,7 +523,7 @@ class ShellLayoutPreferences {
     final activePrimaryRoute =
         _panelRegion(activeWorkbenchRoute) == ShellLayoutRegion.primarySidebar
         ? activeWorkbenchRoute
-        : WorkbenchRoute.navigate;
+        : BottomSurfaceTab.navigate;
     return plan.copyWith(
       activeWorkbenchRoute: activeWorkbenchRoute,
       panels: plan.panels
@@ -683,7 +683,7 @@ class ShellLayoutPreferenceController {
     _setPreferences(preferences);
   }
 
-  void selectWorkbenchRoute(WorkbenchRoute tab) {
+  void selectWorkbenchRoute(BottomSurfaceTab tab) {
     if (_preferences.activeWorkbenchRoute == tab) {
       return;
     }
@@ -800,7 +800,7 @@ class ShellLayoutRenderBinding {
     for (final panel in plan.panels) {
       if (panel.region == ShellLayoutRegion.primarySidebar &&
           (panel.metadata['route'] == plan.activeWorkbenchRoute.name ||
-              panel.metadata['route'] == WorkbenchRoute.navigate.name)) {
+              panel.metadata['route'] == BottomSurfaceTab.navigate.name)) {
         primarySidebar = panel;
         if (panel.metadata['route'] == plan.activeWorkbenchRoute.name) {
           break;
@@ -887,104 +887,118 @@ ShellLayoutRegion _regionFromWire(Object? value) {
   };
 }
 
-WorkbenchRoute _routeFromWire(Object? value) {
+BottomSurfaceTab _routeFromWire(Object? value) {
   final name = value as String? ?? '';
-  for (final tab in WorkbenchRoute.values) {
+  for (final tab in BottomSurfaceTab.values) {
     if (tab.name == name) {
       return tab;
     }
   }
-  return WorkbenchRoute.navigate;
+  return BottomSurfaceTab.navigate;
 }
 
-String _routeTitle(WorkbenchRoute tab) {
+String _routeTitle(BottomSurfaceTab tab) {
   return switch (tab) {
-    WorkbenchRoute.runtime => 'Runtime',
-    WorkbenchRoute.terminal => 'Terminal',
-    WorkbenchRoute.commandPalette => 'Command Palette',
-    WorkbenchRoute.agent => 'Agent',
-    WorkbenchRoute.sourceControl => 'Source Control',
-    WorkbenchRoute.search => 'Search',
-    WorkbenchRoute.problems => 'Problems',
-    WorkbenchRoute.testing => 'Testing',
-    WorkbenchRoute.extensions => 'Extensions',
-    WorkbenchRoute.debug => 'Debug',
-    WorkbenchRoute.navigate => 'Explorer',
-    WorkbenchRoute.settings => 'Settings',
+    BottomSurfaceTab.runtime => 'Runtime',
+    BottomSurfaceTab.terminal => 'Terminal',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'Command Palette',
+    BottomSurfaceTab.agent => 'Agent',
+    BottomSurfaceTab.sourceControl => 'Source Control',
+    BottomSurfaceTab.search => 'Search',
+    BottomSurfaceTab.problems => 'Problems',
+    BottomSurfaceTab.testing => 'Testing',
+    BottomSurfaceTab.observable => 'Observable',
+    BottomSurfaceTab.extensions => 'Extensions',
+    BottomSurfaceTab.debug => 'Debug',
+    BottomSurfaceTab.navigate => 'Navigate',
+    BottomSurfaceTab.settings => 'Settings',
+    BottomSurfaceTab.locations => 'Locations',
+    _ => '',
   };
 }
 
-String _routeSurfaceId(WorkbenchRoute tab) {
+String _routeSurfaceId(BottomSurfaceTab tab) {
   return switch (tab) {
-    WorkbenchRoute.runtime => 'runtime.output',
-    WorkbenchRoute.terminal => 'terminal.session',
-    WorkbenchRoute.commandPalette => 'commands.palette',
-    WorkbenchRoute.agent => 'agent.activity',
-    WorkbenchRoute.sourceControl => 'source-control.changes',
-    WorkbenchRoute.search => 'workspace.search',
-    WorkbenchRoute.problems => 'workspace.problems',
-    WorkbenchRoute.testing => 'testing.results',
-    WorkbenchRoute.extensions => 'extensions.marketplace',
-    WorkbenchRoute.debug => 'debug.console',
-    WorkbenchRoute.navigate => 'workspace.explorer',
-    WorkbenchRoute.settings => 'settings.workspace',
+    BottomSurfaceTab.runtime => 'runtime.output',
+    BottomSurfaceTab.terminal => 'terminal.session',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'commands.palette',
+    BottomSurfaceTab.agent => 'agent.activity',
+    BottomSurfaceTab.sourceControl => 'source-control.changes',
+    BottomSurfaceTab.search => 'workspace.search',
+    BottomSurfaceTab.problems => 'workspace.problems',
+    BottomSurfaceTab.testing => 'testing.results',
+    BottomSurfaceTab.observable => 'observable.graph',
+    BottomSurfaceTab.extensions => 'extensions.marketplace',
+    BottomSurfaceTab.debug => 'debug.console',
+    BottomSurfaceTab.navigate => 'navigate.quick',
+    BottomSurfaceTab.settings => 'settings.workspace',
+    BottomSurfaceTab.locations => 'locations.list',
+    _ => '',
   };
 }
 
-List<String> _routeCapabilities(WorkbenchRoute tab) {
+List<String> _routeCapabilities(BottomSurfaceTab tab) {
   return switch (tab) {
-    WorkbenchRoute.runtime => const <String>['runtime-output', 'task-activity'],
-    WorkbenchRoute.terminal => const <String>['terminal', 'pty-session'],
-    WorkbenchRoute.commandPalette => const <String>[
+    BottomSurfaceTab.runtime => const <String>['runtime-output', 'task-activity'],
+    BottomSurfaceTab.terminal => const <String>['terminal', 'pty-session'],
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => const <String>[
       'command-search',
       'command-execution',
     ],
-    WorkbenchRoute.agent => const <String>[
+    BottomSurfaceTab.agent => const <String>[
       'agent-activity',
       'coding-session-history',
     ],
-    WorkbenchRoute.sourceControl => const <String>[
+    BottomSurfaceTab.sourceControl => const <String>[
       'source-control',
       'diff-preview',
     ],
-    WorkbenchRoute.search => const <String>[
+    BottomSurfaceTab.search => const <String>[
       'workspace-search',
       'replace-preview',
     ],
-    WorkbenchRoute.problems => const <String>['diagnostics', 'quick-fix'],
-    WorkbenchRoute.testing => const <String>[
+    BottomSurfaceTab.problems => const <String>['diagnostics', 'quick-fix'],
+    BottomSurfaceTab.testing => const <String>[
       'test-results',
       'failed-test-debug',
     ],
-    WorkbenchRoute.extensions => const <String>[
+    BottomSurfaceTab.observable => const <String>[
+      'observable-topology',
+      'change-highlight',
+    ],
+    BottomSurfaceTab.extensions => const <String>[
       'extension-management',
       'marketplace',
     ],
-    WorkbenchRoute.debug => const <String>['debug-console', 'debug-session'],
-    WorkbenchRoute.navigate => const <String>[
+    BottomSurfaceTab.debug => const <String>['debug-console', 'debug-session'],
+    BottomSurfaceTab.navigate => const <String>[
       'quick-navigate',
       'fuzzy-file-search',
     ],
-    WorkbenchRoute.settings => const <String>[
+    BottomSurfaceTab.settings => const <String>[
       'settings',
       'toolchain-configuration',
     ],
+    _ => const <String>[],
   };
 }
 
-ShellLayoutRegion _panelRegion(WorkbenchRoute tab) {
+ShellLayoutRegion _panelRegion(BottomSurfaceTab tab) {
   return switch (tab) {
-    WorkbenchRoute.navigate ||
-    WorkbenchRoute.search ||
-    WorkbenchRoute.sourceControl ||
-    WorkbenchRoute.extensions ||
-    WorkbenchRoute.settings => ShellLayoutRegion.primarySidebar,
+    BottomSurfaceTab.navigate ||
+    BottomSurfaceTab.search ||
+    BottomSurfaceTab.sourceControl ||
+    BottomSurfaceTab.extensions ||
+    BottomSurfaceTab.settings => ShellLayoutRegion.primarySidebar,
     _ => ShellLayoutRegion.bottomPanel,
   };
 }
 
-String _panelId(WorkbenchRoute tab) {
-  if (tab == WorkbenchRoute.navigate) {
+String _panelId(BottomSurfaceTab tab) {
+  if (tab == BottomSurfaceTab.navigate) {
     return 'primary.explorer';
   }
   return switch (_panelRegion(tab)) {

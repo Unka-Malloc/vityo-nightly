@@ -46,6 +46,10 @@ import '../view_ide/toolchain/toolchain_manager.dart';
 import '../view_ide/toolchain/native_compiler_toolchain_discovery.dart';
 import '../view_ide/toolchain/styio_toolchain_discovery.dart';
 import '../view_ide/testing/testing.dart';
+import '../view_ide/services/observable_topology/observable_topology.dart';
+import '../view_ide/backend_toolchain/observable_snapshot_publisher_web.dart'
+    if (dart.library.io) '../view_ide/backend_toolchain/observable_snapshot_publisher_io.dart';
+import '../view_ide/backend_toolchain/observable_runtime_intake.dart';
 import '../ide/workspace/workspace_diagnostics.dart';
 import '../ide/workspace/workspace_diagnostics_controller.dart';
 import '../ide/workspace/source_control_status.dart';
@@ -286,6 +290,7 @@ class AppBootstrap {
     this.languageResultCacheBinding,
     this.workspaceDiagnosticsController,
     this.testingSessionController,
+    this.observableGraphController,
     this.sourceControlStatusController,
     this.projectLanguageService,
   }) : runtimeOutputBuffer = runtimeOutputBuffer ?? RuntimeOutputLiveBuffer(),
@@ -341,6 +346,7 @@ class AppBootstrap {
   final StyioServiceToolchainCacheBinding? languageResultCacheBinding;
   final WorkspaceDiagnosticsController? workspaceDiagnosticsController;
   final TestingSessionController? testingSessionController;
+  final ObservableGraphController? observableGraphController;
   final SourceControlStatusController? sourceControlStatusController;
   final ProjectStyioLanguageService? projectLanguageService;
 
@@ -351,6 +357,7 @@ class AppBootstrap {
     unawaited(languageServiceStatusController?.dispose());
     workspaceDiagnosticsController?.dispose();
     testingSessionController?.dispose();
+    observableGraphController?.dispose();
     sourceControlStatusController?.dispose();
     unawaited(vityodClient?.dispose());
     final collaboration = agentCollaboration;
@@ -609,6 +616,13 @@ class AppBootstrap {
           recoveryAction: 'runTests',
         ),
         AppBootstrapServiceDescriptor(
+          serviceId: 'observable.graph-controller',
+          ownerLayer: 'service',
+          requiredInjection: false,
+          capabilityGapCode: 'observable.topology.unavailable',
+          recoveryAction: 'refreshObservableGraph',
+        ),
+        AppBootstrapServiceDescriptor(
           serviceId: 'source-control.status-controller',
           ownerLayer: 'source-control',
           requiredInjection: false,
@@ -667,6 +681,7 @@ class AppBootstrap {
       'workspace.diagnostics-controller':
           workspaceDiagnosticsController != null,
       'testing.session-controller': testingSessionController != null,
+      'observable.graph-controller': observableGraphController != null,
       'source-control.status-controller': sourceControlStatusController != null,
       'language.project-service': projectLanguageService != null,
     };
@@ -944,6 +959,24 @@ class AppBootstrap {
       testRunHistoryWorkspaceId: projectSnapshot.id,
     );
     await testingSessionController.loadRunHistory();
+    final ioDesktop =
+        platformTarget == PlatformTarget.windows ||
+        platformTarget == PlatformTarget.linux ||
+        platformTarget == PlatformTarget.macos;
+    final observableGraphController =
+        ioDesktop && !projectSnapshot.isHosted
+        ? ObservableGraphController(
+            publisher: createObservableSnapshotPublisher(),
+            projectGraph: () => workspaceController.activeProject,
+            ioPlatform: true,
+            fileSystemManager: platformManagers.fileSystem,
+            platformManagers: platformManagers,
+            runtimeIntake: createObservableRuntimeIntake(),
+          )
+        : null;
+    if (observableGraphController != null) {
+      unawaited(observableGraphController.start());
+    }
     final sourceControlStatusController =
         AppBootstrap.createSourceControlStatusController(
           workspaceRoot: projectSnapshot.workspaceRoot,
@@ -1055,6 +1088,7 @@ class AppBootstrap {
       languageResultCacheBinding: languageResultCacheBinding,
       workspaceDiagnosticsController: workspaceDiagnosticsController,
       testingSessionController: testingSessionController,
+      observableGraphController: observableGraphController,
       sourceControlStatusController: sourceControlStatusController,
       projectLanguageService: projectLanguageService,
     );

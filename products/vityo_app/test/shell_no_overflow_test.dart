@@ -7,7 +7,7 @@ void main() {
       'desktop layout plan defines fixed-width regions with no overflow risk',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeWorkbenchRoute: WorkbenchRoute.runtime,
+          activeWorkbenchRoute: BottomSurfaceTab.runtime,
           compact: false,
         );
 
@@ -20,7 +20,7 @@ void main() {
 
     test('compact layout removes activity rail to prevent narrow overflow', () {
       final plan = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.debug,
+        activeWorkbenchRoute: BottomSurfaceTab.debug,
         compact: true,
       );
 
@@ -32,7 +32,7 @@ void main() {
     });
 
     test('all core bottom panels have bounded height within layout', () {
-      for (final tab in WorkbenchRoute.values) {
+      for (final tab in BottomSurfaceTab.values) {
         final plan = ShellLayoutPlan.forViewport(
           activeWorkbenchRoute: tab,
           compact: false,
@@ -70,13 +70,13 @@ void main() {
       'screen-reader semantics keys are stable across plan serialization',
       () {
         final plan = ShellLayoutPlan.forViewport(
-          activeWorkbenchRoute: WorkbenchRoute.problems,
+          activeWorkbenchRoute: BottomSurfaceTab.problems,
           compact: false,
         );
         final json = plan.toJson();
         final restored = ShellLayoutPlan.fromJson(json);
 
-        expect(restored.activeWorkbenchRoute, WorkbenchRoute.problems);
+        expect(restored.activeWorkbenchRoute, BottomSurfaceTab.problems);
         expect(restored.renderBinding().visiblePanelIds, isNotEmpty);
         expect(restored.renderBinding().activePanelId, 'bottom.problems');
 
@@ -87,7 +87,7 @@ void main() {
     );
 
     test('compact render binding uses mobile key consistently', () {
-      for (final tab in WorkbenchRoute.values) {
+      for (final tab in BottomSurfaceTab.values) {
         final plan = ShellLayoutPlan.forViewport(
           activeWorkbenchRoute: tab,
           compact: true,

@@ -7,15 +7,32 @@ import '../../view_ide/interaction/interaction.dart';
 import '../../view_ide/shell_runtime/shell_runtime.dart';
 import 'shell_layout_plan.dart';
 
-enum WorkbenchRoute {
+enum BottomSurfaceTab {
   runtime,
+  commands,
   navigate,
+  locations,
+  documentLinks,
+  documentHighlights,
+  codeLenses,
+  declarations,
+  definitions,
+  typeDefinitions,
+  implementations,
+  typeHierarchy,
+  outline,
+  rename,
+  symbols,
+  usages,
+  calls,
   search,
   problems,
+  actions,
   terminal,
   agent,
   sourceControl,
   testing,
+  observable,
   extensions,
   debug,
   settings,
@@ -66,6 +83,7 @@ class ShellModel extends ShellRuntimeModel {
     super.clangCppVersionPreference,
     super.workspaceDiagnosticsController,
     super.testingSessionController,
+    super.observableGraphController,
     super.sourceControlStatusController,
     super.projectLanguageService,
     super.debugAdapterLauncher,
@@ -130,7 +148,7 @@ class ShellModel extends ShellRuntimeModel {
   ) async {
     final result = await super.executeHostedBackendAction(action);
     if (action.kind == HostedBackendRetryActionKind.openSettings) {
-      selectWorkbenchRoute(WorkbenchRoute.settings);
+      selectWorkbenchRoute(BottomSurfaceTab.settings);
     }
     return result;
   }
@@ -143,7 +161,7 @@ class ShellModel extends ShellRuntimeModel {
     super.dispose();
   }
 
-  WorkbenchRoute get activeWorkbenchRoute =>
+  BottomSurfaceTab get activeWorkbenchRoute =>
       shellLayoutPreferenceController.preferences.activeWorkbenchRoute;
 
   bool get editorLanguageInspectorVisible => _editorLanguageInspectorVisible;
@@ -153,7 +171,7 @@ class ShellModel extends ShellRuntimeModel {
     notifyListeners();
   }
 
-  void selectWorkbenchRoute(WorkbenchRoute route) {
+  void selectWorkbenchRoute(BottomSurfaceTab route) {
     if (activeWorkbenchRoute == route) {
       if (_isDockedWorkbenchRoute(route)) {
         final expanded =
@@ -246,7 +264,7 @@ class ShellModel extends ShellRuntimeModel {
     unawaited(persistShellLayoutPreferences());
   }
 
-  void activatePrimarySidebar(WorkbenchRoute route) {
+  void activatePrimarySidebar(BottomSurfaceTab route) {
     final preferences = shellLayoutPreferenceController.preferences;
     if (activeWorkbenchRoute == route && preferences.primarySidebarVisible) {
       setPrimarySidebarVisible(false);
@@ -289,12 +307,12 @@ class ShellModel extends ShellRuntimeModel {
   ) async {
     await super.handleToolchainRecoveryAction(action);
     if (action.id == 'show-toolchain-logs') {
-      selectWorkbenchRoute(WorkbenchRoute.debug);
+      selectWorkbenchRoute(BottomSurfaceTab.debug);
     } else if (action.id == 'select-existing-toolchain' ||
         action.id == 'configure-managed-download' ||
         action.id == 'enable-toolchain-installation' ||
         action.id == 'install-managed-toolchain') {
-      selectWorkbenchRoute(WorkbenchRoute.settings);
+      selectWorkbenchRoute(BottomSurfaceTab.settings);
     }
   }
 
@@ -302,20 +320,20 @@ class ShellModel extends ShellRuntimeModel {
   Future<void> executeCommand(AppCommandId commandId) async {
     switch (commandId) {
       case AppCommandId.showRuntime:
-        selectWorkbenchRoute(WorkbenchRoute.runtime);
+        selectWorkbenchRoute(BottomSurfaceTab.runtime);
         return;
       case AppCommandId.showAgent:
-        selectWorkbenchRoute(WorkbenchRoute.agent);
+        selectWorkbenchRoute(BottomSurfaceTab.agent);
         return;
       case AppCommandId.searchWorkspace:
-        selectWorkbenchRoute(WorkbenchRoute.search);
+        selectWorkbenchRoute(BottomSurfaceTab.search);
         appendLog('Workspace search surface opened.');
         return;
       case AppCommandId.showDebug:
-        selectWorkbenchRoute(WorkbenchRoute.debug);
+        selectWorkbenchRoute(BottomSurfaceTab.debug);
         return;
       case AppCommandId.openSettings:
-        selectWorkbenchRoute(WorkbenchRoute.settings);
+        selectWorkbenchRoute(BottomSurfaceTab.settings);
         appendLog('Settings surface opened.');
         return;
       case AppCommandId.openFile:
@@ -323,11 +341,11 @@ class ShellModel extends ShellRuntimeModel {
       case AppCommandId.commandPalette:
       case AppCommandId.acceptExternalChange:
         await super.executeCommand(commandId);
-        selectWorkbenchRoute(WorkbenchRoute.commandPalette);
+        selectWorkbenchRoute(BottomSurfaceTab.commandPalette);
         return;
       case AppCommandId.quickOpen:
         await super.executeCommand(commandId);
-        selectWorkbenchRoute(WorkbenchRoute.navigate);
+        selectWorkbenchRoute(BottomSurfaceTab.navigate);
         return;
       case AppCommandId.showRecentLocations:
       case AppCommandId.showWorkspaceDocumentLinks:
@@ -352,16 +370,16 @@ class ShellModel extends ShellRuntimeModel {
       case AppCommandId.run:
         await super.executeCommand(commandId);
         if (commandId == AppCommandId.run) {
-          selectWorkbenchRoute(WorkbenchRoute.runtime);
+          selectWorkbenchRoute(BottomSurfaceTab.runtime);
         }
         return;
       case AppCommandId.showWorkspaceProblems:
         await super.executeCommand(commandId);
-        selectWorkbenchRoute(WorkbenchRoute.problems);
+        selectWorkbenchRoute(BottomSurfaceTab.problems);
         return;
       case AppCommandId.showWorkspaceCodeActions:
         await super.executeCommand(commandId);
-        selectWorkbenchRoute(WorkbenchRoute.problems);
+        selectWorkbenchRoute(BottomSurfaceTab.problems);
         return;
       case AppCommandId.toggleBreakpoint:
       case AppCommandId.startDebugging:
@@ -415,7 +433,7 @@ class ShellModel extends ShellRuntimeModel {
         return;
       case AppCommandId.runSelectedTarget:
         await super.executeCommand(commandId);
-        selectWorkbenchRoute(WorkbenchRoute.runtime);
+        selectWorkbenchRoute(BottomSurfaceTab.runtime);
         return;
       default:
         await super.executeCommand(commandId);
@@ -424,15 +442,15 @@ class ShellModel extends ShellRuntimeModel {
   }
 }
 
-bool _isDockedWorkbenchRoute(WorkbenchRoute route) {
+bool _isDockedWorkbenchRoute(BottomSurfaceTab route) {
   return switch (route) {
-    WorkbenchRoute.runtime ||
-    WorkbenchRoute.terminal ||
-    WorkbenchRoute.commandPalette ||
-    WorkbenchRoute.problems ||
-    WorkbenchRoute.testing ||
-    WorkbenchRoute.debug ||
-    WorkbenchRoute.agent => true,
+    BottomSurfaceTab.runtime ||
+    BottomSurfaceTab.terminal ||
+    BottomSurfaceTab.commandPalette ||
+    BottomSurfaceTab.problems ||
+    BottomSurfaceTab.testing ||
+    BottomSurfaceTab.debug ||
+    BottomSurfaceTab.agent => true,
     _ => false,
   };
 }

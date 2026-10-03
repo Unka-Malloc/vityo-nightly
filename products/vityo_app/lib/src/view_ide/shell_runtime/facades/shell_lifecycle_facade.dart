@@ -22,6 +22,7 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleExtensionMarketplaceChanged() => _notifyShellListeners();
   void _handleSourceControlChanged() => _notifyShellListeners();
   void _handleTestingChanged() => _notifyShellListeners();
+  void _handleObservableGraphChanged() => _notifyShellListeners();
   void _handleSemanticTelemetryChanged() => _notifyShellListeners();
   void _handleLanguageServiceStatusChanged() => _notifyShellListeners();
 
@@ -124,6 +125,8 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _sourceControlController.dispose();
     _testingController.removeListener(_handleTestingChanged);
     _testingController.dispose();
+    observableGraphController?.removeListener(_handleObservableGraphChanged);
+    observableGraphController?.dispose();
     _semanticTelemetryController.removeListener(
       _handleSemanticTelemetryChanged,
     );

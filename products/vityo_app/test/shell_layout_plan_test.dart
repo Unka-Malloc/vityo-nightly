@@ -10,7 +10,7 @@ import 'support/test_file_system_manager.dart';
 void main() {
   test('shell layout plan marks active bottom panel', () {
     final plan = ShellLayoutPlan.forViewport(
-      activeWorkbenchRoute: WorkbenchRoute.agent,
+      activeWorkbenchRoute: BottomSurfaceTab.agent,
       compact: false,
     );
     final restored = ShellLayoutPlan.fromJson(plan.toJson());
@@ -19,7 +19,7 @@ void main() {
     expect(plan.panelById('editor')?.active, isTrue);
     expect(plan.panelById('bottom.agent')?.active, isTrue);
     expect(plan.panelById('bottom.runtime')?.active, isFalse);
-    expect(restored.activeWorkbenchRoute, WorkbenchRoute.agent);
+    expect(restored.activeWorkbenchRoute, BottomSurfaceTab.agent);
     expect(restored.visiblePanelIds, contains('activity-rail'));
     expect(plan.renderBinding().viewportKey, 'shell-viewport-desktop');
     expect(plan.renderBinding().activePanelId, 'bottom.agent');
@@ -27,7 +27,7 @@ void main() {
 
   test('shell layout plan records compact activity rail fallback', () {
     final plan = ShellLayoutPlan.forViewport(
-      activeWorkbenchRoute: WorkbenchRoute.search,
+      activeWorkbenchRoute: BottomSurfaceTab.search,
       compact: true,
     );
 
@@ -75,7 +75,7 @@ void main() {
       );
       const preferences = ShellLayoutPreferences(
         workspaceId: 'demo',
-        activeWorkbenchRoute: WorkbenchRoute.problems,
+        activeWorkbenchRoute: BottomSurfaceTab.problems,
         hiddenPanelIds: <String>{'bottom.runtime'},
         pinnedPanelIds: <String>{'bottom.problems'},
         primarySidebarVisible: false,
@@ -84,7 +84,7 @@ void main() {
         bottomPanelHeight: 284,
       );
       final plan = ShellLayoutPlan.forViewport(
-        activeWorkbenchRoute: WorkbenchRoute.runtime,
+        activeWorkbenchRoute: BottomSurfaceTab.runtime,
         compact: false,
       );
 
@@ -92,8 +92,8 @@ void main() {
       final restored = await store.readPreferences(workspaceId: 'demo');
       final applied = restored.applyTo(plan);
 
-      expect(restored.activeWorkbenchRoute, WorkbenchRoute.problems);
-      expect(applied.activeWorkbenchRoute, WorkbenchRoute.problems);
+      expect(restored.activeWorkbenchRoute, BottomSurfaceTab.problems);
+      expect(applied.activeWorkbenchRoute, BottomSurfaceTab.problems);
       expect(applied.panelById('bottom.runtime')?.visible, isFalse);
       expect(applied.panelById('bottom.problems')?.active, isTrue);
       expect(applied.panelById('bottom.problems')?.metadata['pinned'], isTrue);
@@ -109,7 +109,7 @@ void main() {
 
       expect(
         controller.preferences.activeWorkbenchRoute,
-        WorkbenchRoute.problems,
+        BottomSurfaceTab.problems,
       );
       expect(controller.revision, 1);
       expect(binding.activePanelId, 'bottom.problems');
@@ -121,7 +121,7 @@ void main() {
       expect(await store.deletePreferences(workspaceId: 'demo'), isTrue);
       expect(
         (await store.readPreferences(workspaceId: 'demo')).activeWorkbenchRoute,
-        WorkbenchRoute.navigate,
+        BottomSurfaceTab.navigate,
       );
     },
   );
@@ -131,7 +131,7 @@ void main() {
       initialPreferences: const ShellLayoutPreferences(workspaceId: 'demo'),
     );
 
-    controller.selectWorkbenchRoute(WorkbenchRoute.debug);
+    controller.selectWorkbenchRoute(BottomSurfaceTab.debug);
     controller.setPanelPinned('bottom.debug', pinned: true);
     controller.setPanelVisible('bottom.runtime', visible: false);
     controller.setBottomPanelExpanded(false);
@@ -154,7 +154,7 @@ void main() {
     final registry = ShellPanelContributionRegistry.defaultIdePanels();
     final coverage = registry.coverageForCoreIdePanels();
     final plan = ShellLayoutPlan.forViewport(
-      activeWorkbenchRoute: WorkbenchRoute.problems,
+      activeWorkbenchRoute: BottomSurfaceTab.problems,
       compact: false,
       panelRegistry: registry,
     );
@@ -180,6 +180,18 @@ void main() {
     expect(
       registry.panelById('primary.extensions')?.status,
       ShellPanelContributionStatus.production,
+    );
+    expect(
+      registry.panelById('bottom.observable')?.title,
+      'Observable',
+    );
+    expect(
+      registry.panelById('bottom.observable')?.surfaceId,
+      'observable.graph',
+    );
+    expect(
+      registry.panelById('bottom.observable')?.capabilities,
+      containsAll(<String>['observable-topology', 'change-highlight']),
     );
     expect(registry.toJson()['coreIdeCoverage'], isA<Map<String, Object?>>());
   });

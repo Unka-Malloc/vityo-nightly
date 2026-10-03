@@ -8,12 +8,20 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import tomllib
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# This module is loaded by path, so its own directory is not importable yet.
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+import vityo_macos_signing  # noqa: E402  (needs the path fix above)
+
 PACKAGE_FORMATS = {"linux": "deb", "windows": "zip-powershell", "macos": "dmg"}
 CODING_AGENT_TARGETS = {
     "linux": "x86_64-unknown-linux-gnu",
@@ -248,6 +256,11 @@ def validate_release_inputs(platform: str, config: dict[str, object], versions: 
         raise ValueError(f"invalid {platform} signing policy")
     if signing.get("status") == "explicit-gap" and not str(signing.get("reason", "")).strip():
         raise ValueError(f"missing {platform} signing gap reason")
+    if platform == "macos" and vityo_macos_signing.signing_requested():
+        try:
+            vityo_macos_signing.resolve_configuration()
+        except vityo_macos_signing.SigningError as error:
+            raise ValueError(f"invalid {platform} signing credentials: {error}") from error
     coding_agent = config.get("coding_agent")
     if not isinstance(coding_agent, dict):
         raise ValueError(f"missing {platform} Coding Agent package component")
@@ -349,8 +362,19 @@ def package_macos(config: dict[str, object], output: Path) -> Path:
         stage_vityod(config, staged_app)
         stage_coding_agent(config, staged_app)
         stage_rust_notices("macos", staged_app)
+        # Seal the staged bundle before the installer definition captures it in
+        # the DMG, so the artifact that ships is the sealed one.
+        signing_status = vityo_macos_signing.apply_signing(staged_app)
         subprocess.run(["bash", script, staged_app, output], check=True)
+        if signing_status.get("status") == "configured":
+            vityo_macos_signing.notarize(
+                output, vityo_macos_signing.resolve_configuration()
+            )
+        package_macos.signing_status = signing_status
     return output
+
+
+package_macos.signing_status: dict[str, object] = vityo_macos_signing.gap_status()
 
 
 def main() -> int:
@@ -379,7 +403,11 @@ def main() -> int:
         "core_version": versions["core_version"],
         "adapter_version": version,
         "artifact": output.name,
-        "signing": config["signing"],
+        "signing": (
+            package_macos.signing_status
+            if args.platform == "macos"
+            else config["signing"]
+        ),
         "automatic_updates": config["automatic_updates"],
     }
     if vityod_binary is not None:

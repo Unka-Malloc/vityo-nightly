@@ -9,6 +9,7 @@ import '../../platform/platform.dart';
 import '../../environment/system_compatibility/process/process_manager.dart';
 import '../../runtime/runtime.dart';
 import '../../toolchain/toolchain.dart';
+import '../../services/observable_topology/observable_topology.dart';
 import '../../../ide/workspace/workspace.dart';
 
 const int _maxNativeToolResultRecords = 24;
@@ -1122,6 +1123,99 @@ final class ExecutionController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  Future<ObservedExecutionRun> runObserved({
+    required PlatformTarget platformTarget,
+    required ProjectGraphSnapshot projectGraph,
+    required List<AdapterCapabilitySnapshot> adapterCapabilities,
+    required DocumentState document,
+    required SelectionState selection,
+    required String activeFilePath,
+    required RuntimeObservationRequest observation,
+  }) async {
+    final routeSelection = selectBackendExecutionRoute(
+      platformTarget: platformTarget,
+      projectGraph: projectGraph,
+      adapterCapabilities: adapterCapabilities,
+    );
+    if (!routeSelection.allowed) {
+      final session = ExecutionSession(
+        sessionId: 'route-gate:${projectGraph.id}',
+        kind: 'run',
+        status: ExecutionSessionStatus.blocked,
+        statusMessage:
+            routeSelection.blockedReason ?? 'Execution route blocked.',
+        diagnostics: const <Diagnostic>[],
+        stdoutEvents: const <ExecutionLogEvent>[],
+        stderrEvents: const <ExecutionLogEvent>[],
+      );
+      _lastExecutionSession = session;
+      _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+      log(
+        'Observed run blocked by backend route selection '
+        '(${routeSelection.routeKind.wireValue}/'
+        '${routeSelection.adapterKind.wireValue}): '
+        '${session.statusMessage}',
+      );
+      notifyListeners();
+      return ObservedExecutionRun(
+        session: session,
+        unavailableReason: ObservableReasonCode.unsupportedPlatform,
+      );
+    }
+    log(
+      'Observed run route selected: ${routeSelection.routeKind.wireValue} '
+      'via ${routeSelection.adapterKind.wireValue}.',
+    );
+    final runUnit = selectRunUnitForEditor(
+      document: document,
+      selection: selection,
+    );
+    final adapter = _executionAdapter;
+    if (adapter is! ObservedExecutionAdapter) {
+      final session = ExecutionSession(
+        sessionId: 'observed-unsupported:${projectGraph.id}',
+        kind: 'run',
+        status: ExecutionSessionStatus.blocked,
+        statusMessage: 'Observed runs require a local execution adapter.',
+        diagnostics: const <Diagnostic>[],
+        stdoutEvents: const <ExecutionLogEvent>[],
+        stderrEvents: const <ExecutionLogEvent>[],
+      );
+      _lastExecutionSession = session;
+      _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+      notifyListeners();
+      return ObservedExecutionRun(
+        session: session,
+        unavailableReason: ObservableReasonCode.unsupportedPlatform,
+      );
+    }
+    final observedAdapter = adapter as ObservedExecutionAdapter;
+    final run = await observedAdapter.runActiveDocumentObserved(
+      platformTarget: platformTarget,
+      projectGraph: projectGraph,
+      document: document,
+      activeFilePath: activeFilePath,
+      observation: observation,
+    );
+    final rangedSession = _sessionWithRunUnit(run.session, runUnit);
+    _lastExecutionSession = rangedSession;
+    _lastRuntimeEvents = await runtimeEventAdapter
+        .sessionEvents(rangedSession.sessionId)
+        .toList();
+    log(
+      'Observed run unit ${runUnit.kind.name}: '
+      '${runUnit.range.start}-${runUnit.range.end}.',
+    );
+    log('Observed run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
+    notifyListeners();
+    return ObservedExecutionRun(
+      session: rangedSession,
+      runtimeEventsPath: run.runtimeEventsPath,
+      unavailableReason: run.unavailableReason,
+      release: run.release,
+    );
   }
 
   ExecutionSession _sessionWithRunUnit(
