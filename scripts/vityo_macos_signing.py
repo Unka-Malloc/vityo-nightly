@@ -141,51 +141,90 @@ def _require_success(result: subprocess.CompletedProcess[str], action: str) -> N
         raise SigningError(f"{action} failed: {detail}")
 
 
+def discover_nested_code(app: Path) -> list[str]:
+    """List the nested code inside an application bundle, innermost first.
+
+    ``codesign --deep`` is not used: it is deprecated for signing, and on a real
+    Flutter bundle it fails outright with "bundle format is ambiguous" while it
+    walks the embedded frameworks. Apple's guidance is to seal each nested item
+    explicitly, from the inside out, and then seal the enclosing bundle, so this
+    enumerates what is actually present instead of assuming a fixed layout.
+
+    Frameworks, bundles, and extensions are signed as units. Ordering by path
+    depth puts the code inside a framework before the framework itself.
+    """
+    nested: list[tuple[int, str]] = []
+    for pattern, kind in (
+        ("Contents/Helpers/*", "file"),
+        ("Contents/Frameworks/*.framework", "dir"),
+        ("Contents/Frameworks/*.dylib", "file"),
+        ("Contents/Frameworks/*.app", "dir"),
+        ("Contents/**/*.framework", "dir"),
+        ("Contents/**/*.appex", "dir"),
+        ("Contents/**/*.xpc", "dir"),
+        ("Contents/**/*.bundle", "dir"),
+        # A versioned framework keeps its real bundle under Versions/<letter>,
+        # and modern macOS expects the outer framework to reference a sealed one.
+        ("Contents/**/*.framework/Versions/[A-Z]", "dir"),
+        ("Contents/**/*.dylib", "file"),
+    ):
+        for candidate in app.glob(pattern):
+            if kind == "file" and not candidate.is_file():
+                continue
+            if kind == "dir" and not candidate.is_dir():
+                continue
+            if candidate.is_symlink():
+                continue
+            relative = candidate.relative_to(app).as_posix()
+            nested.append((len(candidate.relative_to(app).parts), relative))
+    # Deepest first, then a stable name order so a rerun is deterministic.
+    ordered = [relative for _, relative in sorted(nested, key=lambda item: (-item[0], item[1]))]
+    deduped: list[str] = []
+    for relative in ordered:
+        if relative not in deduped:
+            deduped.append(relative)
+    return deduped
+
+
+def _codesign(
+    target: Path,
+    configuration: SigningConfiguration,
+    *,
+    run: object,
+    action: str,
+) -> None:
+    result = run(
+        [
+            "codesign",
+            "--force",
+            "--options",
+            "runtime",
+            "--timestamp",
+            "--sign",
+            configuration.identity,
+            str(target),
+        ]
+    )
+    _require_success(result, action)
+
+
 def sign_nested_executables(
     app: Path,
     configuration: SigningConfiguration,
     *,
     run: object = _run,
 ) -> list[str]:
-    """Seal each packaged helper before the enclosing bundle is sealed."""
+    """Seal every nested code item, deepest first, before the enclosing bundle."""
     signed: list[str] = []
-    for relative in NESTED_EXECUTABLES:
-        target = app / relative
-        if not target.is_file():
-            continue
-        result = run(
-            [
-                "codesign",
-                "--force",
-                "--options",
-                "runtime",
-                "--timestamp",
-                "--sign",
-                configuration.identity,
-                str(target),
-            ]
-        )
-        _require_success(result, f"codesign of {relative}")
+    for relative in discover_nested_code(app):
+        _codesign(app / relative, configuration, run=run, action=f"codesign of {relative}")
         signed.append(relative)
     return signed
 
 
 def sign_app_bundle(app: Path, configuration: SigningConfiguration, *, run: object = _run) -> None:
-    """Seal the application bundle itself, deepest content first."""
-    result = run(
-        [
-            "codesign",
-            "--force",
-            "--deep",
-            "--options",
-            "runtime",
-            "--timestamp",
-            "--sign",
-            configuration.identity,
-            str(app),
-        ]
-    )
-    _require_success(result, "codesign of the application bundle")
+    """Seal the application bundle itself, then verify the resulting seal."""
+    _codesign(app, configuration, run=run, action="codesign of the application bundle")
     result = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)])
     _require_success(result, "codesign verification")
 

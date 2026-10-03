@@ -260,6 +260,14 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Exercised macOS sealing against a real Developer ID certificate on the
+installed nightly bundle. Sealing stops on two bundle defects rather than on credentials:
+`Contents/Helpers/vityod-component.json` is unsigned data inside a directory `codesign`
+scans as nested code, and the Flutter frameworks are not a layout `codesign` will seal.
+Recorded both in the signing contract with owners, and replaced the seal step's `--deep`
+sign with explicit deepest-first enumeration of helpers, frameworks, extensions, and
+dylibs. No `prototype/` change.
+
 2026-10-03: Added `docs/release/macos-release-signing.md` as the macOS Developer ID
 and notarization credential contract, and pointed the release checklist at it so the
 nightly signing gap is discoverable from the release path. Documented the sealing

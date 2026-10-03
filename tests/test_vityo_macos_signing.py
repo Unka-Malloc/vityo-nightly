@@ -157,6 +157,41 @@ class SignNestedExecutablesTest(unittest.TestCase):
             self.assertIn("--timestamp", call)
             self.assertIn(self.configuration.identity, call)
 
+    def test_nested_code_is_discovered_innermost_first(self) -> None:
+        """Frameworks and bundles are enumerated instead of assumed."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            app = Path(raw) / "Vityo.app"
+            (app / "Contents/Frameworks/App.framework/Versions/A").mkdir(parents=True)
+            (app / "Contents/Frameworks/FlutterMacOS.framework").mkdir(parents=True)
+            (app / "Contents/Resources/plugin.bundle").mkdir(parents=True)
+            (app / "Contents/Helpers").mkdir(parents=True)
+            (app / "Contents/Helpers/vityod").write_text("#!/bin/sh\n", encoding="utf-8")
+            (app / "Contents/MacOS").mkdir(parents=True)
+            (app / "Contents/MacOS/Vityo").write_text("#!/bin/sh\n", encoding="utf-8")
+            discovered = self.signing.discover_nested_code(app)
+        self.assertIn("Contents/Helpers/vityod", discovered)
+        self.assertIn("Contents/Frameworks/App.framework", discovered)
+        self.assertIn("Contents/Frameworks/FlutterMacOS.framework", discovered)
+        self.assertIn("Contents/Resources/plugin.bundle", discovered)
+        # The app executable is sealed by the bundle signature, not here.
+        self.assertNotIn("Contents/MacOS/Vityo", discovered)
+        # Deepest path first so a framework's inner code is sealed before it.
+        self.assertLess(
+            discovered.index("Contents/Frameworks/App.framework/Versions/A"),
+            discovered.index("Contents/Frameworks/App.framework"),
+        )
+
+    def test_discovery_is_empty_for_a_bare_bundle(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            app = Path(raw) / "Vityo.app"
+            (app / "Contents/MacOS").mkdir(parents=True)
+            (app / "Contents/MacOS/Vityo").write_text("#!/bin/sh\n", encoding="utf-8")
+            self.assertEqual(self.signing.discover_nested_code(app), [])
+
     def test_helper_failure_stops_packaging(self) -> None:
         import tempfile
 
@@ -180,8 +215,12 @@ class SignAppBundleTest(unittest.TestCase):
         runner = _FakeRunner()
         self.signing.sign_app_bundle(Path("/tmp/Vityo.app"), self.configuration, run=runner)
         self.assertEqual(runner.programs, ["codesign", "codesign"])
-        self.assertIn("--deep", runner.calls[0])
+        # `--deep` is not used to sign: it is deprecated and fails on a real
+        # Flutter bundle, so nested code is sealed individually beforehand.
+        self.assertNotIn("--deep", runner.calls[0])
         self.assertIn("--force", runner.calls[0])
+        self.assertIn("--options", runner.calls[0])
+        self.assertIn("runtime", runner.calls[0])
         self.assertIn("--verify", runner.calls[1])
         self.assertIn("--strict", runner.calls[1])
 

@@ -27,6 +27,35 @@ The macOS release artifact is a `.dmg` produced by
 [packaging/macos/create-dmg.sh](../../packaging/macos/create-dmg.sh) from the
 staged `Vityo.app`.
 
+## 1a. Known Bundle Blockers Before A Seal Can Succeed
+
+Signing was exercised against a real Developer ID certificate on the installed
+nightly bundle, and sealing stopped on two concrete bundle defects rather than on
+the credential path. Both must be fixed in the build/staging layout before a
+signed artifact can exist:
+
+1. **`Contents/Helpers/vityod-component.json` is unsigned data inside a
+   directory `codesign` treats as nested code.** The seal fails with `code object
+   is not signed at all` naming that file. The manifest is a JSON identity record
+   and should not be signed at all, so the portable fix is to stage it somewhere
+   that is not scanned as nested code, such as a `Resources` subdirectory. Note
+   that [packaging/README.md](../../packaging/README.md) currently documents it
+   as living beside the daemon, and
+   `scripts/vityod-desktop-matrix-gate.py` discovers it by recursive search, so
+   moving it means updating that contract in the same change.
+2. **The Flutter frameworks are not in a form `codesign` will seal.**
+   `Contents/Frameworks/FlutterMacOS.framework` fails with `bundle format is
+   ambiguous (could be app or framework)`, and the same applies to
+   `App.framework`. On disk these frameworks carry a top-level binary alongside a
+   `Versions/` tree, which is not a layout `codesign` accepts for a framework
+   bundle. This originates in the Flutter macOS build output, so the resolution
+   belongs to the build configuration rather than to the seal step.
+
+Until both are resolved, package builds keep recording the explicit signing gap,
+which is the honest state: the seal step refuses to report success for a bundle it
+cannot verify. `--deep` is deliberately not used, because it is deprecated for
+signing and reports the framework problem with a less specific message.
+
 ## 2. Sealing Order
 
 `scripts/package-nightly.py` stages `vityod` and `vityo-coding-agent` into
@@ -36,7 +65,9 @@ rearranged:
 1. Copy `Vityo.app` into a staging directory.
 2. Stage `Contents/Helpers/vityod` and `Contents/Helpers/vityo-coding-agent`.
 3. Stage the Rust third-party notices.
-4. Seal each staged helper with the hardened runtime.
+4. Enumerate the bundle's nested code — helpers, frameworks (including each
+   framework's versioned bundle), app extensions, and loose dylibs — and seal each
+   item deepest-first with the hardened runtime. `--deep` is not used.
 5. Seal the enclosing `Vityo.app` bundle and verify the seal.
 6. Build the DMG from the sealed bundle.
 7. Notarize the DMG and staple the ticket.
@@ -134,6 +165,8 @@ not run the signed artifact through Gatekeeper on a user machine.
 | Developer ID certificate and notarization credentials are not provisioned in this repository's pipeline | High | Release |
 | No CI secret is configured for the variables in section 3, so hosted macOS packaging stays unsigned | High | Release |
 | Signed install, update, rollback, and uninstall proof is not attached | High | Release |
+| `vityod-component.json` is staged inside `Contents/Helpers`, where `codesign` requires it to be signed | High | Packaging |
+| The Flutter frameworks in the macOS build output are not a bundle layout `codesign` will seal | High | Build |
 | Formal distribution channel is not selected | High | Release |
 
 ## 8. Enabling Signing
