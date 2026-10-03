@@ -271,6 +271,11 @@ def agent_client_protocol() -> int:
     dart = tool("dart")
     protocol = ROOT / "packages" / "vityo_agent_protocol"
     product = ROOT / "products" / "vityo_app"
+    # Resolve before analysing: this suite runs on its own and on a clean checkout
+    # the analyzer otherwise reports the package's own libraries as undefined.
+    code = ensure_dart_package(dart, protocol)
+    if code:
+        return code
     commands = (
         ([dart, "analyze"], protocol, None),
         ([dart, "test"], protocol, None),
