@@ -100,12 +100,19 @@ File _findCodingAgentExecutable() {
   final executable = Platform.isWindows
       ? 'vityo-coding-agent.exe'
       : 'vityo-coding-agent';
-  return File(
-    '${app.parent.path}${Platform.pathSeparator}'
-    'vityo_coding_agent${Platform.pathSeparator}'
-    'target${Platform.pathSeparator}debug${Platform.pathSeparator}'
-    '$executable',
-  );
+  final targetRoot = '${app.parent.path}${Platform.pathSeparator}'
+      'vityo_coding_agent${Platform.pathSeparator}target${Platform.pathSeparator}';
+  // Delivery builds the packaged Agent with `--release`, while a local debug
+  // build lands in `target/debug`. Accept either so the test runs against
+  // whichever build the invoking entrypoint produced instead of depending on a
+  // profile it cannot control.
+  for (final profile in const <String>['release', 'debug']) {
+    final candidate = File('$targetRoot$profile${Platform.pathSeparator}$executable');
+    if (candidate.existsSync()) {
+      return candidate;
+    }
+  }
+  return File('${targetRoot}release${Platform.pathSeparator}$executable');
 }
 
 Directory _findAppDirectory() {
