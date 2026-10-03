@@ -369,7 +369,8 @@ def package_windows(config: dict[str, object], output: Path) -> Path:
     return output
 
 
-def package_macos(config: dict[str, object], output: Path) -> Path:
+def package_macos(config: dict[str, object], output: Path) -> dict[str, object]:
+    """Build the DMG and return the signing block to record in evidence."""
     app = require_dir(ROOT / str(config["build_relative_path"]))
     script = require_file(ROOT / str(config["installer_definition"]))
     with tempfile.TemporaryDirectory(prefix="vityo-macos-") as raw_stage:
@@ -386,11 +387,7 @@ def package_macos(config: dict[str, object], output: Path) -> Path:
             vityo_macos_signing.notarize(
                 output, vityo_macos_signing.resolve_configuration()
             )
-        package_macos.signing_status = signing_status
-    return output
-
-
-package_macos.signing_status: dict[str, object] = vityo_macos_signing.gap_status()
+    return signing_status
 
 
 def main() -> int:
@@ -411,19 +408,19 @@ def main() -> int:
     artifact = {"linux": package_linux, "windows": package_windows, "macos": package_macos}[args.platform]
     if args.platform == "linux":
         artifact(config, output, version)
+        signing_block = config["signing"]
+    elif args.platform == "macos":
+        signing_block = package_macos(config, output)
     else:
         artifact(config, output)
+        signing_block = config["signing"]
     evidence = {
         "schema_version": 1,
         "platform": args.platform,
         "core_version": versions["core_version"],
         "adapter_version": version,
         "artifact": output.name,
-        "signing": (
-            package_macos.signing_status
-            if args.platform == "macos"
-            else config["signing"]
-        ),
+        "signing": signing_block,
         "automatic_updates": config["automatic_updates"],
     }
     if vityod_binary is not None:

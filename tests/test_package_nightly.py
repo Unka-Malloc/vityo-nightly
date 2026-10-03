@@ -352,11 +352,19 @@ class PackageNightlyTest(unittest.TestCase):
             }
             mac_output = root / "vityo.dmg"
             with mock.patch.object(self.packager.subprocess, "run") as run:
-                result = self.packager.package_macos(
+                signing_block = self.packager.package_macos(
                     mac_config,
                     mac_output,
                 )
-            self.assertEqual(result, mac_output)
+            # The DMG is written in place; the return value is the signing block
+            # that packaging records in the artifact evidence.
+            self.assertEqual(
+                signing_block,
+                {
+                    "status": "explicit-gap",
+                    "reason": self.packager.vityo_macos_signing.SIGNING_GAP_REASON,
+                },
+            )
             self.assertEqual(run.call_args.args[0][:2], ["bash", script])
             staged_app = run.call_args.args[0][2]
             self.assertEqual(staged_app.name, app.name)

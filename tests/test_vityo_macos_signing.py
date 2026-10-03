@@ -328,15 +328,58 @@ class CredentialBoundaryTest(unittest.TestCase):
 
 
 class PackagerSigningWiringTest(unittest.TestCase):
-    def test_macos_evidence_defaults_to_the_declared_gap(self) -> None:
+    def test_macos_package_returns_the_declared_gap_when_unconfigured(self) -> None:
+        """package_macos returns the signing block that evidence records.
+
+        The staging and installer steps are mocked so this asserts only the
+        signing wiring: the block handed back is the one `apply_signing`
+        resolved, and notarization runs only when signing is configured.
+        """
         packager = load_packager_module()
+        import tempfile
+
+        config = {
+            "build_relative_path": "build/macos/Vityo.app",
+            "installer_definition": "packaging/macos/create-dmg.sh",
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "build/macos/Vityo.app").mkdir(parents=True)
+            script = root / "packaging/macos/create-dmg.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text("#!/bin/sh\n", encoding="utf-8")
+            real_root = packager.ROOT
+            packager.ROOT = root
+            try:
+                with mock.patch.object(packager, "stage_vityod"), mock.patch.object(
+                    packager, "stage_coding_agent"
+                ), mock.patch.object(packager, "stage_rust_notices"), mock.patch.object(
+                    packager.subprocess, "run"
+                ):
+                    with mock.patch.dict("os.environ", {}, clear=True):
+                        with mock.patch.object(
+                            packager.vityo_macos_signing, "apply_signing"
+                        ) as apply_signing:
+                            apply_signing.return_value = (
+                                packager.vityo_macos_signing.gap_status()
+                            )
+                            with mock.patch.object(
+                                packager.vityo_macos_signing, "notarize"
+                            ) as notarize:
+                                block = packager.package_macos(
+                                    config, root / "vityo.dmg"
+                                )
+            finally:
+                packager.ROOT = real_root
         self.assertEqual(
-            packager.package_macos.signing_status,
+            block,
             {
                 "status": "explicit-gap",
                 "reason": packager.vityo_macos_signing.SIGNING_GAP_REASON,
             },
         )
+        apply_signing.assert_called_once()
+        notarize.assert_not_called()
 
     def test_declared_macos_gap_matches_the_module_reason(self) -> None:
         packager = load_packager_module()
