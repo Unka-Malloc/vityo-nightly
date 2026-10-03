@@ -249,6 +249,73 @@ class PackageNightlyTest(unittest.TestCase):
                         self.packager.stage_coding_agent(config, destination_root)
             self.assertFalse((root / "tmp").exists())
 
+    def test_component_manifest_can_be_staged_outside_nested_code(self) -> None:
+        """macOS declares a manifest path that codesign does not scan as code.
+
+        `codesign` treats `Contents/Helpers` as a directory of nested code, so an
+        unsigned JSON identity record staged there blocks sealing the bundle.
+        """
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            binary = root / "source/vityod"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"daemon")
+            destination_root = root / "application"
+            self.packager.ROOT = root
+            config = {
+                "vityod": {
+                    "source_relative_path": "source/vityod",
+                    "package_relative_path": "Contents/Helpers/vityod",
+                    "manifest_relative_path": "Contents/Resources/vityod-component.json",
+                    "required_runtime_libraries": [],
+                }
+            }
+            with mock.patch.object(
+                self.packager, "vityod_build_identity", return_value={"target": "native-apple-darwin"}
+            ):
+                staged = self.packager.stage_vityod(config, destination_root)
+            self.assertEqual(staged, destination_root / "Contents/Helpers/vityod")
+            manifest = destination_root / "Contents/Resources/vityod-component.json"
+            self.assertTrue(manifest.is_file())
+            self.assertFalse(
+                (destination_root / "Contents/Helpers/vityod-component.json").exists()
+            )
+            identity = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(identity["component"], "vityod")
+            self.assertEqual(
+                identity["package_relative_path"], "Contents/Helpers/vityod"
+            )
+
+    def test_component_manifest_path_must_stay_inside_and_not_replace_the_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            binary = root / "source/vityod"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"daemon")
+            destination_root = root / "application"
+            self.packager.ROOT = root
+            base = {
+                "source_relative_path": "source/vityod",
+                "package_relative_path": "Contents/Helpers/vityod",
+                "required_runtime_libraries": [],
+            }
+            with mock.patch.object(
+                self.packager, "vityod_build_identity", return_value={"target": "native-apple-darwin"}
+            ):
+                for escaped in ("/tmp/vityod-component.json", "../outside.json"):
+                    with self.subTest(manifest_relative_path=escaped):
+                        config = {"vityod": {**base, "manifest_relative_path": escaped}}
+                        with self.assertRaisesRegex(ValueError, "must stay inside"):
+                            self.packager.stage_vityod(config, destination_root)
+                config = {
+                    "vityod": {
+                        **base,
+                        "manifest_relative_path": "Contents/Helpers/vityod",
+                    }
+                }
+                with self.assertRaisesRegex(ValueError, "must not overwrite"):
+                    self.packager.stage_vityod(config, destination_root)
+
     def test_stage_rust_notices_requires_nonempty_generated_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)

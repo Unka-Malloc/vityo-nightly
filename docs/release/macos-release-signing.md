@@ -34,15 +34,14 @@ nightly bundle, and sealing stopped on two concrete bundle defects rather than o
 the credential path. Both must be fixed in the build/staging layout before a
 signed artifact can exist:
 
-1. **`Contents/Helpers/vityod-component.json` is unsigned data inside a
-   directory `codesign` treats as nested code.** The seal fails with `code object
-   is not signed at all` naming that file. The manifest is a JSON identity record
-   and should not be signed at all, so the portable fix is to stage it somewhere
-   that is not scanned as nested code, such as a `Resources` subdirectory. Note
-   that [packaging/README.md](../../packaging/README.md) currently documents it
-   as living beside the daemon, and
-   `scripts/vityod-desktop-matrix-gate.py` discovers it by recursive search, so
-   moving it means updating that contract in the same change.
+1. **Resolved: `vityod-component.json` is no longer staged as nested code.**
+   The seal previously failed with `code object is not signed at all` naming
+   `Contents/Helpers/vityod-component.json`, because `codesign` treats
+   `Contents/Helpers` as a directory of nested code. The package definition now
+   declares the manifest location through `vityod.manifest_relative_path`, and
+   macOS stages it under `Contents/Resources`; other platforms keep the manifest
+   beside the daemon. The desktop matrix gate discovers it by recursive search and
+   still requires exactly one record per package.
 2. **The Flutter frameworks are not in a form `codesign` will seal.**
    `Contents/Frameworks/FlutterMacOS.framework` fails with `bundle format is
    ambiguous (could be app or framework)`, and the same applies to
@@ -165,7 +164,6 @@ not run the signed artifact through Gatekeeper on a user machine.
 | Developer ID certificate and notarization credentials are not provisioned in this repository's pipeline | High | Release |
 | No CI secret is configured for the variables in section 3, so hosted macOS packaging stays unsigned | High | Release |
 | Signed install, update, rollback, and uninstall proof is not attached | High | Release |
-| `vityod-component.json` is staged inside `Contents/Helpers`, where `codesign` requires it to be signed | High | Packaging |
 | The Flutter frameworks in the macOS build output are not a bundle layout `codesign` will seal | High | Build |
 | Formal distribution channel is not selected | High | Release |
 

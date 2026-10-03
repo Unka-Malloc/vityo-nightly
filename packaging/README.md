@@ -13,10 +13,14 @@ platform definition and writes only that platform's artifact and receipt under
 
 The three native CI jobs do not depend on one another. A platform failure blocks
 only that adapter artifact. Each artifact receipt records both the core version
-and that platform adapter version. Each package also carries one
-`vityod-component.json` next to its daemon executable. That identity binds the
-target, daemon version, protocol range, executable digest, daemon-source
-fingerprint, declared runtime libraries, and application-relative location.
+and that platform adapter version. Each package also carries exactly one
+`vityod-component.json`. That identity binds the target, daemon version, protocol
+range, executable digest, daemon-source fingerprint, declared runtime libraries,
+and application-relative location. The package definition declares where it is
+staged through `vityod.manifest_relative_path`, and it defaults to sitting beside
+the daemon executable. macOS stages it under `Contents/Resources` instead, because
+`codesign` treats `Contents/Helpers` as a directory of nested code and refuses to
+seal the bundle while an unsigned JSON record is inside it.
 
 `python3 scripts/vityod-desktop-matrix-gate.py --fixtures-only` verifies all
 three structural lanes without claiming a launch. A matching host validates an

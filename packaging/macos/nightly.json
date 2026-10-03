@@ -10,7 +10,8 @@
     "target": "native-apple-darwin",
     "source_relative_path": "products/vityo_app/native/vityod/target/release/vityod",
     "package_relative_path": "Contents/Helpers/vityod",
-    "required_runtime_libraries": []
+    "required_runtime_libraries": [],
+    "manifest_relative_path": "Contents/Resources/vityod-component.json"
   },
   "coding_agent": {
     "target": "native-apple-darwin",
@@ -19,6 +20,9 @@
     "required_runtime_libraries": []
   },
   "rust_notices_path": "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt",
-  "signing": {"status": "explicit-gap", "reason": "Nightly Developer ID and notarization credentials are not configured."},
+  "signing": {
+    "status": "explicit-gap",
+    "reason": "Nightly Developer ID and notarization credentials are not configured."
+  },
   "automatic_updates": false
 }

@@ -33,6 +33,7 @@ CODING_AGENT_RUNTIME_LIBRARIES = {
     "windows": ["vcruntime140.dll"],
     "macos": [],
 }
+COMPONENT_MANIFEST_NAME = "vityod-component.json"
 RUST_NOTICE_SOURCE = Path("build/evidence/rust-third-party-notices.txt")
 RUST_NOTICE_DESTINATIONS = {
     "linux": Path("licenses/RUST-THIRD-PARTY-NOTICES.txt"),
@@ -181,6 +182,12 @@ def stage_vityod(config: dict[str, object], destination_root: Path) -> Path | No
         isinstance(library, str) and library.strip() for library in runtime_libraries
     ):
         raise ValueError("vityod required_runtime_libraries must be a string list")
+    manifest_path = require_contained_relative_path(
+        str(component.get("manifest_relative_path") or (relative.parent / COMPONENT_MANIFEST_NAME).as_posix()),
+        "vityod component manifest",
+    )
+    if manifest_path == relative:
+        raise ValueError("vityod component manifest must not overwrite the executable")
     manifest = {
         "schema_version": 1,
         "component": "vityod",
@@ -191,7 +198,9 @@ def stage_vityod(config: dict[str, object], destination_root: Path) -> Path | No
         "required_runtime_libraries": runtime_libraries,
         "package_relative_path": relative.as_posix(),
     }
-    (destination.parent / "vityod-component.json").write_text(
+    manifest_destination = destination_root / manifest_path
+    manifest_destination.parent.mkdir(parents=True, exist_ok=True)
+    manifest_destination.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return destination

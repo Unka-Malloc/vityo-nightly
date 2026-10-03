@@ -260,6 +260,12 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Resolved the first macOS sealing blocker. The package definition now declares
+where the `vityod-component.json` identity record is staged, and macOS moves it to
+`Contents/Resources` so `codesign` no longer sees unsigned JSON inside the nested-code
+directory `Contents/Helpers`. The Flutter framework layout blocker remains open. Updated
+the packaging contract and the signing evidence. No `prototype/` change.
+
 2026-10-03: Exercised macOS sealing against a real Developer ID certificate on the
 installed nightly bundle. Sealing stops on two bundle defects rather than on credentials:
 `Contents/Helpers/vityod-component.json` is unsigned data inside a directory `codesign`
