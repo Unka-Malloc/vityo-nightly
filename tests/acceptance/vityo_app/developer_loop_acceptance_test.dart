@@ -161,7 +161,16 @@ Future<void> main() async {
             receipt.exitCode == 0 &&
             receipt.provenance.isNotEmpty,
       ),
-      'save, analyze, test, and run must emit successful revisioned receipts',
+      // Name the observed receipt state, otherwise a failure only says the
+      // aggregate check failed and leaves which operation regressed unknown.
+      'save, analyze, test, and run must emit successful revisioned receipts; '
+      'observed ${receipts.map((receipt) => '${receipt.operationId}:'
+          'status=${receipt.status.name},'
+          'revision=${receipt.workspaceRevision},'
+          'exit=${receipt.exitCode},'
+          'provenance=${receipt.provenance.length},'
+          'message=${receipt.message}').join(' | ')}'
+      ' (expected revision $editedRevision)',
     );
     _expect(
       await mainFile.readAsString() ==
