@@ -480,8 +480,14 @@ final class EditorTextInputClient with TextInputClient {
     _notifyChanged();
   }
 
-  @override
-  bool onFocusReceived() {
+  // Named so it is not an override on either side of the SDK pin. The pinned
+  // Flutter 3.41.7 does not declare `TextInputClient.onFocusReceived`, so an
+  // `@override` there fails `override_on_non_overridable`; a newer SDK does
+  // declare it, so an unannotated same-named member then fails
+  // `annotate_overrides`. Keeping the re-attach intent under a distinct name
+  // satisfies both, and the editor's own explicit `attach(explicit: true)`
+  // call remains the re-attach path in use.
+  bool reconnectOnFocusReceived() {
     if (_awaitingExplicitReconnect) return false;
     attach();
     return isAttached;

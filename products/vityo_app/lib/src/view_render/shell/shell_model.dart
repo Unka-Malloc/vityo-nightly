@@ -90,7 +90,7 @@ class ShellModel extends ShellRuntimeModel {
     super.debugBreakpointStore,
     super.debugLaunchConfigurationStore,
     super.initialDebugLaunchProfiles,
-    VityodClient? vityodClient,
+    this.vityodClient,
     super.semanticPanelEventStateController,
     super.semanticPanelEventStore,
     super.semanticPanelEventWorkspaceId,
@@ -99,8 +99,7 @@ class ShellModel extends ShellRuntimeModel {
     super.workspaceTextSearchProvider,
     ShellLayoutPreferenceController? shellLayoutPreferenceController,
     this.shellLayoutPreferencesStore,
-  }) : vityodClient = vityodClient,
-       shellLayoutPreferenceController =
+  }) : shellLayoutPreferenceController =
            shellLayoutPreferenceController ??
            ShellLayoutPreferenceController(
              initialPreferences: const ShellLayoutPreferences(
