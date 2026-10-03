@@ -260,4 +260,11 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Added `docs/release/macos-release-signing.md` as the macOS Developer ID
+and notarization credential contract, and pointed the release checklist at it so the
+nightly signing gap is discoverable from the release path. Documented the sealing
+order, the environment-only credential interface, and the published evidence shape;
+credentials remain unprovisioned, so nightly packages keep their explicit gap.
+No `prototype/` change.
+
 <!-- codex merge: docs/build/scripts assets imported -->

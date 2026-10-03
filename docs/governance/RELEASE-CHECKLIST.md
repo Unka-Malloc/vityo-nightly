@@ -102,7 +102,7 @@ Before declaring product launch readiness, the release owner must verify:
 
 1. The launch channel has a production release artifact, not a debug or prototype artifact.
 2. Linux, Windows, and macOS launch claims each have native `--release` build evidence when that platform is included in the release.
-3. Platform-specific packaging, signing/notarization, installer/update/uninstall, release notes, and rollback or recovery evidence are attached to the release record.
+3. Platform-specific packaging, signing/notarization, installer/update/uninstall, release notes, and rollback or recovery evidence are attached to the release record. The macOS Developer ID and notarization credential contract is defined in [macOS Release Signing](../release/macos-release-signing.md); nightly packages currently record an explicit signing gap because those credentials are not provisioned.
 4. Prototype governance and selftest evidence is treated only as regression evidence; it cannot replace release build, packaging, signing, or launch evidence.
 5. Any unsupported or upstream-blocked capability is exposed as a user-visible capability gap with owner, reason, recovery guidance, and release-note coverage.
 
