@@ -446,7 +446,7 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (render_shell / "shell_model.dart").write_text(
-                "enum WorkbenchRoute { runtime }\n"
+                "enum BottomSurfaceTab { runtime }\n"
                 "class ShellModel extends ShellRuntimeModel {}\n",
                 encoding="utf-8",
             )
@@ -474,11 +474,11 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
             runtime_root.mkdir(parents=True)
             render_shell.mkdir(parents=True)
             (runtime_root / "shell_runtime_model.dart").write_text(
-                "class ShellRuntimeModel { void route() { selectWorkbenchRoute(WorkbenchRoute.debug); } }\n",
+                "class ShellRuntimeModel { void route() { selectWorkbenchRoute(BottomSurfaceTab.debug); } }\n",
                 encoding="utf-8",
             )
             (render_shell / "shell_model.dart").write_text(
-                "enum WorkbenchRoute { debug }\n"
+                "enum BottomSurfaceTab { debug }\n"
                 "class ShellModel extends ShellRuntimeModel {}\n",
                 encoding="utf-8",
             )

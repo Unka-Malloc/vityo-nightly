@@ -511,7 +511,7 @@ def check_shell_runtime_boundary() -> list[str]:
 
     if runtime_model.exists():
         text = runtime_model.read_text(encoding="utf-8")
-        for needle in ("WorkbenchRoute", "selectWorkbenchRoute("):
+        for needle in ("BottomSurfaceTab", "selectWorkbenchRoute("):
             if needle in text:
                 errors.append(
                     f"{runtime_model.relative_to(REPO_ROOT).as_posix()}: shell runtime must not own presentation route state marker {needle}"
@@ -519,7 +519,7 @@ def check_shell_runtime_boundary() -> list[str]:
     if render_model.exists():
         text = render_model.read_text(encoding="utf-8")
         required_needles = (
-            "enum WorkbenchRoute",
+            "enum BottomSurfaceTab",
             "class ShellModel extends ShellRuntimeModel",
         )
         for needle in required_needles:

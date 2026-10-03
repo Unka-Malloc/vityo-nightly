@@ -352,7 +352,7 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                 self.gate.VIEW_IDE_SHELL_RUNTIME_ROOT.mkdir()
                 self.gate.VIEW_RENDER_SHELL_ROOT.mkdir()
                 (self.gate.VIEW_IDE_SHELL_RUNTIME_ROOT / "shell_runtime_model.dart").write_text(
-                    "enum WorkbenchRoute { terminal }\n",
+                    "enum BottomSurfaceTab { terminal }\n",
                     encoding="utf-8",
                 )
                 (self.gate.VIEW_RENDER_SHELL_ROOT / "shell_model.dart").write_text(
@@ -366,7 +366,7 @@ class RepoHygieneCoverageTest(unittest.TestCase):
 
         joined = "\n".join(errors)
         self.assertIn("shell runtime must not own presentation route state marker", joined)
-        self.assertIn("must preserve render shell marker: enum WorkbenchRoute", joined)
+        self.assertIn("must preserve render shell marker: enum BottomSurfaceTab", joined)
         self.assertIn("must preserve render shell marker: class ShellModel extends ShellRuntimeModel", joined)
 
     def test_main_push_and_empty_policy_error_paths(self) -> None:
