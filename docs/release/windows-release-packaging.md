@@ -69,6 +69,29 @@ not establish Windows native UI behavior.
 | Install/update/uninstall/repair/rollback proof is not attached | High | Release |
 | Formal code-signing evidence is absent and automatic updates are disabled | High | Release |
 
+## 6a. Windows Lane State After The Cross-Platform Gate Repairs
+
+The Windows lane previously stopped in the `architecture` stage because the docs
+gate was invoked as `bash scripts/docs-gate.sh`, and `bash` in PATH resolves to the
+WSL launcher, which has no distribution installed. Delivery now runs the gate
+through its Python implementation, and the lane reaches the `test` stage, builds
+the pinned Styio CLI with MSVC, and runs the full Python suite.
+
+That suite currently reports 16 failures and 2 errors, all of which are test
+fixtures encoding POSIX expectations rather than product defects. They fall into
+recognisable groups:
+
+- POSIX permission bits, for example a staged binary asserts `st_mode & 0o111`.
+- Unix-domain socket transport, including the daemon handshake and reconnect
+  probes, which assert an `AF_UNIX` path.
+- Path and line-ending formatting, such as asserting `/`-separated paths or CRLF
+  detection details.
+- Platform-conditional production branches whose tests assert the Unix branch on
+  every host.
+
+Making those fixtures platform-aware is a bounded task for the Windows lane and is
+not a packaging requirement change.
+
 ## 7. Related Documents
 
 - [Windows Desktop Adaptation Plan](../design/Vityo-Windows-Desktop-Adaptation-Plan.md)

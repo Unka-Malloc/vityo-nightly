@@ -260,6 +260,12 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Recorded the Windows lane state after the cross-platform gate repairs: the lane
+now passes `architecture`, builds the pinned Styio CLI with MSVC, and runs the full Python
+suite, and its remaining 16 failures and 2 errors are test fixtures encoding POSIX
+expectations (permission bits, Unix-domain sockets, path and CRLF formatting) rather than
+product defects. No `prototype/` change.
+
 2026-10-03: Moved the docs/process gate composition into `scripts/docs_gate.py` and had
 delivery invoke that implementation directly. `scripts/docs-gate.sh` remains the documented
 convenience entrypoint and forwards to it, so the two cannot drift. The reason is platform
