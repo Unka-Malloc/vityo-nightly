@@ -543,14 +543,19 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
     def test_handshake_uses_a_unix_socket_on_posix_hosts(self) -> None:
         connection = FakeStream(daemon_frame())
         endpoint = str(self.root / "service.sock")
-        with mock.patch.object(self.gate.os, "name", "posix"):
+        unix_family = getattr(self.gate.socket, "AF_UNIX", mock.sentinel.unix_family)
+        with mock.patch.object(
+            self.gate.socket, "AF_UNIX", unix_family, create=True
+        ), mock.patch.object(
+            self.gate, "os", SimpleNamespace(name="posix", getpid=os.getpid)
+        ):
             with mock.patch.object(
                 self.gate.socket, "socket", return_value=connection
             ) as socket_factory:
                 self.assertIsNone(self.gate._handshake(endpoint, "package-probe-1"))
 
         socket_factory.assert_called_once_with(
-            self.gate.socket.AF_UNIX, self.gate.socket.SOCK_STREAM
+            unix_family, self.gate.socket.SOCK_STREAM
         )
         self.assertEqual(connection.timeouts, [5])
         self.assertEqual(connection.endpoints, [endpoint])
@@ -564,7 +569,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         request_size = 24 + len(self.gate._handshake_payload("package-probe-1"))
         endpoint.write_bytes(b"\x00" * request_size + daemon_frame())
 
-        with mock.patch.object(self.gate.os, "name", "nt"):
+        with mock.patch.object(
+            self.gate, "os", SimpleNamespace(name="nt", getpid=os.getpid)
+        ):
             self.assertIsNone(self.gate._handshake(str(endpoint), "package-probe-1"))
 
         written = endpoint.read_bytes()[:request_size]
@@ -590,7 +597,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         endpoint = str(socket_dir / "service.sock")
 
         with self.probe_tempdir(socket_dir):
-            with mock.patch.object(self.gate.os, "name", "posix"):
+            with mock.patch.object(
+                self.gate, "os", SimpleNamespace(name="posix", getpid=os.getpid)
+            ):
                 with mock.patch.object(
                     self.gate.subprocess, "Popen", return_value=process
                 ) as popen:
@@ -677,7 +686,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
                     "TemporaryDirectory",
                     return_value=FakeTemporaryDirectory(socket_dir),
                 ):
-                    with mock.patch.object(self.gate.os, "name", "posix"):
+                    with mock.patch.object(
+                        self.gate, "os", SimpleNamespace(name="posix", getpid=os.getpid)
+                    ):
                         with mock.patch.object(
                             self.gate.subprocess, "Popen", return_value=process
                         ):
@@ -720,7 +731,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         binary = self.root / "vityod.exe"
 
         with self.probe_tempdir(pipe_dir):
-            with mock.patch.object(self.gate.os, "name", "nt"):
+            with mock.patch.object(
+                self.gate, "os", SimpleNamespace(name="nt", getpid=os.getpid)
+            ):
                 with mock.patch.object(self.gate.secrets, "token_hex", return_value="abcdef"):
                     with mock.patch.object(self.gate.time, "sleep") as sleep:
                         with mock.patch.object(
@@ -749,7 +762,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         exited.wait.return_value = 0
 
         with self.probe_tempdir(pipe_dir):
-            with mock.patch.object(self.gate.os, "name", "nt"):
+            with mock.patch.object(
+                self.gate, "os", SimpleNamespace(name="nt", getpid=os.getpid)
+            ):
                 with mock.patch.object(self.gate.subprocess, "Popen", return_value=exited):
                     with mock.patch.object(self.gate, "_handshake") as handshake:
                         result = self.gate._probe_reconnect(self.root / "vityod.exe")
@@ -761,7 +776,9 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         running.poll.return_value = None
         running.wait.return_value = 0
         with self.probe_tempdir(pipe_dir):
-            with mock.patch.object(self.gate.os, "name", "nt"):
+            with mock.patch.object(
+                self.gate, "os", SimpleNamespace(name="nt", getpid=os.getpid)
+            ):
                 with mock.patch.object(self.gate.subprocess, "Popen", return_value=running):
                     with mock.patch.object(
                         self.gate.time, "monotonic", side_effect=[0.0, 1.0, 10.0]

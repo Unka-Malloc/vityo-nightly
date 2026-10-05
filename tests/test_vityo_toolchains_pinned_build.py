@@ -677,7 +677,9 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         }
         with self._clean_environment(), self._which_map(mapping), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=llvm_dir
-        ), mock.patch.object(self.toolchains.sys, "platform", "linux"):
+        ), mock.patch.object(self.toolchains.sys, "platform", "linux"), mock.patch.object(
+            self.toolchains, "os", SimpleNamespace(name="posix", environ=os.environ)
+        ):
             configure, build = self.toolchains._build_commands("styio", source)
         self.assertEqual(
             configure,
@@ -714,7 +716,9 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         mapping = {"cmake": "/usr/bin/cmake"}
         with self._clean_environment(), self._which_map(mapping), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=Path("/opt/llvm18")
-        ), mock.patch.object(self.toolchains.sys, "platform", "linux"):
+        ), mock.patch.object(self.toolchains.sys, "platform", "linux"), mock.patch.object(
+            self.toolchains, "os", SimpleNamespace(name="posix", environ=os.environ)
+        ):
             configure, _build = self.toolchains._build_commands("styio", source)
         self.assertEqual(
             configure,
@@ -735,7 +739,9 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         mapping = {"cmake": "/usr/bin/cmake", "clang-18": "/usr/bin/clang-18"}
         with self._which_map(mapping), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=Path("/opt/llvm18")
-        ), mock.patch.object(self.toolchains.sys, "platform", "linux"):
+        ), mock.patch.object(self.toolchains.sys, "platform", "linux"), mock.patch.object(
+            self.toolchains, "os", SimpleNamespace(name="posix", environ=os.environ)
+        ):
             configure, _build = self.toolchains._build_commands("styio", source)
         self.assertNotIn("-DCMAKE_C_COMPILER=clang-18", configure)
         self.assertNotIn("-DCMAKE_CXX_COMPILER=clang++-18", configure)
@@ -748,7 +754,9 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         )
         with env, self._which_map({"cmake": "cmake"}), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=Path("C:/llvm18")
-        ), mock.patch.object(self.toolchains.os, "name", "nt"), mock.patch.object(
+        ), mock.patch.object(
+            self.toolchains, "os", SimpleNamespace(name="nt", environ=os.environ)
+        ), mock.patch.object(
             self.toolchains.sys, "platform", "win32"
         ):
             configure, _build = self.toolchains._build_commands("styio", source)
@@ -763,7 +771,9 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         try:
             with self._which_map({"cmake": "cmake"}), mock.patch.object(
                 self.toolchains, "_llvm_cmake_dir", return_value=Path("C:/llvm18")
-            ), mock.patch.object(self.toolchains.os, "name", "nt"), mock.patch.object(
+            ), mock.patch.object(
+                self.toolchains, "os", SimpleNamespace(name="nt", environ=os.environ)
+            ), mock.patch.object(
                 self.toolchains.sys, "platform", "win32"
             ):
                 configure, _build = self.toolchains._build_commands("styio", source)
