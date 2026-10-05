@@ -426,9 +426,7 @@ void main() {
         );
         addTearDown(controller.dispose);
 
-        for (int i = 0; i < 20 && !controller.executionLive; i++) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        await controller.workspaceBootSettled;
         expect(controller.executionLive, isTrue);
         final int booted = boots;
 
