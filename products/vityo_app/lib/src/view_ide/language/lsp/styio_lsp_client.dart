@@ -93,6 +93,7 @@ class StyioLspClient {
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
   final Map<int, String> _pendingMethods = <int, String>{};
   final List<int> _buffer = <int>[];
+  Future<void> _writeTail = Future<void>.value();
   final StreamController<StyioLspDiagnosticNotification> _diagnostics =
       StreamController<StyioLspDiagnosticNotification>.broadcast();
   final StreamController<Map<String, Object?>> _notifications =
@@ -100,6 +101,7 @@ class StyioLspClient {
   final StreamController<LspProtocolError> _protocolErrors =
       StreamController<LspProtocolError>.broadcast();
   StreamSubscription<List<int>>? _inputSubscription;
+  Future<void>? _closeFuture;
   var _closed = false;
 
   StyioLspCapabilities? _capabilities;
@@ -178,17 +180,17 @@ class StyioLspClient {
     return capabilities;
   }
 
-  Future<void> sendInitialized() async {
-    _sendNotification('initialized', const <String, Object?>{});
+  Future<void> sendInitialized() {
+    return _sendNotification('initialized', const <String, Object?>{});
   }
 
-  void didOpen({
+  Future<void> didOpen({
     required String uri,
     required String languageId,
     required int version,
     required String text,
   }) {
-    _sendNotification('textDocument/didOpen', <String, Object?>{
+    return _sendNotification('textDocument/didOpen', <String, Object?>{
       'textDocument': <String, Object?>{
         'uri': uri,
         'languageId': languageId,
@@ -198,25 +200,25 @@ class StyioLspClient {
     });
   }
 
-  void didChange({
+  Future<void> didChange({
     required String uri,
     required int version,
     required List<Map<String, Object?>> contentChanges,
   }) {
-    _sendNotification('textDocument/didChange', <String, Object?>{
+    return _sendNotification('textDocument/didChange', <String, Object?>{
       'textDocument': <String, Object?>{'uri': uri, 'version': version},
       'contentChanges': contentChanges,
     });
   }
 
-  void didClose({required String uri}) {
-    _sendNotification('textDocument/didClose', <String, Object?>{
+  Future<void> didClose({required String uri}) {
+    return _sendNotification('textDocument/didClose', <String, Object?>{
       'textDocument': <String, Object?>{'uri': uri},
     });
   }
 
   Future<void> cancelRequest(int id) async {
-    _sendNotification(r'$/cancelRequest', <String, Object?>{'id': id});
+    await _sendNotification(r'$/cancelRequest', <String, Object?>{'id': id});
   }
 
   StyioLspPendingRequest sendCancellableRequest(
@@ -230,12 +232,17 @@ class StyioLspClient {
     final completer = Completer<Object?>();
     _pending[id] = completer;
     _pendingMethods[id] = method;
-    _write(<String, Object?>{
+    final write = _write(<String, Object?>{
       'jsonrpc': '2.0',
       'id': id,
       'method': method,
       'params': params,
     });
+    unawaited(
+      write.catchError((Object error, StackTrace stackTrace) {
+        _onTransportError(error, stackTrace);
+      }),
+    );
     final timeout = requestTimeout;
     final result = completer.future.timeout(
       timeout,
@@ -341,10 +348,9 @@ class StyioLspClient {
     });
   }
 
-  Future<void> close() async {
-    if (_closed) {
-      return;
-    }
+  Future<void> close() => _closeFuture ??= _closeOwnedTransport();
+
+  Future<void> _closeOwnedTransport() async {
     _closed = true;
     await _inputSubscription?.cancel();
     final failure = const StyioLspTransportClosedFailure();
@@ -356,9 +362,15 @@ class StyioLspClient {
     _pending.clear();
     _pendingMethods.clear();
     await _transport.close();
-    await _diagnostics.close();
-    await _notifications.close();
-    await _protocolErrors.close();
+    if (!_diagnostics.isClosed) {
+      await _diagnostics.close();
+    }
+    if (!_notifications.isClosed) {
+      await _notifications.close();
+    }
+    if (!_protocolErrors.isClosed) {
+      await _protocolErrors.close();
+    }
   }
 
   void _onBytes(List<int> bytes) {
@@ -400,7 +412,7 @@ class StyioLspClient {
       return;
     }
     if (hasId && method != null) {
-      _write(<String, Object?>{
+      final write = _write(<String, Object?>{
         'jsonrpc': '2.0',
         'id': idValue,
         'error': <String, Object?>{
@@ -408,6 +420,11 @@ class StyioLspClient {
           'message': 'Unsupported server request: $method',
         },
       });
+      unawaited(
+        write.catchError((Object error, StackTrace stackTrace) {
+          _onTransportError(error, stackTrace);
+        }),
+      );
       return;
     }
     if (!_notifications.isClosed) {
@@ -506,23 +523,31 @@ class StyioLspClient {
     }
   }
 
-  void _sendNotification(String method, Map<String, Object?> params) {
-    _write(<String, Object?>{
+  Future<void> _sendNotification(String method, Map<String, Object?> params) {
+    return _write(<String, Object?>{
       'jsonrpc': '2.0',
       'method': method,
       'params': params,
     });
   }
 
-  void _write(Map<String, Object?> message) {
+  Future<void> _write(Map<String, Object?> message) {
     if (_closed) {
       throw const StyioLspTransportClosedFailure();
     }
     final bytes = _codec.encode(message);
-    unawaited(
-      _transport.write(bytes).catchError((Object error, StackTrace stackTrace) {
+    final write = _writeTail.then((_) async {
+      if (_closed) {
+        throw const StyioLspTransportClosedFailure();
+      }
+      await _transport.write(bytes);
+    });
+    _writeTail = write.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
         _onTransportError(error, stackTrace);
-      }),
+      },
     );
+    return write;
   }
 }

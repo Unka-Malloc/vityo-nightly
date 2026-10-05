@@ -44,15 +44,17 @@ void main() {
 
       await client.sendInitialized();
       final diagnostics = client.diagnostics.first;
-      client.didOpen(
+      const int openVersion = 10;
+      await client.didOpen(
         uri: Uri.file(sourcePath).toString(),
         languageId: 'styio',
-        version: 1,
+        version: openVersion,
         text: await File(sourcePath).readAsString(),
       );
 
       final published = await diagnostics.timeout(const Duration(seconds: 10));
       expect(published.uri, Uri.file(sourcePath).toString());
+      expect(published.version, openVersion);
 
       final symbols = await client.documentSymbol(
         uri: Uri.file(sourcePath).toString(),
@@ -100,12 +102,11 @@ void main() {
         ),
       );
       addTearDown(connector.close);
-
       final response = await connector.analyzeDocument(
         StyioServiceDocument(
           documentId: 'acceptance://lspd',
           text: source,
-          revision: 1,
+          revision: 10,
           filePath: sourcePath,
           workingDirectory: workspace.path,
         ),
@@ -116,8 +117,25 @@ void main() {
       expect(response.toolchainId, 'local-styio-lsp-daemon');
       // Handshake-driven capability truth: formatting stays unavailable.
       expect(response.capabilityStates['formatting'], 'unavailable');
+      expect(response.capabilityStates['diagnostics'], 'available');
       expect(response.formattingEdits, isEmpty);
       expect(connector.capabilities?.semanticTokensProvider, isTrue);
+
+      final rewoundRevision = await connector.analyzeDocument(
+        StyioServiceDocument(
+          documentId: 'acceptance://lspd',
+          text: '$source ',
+          revision: 1,
+          filePath: sourcePath,
+          workingDirectory: workspace.path,
+        ),
+      );
+      expect(rewoundRevision.status, StyioServiceStatus.succeeded);
+      expect(
+        rewoundRevision.capabilityStates['diagnostics'],
+        'available',
+        reason: 'the actual Styio producer tags the connector wire version',
+      );
     },
     skip: binaryPath == null
         ? 'styio_lspd is not installed on this machine.'
@@ -155,7 +173,7 @@ void main() {
       await client.sendInitialized();
 
       final diagnostics = client.diagnostics.first;
-      client.didOpen(
+      await client.didOpen(
         uri: Uri.file(sourcePath).toString(),
         languageId: 'styio',
         version: 1,

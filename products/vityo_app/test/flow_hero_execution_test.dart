@@ -742,7 +742,8 @@ void main() {
       final Completer<FlowHeroExecutionSource> boot =
           Completer<FlowHeroExecutionSource>();
       final FlowHeroController controller = FlowHeroController(
-        executionBoot: (FlowHeroToolchainSelection selection) => boot.future,
+        executionBoot: (String _, FlowHeroToolchainSelection selection) =>
+            boot.future,
       );
       addTearDown(controller.dispose);
       await pumpStrip(tester, controller);

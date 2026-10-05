@@ -90,7 +90,13 @@ class _ChatRailState extends State<ChatRail> {
                             );
                           },
                         ),
-                      for (final message in c.messages) _MsgView(msg: message),
+                      for (final message in c.messages)
+                        _MsgView(
+                          msg: message,
+                          originIsCurrent: c.executionOriginIsCurrent(
+                            message.executionOrigin,
+                          ),
+                        ),
                     ],
                   ),
                 );
@@ -402,9 +408,10 @@ class _AgentHeader extends StatelessWidget {
 }
 
 class _MsgView extends StatelessWidget {
-  const _MsgView({required this.msg});
+  const _MsgView({required this.msg, required this.originIsCurrent});
 
   final ChatMsg msg;
+  final bool originIsCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +431,13 @@ class _MsgView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            if (msg.executionOrigin != null && !originIsCurrent) ...<Widget>[
+              Text(
+                '结果来自切换前的工作区与工具链',
+                style: P.silkStyle().copyWith(color: P.orange, fontSize: 9),
+              ),
+              const SizedBox(height: 3),
+            ],
             if (msg.demo) ...<Widget>[
               Text(
                 '演示内容',
@@ -458,6 +472,13 @@ class _MsgView extends StatelessWidget {
                 ],
               ],
             ),
+            if (msg.executionOrigin != null && !originIsCurrent) ...<Widget>[
+              const SizedBox(height: 3),
+              Text(
+                '结果来自切换前的工作区与工具链',
+                style: P.silkStyle().copyWith(color: P.orange, fontSize: 9),
+              ),
+            ],
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

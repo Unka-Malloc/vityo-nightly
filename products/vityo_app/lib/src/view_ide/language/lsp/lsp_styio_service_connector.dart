@@ -542,6 +542,82 @@ class LspStyioServiceResponseMapper {
 /// documents synchronized through `didOpen`/`didChange`. Document-scoped
 /// analysis is served by `analyzeDocument`; position-scoped queries are exposed
 /// through the explicit `*At` methods.
+class _LspClientStartup {
+  _LspClientStartup({required this.rootPath, required this.generation});
+
+  final String rootPath;
+  final int generation;
+  LspByteTransport? transport;
+  StyioLspClient? client;
+  Future<StyioLspClient?>? future;
+  bool invalidated = false;
+  Future<void>? _releaseFuture;
+
+  Future<void>? releaseOwnedResource() {
+    final existing = _releaseFuture;
+    if (existing != null) {
+      return existing;
+    }
+    final client = this.client;
+    final transport = this.transport;
+    if (client == null && transport == null) {
+      return null;
+    }
+    return _releaseFuture = Future<void>.sync(() async {
+      if (client != null) {
+        await client.close();
+      } else {
+        await transport!.close();
+      }
+    });
+  }
+}
+
+class _OpenLspDocument {
+  const _OpenLspDocument({
+    required this.sessionGeneration,
+    required this.sourceRevision,
+    required this.lspVersion,
+    required this.text,
+  });
+
+  final int sessionGeneration;
+  final int sourceRevision;
+  final int lspVersion;
+  final String text;
+}
+
+class _RevisionBoundDiagnostics {
+  const _RevisionBoundDiagnostics({
+    required this.sessionGeneration,
+    required this.sourceRevision,
+    required this.lspVersion,
+    required this.text,
+    required this.diagnostics,
+  });
+
+  final int sessionGeneration;
+  final int sourceRevision;
+  final int lspVersion;
+  final String text;
+  final List<Object?> diagnostics;
+
+  bool belongsTo(_OpenLspDocument document) {
+    return sessionGeneration == document.sessionGeneration &&
+        sourceRevision == document.sourceRevision &&
+        lspVersion == document.lspVersion &&
+        text == document.text;
+  }
+}
+
+class _DiagnosticsRequest {
+  _DiagnosticsRequest();
+
+  final Completer<_RevisionBoundDiagnostics?> completer =
+      Completer<_RevisionBoundDiagnostics?>();
+  _OpenLspDocument? document;
+}
+
 class LspStyioServiceConnector implements StyioServiceConnector {
   LspStyioServiceConnector({
     required this.executablePath,
@@ -562,23 +638,66 @@ class LspStyioServiceConnector implements StyioServiceConnector {
   final Duration requestTimeout;
 
   StyioLspClient? _client;
-  Future<StyioLspClient?>? _starting;
+  _LspClientStartup? _clientStartup;
+  _LspClientStartup? _starting;
+  Future<void> _retirement = Future<void>.value();
+  var _retirementPending = false;
+  Future<void>? _closeFuture;
+  var _sessionGeneration = 0;
   String? _rootPath;
-  final Map<String, int> _openVersions = <String, int>{};
-  final Map<String, String> _openTexts = <String, String>{};
-  final Map<String, List<Object?>> _latestDiagnostics =
-      <String, List<Object?>>{};
-  final Map<String, Completer<List<Object?>>> _diagnosticWaiters =
-      <String, Completer<List<Object?>>>{};
+  final Map<String, _OpenLspDocument> _openDocuments =
+      <String, _OpenLspDocument>{};
+  final Map<String, _RevisionBoundDiagnostics> _latestDiagnostics =
+      <String, _RevisionBoundDiagnostics>{};
+  final Map<String, _DiagnosticsRequest> _diagnosticWaiters =
+      <String, _DiagnosticsRequest>{};
+  final Map<String, Future<void>> _documentTails = <String, Future<void>>{};
   StreamSubscription<StyioLspDiagnosticNotification>? _diagnosticsSubscription;
   var _closed = false;
 
-  StyioLspConnectorStatus get status => _status;
+  StyioLspConnectorStatus get status {
+    if (_status == StyioLspConnectorStatus.active && !_hasHealthyClient) {
+      return _closed
+          ? StyioLspConnectorStatus.dormant
+          : StyioLspConnectorStatus.failed;
+    }
+    return _status;
+  }
+
   StyioLspConnectorStatus _status = StyioLspConnectorStatus.dormant;
 
-  StyioLspCapabilities? get capabilities => _client?.capabilities;
+  StyioLspCapabilities? get capabilities =>
+      isSessionActive ? _client?.capabilities : null;
 
-  bool get isSessionActive => _client != null && !_closed;
+  bool get isSessionActive =>
+      _status == StyioLspConnectorStatus.active && _hasHealthyClient;
+
+  bool get _hasHealthyClient {
+    final client = _client;
+    final startup = _clientStartup;
+    return !_closed &&
+        client != null &&
+        client.isInitialized &&
+        !client.isClosed &&
+        startup != null &&
+        startup.generation == _sessionGeneration &&
+        identical(startup.client, client) &&
+        startup.rootPath == _rootPath;
+  }
+
+  /// Initializes and retains the LSP session for [workingDirectory].
+  ///
+  /// Calls for the same root share the same pending startup. A `false` result
+  /// means the attempt failed or was superseded and has released any transport
+  /// it created; a still-pending transport factory keeps the returned future
+  /// pending until that factory completes and its resource can be released.
+  Future<bool> startSession({required String workingDirectory}) async {
+    final client = await _ensureClient(workingDirectory, null);
+    return client != null &&
+        isSessionActive &&
+        identical(_client, client) &&
+        _rootPath == _resolveRootPath(workingDirectory, null);
+  }
 
   @override
   Future<StyioServiceResponse> analyzeDocument(
@@ -592,6 +711,17 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       );
     }
     final uri = _fileUri(filePath);
+    return _serializeDocument(
+      uri,
+      () => _analyzeDocument(document, uri, filePath),
+    );
+  }
+
+  Future<StyioServiceResponse> _analyzeDocument(
+    StyioServiceDocument document,
+    String uri,
+    String filePath,
+  ) async {
     try {
       final client = await _ensureClient(document.workingDirectory, filePath);
       if (client == null) {
@@ -600,8 +730,16 @@ class LspStyioServiceConnector implements StyioServiceConnector {
           'styio_lspd session is unavailable for $filePath.',
         );
       }
+      final startup = _clientStartup;
+      if (startup == null || !identical(startup.client, client)) {
+        return _unavailable(
+          document,
+          'styio_lspd session changed before analysis started.',
+          status: StyioServiceStatus.stale,
+        );
+      }
       final capabilities = client.capabilities;
-      final diagnostics = await _syncAndAwaitDiagnostics(
+      final revisionDiagnostics = await _syncAndAwaitDiagnostics(
         client,
         uri,
         filePath: filePath,
@@ -609,6 +747,7 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         revision: document.revision,
         languageId: document.languageId,
       );
+      final diagnostics = revisionDiagnostics?.diagnostics ?? const <Object?>[];
 
       Object? semanticTokens;
       Object? symbols;
@@ -616,7 +755,12 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       final capabilityStates = <String, String>{'analysis': 'available'};
       final capabilityMessages = <String, String>{};
       capabilityStates[StyioServiceCapability.diagnostics.wireValue] =
-          'available';
+          revisionDiagnostics == null ? 'unavailable' : 'available';
+      if (revisionDiagnostics == null) {
+        capabilityMessages[StyioServiceCapability.diagnostics.wireValue] =
+            'styio_lspd did not publish diagnostics tagged with the exact '
+            'open-document version for this revision.';
+      }
 
       if (capabilities?.semanticTokensProvider == true) {
         try {
@@ -675,6 +819,14 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         capabilityMessages,
       );
 
+      if (!_isActiveStartup(startup, client)) {
+        return _unavailable(
+          document,
+          'styio_lspd session changed before analysis completed.',
+          status: StyioServiceStatus.stale,
+        );
+      }
+
       final mappedDiagnostics = mapper.diagnosticsFrom(
         diagnostics,
         document.text,
@@ -713,7 +865,6 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         message: 'styio_lspd analyzed $uri.',
       );
     } on Object catch (error) {
-      _status = StyioLspConnectorStatus.failed;
       return _unavailable(
         document,
         'styio_lspd analysis failed: $error',
@@ -801,33 +952,42 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       return const <DiagnosticQuickFix>[];
     }
     final uri = _fileUri(filePath);
-    try {
-      final client = await _ensureClient(document.workingDirectory, filePath);
-      if (client == null) {
+    return _serializeDocument(uri, () async {
+      try {
+        final client = await _ensureClient(document.workingDirectory, filePath);
+        if (client == null) {
+          return const <DiagnosticQuickFix>[];
+        }
+        final startup = _clientStartup;
+        if (startup == null || !identical(startup.client, client)) {
+          return const <DiagnosticQuickFix>[];
+        }
+        await _syncDocument(
+          client,
+          uri,
+          filePath: filePath,
+          text: document.text,
+          revision: document.revision,
+          languageId: document.languageId,
+        );
+        final result = await client.codeAction(
+          uri: uri,
+          range: LspRange(
+            start: LspTextCoordinates.positionAtOffset(
+              document.text,
+              range.start,
+            ),
+            end: LspTextCoordinates.positionAtOffset(document.text, range.end),
+          ),
+        );
+        if (!_isActiveStartup(startup, client)) {
+          return const <DiagnosticQuickFix>[];
+        }
+        return mapper.codeActionsFrom(result, uri: uri, text: document.text);
+      } on Object {
         return const <DiagnosticQuickFix>[];
       }
-      await _syncDocument(
-        client,
-        uri,
-        filePath: filePath,
-        text: document.text,
-        revision: document.revision,
-        languageId: document.languageId,
-      );
-      final result = await client.codeAction(
-        uri: uri,
-        range: LspRange(
-          start: LspTextCoordinates.positionAtOffset(
-            document.text,
-            range.start,
-          ),
-          end: LspTextCoordinates.positionAtOffset(document.text, range.end),
-        ),
-      );
-      return mapper.codeActionsFrom(result, uri: uri, text: document.text);
-    } on Object {
-      return const <DiagnosticQuickFix>[];
-    }
+    });
   }
 
   Future<RenamePlan?> renameAt(
@@ -879,26 +1039,33 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       return fallback;
     }
     final uri = _fileUri(filePath);
-    try {
-      final client = await _ensureClient(document.workingDirectory, filePath);
-      if (client == null) {
+    return _serializeDocument(uri, () async {
+      try {
+        final client = await _ensureClient(document.workingDirectory, filePath);
+        if (client == null) {
+          return fallback;
+        }
+        final startup = _clientStartup;
+        if (startup == null || !identical(startup.client, client)) {
+          return fallback;
+        }
+        await _syncDocument(
+          client,
+          uri,
+          filePath: filePath,
+          text: document.text,
+          revision: document.revision,
+          languageId: document.languageId,
+        );
+        final result = await action(client, uri, document.text);
+        return _isActiveStartup(startup, client) ? result : fallback;
+      } on Object {
         return fallback;
       }
-      await _syncDocument(
-        client,
-        uri,
-        filePath: filePath,
-        text: document.text,
-        revision: document.revision,
-        languageId: document.languageId,
-      );
-      return await action(client, uri, document.text);
-    } on Object {
-      return fallback;
-    }
+    });
   }
 
-  Future<List<Object?>> _syncAndAwaitDiagnostics(
+  Future<_RevisionBoundDiagnostics?> _syncAndAwaitDiagnostics(
     StyioLspClient client,
     String uri, {
     required String filePath,
@@ -906,8 +1073,7 @@ class LspStyioServiceConnector implements StyioServiceConnector {
     required int revision,
     required String languageId,
   }) async {
-    final waiter = Completer<List<Object?>>();
-    _diagnosticWaiters[uri] = waiter;
+    final waiter = _DiagnosticsRequest();
     try {
       await _syncDocument(
         client,
@@ -916,52 +1082,78 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         text: text,
         revision: revision,
         languageId: languageId,
+        onSynchronized: (document) {
+          waiter.document = document;
+          _diagnosticWaiters[uri] = waiter;
+        },
       );
-      return await waiter.future.timeout(
+      final document = waiter.document!;
+      final cached = _latestDiagnostics[uri];
+      if (cached != null && cached.belongsTo(document)) {
+        return cached;
+      }
+      return await waiter.completer.future.timeout(
         diagnosticsTimeout,
-        onTimeout: () => _latestDiagnostics[uri] ?? const <Object?>[],
+        onTimeout: () => null,
       );
     } finally {
-      _diagnosticWaiters.remove(uri);
+      if (identical(_diagnosticWaiters[uri], waiter)) {
+        _diagnosticWaiters.remove(uri);
+      }
     }
   }
 
-  Future<void> _syncDocument(
+  Future<_OpenLspDocument> _syncDocument(
     StyioLspClient client,
     String uri, {
     required String filePath,
     required String text,
     required int revision,
     required String languageId,
+    void Function(_OpenLspDocument document)? onSynchronized,
   }) async {
-    final previousVersion = _openVersions[uri];
-    if (previousVersion == null) {
-      _openVersions[uri] = revision;
-      _openTexts[uri] = text;
-      client.didOpen(
+    final startup = _clientStartup;
+    if (!_hasHealthyClient || !identical(_client, client) || startup == null) {
+      throw const StyioLspTransportClosedFailure();
+    }
+    final previous = _openDocuments[uri];
+    final textAndRevisionUnchanged =
+        previous != null &&
+        previous.sessionGeneration == startup.generation &&
+        previous.text == text &&
+        previous.sourceRevision == revision;
+    final version = previous == null
+        ? revision
+        : textAndRevisionUnchanged
+        ? previous.lspVersion
+        : revision > previous.lspVersion
+        ? revision
+        : previous.lspVersion + 1;
+    final document = _OpenLspDocument(
+      sessionGeneration: startup.generation,
+      sourceRevision: revision,
+      lspVersion: version,
+      text: text,
+    );
+    _openDocuments[uri] = document;
+    onSynchronized?.call(document);
+    if (previous == null || previous.sessionGeneration != startup.generation) {
+      await client.didOpen(
         uri: uri,
         languageId: languageId,
-        version: revision,
+        version: version,
         text: text,
       );
-      return;
+    } else if (!textAndRevisionUnchanged) {
+      await client.didChange(
+        uri: uri,
+        version: version,
+        contentChanges: <Map<String, Object?>>[
+          <String, Object?>{'text': text},
+        ],
+      );
     }
-    final previousText = _openTexts[uri];
-    if (previousText == text && previousVersion == revision) {
-      return;
-    }
-    final nextVersion = revision > previousVersion
-        ? revision
-        : previousVersion + 1;
-    _openVersions[uri] = nextVersion;
-    _openTexts[uri] = text;
-    client.didChange(
-      uri: uri,
-      version: nextVersion,
-      contentChanges: <Map<String, Object?>>[
-        <String, Object?>{'text': text},
-      ],
-    );
+    return document;
   }
 
   Future<StyioLspClient?> _ensureClient(
@@ -972,20 +1164,37 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       return null;
     }
     final rootPath = _resolveRootPath(workingDirectory, filePath);
-    if (_client != null) {
-      if (rootPath == _rootPath) {
-        return _client;
-      }
-      await _stopClient();
+    final activeClient = _client;
+    if (rootPath == _rootPath && isSessionActive && activeClient != null) {
+      return activeClient;
     }
     final inFlight = _starting;
-    if (inFlight != null) {
-      return inFlight;
+    if (inFlight != null &&
+        !inFlight.invalidated &&
+        inFlight.generation == _sessionGeneration &&
+        inFlight.rootPath == rootPath) {
+      final client = await inFlight.future;
+      return _isActiveStartup(inFlight, client) ? client : null;
     }
-    final starting = _startClient(rootPath);
+
+    final generation = ++_sessionGeneration;
+    final needsRetirement =
+        _starting != null ||
+        _clientStartup != null ||
+        _diagnosticsSubscription != null ||
+        _retirementPending;
+    final retirement = needsRetirement ? _retireCurrentSession() : null;
+    final starting = _LspClientStartup(
+      rootPath: rootPath,
+      generation: generation,
+    );
     _starting = starting;
+    _status = StyioLspConnectorStatus.starting;
+    final future = _startClient(starting, retirement);
+    starting.future = future;
     try {
-      return await starting;
+      final client = await future;
+      return _isActiveStartup(starting, client) ? client : null;
     } finally {
       if (identical(_starting, starting)) {
         _starting = null;
@@ -993,63 +1202,275 @@ class LspStyioServiceConnector implements StyioServiceConnector {
     }
   }
 
-  Future<StyioLspClient?> _startClient(String rootPath) async {
-    _status = StyioLspConnectorStatus.starting;
+  Future<StyioLspClient?> _startClient(
+    _LspClientStartup startup,
+    Future<void>? retirement,
+  ) async {
     try {
-      final transport = await transportFactory(rootPath);
+      if (retirement != null) {
+        await retirement;
+      }
+      if (!_isPendingStartup(startup)) {
+        return null;
+      }
+      final transport = await transportFactory(startup.rootPath);
+      startup.transport = transport;
+      if (!_isPendingStartup(startup)) {
+        await startup.releaseOwnedResource();
+        return null;
+      }
       final client = StyioLspClient(
         transport: transport,
         requestTimeout: requestTimeout,
       );
+      startup.client = client;
       await client.initialize(
-        rootUri: Uri.parse(_fileUri(rootPath)),
-        rootPath: rootPath,
+        rootUri: Uri.parse(_fileUri(startup.rootPath)),
+        rootPath: startup.rootPath,
         clientName: 'Vityo',
       );
+      if (!_isPendingStartup(startup)) {
+        await startup.releaseOwnedResource();
+        return null;
+      }
       await client.sendInitialized();
-      _diagnosticsSubscription = client.diagnostics.listen(
-        _acceptDiagnosticsNotification,
+      if (!_isPendingStartup(startup)) {
+        await startup.releaseOwnedResource();
+        return null;
+      }
+      late final StreamSubscription<StyioLspDiagnosticNotification>
+      diagnosticsSubscription;
+      diagnosticsSubscription = client.diagnostics.listen(
+        (notification) =>
+            _acceptDiagnosticsNotification(startup.generation, notification),
         onError: (Object _) {},
+        onDone: () =>
+            _onDiagnosticsStreamDone(startup, diagnosticsSubscription),
       );
+      if (!_isPendingStartup(startup)) {
+        await diagnosticsSubscription.cancel();
+        await startup.releaseOwnedResource();
+        return null;
+      }
+      _diagnosticsSubscription = diagnosticsSubscription;
       _client = client;
-      _rootPath = rootPath;
+      _clientStartup = startup;
+      _rootPath = startup.rootPath;
       _status = StyioLspConnectorStatus.active;
       return client;
     } on Object {
-      _status = StyioLspConnectorStatus.failed;
+      final release = startup.releaseOwnedResource();
+      if (release != null) {
+        try {
+          await release;
+        } on Object {
+          // Preserve the startup failure while making the release attempt once.
+        }
+      }
+      if (_isPendingStartup(startup)) {
+        _status = StyioLspConnectorStatus.failed;
+      }
       return null;
     }
   }
 
   void _acceptDiagnosticsNotification(
+    int sessionGeneration,
     StyioLspDiagnosticNotification notification,
   ) {
-    _latestDiagnostics[notification.uri] = notification.diagnostics;
+    final startup = _clientStartup;
+    if (!isSessionActive ||
+        startup == null ||
+        startup.generation != sessionGeneration) {
+      return;
+    }
+    final document = _openDocuments[notification.uri];
+    final version = notification.version;
+    if (document == null ||
+        document.sessionGeneration != sessionGeneration ||
+        version == null ||
+        version != document.lspVersion) {
+      return;
+    }
+    final result = _RevisionBoundDiagnostics(
+      sessionGeneration: sessionGeneration,
+      sourceRevision: document.sourceRevision,
+      lspVersion: document.lspVersion,
+      text: document.text,
+      diagnostics: List<Object?>.unmodifiable(notification.diagnostics),
+    );
+    _latestDiagnostics[notification.uri] = result;
     final waiter = _diagnosticWaiters[notification.uri];
-    if (waiter != null && !waiter.isCompleted) {
-      waiter.complete(notification.diagnostics);
+    final requestedDocument = waiter?.document;
+    if (waiter != null &&
+        !waiter.completer.isCompleted &&
+        requestedDocument != null &&
+        result.belongsTo(requestedDocument)) {
+      waiter.completer.complete(result);
     }
   }
 
-  Future<void> _stopClient() async {
+  bool _isPendingStartup(_LspClientStartup startup) {
+    return !_closed &&
+        !startup.invalidated &&
+        startup.generation == _sessionGeneration &&
+        identical(_starting, startup);
+  }
+
+  bool _isActiveStartup(_LspClientStartup startup, StyioLspClient? client) {
+    return client != null &&
+        isSessionActive &&
+        startup.generation == _sessionGeneration &&
+        identical(_clientStartup, startup) &&
+        identical(_client, client);
+  }
+
+  void _onDiagnosticsStreamDone(
+    _LspClientStartup startup,
+    StreamSubscription<StyioLspDiagnosticNotification> subscription,
+  ) {
+    if (!identical(_clientStartup, startup) ||
+        startup.generation != _sessionGeneration ||
+        _closed) {
+      return;
+    }
+    if (identical(_diagnosticsSubscription, subscription)) {
+      _diagnosticsSubscription = null;
+    }
+    _client = null;
+    _clientStartup = null;
+    _rootPath = null;
+    startup.invalidated = true;
+    _sessionGeneration += 1;
+    _clearDocumentState();
+    _status = StyioLspConnectorStatus.failed;
+    final release = startup.releaseOwnedResource();
+    if (release != null) {
+      unawaited(_joinRetirement(<Future<void>>[release]));
+    }
+  }
+
+  Future<void> _retireCurrentSession() {
+    final starts = <_LspClientStartup>{};
+    final starting = _starting;
+    _starting = null;
+    if (starting != null) {
+      starting.invalidated = true;
+      starts.add(starting);
+    }
+    final active = _clientStartup;
+    _clientStartup = null;
+    if (active != null) {
+      active.invalidated = true;
+      starts.add(active);
+    }
     final subscription = _diagnosticsSubscription;
     _diagnosticsSubscription = null;
-    await subscription?.cancel();
-    final client = _client;
     _client = null;
     _rootPath = null;
-    _openVersions.clear();
-    _openTexts.clear();
-    _latestDiagnostics.clear();
-    if (client != null) {
-      await client.close();
-    }
+    _clearDocumentState();
     _status = StyioLspConnectorStatus.dormant;
+
+    final releases = <Future<void>>[];
+    if (subscription != null) {
+      releases.add(subscription.cancel());
+    }
+    for (final startup in starts) {
+      final release = startup.releaseOwnedResource();
+      if (release != null) {
+        releases.add(release);
+      }
+    }
+    return _joinRetirement(releases);
   }
 
-  Future<void> close() async {
+  Future<void> _joinRetirement(List<Future<void>> releases) {
+    if (releases.isEmpty) {
+      return _retirement;
+    }
+    late final Future<void> joinedRetirement;
+    joinedRetirement =
+        Future.wait<void>(<Future<void>>[
+          _retirement,
+          ...releases,
+        ]).then<void>((_) {}).whenComplete(() {
+          if (identical(_retirement, joinedRetirement)) {
+            _retirementPending = false;
+          }
+        });
+    _retirementPending = true;
+    _retirement = joinedRetirement;
+    return joinedRetirement;
+  }
+
+  void _clearDocumentState() {
+    _openDocuments.clear();
+    _latestDiagnostics.clear();
+    final waiters = _diagnosticWaiters.values.toList(growable: false);
+    _diagnosticWaiters.clear();
+    for (final waiter in waiters) {
+      if (!waiter.completer.isCompleted) {
+        waiter.completer.complete(null);
+      }
+    }
+  }
+
+  Future<T> _serializeDocument<T>(String uri, Future<T> Function() action) {
+    final previous = _documentTails[uri];
+    if (previous == null) {
+      final tailCompleter = Completer<void>();
+      final tail = tailCompleter.future;
+      _documentTails[uri] = tail;
+      final result = Future<T>.sync(action);
+      unawaited(
+        result.then<void>(
+          (_) {
+            if (!tailCompleter.isCompleted) {
+              tailCompleter.complete();
+            }
+          },
+          onError: (Object _, StackTrace __) {
+            if (!tailCompleter.isCompleted) {
+              tailCompleter.complete();
+            }
+          },
+        ),
+      );
+      unawaited(
+        tail.then((_) {
+          if (identical(_documentTails[uri], tail)) {
+            _documentTails.remove(uri);
+          }
+        }),
+      );
+      return result;
+    }
+    final result = Completer<T>();
+    late final Future<void> tail;
+    tail = previous.then((_) async {
+      try {
+        result.complete(await action());
+      } on Object catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      } finally {
+        if (identical(_documentTails[uri], tail)) {
+          _documentTails.remove(uri);
+        }
+      }
+    });
+    _documentTails[uri] = tail;
+    return result.future;
+  }
+
+  Future<void> close() {
+    return _closeFuture ??= _close();
+  }
+
+  Future<void> _close() async {
     _closed = true;
-    await _stopClient();
+    _sessionGeneration += 1;
+    _status = StyioLspConnectorStatus.dormant;
+    await _retireCurrentSession();
   }
 
   void _recordPositionScopedCapabilities(

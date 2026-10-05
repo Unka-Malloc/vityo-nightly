@@ -409,18 +409,20 @@ void main() {
         var boots = 0;
         final controller = FlowHeroController(
           localServices: services,
-          executionBoot: (FlowHeroToolchainSelection selection) async {
-            boots++;
-            return FlowHeroExecutionRuntime.boot(
-              workspaceRoot: workspace.path,
-              vityodClient: await services.client(),
-              environment: <String, String>{
-                'VITYO_PAFIO_BIN': pafioPath,
-                'VITYO_STYIO_BIN': styioPath,
+          initialWorkspaceRoot: workspace.path,
+          executionBoot:
+              (String root, FlowHeroToolchainSelection selection) async {
+                boots++;
+                return FlowHeroExecutionRuntime.boot(
+                  workspaceRoot: root,
+                  vityodClient: await services.client(),
+                  environment: <String, String>{
+                    'VITYO_PAFIO_BIN': pafioPath,
+                    'VITYO_STYIO_BIN': styioPath,
+                  },
+                  pafioSystemCandidatePaths: const <String>[],
+                );
               },
-              pafioSystemCandidatePaths: const <String>[],
-            );
-          },
         );
         addTearDown(controller.dispose);
 

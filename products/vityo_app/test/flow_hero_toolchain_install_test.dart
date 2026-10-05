@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -40,6 +41,8 @@ class _FakeSource
   final Map<FlowHeroToolchainKind, List<FlowHeroToolchainCheck>>
   toolchainChecks;
 
+  int starts = 0;
+
   /// This scripted route always reports a missing tool set instead of a
   /// classified cause; the strip's toolchain branch reads that directly.
   @override
@@ -54,6 +57,8 @@ class _FakeSource
     FlowHeroExecutionKind kind, {
     VoidCallback? onStarted,
   }) async {
+    starts++;
+    onStarted?.call();
     return FlowHeroExecutionOutcome(
       kind: kind,
       phase: FlowHeroExecutionPhase.failed,
@@ -72,16 +77,22 @@ class _FakeSource
 
 class _FakeToolchainStore implements FlowHeroToolchainStore {
   FlowHeroToolchainSelection? stored;
+  Completer<FlowHeroToolchainSelection?>? loadGate;
+  Completer<void>? saveGate;
   final List<String> saves = <String>[];
 
   @override
   bool get persistent => true;
 
   @override
-  Future<FlowHeroToolchainSelection?> load() async => stored;
+  Future<FlowHeroToolchainSelection?> load() async {
+    final Completer<FlowHeroToolchainSelection?>? gate = loadGate;
+    return gate == null ? stored : await gate.future;
+  }
 
   @override
   Future<void> savePath(FlowHeroToolchainKind kind, String path) async {
+    await saveGate?.future;
     saves.add('${kind.id}=$path');
     stored = (stored ?? const FlowHeroToolchainSelection()).withPath(
       kind,
@@ -135,7 +146,7 @@ void main() {
         toolchainStore: store,
         toolchainProbe: probe,
         languageBoot: languageBoot,
-        executionBoot: (FlowHeroToolchainSelection selection) async {
+        executionBoot: (String _, FlowHeroToolchainSelection selection) async {
           boots.add(selection);
           if (selection.pafioPath.isEmpty) {
             return _FakeSource(
@@ -232,6 +243,125 @@ void main() {
       },
     );
 
+    test(
+      'dispatch stays gated until a toolchain choice is persisted',
+      () async {
+        store.saveGate = Completer<void>();
+        final List<_FakeSource> routes = <_FakeSource>[];
+        final controller = FlowHeroController(
+          toolchainStore: store,
+          executionBoot:
+              (String _, FlowHeroToolchainSelection selection) async {
+                final source = _FakeSource(live: true);
+                routes.add(source);
+                return source;
+              },
+        );
+        addTearDown(controller.dispose);
+        await controller.workspaceBootSettled;
+        expect(controller.canExecute, isTrue);
+
+        final Future<FlowHeroToolchainSaveResult> saving = controller
+            .saveToolchainOverride(
+              FlowHeroToolchainKind.pafio,
+              '/tmp/next-pafio',
+            );
+        expect(controller.canExecute, isFalse);
+        expect(controller.executionUnavailableReason, '正在保存工具链选择…');
+        await controller.runExecution(FlowHeroExecutionKind.run);
+        expect(routes.first.starts, 0);
+
+        store.saveGate!.complete();
+        final FlowHeroToolchainSaveResult result = await saving;
+        expect(result.saved, isTrue);
+        expect(routes, hasLength(2));
+        expect(controller.toolchainSelection.pafioPath, '/tmp/next-pafio');
+        expect(controller.canExecute, isTrue);
+      },
+    );
+
+    test(
+      'a manual toolchain choice wins over startup restore completing mid-save',
+      () async {
+        store
+          ..loadGate = Completer<FlowHeroToolchainSelection?>()
+          ..saveGate = Completer<void>();
+        final List<FlowHeroToolchainSelection> routes =
+            <FlowHeroToolchainSelection>[];
+        final controller = FlowHeroController(
+          toolchainStore: store,
+          executionBoot:
+              (String _, FlowHeroToolchainSelection selection) async {
+                routes.add(selection);
+                return _FakeSource(live: true);
+              },
+        );
+        addTearDown(controller.dispose);
+        final Future<void> startup = controller.workspaceBootSettled;
+        final Future<FlowHeroToolchainSaveResult> saving = controller
+            .saveToolchainOverride(
+              FlowHeroToolchainKind.pafio,
+              '/tmp/manual-pafio',
+            );
+
+        store.loadGate!.complete(
+          const FlowHeroToolchainSelection(
+            pafioPath: '/tmp/stale-pafio',
+            styioPath: '/tmp/stale-styio',
+          ),
+        );
+        await startup;
+        expect(
+          controller.toolchainSelection,
+          const FlowHeroToolchainSelection(),
+          reason: 'startup restore waits behind the in-flight user choice',
+        );
+
+        store.saveGate!.complete();
+        expect((await saving).saved, isTrue);
+        expect(
+          controller.toolchainSelection,
+          const FlowHeroToolchainSelection(pafioPath: '/tmp/manual-pafio'),
+        );
+        expect(
+          routes.any((selection) => selection.pafioPath == '/tmp/stale-pafio'),
+          isFalse,
+          reason: 'the stale restored route must never boot',
+        );
+      },
+    );
+
+    test(
+      'a failed toolchain save releases the still-current stored selection',
+      () async {
+        store
+          ..loadGate = Completer<FlowHeroToolchainSelection?>()
+          ..saveGate = Completer<void>();
+        final controller = FlowHeroController(
+          toolchainStore: store,
+          executionBoot: (String _, FlowHeroToolchainSelection __) async =>
+              _FakeSource(live: true),
+        );
+        addTearDown(controller.dispose);
+        final Future<void> startup = controller.workspaceBootSettled;
+        final Future<FlowHeroToolchainSaveResult> saving = controller
+            .saveToolchainOverride(
+              FlowHeroToolchainKind.pafio,
+              '/tmp/unpersisted-pafio',
+            );
+        const FlowHeroToolchainSelection restored = FlowHeroToolchainSelection(
+          pafioPath: '/tmp/stored-pafio',
+          styioPath: '/tmp/stored-styio',
+        );
+        store.loadGate!.complete(restored);
+        await startup;
+        store.saveGate!.completeError(StateError('write failed'));
+
+        expect((await saving).saved, isFalse);
+        expect(controller.toolchainSelection, restored);
+      },
+    );
+
     test('an empty path is refused before anything is written', () async {
       final controller = build(
         probe: (FlowHeroToolchainKind _, String __) async =>
@@ -253,7 +383,7 @@ void main() {
         final controller = build(
           probe: (FlowHeroToolchainKind _, String __) async =>
               const FlowHeroToolchainProbeResult(ok: true, detail: 'ok'),
-          languageBoot: (FlowHeroToolchainSelection _) async {
+          languageBoot: (String _, FlowHeroToolchainSelection __) async {
             throw StateError('language boot unavailable');
           },
         );
@@ -269,7 +399,7 @@ void main() {
     );
 
     test(
-      'a stored Styio selection re-probes the language service at startup',
+      'the restored Styio selection owns the language route at startup',
       () async {
         store.stored = const FlowHeroToolchainSelection(
           styioPath: '/tmp/styio',
@@ -282,9 +412,10 @@ void main() {
             unavailableReason: '未发现 styio',
           ),
           toolchainStore: store,
-          executionBoot: (FlowHeroToolchainSelection selection) async =>
-              _FakeSource(live: selection.styioPath.isNotEmpty),
-          languageBoot: (FlowHeroToolchainSelection selection) async {
+          executionBoot:
+              (String _, FlowHeroToolchainSelection selection) async =>
+                  _FakeSource(live: selection.styioPath.isNotEmpty),
+          languageBoot: (String _, FlowHeroToolchainSelection selection) async {
             languageBoots.add(selection);
             throw StateError('no language runtime in this test');
           },
@@ -296,7 +427,7 @@ void main() {
 
         expect(controller.toolchainSelection.styioPath, '/tmp/styio');
         expect(controller.executionLive, isTrue);
-        expect(languageBoots.single.styioPath, '/tmp/styio');
+        expect(languageBoots.last.styioPath, '/tmp/styio');
       },
     );
 
@@ -460,7 +591,7 @@ void main() {
         },
         executionBoot:
             boot ??
-            (FlowHeroToolchainSelection selection) async {
+            (String _, FlowHeroToolchainSelection selection) async {
               bootCount++;
               if (selection.pafioPath.isEmpty) {
                 return _FakeSource(

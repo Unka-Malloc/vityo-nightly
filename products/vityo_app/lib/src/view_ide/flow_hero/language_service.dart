@@ -85,6 +85,10 @@ abstract interface class FlowHeroLanguageSession
 
   String? get providerVersion;
 
+  /// Publishes process-wide language availability only after this session is
+  /// accepted as the current workspace route.
+  void activateRoute();
+
   Future<void> dispose();
 }
 
@@ -92,14 +96,16 @@ abstract interface class FlowHeroLanguageSession
 /// [lang.StyioLanguageService] the engine holds.
 class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
   FlowHeroLanguageRuntime._({
-    required this.mode,
-    required this.statusLine,
+    required FlowHeroLanguageMode mode,
+    required String statusLine,
     required this.providerId,
     required this.workspaceRoot,
     lang.StyioLanguageService? service,
     lang.StyioServiceAnalysisDriver? driver,
     lang.LspStyioServiceConnector? connector,
-  }) : _service = service,
+  }) : _mode = mode,
+       _statusLine = statusLine,
+       _service = service,
        _driver = driver,
        _connector = connector;
 
@@ -174,12 +180,24 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
         toolchainId: connector.toolchainId,
         workingDirectory: workspaceRoot,
       );
-      StyioLanguageServiceProbe.report(
-        const StyioLanguageServiceProbe(
-          realServiceAvailable: true,
-          providerId: 'styio_lspd',
-        ),
-      );
+      late final bool sessionStarted;
+      try {
+        sessionStarted = await connector.startSession(
+          workingDirectory: workspaceRoot,
+        );
+      } on Object {
+        await connector.close();
+        rethrow;
+      }
+      if (!sessionStarted) {
+        await connector.close();
+        return FlowHeroLanguageRuntime._(
+          mode: FlowHeroLanguageMode.degraded,
+          statusLine: 'styio_lspd 会话未就绪 · 本地启发式分析',
+          providerId: '',
+          workspaceRoot: workspaceRoot,
+        );
+      }
       return FlowHeroLanguageRuntime._(
         mode: FlowHeroLanguageMode.live,
         statusLine: 'styio_lspd',
@@ -200,29 +218,54 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
   }
 
   @override
-  final FlowHeroLanguageMode mode;
+  FlowHeroLanguageMode get mode => _mode == FlowHeroLanguageMode.live && !live
+      ? FlowHeroLanguageMode.degraded
+      : _mode;
+
+  final FlowHeroLanguageMode _mode;
   @override
   final String providerId;
   @override
   final String workspaceRoot;
 
   @override
-  String statusLine;
+  String get statusLine => _mode == FlowHeroLanguageMode.live && !live
+      ? 'styio_lspd 会话不可用 · 本地启发式分析'
+      : _statusLine;
+
+  String _statusLine;
 
   lang.StyioLanguageService? _service;
   lang.StyioServiceAnalysisDriver? _driver;
   lang.LspStyioServiceConnector? _connector;
   final Map<String, int> _revisions = <String, int>{};
+  Object? _probeOwner;
   bool _disposed = false;
 
   @override
-  bool get live => mode == FlowHeroLanguageMode.live && _service != null;
+  bool get live =>
+      _mode == FlowHeroLanguageMode.live &&
+      !_disposed &&
+      _service != null &&
+      (_connector?.isSessionActive ?? false);
 
   /// The server version advertised at `initialize`, once observed.
   @override
   String? get providerVersion {
     final version = _connector?.capabilities?.serverVersion;
     return version == null || version.isEmpty ? null : version;
+  }
+
+  @override
+  void activateRoute() {
+    if (!live || _probeOwner != null) return;
+    _probeOwner = StyioLanguageServiceProbe.report(
+      StyioLanguageServiceProbe(
+        realServiceAvailable: true,
+        providerId: 'styio_lspd',
+        version: providerVersion ?? '',
+      ),
+    );
   }
 
   /// The routed service handed to the engine, or null when not live.
@@ -261,10 +304,16 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
       final authoritative =
           report.usedFreshStyioServiceResponse &&
           response.succeeded &&
-          response.parserEngine == 'styio-lspd';
+          response.parserEngine == 'styio-lspd' &&
+          lang.lookupStyioServiceCapabilityValue(
+                response.capabilityStates,
+                lang.StyioServiceCapability.diagnostics,
+              ) ==
+              'available' &&
+          (_connector?.isSessionActive ?? false);
       final version = providerVersion;
       if (version != null && version.isNotEmpty) {
-        statusLine = 'styio_lspd $version';
+        _statusLine = 'styio_lspd $version';
       }
       return FlowHeroLanguageResult(
         analysis: report.analysis,
@@ -289,7 +338,9 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
       return;
     }
     _disposed = true;
-    StyioLanguageServiceProbe.clear();
+    final Object? probeOwner = _probeOwner;
+    _probeOwner = null;
+    if (probeOwner != null) StyioLanguageServiceProbe.clear(owner: probeOwner);
     await _connector?.close();
     _service = null;
     _driver = null;

@@ -16,16 +16,19 @@ import 'flow_model.dart';
 import 'palette.dart';
 import 'workspace_picker.dart';
 
-/// Boots the execution route for a given stored toolchain selection. Injected
-/// so the controller can re-boot after the user saves a binary.
+/// Boots the execution route for the exact workspace and toolchain selection
+/// that will own it.
 typedef FlowHeroExecutionBoot =
     Future<FlowHeroExecutionSource> Function(
+      String workspaceRoot,
       FlowHeroToolchainSelection selection,
     );
 
-/// Boots the language service for a given stored toolchain selection.
+/// Boots the language service for the exact workspace and toolchain selection
+/// that will own it.
 typedef FlowHeroLanguageBoot =
     Future<FlowHeroLanguageSession> Function(
+      String workspaceRoot,
       FlowHeroToolchainSelection selection,
     );
 
@@ -100,13 +103,57 @@ class HeroEdge {
 }
 
 class ChatMsg {
-  const ChatMsg(this.who, this.text, {this.receipt = false, this.demo = false});
+  const ChatMsg(
+    this.who,
+    this.text, {
+    this.receipt = false,
+    this.demo = false,
+    this.executionOrigin,
+  });
   final String who;
   final String text;
   final bool receipt;
 
   /// True for demo-only scripted text, never presented as a live Agent reply.
   final bool demo;
+
+  /// Workspace/toolchain identity that produced a local execution result.
+  /// Kept as structured in-memory provenance; the UI never prints the path.
+  final FlowHeroExecutionOrigin? executionOrigin;
+}
+
+/// The route identity captured when a local operation starts.
+class FlowHeroExecutionOrigin {
+  const FlowHeroExecutionOrigin({
+    required this.workspaceRoot,
+    required this.toolchainSelection,
+  });
+
+  final String workspaceRoot;
+  final FlowHeroToolchainSelection toolchainSelection;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FlowHeroExecutionOrigin &&
+      other.workspaceRoot == workspaceRoot &&
+      other.toolchainSelection == toolchainSelection;
+
+  @override
+  int get hashCode => Object.hash(workspaceRoot, toolchainSelection);
+}
+
+class _FlowHeroRouteIdentity extends FlowHeroExecutionOrigin {
+  const _FlowHeroRouteIdentity({
+    required super.workspaceRoot,
+    required super.toolchainSelection,
+  });
+}
+
+class _FlowHeroActiveExecution {
+  const _FlowHeroActiveExecution({required this.source, required this.origin});
+
+  final FlowHeroExecutionSource source;
+  final FlowHeroExecutionOrigin origin;
 }
 
 /// One real source line shown by the dock, numbered from the active buffer.
@@ -125,6 +172,8 @@ class FlowHeroController extends ChangeNotifier {
     FlowHeroWorkspaceStore? workspaceStore,
     FlowHeroWorkspacePicker? workspacePicker,
     String initialWorkspaceRoot = '',
+    FlowHeroToolchainSelection initialToolchainSelection =
+        const FlowHeroToolchainSelection(),
     FlowHeroModelConfigStore? modelConfigStore,
     FlowHeroProviderConfigWriter? providerConfigWriter,
     FlowHeroAgentSecretStore? agentSecretStore,
@@ -151,9 +200,11 @@ class FlowHeroController extends ChangeNotifier {
     _toolchainProbe = toolchainProbe;
     _workspaceStore = workspaceStore;
     _workspacePicker = workspacePicker ?? pickFlowHeroWorkspaceDirectory;
+    _startupRestorePending = _workspaceStore != null || _toolchainStore != null;
     _workspaceRoot = resolveFlowHeroWorkspaceRoot(
       selected: initialWorkspaceRoot,
     );
+    _toolchainSelection = initialToolchainSelection;
     bridge.setWorkspaceRoot(_workspaceRoot);
     // The agent runtime must not be spawned without a provider configuration:
     // it would exit 78 and the link would be red for an invisible reason. The
@@ -170,8 +221,8 @@ class FlowHeroController extends ChangeNotifier {
       ),
     );
     unawaited(_bootModelConfig());
-    _toolchainStartInFlight = _startToolchain();
-    workspaceBootSettled = _bootWorkspaceSelection();
+    _executionRoute = _execution == null ? null : _desiredRoute;
+    workspaceBootSettled = _initializeRoutes();
     refreshProjection();
   }
 
@@ -196,27 +247,56 @@ class FlowHeroController extends ChangeNotifier {
   /// The real Styio language stack when FlowHeroApp booted one. Null until the
   /// async probe answers; the engine stays on its heuristic meanwhile.
   FlowHeroLanguageSession? _languageRuntime;
+  _FlowHeroRouteIdentity? _languageRoute;
+  bool _languageBootInFlight = false;
 
-  FlowHeroLanguageMode get languageMode =>
-      _languageRuntime?.mode ?? FlowHeroLanguageMode.unavailable;
+  FlowHeroLanguageMode get languageMode {
+    if (_languageRoute != _desiredRoute) {
+      return FlowHeroLanguageMode.unavailable;
+    }
+    final FlowHeroLanguageSession? runtime = _languageRuntime;
+    if (runtime == null) return FlowHeroLanguageMode.unavailable;
+    if (runtime.mode == FlowHeroLanguageMode.live && !runtime.live) {
+      return FlowHeroLanguageMode.degraded;
+    }
+    return runtime.mode;
+  }
 
-  String get languageStatusLine =>
-      _languageRuntime?.statusLine ?? '未接线 · 本地启发式分析';
+  String get languageStatusLine {
+    if (_languageRoute != _desiredRoute) {
+      return _languageBootInFlight ? '语言服务探测中' : '未接线 · 本地启发式分析';
+    }
+    final FlowHeroLanguageSession? runtime = _languageRuntime;
+    if (runtime == null) return '未接线 · 本地启发式分析';
+    if (runtime.mode == FlowHeroLanguageMode.live && !runtime.live) {
+      return '语言会话不可用 · 本地启发式分析';
+    }
+    return runtime.statusLine;
+  }
 
-  String? get languageProviderVersion => _languageRuntime?.providerVersion;
+  String? get languageProviderVersion => _languageRoute == _desiredRoute
+      ? _languageRuntime?.providerVersion
+      : null;
 
-  bool get languageLive => _languageRuntime?.live ?? false;
+  bool get languageLive =>
+      _languageRoute == _desiredRoute && (_languageRuntime?.live ?? false);
 
-  /// Called by FlowHeroApp once its startup probe returns. The engine always
-  /// receives the runtime so it can mark the heuristic as a degraded route.
+  /// Attaches a route that has already completed its startup handshake.
   void attachLanguageService(
     FlowHeroLanguageSession runtime, {
     FlowHeroToolchainSelection? selection,
   }) {
+    if (_disposed ||
+        runtime.workspaceRoot != _workspaceRoot ||
+        (selection != null && selection != _toolchainSelection)) {
+      unawaited(runtime.dispose());
+      return;
+    }
     final FlowHeroLanguageSession? previous = _languageRuntime;
     if (previous != null) unawaited(previous.dispose());
+    runtime.activateRoute();
     _languageRuntime = runtime;
-    _languageBootedSelection = selection ?? _toolchainSelection;
+    _languageRoute = _desiredRoute;
     engine.attachLanguageService(runtime);
     notifyListeners();
   }
@@ -299,6 +379,7 @@ class FlowHeroController extends ChangeNotifier {
   }
 
   void _onEngineChanged() {
+    if (_disposed) return;
     _syncDemoMode();
     final String signature = _signature();
     if (signature != _projectionSignature) {
@@ -525,6 +606,17 @@ class FlowHeroController extends ChangeNotifier {
   /// probe answers; the RUN/TEST controls disable themselves and name the
   /// reason whenever this route is not live.
   FlowHeroExecutionSource? _execution;
+  _FlowHeroRouteIdentity? _executionRoute;
+  final Set<FlowHeroExecutionSource> _disposeAfterExecution =
+      <FlowHeroExecutionSource>{};
+  _FlowHeroActiveExecution? _activeExecution;
+  _FlowHeroRouteIdentity? _routeActivationIdentity;
+  Future<void>? _routeActivationFuture;
+  int _routeGeneration = 0;
+  int _workspaceChoiceGeneration = 0;
+  int _toolchainChoiceGeneration = 0;
+  FlowHeroToolchainSelection? _pendingRestoredToolchainSelection;
+  Future<void> _workspacePersistenceTail = Future<void>.value();
 
   /// Where the real execution has reached. Driven only by process events, not
   /// by a timer — there is no animated stand-in for progress.
@@ -538,27 +630,40 @@ class FlowHeroController extends ChangeNotifier {
 
   bool quickOpenVisible = false;
   bool _disposed = false;
+  bool _startupRestorePending = false;
+  bool _toolchainSavePending = false;
 
   FlowHeroExecutionSource? get executionSource => _execution;
 
-  bool get executionLive => _execution?.live ?? false;
+  bool get executionLive =>
+      _executionRoute == _desiredRoute && (_execution?.live ?? false);
 
-  /// True while the route is being probed and nothing is known yet: the strip
-  /// must say so instead of presenting the unwired state as a resolved failure.
-  /// A re-boot keeps the previous route visible, so no dead frame flashes.
+  /// True while the current route is being probed and has no attached source.
+  /// The strip names the pending probe instead of calling it an unwired route.
   bool get executionProbing => _executionBootInFlight && _execution == null;
 
-  bool get executionBusy =>
-      executionPhase == FlowHeroExecutionPhase.pending ||
-      executionPhase == FlowHeroExecutionPhase.running;
+  bool get executionBusy => _activeExecution != null;
 
   /// True only when a real pafio invocation can start right now.
-  bool get canExecute => executionLive && !executionBusy;
+  bool get canExecute =>
+      executionLive &&
+      !executionBusy &&
+      !_executionBootInFlight &&
+      !_startupRestorePending &&
+      !_toolchainSavePending;
 
   /// Why RUN/TEST cannot start; empty while [canExecute].
   String get executionUnavailableReason {
     final FlowHeroExecutionSource? source = _execution;
-    if (source == null) return '未接线 · 未配置执行服务';
+    if (_startupRestorePending) return '正在恢复工作区和工具链…';
+    if (_toolchainSavePending) return '正在保存工具链选择…';
+    final _FlowHeroActiveExecution? active = _activeExecution;
+    if (active != null && active.origin != _desiredRoute) {
+      return '切换前的工作区/工具链仍有执行在进行';
+    }
+    if (source == null) {
+      return _executionBootInFlight ? '执行服务探测中…' : '未接线 · 未配置执行服务';
+    }
     if (source.live) return executionBusy ? '已有一次执行在进行' : '';
     return source.unavailableReason.isEmpty
         ? '执行服务不可用'
@@ -566,21 +671,39 @@ class FlowHeroController extends ChangeNotifier {
   }
 
   /// The strip's readout: a real phase or an honest unavailable reason.
-  String get executionStatusLabel => switch (executionPhase) {
-    FlowHeroExecutionPhase.pending => '启动中…',
-    FlowHeroExecutionPhase.running => '执行中…',
-    FlowHeroExecutionPhase.succeeded =>
-      lastExecutionOutcome?.statusLine ?? '通过',
-    FlowHeroExecutionPhase.failed => lastExecutionOutcome?.statusLine ?? '失败',
-    FlowHeroExecutionPhase.idle =>
-      executionLive
-          ? (_execution?.statusLine ?? '就绪')
-          : executionUnavailableReason,
-  };
+  String get executionStatusLabel {
+    final _FlowHeroActiveExecution? active = _activeExecution;
+    if (active != null && active.origin != _desiredRoute) {
+      return '切换前的工作区/工具链仍有执行在进行';
+    }
+    if (_toolchainSavePending && active == null) return '正在保存工具链选择…';
+    return switch (executionPhase) {
+      FlowHeroExecutionPhase.pending => '启动中…',
+      FlowHeroExecutionPhase.running => '执行中…',
+      FlowHeroExecutionPhase.succeeded =>
+        lastExecutionOutcome?.statusLine ?? '通过',
+      FlowHeroExecutionPhase.failed => lastExecutionOutcome?.statusLine ?? '失败',
+      FlowHeroExecutionPhase.idle =>
+        executionLive
+            ? (_execution?.statusLine ?? '就绪')
+            : executionUnavailableReason,
+    };
+  }
 
-  /// Called by FlowHeroApp once its startup probe returns.
+  /// The origin currently owning Flow Hero's workspace/toolchain route.
+  FlowHeroExecutionOrigin get executionOrigin => _desiredRoute;
+
+  bool executionOriginIsCurrent(FlowHeroExecutionOrigin? origin) =>
+      origin == _desiredRoute;
+
+  /// Attaches a source supplied by an embedding host to the current route.
   void attachExecutionSource(FlowHeroExecutionSource? source) {
+    final FlowHeroExecutionSource? previous = _execution;
+    if (previous != null && previous != source) {
+      _retireExecutionSource(previous);
+    }
     _execution = source;
+    _executionRoute = source == null ? null : _desiredRoute;
     executionPhase = FlowHeroExecutionPhase.idle;
     lastExecutionOutcome = null;
     notifyListeners();
@@ -589,40 +712,79 @@ class FlowHeroController extends ChangeNotifier {
   /// Runs [kind] through the real route and posts the real receipt.
   Future<void> runExecution(FlowHeroExecutionKind kind) async {
     final FlowHeroExecutionSource? source = _execution;
-    if (source == null || !source.live || executionBusy || _disposed) {
+    final _FlowHeroRouteIdentity origin = _desiredRoute;
+    if (source == null ||
+        _executionRoute != origin ||
+        !source.live ||
+        executionBusy ||
+        _executionBootInFlight ||
+        _startupRestorePending ||
+        _toolchainSavePending ||
+        _disposed) {
       return;
     }
+    final _FlowHeroActiveExecution active = _FlowHeroActiveExecution(
+      source: source,
+      origin: origin,
+    );
+    _activeExecution = active;
     executionPhase = FlowHeroExecutionPhase.pending;
     lastExecutionOutcome = null;
     notifyListeners();
-    final FlowHeroExecutionOutcome outcome = await source.execute(
-      kind,
-      onStarted: () {
-        if (_disposed || executionPhase != FlowHeroExecutionPhase.pending) {
-          return;
-        }
-        executionPhase = FlowHeroExecutionPhase.running;
-        notifyListeners();
-      },
-    );
-    if (_disposed) return;
-    lastExecutionOutcome = outcome;
-    executionPhase = outcome.phase;
-    // The receipt is written by pafio; the chat rail echoes the real summary.
-    postAgentNote(outcome.receiptText, receipt: true);
+    try {
+      final FlowHeroExecutionOutcome outcome = await source.execute(
+        kind,
+        onStarted: () {
+          if (_disposed ||
+              !identical(_activeExecution, active) ||
+              active.origin != _desiredRoute ||
+              executionPhase != FlowHeroExecutionPhase.pending) {
+            return;
+          }
+          executionPhase = FlowHeroExecutionPhase.running;
+          notifyListeners();
+        },
+      );
+      if (_disposed) return;
+      if (identical(_activeExecution, active) &&
+          active.origin == _desiredRoute) {
+        lastExecutionOutcome = outcome;
+        executionPhase = outcome.phase;
+      }
+      // The receipt remains attached to the route that produced it, including
+      // when that route is no longer the current workspace.
+      postAgentNote(
+        outcome.receiptText,
+        receipt: true,
+        executionOrigin: active.origin,
+      );
+    } finally {
+      if (identical(_activeExecution, active)) _activeExecution = null;
+      if (_disposeAfterExecution.remove(source)) unawaited(source.dispose());
+      if (!_disposed) notifyListeners();
+    }
   }
 
   /// Asks the running child to stop. Says so when the route cannot cancel.
   Future<void> cancelExecution() async {
-    final FlowHeroExecutionSource? source = _execution;
-    if (source == null || !executionBusy) return;
-    final bool accepted = await source.cancel();
+    final _FlowHeroActiveExecution? active = _activeExecution;
+    if (active == null) return;
+    final bool accepted = await active.source.cancel();
     if (!accepted && !_disposed) {
-      postAgentNote('无法中断 · 本地进程管理器不支持取消。');
+      postAgentNote('无法中断 · 本地进程管理器不支持取消。', executionOrigin: active.origin);
+    }
+  }
+
+  void _retireExecutionSource(FlowHeroExecutionSource source) {
+    if (identical(_activeExecution?.source, source)) {
+      _disposeAfterExecution.add(source);
+    } else {
+      unawaited(source.dispose());
     }
   }
 
   void clearExecution() {
+    if (_activeExecution != null) return;
     if (executionPhase == FlowHeroExecutionPhase.idle &&
         lastExecutionOutcome == null) {
       return;
@@ -685,74 +847,197 @@ class FlowHeroController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Boots the route with what is known now, then adopts a stored selection.
-  ///
-  /// Booting first keeps startup honest and fast: an empty workspace already
-  /// answers without touching the store. A stored selection that the boot did
-  /// not already use re-boots exactly once.
-  Future<void> _startToolchain() async {
-    await _rebootExecution();
-    await _adoptStoredToolchainSelection();
-  }
-
-  Future<void> _adoptStoredToolchainSelection() async {
-    FlowHeroToolchainSelection? loaded;
-    try {
-      loaded = await _toolchainStore?.load();
-    } on Object {
-      // A failed read leaves the selection empty; the dialog still works.
-      loaded = null;
-    }
-    if (loaded == null || _disposed) return;
-    _toolchainSelection = loaded;
-    notifyListeners();
-    if (_bootedSelection != loaded) await _rebootExecution();
-    // A stored Styio compiler also belongs to the language service; re-probe
-    // it unless that route already booted with this exact selection.
-    if (loaded.styioPath.isNotEmpty &&
-        _languageBoot != null &&
-        _languageBootedSelection != loaded) {
-      await _rebootLanguageService();
-    }
-  }
-
-  /// Re-probes the execution route with the current selection. A no-op when no
-  /// boot route was injected (the caller owns the source).
-  Future<void> retryExecutionBoot() => _rebootExecution();
-
-  FlowHeroToolchainSelection? _bootedSelection;
-  FlowHeroToolchainSelection? _languageBootedSelection;
   bool _executionBootInFlight = false;
 
-  /// The constructor's execution/toolchain startup. A workspace adoption waits
-  /// for it so the switch is the last route change, not a race.
-  Future<void>? _toolchainStartInFlight;
+  _FlowHeroRouteIdentity get _desiredRoute => _FlowHeroRouteIdentity(
+    workspaceRoot: _workspaceRoot,
+    toolchainSelection: _toolchainSelection,
+  );
 
-  Future<void> _rebootExecution() async {
-    final FlowHeroExecutionBoot? boot = _executionBoot;
-    if (boot == null || _disposed) return;
-    final FlowHeroToolchainSelection selection = _toolchainSelection;
-    // Nothing is known until this boot answers: announce the probe so the strip
-    // does not present the unwired state as a resolved failure.
-    _executionBootInFlight = true;
-    notifyListeners();
+  /// Loads both persisted choices before starting either route. Manual choices
+  /// made while a store read is pending supersede that read.
+  Future<void> _initializeRoutes() async {
+    final int workspaceGeneration = _workspaceChoiceGeneration;
+    final int toolchainGeneration = _toolchainChoiceGeneration;
+    unawaited(_activateCurrentRoutes());
+    final Future<String?> workspaceLoad = _loadWorkspaceChoice();
+    final Future<FlowHeroToolchainSelection?> toolchainLoad =
+        _loadToolchainChoice();
+    final List<Object?> loaded = await Future.wait<Object?>(<Future<Object?>>[
+      workspaceLoad,
+      toolchainLoad,
+    ]);
+    if (_disposed) return;
+
+    bool routeChanged = false;
+    bool workspaceChanged = false;
+    final String path = (loaded[0] as String? ?? '').trim();
+    if (workspaceGeneration == _workspaceChoiceGeneration &&
+        path.isNotEmpty &&
+        path != _workspaceRoot) {
+      _adoptWorkspaceRoot(path);
+      routeChanged = true;
+      workspaceChanged = true;
+    }
+    final FlowHeroToolchainSelection? selection =
+        loaded[1] as FlowHeroToolchainSelection?;
+    if (toolchainGeneration == _toolchainChoiceGeneration &&
+        selection != null) {
+      if (_toolchainSavePending) {
+        _pendingRestoredToolchainSelection = selection;
+      } else if (selection != _toolchainSelection) {
+        _toolchainSelection = selection;
+        _invalidateCurrentRoutes();
+        routeChanged = true;
+      }
+    }
+    _startupRestorePending = false;
+    if (routeChanged) notifyListeners();
+    final Future<void> activation = _activateCurrentRoutes();
+    final Future<void> reconnect = workspaceChanged
+        ? bridge.reconnect()
+        : Future<void>.value();
+    await Future.wait<void>(<Future<void>>[activation, reconnect]);
+  }
+
+  Future<String?> _loadWorkspaceChoice() async {
     try {
-      final FlowHeroExecutionSource source = await boot(selection);
-      if (_disposed) {
+      return await _workspaceStore?.load();
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<FlowHeroToolchainSelection?> _loadToolchainChoice() async {
+    try {
+      return await _toolchainStore?.load();
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> retryExecutionBoot() async {
+    if (_disposed || (_executionBoot == null && _languageBoot == null)) return;
+    _invalidateCurrentRoutes();
+    await _activateCurrentRoutes();
+  }
+
+  /// Invalidates both bound routes before any asynchronous root/toolchain work
+  /// can complete. A running invocation keeps its source until it returns.
+  void _invalidateCurrentRoutes() {
+    _routeGeneration++;
+    _routeActivationIdentity = null;
+    _routeActivationFuture = null;
+    _executionBootInFlight = false;
+    _languageBootInFlight = false;
+
+    final FlowHeroExecutionSource? execution = _execution;
+    _execution = null;
+    _executionRoute = null;
+    if (execution != null) _retireExecutionSource(execution);
+
+    final FlowHeroLanguageSession? language = _languageRuntime;
+    _languageRuntime = null;
+    _languageRoute = null;
+    engine.attachLanguageService(null);
+    if (language != null) unawaited(language.dispose());
+
+    executionPhase = FlowHeroExecutionPhase.idle;
+    lastExecutionOutcome = null;
+  }
+
+  Future<void> _activateCurrentRoutes() {
+    if (_disposed) return Future<void>.value();
+    final _FlowHeroRouteIdentity identity = _desiredRoute;
+    if (_routeActivationIdentity == identity) {
+      return _routeActivationFuture ?? Future<void>.value();
+    }
+
+    final int generation = _routeGeneration;
+    _routeActivationIdentity = identity;
+    _executionBootInFlight =
+        _executionBoot != null && _executionRoute != identity;
+    _languageBootInFlight = _languageBoot != null && _languageRoute != identity;
+    notifyListeners();
+
+    final Future<void> execution = _bootExecutionFor(identity, generation);
+    final Future<void> language = _bootLanguageFor(identity, generation);
+    final Future<void> activation =
+        Future.wait<void>(<Future<void>>[execution, language]).then<void>((_) {
+          if (!_disposed && generation == _routeGeneration) {
+            _routeActivationFuture = null;
+            notifyListeners();
+          }
+        });
+    _routeActivationFuture = activation;
+    return activation;
+  }
+
+  Future<void> _bootExecutionFor(
+    _FlowHeroRouteIdentity identity,
+    int generation,
+  ) async {
+    final FlowHeroExecutionBoot? boot = _executionBoot;
+    if (boot == null) return;
+    try {
+      final FlowHeroExecutionSource source = await boot(
+        identity.workspaceRoot,
+        identity.toolchainSelection,
+      );
+      if (_disposed ||
+          generation != _routeGeneration ||
+          identity != _desiredRoute) {
         unawaited(source.dispose());
         return;
       }
-      _bootedSelection = selection;
-      final FlowHeroExecutionSource? previous = _execution;
-      attachExecutionSource(source);
-      if (previous != null && previous != source) unawaited(previous.dispose());
+      _execution = source;
+      _executionRoute = identity;
     } on Object {
-      if (!_disposed) {
+      if (!_disposed && generation == _routeGeneration) {
         postAgentNote('执行服务重新探测失败 · 无法启动本地工具链探测。');
       }
     } finally {
-      _executionBootInFlight = false;
-      if (!_disposed) notifyListeners();
+      if (!_disposed && generation == _routeGeneration) {
+        _executionBootInFlight = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _bootLanguageFor(
+    _FlowHeroRouteIdentity identity,
+    int generation,
+  ) async {
+    final FlowHeroLanguageBoot? boot = _languageBoot;
+    if (boot == null) return;
+    try {
+      final FlowHeroLanguageSession runtime = await boot(
+        identity.workspaceRoot,
+        identity.toolchainSelection,
+      );
+      if (_disposed ||
+          generation != _routeGeneration ||
+          identity != _desiredRoute ||
+          runtime.workspaceRoot != identity.workspaceRoot ||
+          (runtime.mode == FlowHeroLanguageMode.live && !runtime.live)) {
+        unawaited(runtime.dispose());
+        return;
+      }
+      final FlowHeroLanguageSession? previous = _languageRuntime;
+      if (previous != null && previous != runtime) {
+        unawaited(previous.dispose());
+      }
+      runtime.activateRoute();
+      _languageRuntime = runtime;
+      _languageRoute = identity;
+      engine.attachLanguageService(runtime);
+    } on Object {
+      // The active workspace continues with the engine's local heuristic.
+    } finally {
+      if (!_disposed && generation == _routeGeneration) {
+        _languageBootInFlight = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -781,8 +1066,7 @@ class FlowHeroController extends ChangeNotifier {
     }
   }
 
-  /// Persists [path], re-boots the execution route, and — when Styio was the
-  /// fixed tool — re-probes the language service so it uses the new binary.
+  /// Persists [path] and re-boots both routes for the resulting selection.
   Future<FlowHeroToolchainSaveResult> saveToolchainOverride(
     FlowHeroToolchainKind kind,
     String path,
@@ -791,20 +1075,44 @@ class FlowHeroController extends ChangeNotifier {
     if (trimmed.isEmpty) {
       return const FlowHeroToolchainSaveResult.failed('未填写二进制路径');
     }
+    if (_toolchainSavePending) {
+      return const FlowHeroToolchainSaveResult.failed('正在保存工具链选择');
+    }
+    _toolchainSavePending = true;
+    notifyListeners();
     try {
       await _toolchainStore?.savePath(kind, trimmed);
     } on Object {
+      final FlowHeroToolchainSelection? restored =
+          _pendingRestoredToolchainSelection;
+      _pendingRestoredToolchainSelection = null;
+      _toolchainSavePending = false;
+      if (!_disposed && restored != null && restored != _toolchainSelection) {
+        _toolchainSelection = restored;
+        _invalidateCurrentRoutes();
+        notifyListeners();
+        await _activateCurrentRoutes();
+      } else if (!_disposed) {
+        notifyListeners();
+      }
       return const FlowHeroToolchainSaveResult.failed(
         '保存失败 · 无法写入 toolchain.json',
       );
     }
-    _toolchainSelection = _toolchainSelection.withPath(kind, trimmed);
-    notifyListeners();
+    if (_disposed) {
+      return const FlowHeroToolchainSaveResult.failed('页面已关闭');
+    }
     final bool owned = _executionBoot != null;
-    await _rebootExecution();
-    final String languageNote = kind == FlowHeroToolchainKind.styio
-        ? await _rebootLanguageService()
-        : '';
+    _toolchainSelection = _toolchainSelection.withPath(kind, trimmed);
+    _toolchainChoiceGeneration++;
+    _pendingRestoredToolchainSelection = null;
+    _invalidateCurrentRoutes();
+    _toolchainSavePending = false;
+    notifyListeners();
+    await _activateCurrentRoutes();
+    final String languageNote = _languageRuntime == null
+        ? '语言服务将在重启后使用新工具链'
+        : '语言服务已重新探测 · ${_languageRuntime!.statusLine}';
     if (!owned) {
       return FlowHeroToolchainSaveResult(
         saved: true,
@@ -820,23 +1128,6 @@ class FlowHeroController extends ChangeNotifier {
       stateLine: stateLine,
       languageNote: languageNote,
     );
-  }
-
-  Future<String> _rebootLanguageService() async {
-    final FlowHeroLanguageBoot? boot = _languageBoot;
-    if (boot == null) return '语言服务将在重启后使用新工具链';
-    try {
-      final FlowHeroLanguageSession runtime = await boot(_toolchainSelection);
-      if (_disposed) {
-        unawaited(runtime.dispose());
-        return '';
-      }
-      _languageBootedSelection = _toolchainSelection;
-      attachLanguageService(runtime, selection: _toolchainSelection);
-      return '语言服务已重新探测 · ${runtime.statusLine}';
-    } on Object {
-      return '语言服务将在重启后使用新工具链';
-    }
   }
 
   // ── theme ────────────────────────────────────────────────────
@@ -1050,37 +1341,6 @@ class FlowHeroController extends ChangeNotifier {
   @visibleForTesting
   Future<void> workspaceBootSettled = Future<void>.value();
 
-  /// Adopts a persisted selection after the (possibly deferred) store boot.
-  ///
-  /// The first attach already ran with the build-time root, so a stored root
-  /// that differs is applied through the same [switchWorkspace] path the UI
-  /// uses — without writing it back, since it is already stored. The initial
-  /// execution/toolchain boot is awaited first so its route cannot land after
-  /// the new root's and silently point at the old workspace.
-  Future<void> _bootWorkspaceSelection() async {
-    final FlowHeroWorkspaceStore? store = _workspaceStore;
-    if (store == null) return;
-    String? stored;
-    try {
-      stored = await store.load();
-    } on Object {
-      stored = null;
-    }
-    if (_disposed) return;
-    final String path = (stored ?? '').trim();
-    if (path.isEmpty || path == _workspaceRoot) return;
-    final Future<void>? startup = _toolchainStartInFlight;
-    if (startup != null) {
-      try {
-        await startup;
-      } on Object {
-        // A failed startup boot reports itself; the switch still proceeds.
-      }
-    }
-    if (_disposed) return;
-    await switchWorkspace(path, persist: false);
-  }
-
   /// Opens the platform directory chooser and adopts the chosen root. A cancel
   /// (or a host with no chooser) leaves the current workspace untouched.
   Future<bool> pickWorkspace() async {
@@ -1099,48 +1359,61 @@ class FlowHeroController extends ChangeNotifier {
 
   /// Switches the active workspace at runtime.
   ///
-  /// Persists the choice (unless [persist] is false, used when adopting an
-  /// already-stored root), re-roots the file index, drops buffers opened from
-  /// the previous root, rebuilds the agent link on a fresh session — the Agent
-  /// binds a session to its canonical roots, so the old one must not be reused
-  /// — re-probes the execution and language routes, and re-attaches the
-  /// engine's document store for the new root.
+  /// Persists the choice (unless [persist] is false), re-roots the file index,
+  /// drops buffers opened from the previous root, immediately invalidates both
+  /// service routes, and rebuilds them for the new root. An active execution
+  /// keeps its original source and result provenance until it ends.
   Future<bool> switchWorkspace(String path, {bool persist = true}) async {
     final String root = path.trim();
     if (root.isEmpty || _disposed) return false;
+    _workspaceChoiceGeneration++;
     if (root == _workspaceRoot) {
       if (persist) await _persistWorkspace(root);
       return true;
     }
-    if (persist) await _persistWorkspace(root);
+    _adoptWorkspaceRoot(root);
+    final Future<void> persistence = persist
+        ? _persistWorkspace(root)
+        : Future<void>.value();
+    final Future<void> reconnect = bridge.reconnect();
+    final Future<void> activation = _activateCurrentRoutes();
+    await Future.wait<void>(<Future<void>>[persistence, reconnect, activation]);
+    return true;
+  }
+
+  void _adoptWorkspaceRoot(String root) {
     _workspaceRoot = root;
     workspaceFileIndex = _workspaceFileIndexFactory(root);
     if (engine.resetWorkspaceBuffers()) activeFile = engine.activeFile.name;
     bridge.setWorkspaceRoot(root);
+    _invalidateCurrentRoutes();
     notifyListeners();
-    await bridge.reconnect();
-    await _rebootExecution();
-    await _rebootLanguageService();
-    if (!_disposed) notifyListeners();
-    return true;
   }
 
-  Future<void> _persistWorkspace(String root) async {
-    try {
-      await _workspaceStore?.save(root);
-    } on Object {
-      // A failed write leaves the choice session-scoped; the applied root is
-      // still shown, so there is nothing honest to claim here.
-    }
+  Future<void> _persistWorkspace(String root) {
+    final FlowHeroWorkspaceStore? store = _workspaceStore;
+    if (store == null) return Future<void>.value();
+    final Future<void> write = _workspacePersistenceTail.then<void>((_) async {
+      try {
+        await store.save(root);
+      } on Object {
+        // A failed write leaves the choice session-scoped; the applied root is
+        // still shown, so there is nothing honest to claim here.
+      }
+    });
+    _workspacePersistenceTail = write;
+    return write;
   }
 
   // ── agent wiring ─────────────────────────────────────────────
   void _agentText(String text) {
+    if (_disposed) return;
     _adoptLiveTranscript();
     postAgentNote(text);
   }
 
   void _agentReceipt(String text) {
+    if (_disposed) return;
     _adoptLiveTranscript();
     postAgentNote(text, receipt: true);
   }
@@ -1148,7 +1421,11 @@ class FlowHeroController extends ChangeNotifier {
   void _adoptLiveTranscript() {
     if (_liveTranscript) return;
     _liveTranscript = true;
+    final List<ChatMsg> executionHistory = messages
+        .where((ChatMsg message) => message.executionOrigin != null)
+        .toList(growable: false);
     messages.clear();
+    messages.addAll(executionHistory);
   }
 
   /// SEND path: live bridge when attached, demo transcript otherwise.
@@ -1160,8 +1437,22 @@ class FlowHeroController extends ChangeNotifier {
   }
 
   /// Widgets never call notifyListeners directly — they go through these.
-  void postAgentNote(String text, {bool receipt = false, bool demo = false}) {
-    messages.add(ChatMsg('AGENT', text, receipt: receipt, demo: demo));
+  void postAgentNote(
+    String text, {
+    bool receipt = false,
+    bool demo = false,
+    FlowHeroExecutionOrigin? executionOrigin,
+  }) {
+    if (_disposed) return;
+    messages.add(
+      ChatMsg(
+        'AGENT',
+        text,
+        receipt: receipt,
+        demo: demo,
+        executionOrigin: executionOrigin,
+      ),
+    );
     notifyListeners();
   }
 
@@ -1173,6 +1464,7 @@ class FlowHeroController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _routeGeneration++;
     for (final Timer t in _demoTimers) {
       t.cancel();
     }
@@ -1182,6 +1474,17 @@ class FlowHeroController extends ChangeNotifier {
     if (language != null) unawaited(language.dispose());
     final FlowHeroExecutionSource? execution = _execution;
     if (execution != null) unawaited(execution.dispose());
+    final _FlowHeroActiveExecution? active = _activeExecution;
+    if (active != null && !identical(active.source, execution)) {
+      unawaited(active.source.dispose());
+    }
+    for (final FlowHeroExecutionSource retired in _disposeAfterExecution) {
+      if (!identical(retired, execution) &&
+          !identical(retired, active?.source)) {
+        unawaited(retired.dispose());
+      }
+    }
+    _disposeAfterExecution.clear();
     bridge.dispose();
     super.dispose();
   }

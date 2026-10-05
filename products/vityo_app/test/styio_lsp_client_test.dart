@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/language/lsp/lsp.dart';
 
@@ -105,6 +107,55 @@ void main() {
     await client.close();
   });
 
+  test(
+    'serializes initialized and document writes before later requests',
+    () async {
+      server.handler = (message) {
+        if (message['method'] == 'initialize') {
+          server.respond(message['id'], styioLspdCapabilities());
+        } else if (message['method'] == 'textDocument/documentSymbol') {
+          server.respond(message['id'], <Object?>[]);
+        }
+      };
+      final transport = _WriteGateTransport(server.transport);
+      final client = StyioLspClient(transport: transport);
+      await client.initialize(rootUri: Uri.parse('file:///workspace'));
+
+      transport.holdNextWrite();
+      final initialized = client.sendInitialized();
+      final opened = client.didOpen(
+        uri: 'file:///workspace/main.styio',
+        languageId: 'styio',
+        version: 1,
+        text: '#main := () => {}\n',
+      );
+      final symbols = client.documentSymbol(
+        uri: 'file:///workspace/main.styio',
+      );
+      await pump();
+      await pump();
+
+      expect(
+        server.received.where((message) => message['method'] != 'initialize'),
+        isEmpty,
+      );
+      transport.releaseWrite();
+      await Future.wait(<Future<void>>[initialized, opened]);
+      expect(await symbols, isEmpty);
+      expect(
+        server.received
+            .where((message) => message['method'] != 'initialize')
+            .map((message) => message['method']),
+        <Object?>[
+          'initialized',
+          'textDocument/didOpen',
+          'textDocument/documentSymbol',
+        ],
+      );
+      await client.close();
+    },
+  );
+
   test('publishDiagnostics notifications stream to the client', () async {
     server.handler = (message) {
       if (message['method'] == 'initialize') {
@@ -135,6 +186,26 @@ void main() {
     expect(resolved.uri, 'file:///workspace/main.styio');
     expect(resolved.version, 3);
     expect(resolved.diagnostics, hasLength(1));
+    await client.close();
+  });
+
+  test('publishDiagnostics accepts the protocol optional version', () async {
+    server.handler = (message) {
+      if (message['method'] == 'initialize') {
+        server.respond(message['id'], styioLspdCapabilities());
+      }
+    };
+    final client = StyioLspClient(transport: server.transport);
+    await client.initialize(rootUri: Uri.parse('file:///workspace'));
+
+    final notification = client.diagnostics.first;
+    server.notify('textDocument/publishDiagnostics', <String, Object?>{
+      'uri': 'file:///workspace/main.styio',
+      'diagnostics': <Object?>[],
+    });
+
+    final resolved = await notification;
+    expect(resolved.version, isNull);
     await client.close();
   });
 
@@ -229,4 +300,38 @@ void main() {
     await expectation;
     await client.close();
   });
+}
+
+class _WriteGateTransport implements LspByteTransport {
+  _WriteGateTransport(this._delegate);
+
+  final LspMemoryTransport _delegate;
+  Completer<void>? _writeGate;
+  var _holdNextWrite = false;
+
+  @override
+  Stream<List<int>> get input => _delegate.input;
+
+  void holdNextWrite() {
+    _writeGate = Completer<void>();
+    _holdNextWrite = true;
+  }
+
+  void releaseWrite() {
+    _writeGate!.complete();
+    _writeGate = null;
+  }
+
+  @override
+  Future<void> write(List<int> bytes) async {
+    final gate = _holdNextWrite ? _writeGate : null;
+    _holdNextWrite = false;
+    if (gate != null) {
+      await gate.future;
+    }
+    await _delegate.write(bytes);
+  }
+
+  @override
+  Future<void> close() => _delegate.close();
 }

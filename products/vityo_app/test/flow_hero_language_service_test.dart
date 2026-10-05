@@ -54,6 +54,41 @@ class _LiveService extends LocalStyioLanguageService
   }
 }
 
+class _DegradedSession extends LocalStyioLanguageService
+    implements FlowHeroLanguageSession {
+  _DegradedSession(this.workspaceRoot);
+
+  @override
+  final String workspaceRoot;
+
+  @override
+  FlowHeroLanguageMode get mode => FlowHeroLanguageMode.degraded;
+
+  @override
+  String get providerId => '';
+
+  @override
+  String get statusLine => '未配置工作区 · 本地启发式分析';
+
+  @override
+  String? get providerVersion => null;
+
+  @override
+  bool get live => false;
+
+  @override
+  void activateRoute() {}
+
+  @override
+  Future<FlowHeroLanguageResult?> analyzeFresh(
+    DocumentState document, {
+    String? filePath,
+  }) async => null;
+
+  @override
+  Future<void> dispose() async {}
+}
+
 lang.StyioDocumentAnalysis _analysisFor(
   String text, {
   required String ident,
@@ -291,7 +326,7 @@ void main() {
       addTearDown(() => P.dark = true);
       await tester.pumpWidget(
         FlowHeroApp(
-          languageBoot: (_) => FlowHeroLanguageRuntime.boot(workspaceRoot: ''),
+          languageBoot: (String root, _) async => _DegradedSession(root),
         ),
       );
       await tester.pump();

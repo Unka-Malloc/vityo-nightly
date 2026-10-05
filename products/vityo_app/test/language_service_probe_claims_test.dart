@@ -43,6 +43,30 @@ void main() {
     );
   });
 
+  test('a retired route cannot clear the newer route probe', () {
+    addTearDown(() => StyioLanguageServiceProbe.clear());
+    final Object retiredOwner = StyioLanguageServiceProbe.report(
+      const StyioLanguageServiceProbe(
+        realServiceAvailable: true,
+        providerId: 'styio_lspd',
+        version: 'old',
+      ),
+    );
+    final Object currentOwner = StyioLanguageServiceProbe.report(
+      const StyioLanguageServiceProbe(
+        realServiceAvailable: true,
+        providerId: 'styio_lspd',
+        version: 'current',
+      ),
+    );
+
+    StyioLanguageServiceProbe.clear(owner: retiredOwner);
+    expect(StyioLanguageServiceProbe.current.version, 'current');
+
+    StyioLanguageServiceProbe.clear(owner: currentOwner);
+    expect(StyioLanguageServiceProbe.current.realServiceAvailable, isFalse);
+  });
+
   test('the cloud contract line reflects the real local route', () {
     final unavailable = buildCloudAdapterCapability(
       supportsCloudExecution: false,

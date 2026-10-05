@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:vityo_app/src/view_render/flow_hero/engine/machine.dart';
 import 'package:vityo_app/src/view_ide/flow_hero/execution_service.dart';
 import 'package:vityo_app/src/view_render/flow_hero/flow_hero.dart';
 import 'package:vityo_app/src/view_ide/flow_hero/language_service.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/model_config.dart';
 import 'package:vityo_app/src/view_render/flow_hero/palette.dart';
 import 'package:vityo_app/src/view_render/flow_hero/settings_panel.dart';
 import 'package:vityo_app/src/view_ide/flow_hero/toolchain_store.dart';
@@ -22,16 +24,24 @@ class _FakeWorkspaceStore implements FlowHeroWorkspaceStore {
   _FakeWorkspaceStore({this.stored});
 
   String? stored;
+  Completer<String?>? loadGate;
+  final Map<String, Completer<void>> saveGates = <String, Completer<void>>{};
+  final List<String> saveStarts = <String>[];
   int saves = 0;
 
   @override
   bool get persistent => true;
 
   @override
-  Future<String?> load() async => stored;
+  Future<String?> load() async {
+    final Completer<String?>? gate = loadGate;
+    return gate == null ? stored : await gate.future;
+  }
 
   @override
   Future<void> save(String path) async {
+    saveStarts.add(path);
+    await saveGates[path]?.future;
     stored = path.trim();
     saves++;
   }
@@ -213,12 +223,13 @@ void main() {
         final controller = FlowHeroController(
           workspaceStore: store,
           workspaceFileIndexFactory: factory,
-          executionBoot: (FlowHeroToolchainSelection selection) async {
-            executionBoots++;
-            return _FakeExecutionSource();
-          },
-          languageBoot: (FlowHeroToolchainSelection selection) async =>
-              FlowHeroLanguageRuntime.boot(workspaceRoot: ''),
+          executionBoot:
+              (String _, FlowHeroToolchainSelection selection) async {
+                executionBoots++;
+                return _FakeExecutionSource();
+              },
+          languageBoot: (String root, FlowHeroToolchainSelection selection) =>
+              FlowHeroLanguageRuntime.boot(workspaceRoot: root),
         );
         addTearDown(controller.dispose);
         await controller.workspaceBootSettled;
@@ -300,6 +311,54 @@ void main() {
         reason: 'an adopted root is already stored; it is not written back',
       );
       expect(indexRoots, <String>['/tmp/ws-injected', '/tmp/ws-stored']);
+    });
+
+    test('a manual root choice wins over a pending startup restore', () async {
+      final store = _FakeWorkspaceStore()..loadGate = Completer<String?>();
+      final controller = FlowHeroController(
+        workspaceStore: store,
+        workspaceFileIndexFactory: factory,
+        initialWorkspaceRoot: '/tmp/ws-initial',
+        providerConfigWriter: const FlowHeroUnavailableProviderConfigWriter(),
+      );
+      addTearDown(controller.dispose);
+      final Future<void> startup = controller.workspaceBootSettled;
+
+      expect(
+        await controller.switchWorkspace('/tmp/ws-manual', persist: false),
+        isTrue,
+      );
+      store.loadGate!.complete('/tmp/ws-stale');
+      await startup;
+
+      expect(controller.workspaceRoot, '/tmp/ws-manual');
+      expect(indexRoots, <String>['/tmp/ws-initial', '/tmp/ws-manual']);
+    });
+
+    test('overlapping root writes persist in user selection order', () async {
+      final store = _FakeWorkspaceStore()
+        ..saveGates['/tmp/ws-first'] = Completer<void>();
+      final controller = FlowHeroController(
+        workspaceStore: store,
+        workspaceFileIndexFactory: factory,
+        providerConfigWriter: const FlowHeroUnavailableProviderConfigWriter(),
+      );
+      addTearDown(controller.dispose);
+      await controller.workspaceBootSettled;
+
+      final Future<bool> first = controller.switchWorkspace('/tmp/ws-first');
+      final Future<bool> second = controller.switchWorkspace('/tmp/ws-second');
+      await Future<void>.delayed(Duration.zero);
+      expect(store.saveStarts, <String>['/tmp/ws-first']);
+
+      store.saveGates['/tmp/ws-first']!.complete();
+      expect(await Future.wait<bool>(<Future<bool>>[first, second]), <bool>[
+        true,
+        true,
+      ]);
+      expect(store.saveStarts, <String>['/tmp/ws-first', '/tmp/ws-second']);
+      expect(store.stored, '/tmp/ws-second');
+      expect(controller.workspaceRoot, '/tmp/ws-second');
     });
 
     test('switching to the current root persists without rebuilding', () async {

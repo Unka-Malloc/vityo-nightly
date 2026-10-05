@@ -73,7 +73,7 @@ class FlowHeroApp extends StatefulWidget {
   /// Persistence for the user-selected pafio/styio binaries.
   final FlowHeroToolchainStore? toolchainStore;
 
-  /// The selection read by the app root for the first language probe.
+  /// The initial selection before the controller restores persisted choices.
   final FlowHeroToolchainSelection initialToolchainSelection;
 
   /// Overrides execution boot when the host supplies no execution source.
@@ -94,11 +94,6 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
   /// The store the light/dark choice is restored from and written back to.
   late final FlowHeroThemeStore? _themeStore;
 
-  /// The workspace root the boot routes launch with. Kept in step with the
-  /// controller (which owns the runtime choice) so a switch re-probes the
-  /// execution and language routes against the new root.
-  String _workspaceRoot = AgentBridge.workspaceDir.trim();
-
   @override
   void initState() {
     super.initState();
@@ -112,7 +107,8 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
       workspaceFileIndexFactory: runtime?.createWorkspaceFileIndex,
       workspaceStore: widget.workspaceStore ?? runtime?.workspaceStore,
       workspacePicker: widget.workspacePicker,
-      initialWorkspaceRoot: _workspaceRoot,
+      initialWorkspaceRoot: AgentBridge.workspaceDir.trim(),
+      initialToolchainSelection: widget.initialToolchainSelection,
       modelConfigStore: widget.modelConfigStore ?? runtime?.modelConfigStore,
       providerConfigWriter:
           widget.providerConfigWriter ?? runtime?.providerConfigWriter,
@@ -120,49 +116,14 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
       toolchainStore: widget.toolchainStore ?? runtime?.toolchainStore,
       toolchainProbe: runtime?.probeToolchain,
       // The controller owns the execution boot so it can re-probe after the
-      // user saves a binary. An injected source keeps its own route.
+      // user changes workspace or saves a binary. An injected source keeps
+      // its host-owned route.
       executionBoot: widget.executionSource != null
           ? widget.executionBoot
-          : (widget.executionBoot ??
-                (runtime == null ? null : _bootExecutionRoute)),
-      languageBoot:
-          widget.languageBoot ?? (runtime == null ? null : _bootLanguageRoute),
+          : (widget.executionBoot ?? runtime?.bootExecution),
+      languageBoot: widget.languageBoot ?? runtime?.bootLanguage,
     );
-    controller.addListener(_syncWorkspaceRoot);
-    unawaited(_bootLanguageService());
     unawaited(_restoreTheme());
-  }
-
-  /// Follows the controller's runtime workspace choice so the boot routes
-  /// below launch against the selected root, not the build-time one.
-  void _syncWorkspaceRoot() {
-    final String root = controller.workspaceRoot;
-    if (root != _workspaceRoot) _workspaceRoot = root;
-  }
-
-  Future<FlowHeroExecutionSource> _bootExecutionRoute(
-    FlowHeroToolchainSelection selection,
-  ) => runtime!.bootExecution(_workspaceRoot, selection);
-
-  Future<FlowHeroLanguageSession> _bootLanguageRoute(
-    FlowHeroToolchainSelection selection,
-  ) => runtime!.bootLanguage(_workspaceRoot, selection);
-
-  /// Probes for `styio_lspd` at startup and hands the result to the controller.
-  /// Failure is a state, never an exception: the engine keeps its local
-  /// heuristic and the settings panel says which side of the wire it is on.
-  Future<void> _bootLanguageService() async {
-    final FlowHeroLanguageBoot? boot =
-        widget.languageBoot ?? (runtime == null ? null : _bootLanguageRoute);
-    if (boot == null) return;
-    final FlowHeroToolchainSelection selection =
-        widget.initialToolchainSelection;
-    final FlowHeroLanguageSession language = await boot(selection);
-    if (!mounted) {
-      unawaited(language.dispose());
-      return;
-    }
-    controller.attachLanguageService(language, selection: selection);
   }
 
   Future<void> _restoreTheme() async {
@@ -173,7 +134,6 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
 
   @override
   void dispose() {
-    controller.removeListener(_syncWorkspaceRoot);
     controller.dispose();
     final FlowHeroFeatureRuntime? runtime = this.runtime;
     if (runtime != null) unawaited(runtime.dispose());

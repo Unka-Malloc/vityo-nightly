@@ -48,16 +48,22 @@ class StyioLanguageServiceProbe {
 
   static StyioLanguageServiceProbe _current =
       const StyioLanguageServiceProbe.absent();
+  static Object? _currentOwner;
 
   /// The most recently observed probe for this process.
   static StyioLanguageServiceProbe get current => _current;
 
-  static void report(StyioLanguageServiceProbe probe) {
+  static Object report(StyioLanguageServiceProbe probe) {
+    final Object owner = Object();
     _current = probe;
+    _currentOwner = owner;
+    return owner;
   }
 
-  static void clear() {
+  static void clear({Object? owner}) {
+    if (owner != null && !identical(owner, _currentOwner)) return;
     _current = const StyioLanguageServiceProbe.absent();
+    _currentOwner = null;
   }
 
   String get providerLabel {
