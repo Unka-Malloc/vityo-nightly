@@ -15,18 +15,19 @@ Future<void> main() async {
   final harness = await VityodTestHarness.start(
     clientId: 'agent-isolation-integration',
   );
+  // Run the SDK-only fixture directly; pub build-hook banners are not ACP.
   final registry = AgentClientRegistry(
     descriptors: <String, AgentLaunchDescriptor>{
       'healthy': AgentLaunchDescriptor(
         id: 'healthy',
         executable: Platform.resolvedExecutable,
-        arguments: <String>['run', fixture.path, 'normal'],
+        arguments: <String>[fixture.path, 'normal'],
         workingDirectory: Directory.current.path,
       ),
       'crash': AgentLaunchDescriptor(
         id: 'crash',
         executable: Platform.resolvedExecutable,
-        arguments: <String>['run', fixture.path, 'crash'],
+        arguments: <String>[fixture.path, 'crash'],
         workingDirectory: Directory.current.path,
       ),
     },

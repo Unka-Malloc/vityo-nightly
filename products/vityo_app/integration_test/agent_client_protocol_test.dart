@@ -15,12 +15,13 @@ Future<void> main() async {
   final harness = await VityodTestHarness.start(
     clientId: 'agent-protocol-integration',
   );
+  // Run the SDK-only fixture directly; pub build-hook banners are not ACP.
   final registry = AgentClientRegistry(
     descriptors: <String, AgentLaunchDescriptor>{
       'fixture': AgentLaunchDescriptor(
         id: 'fixture',
         executable: Platform.resolvedExecutable,
-        arguments: <String>['run', fixture.path, 'normal'],
+        arguments: <String>[fixture.path, 'normal'],
         workingDirectory: Directory.current.path,
       ),
     },
