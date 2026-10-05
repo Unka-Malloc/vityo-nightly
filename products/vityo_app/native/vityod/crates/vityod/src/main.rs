@@ -2112,7 +2112,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 working_directory: Some(working_directory),
                 environment: std::collections::HashMap::new(),
                 standard_input,
-                timeout: std::time::Duration::from_secs(30),
+                timeout: None,
             }) {
                 Ok(pid) => json!({"state": "running", "taskId": task_id, "pid": pid}),
                 Err(error) => {
@@ -2197,12 +2197,12 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 .get("standardInput")
                 .and_then(Value::as_str)
                 .map(|value| value.as_bytes().to_vec());
-            let timeout_millis = request
-                .params
-                .get("timeoutMillis")
-                .and_then(Value::as_u64)
-                .unwrap_or(30_000)
-                .clamp(1, 30 * 60 * 1000);
+            let timeout = match optional_task_timeout(request.params.get("timeoutMillis")) {
+                Ok(timeout) => timeout,
+                Err(error_code) => {
+                    return error_response(request, error_code, false, workspace_revision);
+                }
+            };
             match state.runtime.tasks.start(TaskLaunch {
                 id: task_id,
                 executable: std::path::PathBuf::from(executable),
@@ -2210,7 +2210,7 @@ fn response_for(state: &mut DaemonState, request: ControlEnvelope) -> ControlEnv
                 working_directory,
                 environment,
                 standard_input,
-                timeout: std::time::Duration::from_millis(timeout_millis),
+                timeout,
             }) {
                 Ok(pid) => json!({"state": "running", "pid": pid}),
                 Err(error) => {
@@ -4037,12 +4037,7 @@ fn tool_process_response(
                 .get("standardInput")
                 .and_then(Value::as_str)
                 .map(|value| value.as_bytes().to_vec());
-            let timeout_millis = request
-                .params
-                .get("timeoutMillis")
-                .and_then(Value::as_u64)
-                .unwrap_or(30_000)
-                .clamp(1, 30 * 60 * 1000);
+            let timeout = optional_task_timeout(request.params.get("timeoutMillis"))?;
             let pid = tasks
                 .start(TaskLaunch {
                     id: internal_task_id,
@@ -4051,7 +4046,7 @@ fn tool_process_response(
                     working_directory,
                     environment,
                     standard_input,
-                    timeout: std::time::Duration::from_millis(timeout_millis),
+                    timeout,
                 })
                 .map_err(task_error_code)?;
             Ok(json!({"state": "running", "taskId": task_id, "pid": pid}))
@@ -4070,6 +4065,10 @@ fn tool_process_response(
                 "stderrTruncated": snapshot.stderr_truncated,
                 "durationMillis": snapshot.duration_millis,
             }))
+        }
+        "cancel" => {
+            let exit_code = tasks.cancel(&internal_task_id).map_err(task_error_code)?;
+            Ok(json!({"state": "cancelled", "exitCode": exit_code}))
         }
         "close" => {
             tasks.remove(&internal_task_id).map_err(task_error_code)?;
@@ -4238,6 +4237,19 @@ fn bounded_request_timeout(request: &ControlEnvelope) -> std::time::Duration {
     std::time::Duration::from_millis(remaining)
 }
 
+fn optional_task_timeout(
+    timeout_millis: Option<&Value>,
+) -> Result<Option<std::time::Duration>, &'static str> {
+    let Some(timeout_millis) = timeout_millis else {
+        return Ok(None);
+    };
+    let timeout_millis = timeout_millis
+        .as_u64()
+        .filter(|timeout_millis| *timeout_millis > 0)
+        .ok_or("invalid_task_timeout")?;
+    Ok(Some(std::time::Duration::from_millis(timeout_millis)))
+}
+
 fn byte_process_error_code(error: vityod_runtime::ByteProcessError) -> &'static str {
     use vityod_runtime::ByteProcessError;
     match error {
@@ -4399,6 +4411,103 @@ mod tests {
             cursor = end;
         }
         responses
+    }
+
+    #[test]
+    fn task_timeout_is_optional_and_explicit_values_are_not_clamped() {
+        assert_eq!(optional_task_timeout(None), Ok(None));
+        assert_eq!(
+            optional_task_timeout(Some(&json!(1500))),
+            Ok(Some(std::time::Duration::from_millis(1500)))
+        );
+        assert_eq!(
+            optional_task_timeout(Some(&json!(7_200_000))),
+            Ok(Some(std::time::Duration::from_secs(7200)))
+        );
+        assert_eq!(
+            optional_task_timeout(Some(&json!(0))),
+            Err("invalid_task_timeout")
+        );
+        assert_eq!(
+            optional_task_timeout(Some(&json!(-1))),
+            Err("invalid_task_timeout")
+        );
+        assert_eq!(
+            optional_task_timeout(Some(&json!(null))),
+            Err("invalid_task_timeout")
+        );
+    }
+
+    #[test]
+    fn typed_process_cancellation_fixture() {
+        if std::env::var_os("VITYOD_TYPED_PROCESS_FIXTURE").is_some() {
+            println!("fixture-ready");
+            std::io::stdout().flush().unwrap();
+            loop {
+                std::thread::park_timeout(std::time::Duration::from_secs(60));
+            }
+        }
+    }
+
+    #[test]
+    fn typed_process_request_cancels_the_namespaced_task() {
+        let executable = std::env::current_exe().unwrap();
+        let public_task_id = "typed-client-7";
+        let internal_task_id = format!("pafio:{public_task_id}");
+        let mut tasks = vityod_runtime::ManagedTaskRegistry::new(2, 1024);
+        let mut request = ControlEnvelope {
+            protocol_version: PROTOCOL_VERSION,
+            method: "pafio.request".to_owned(),
+            request_id: Some("typed-task-start".to_owned()),
+            client_instance_id: "typed-task-client".to_owned(),
+            idempotency_key: "typed-task-start".to_owned(),
+            workspace_id: None,
+            workspace_revision: None,
+            deadline_unix_millis: u64::MAX,
+            cancellation_id: None,
+            params: json!({
+                "action": "start",
+                "taskId": public_task_id,
+                "executable": executable,
+                "arguments": ["--exact", "tests::typed_process_cancellation_fixture", "--nocapture"],
+                "environment": {"VITYOD_TYPED_PROCESS_FIXTURE": "1"}
+            })
+            .as_object()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect(),
+            capabilities: vec![],
+            unknown_fields: Default::default(),
+        };
+
+        let started = tool_process_response(&mut tasks, &request, "pafio").unwrap();
+        assert_eq!(started.get("state"), Some(&json!("running")));
+
+        let ready = (0..500).any(|_| {
+            let snapshot = tasks.snapshot(&internal_task_id).unwrap();
+            if snapshot
+                .stdout
+                .windows(b"fixture-ready".len())
+                .any(|window| window == b"fixture-ready")
+            {
+                true
+            } else if snapshot.running {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                false
+            } else {
+                false
+            }
+        });
+        if !ready {
+            let _ = tasks.cancel(&internal_task_id);
+            panic!("typed process fixture did not report readiness");
+        }
+
+        request.params.insert("action".to_owned(), json!("cancel"));
+        let cancelled = tool_process_response(&mut tasks, &request, "pafio").unwrap();
+        assert_eq!(cancelled.get("state"), Some(&json!("cancelled")));
+        assert!(cancelled.get("exitCode").and_then(Value::as_i64).is_some());
     }
 
     #[test]

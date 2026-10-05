@@ -471,7 +471,8 @@ pub struct TaskLaunch {
     pub working_directory: Option<PathBuf>,
     pub environment: HashMap<String, String>,
     pub standard_input: Option<Vec<u8>>,
-    pub timeout: std::time::Duration,
+    /// No deadline unless the caller explicitly supplies one.
+    pub timeout: Option<std::time::Duration>,
 }
 
 pub struct ManagedTaskRegistry {
@@ -490,7 +491,7 @@ struct ManagedTask {
     stdout_complete: Arc<AtomicBool>,
     stderr_complete: Arc<AtomicBool>,
     started: std::time::Instant,
-    timeout: std::time::Duration,
+    timeout: Option<std::time::Duration>,
     exit_code: Option<i32>,
     timed_out: bool,
 }
@@ -530,7 +531,7 @@ impl ManagedTaskRegistry {
         if launch.id.is_empty()
             || launch.id.len() > 256
             || launch.arguments.len() > 256
-            || launch.timeout.is_zero()
+            || launch.timeout.is_some_and(|timeout| timeout.is_zero())
             || self.tasks.contains_key(&launch.id)
             || !launch.executable.is_absolute()
             || launch
@@ -665,7 +666,11 @@ impl ManagedTaskRegistry {
             .tasks
             .get_mut(id)
             .ok_or(TaskRuntimeError::UnknownTask)?;
-        if task.exit_code.is_none() && task.started.elapsed() >= task.timeout {
+        if task.exit_code.is_none()
+            && task
+                .timeout
+                .is_some_and(|timeout| task.started.elapsed() >= timeout)
+        {
             task.timed_out = true;
             #[cfg(windows)]
             task.job.terminate();
@@ -686,7 +691,9 @@ impl ManagedTaskRegistry {
         if task.exit_code.is_some()
             && !task.output_complete()
             && !task.timed_out
-            && task.started.elapsed() >= task.timeout
+            && task
+                .timeout
+                .is_some_and(|timeout| task.started.elapsed() >= timeout)
         {
             task.timed_out = true;
             #[cfg(windows)]
@@ -1301,7 +1308,7 @@ mod tests {
                 working_directory: None,
                 environment: HashMap::new(),
                 standard_input: None,
-                timeout: std::time::Duration::from_secs(3),
+                timeout: Some(std::time::Duration::from_secs(3)),
             })
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
@@ -1333,7 +1340,7 @@ mod tests {
                 working_directory: None,
                 environment: HashMap::new(),
                 standard_input: None,
-                timeout: std::time::Duration::from_secs(3),
+                timeout: Some(std::time::Duration::from_secs(3)),
             })
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
@@ -1348,6 +1355,71 @@ mod tests {
         assert_eq!(snapshot.stdout, b"stdout-value");
         assert_eq!(snapshot.stderr, b"stderr-value");
         tasks.remove("drain").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_task_without_deadline_waits_for_natural_completion() {
+        let mut tasks = ManagedTaskRegistry::new(2, 1024);
+        tasks
+            .start(TaskLaunch {
+                id: "unbounded".into(),
+                executable: PathBuf::from("/bin/sh"),
+                arguments: vec!["-c".into(), "sleep 0.25; printf finished".into()],
+                working_directory: None,
+                environment: HashMap::new(),
+                standard_input: None,
+                timeout: None,
+            })
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let running = tasks.snapshot("unbounded").unwrap();
+        assert!(running.running);
+        assert!(!running.timed_out);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let completed = loop {
+            let snapshot = tasks.snapshot("unbounded").unwrap();
+            if !snapshot.running || std::time::Instant::now() >= deadline {
+                break snapshot;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(!completed.running);
+        assert!(!completed.timed_out);
+        assert_eq!(completed.exit_code, Some(0));
+        assert_eq!(completed.stdout, b"finished");
+        tasks.remove("unbounded").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_task_honors_an_explicit_deadline() {
+        let mut tasks = ManagedTaskRegistry::new(2, 1024);
+        tasks
+            .start(TaskLaunch {
+                id: "bounded".into(),
+                executable: PathBuf::from("/bin/sh"),
+                arguments: vec!["-c".into(), "sleep 1".into()],
+                working_directory: None,
+                environment: HashMap::new(),
+                standard_input: None,
+                timeout: Some(std::time::Duration::from_millis(30)),
+            })
+            .unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let snapshot = loop {
+            let snapshot = tasks.snapshot("bounded").unwrap();
+            if (snapshot.timed_out && !snapshot.running) || std::time::Instant::now() >= deadline {
+                break snapshot;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(snapshot.timed_out);
+        assert!(!snapshot.running);
+        tasks.remove("bounded").unwrap();
     }
 
     #[cfg(unix)]

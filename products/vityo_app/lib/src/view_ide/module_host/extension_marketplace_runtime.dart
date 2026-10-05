@@ -399,7 +399,7 @@ class ExtensionMarketplacePlatformIo {
             'Extension package must use HTTPS (loopback HTTP is allowed for local development).',
       );
     }
-    final response = await _networkManager.getBytes(uri);
+    final response = await _networkManager.getBytes(uri, timeout: null);
     if (!response.succeeded) {
       return ExtensionMarketplaceIoOperationResult.blocked(
         request: request,

@@ -11,6 +11,7 @@ enum BottomSurfaceTab {
   runtime,
   commands,
   navigate,
+  quickOpen,
   locations,
   documentLinks,
   documentHighlights,
@@ -97,6 +98,7 @@ class ShellModel extends ShellRuntimeModel {
     super.workspaceQuickFixTelemetryStore,
     super.workspaceQuickFixTelemetryWorkspaceId,
     super.workspaceTextSearchProvider,
+    super.diagnosticsPanelStateStore,
     ShellLayoutPreferenceController? shellLayoutPreferenceController,
     this.shellLayoutPreferencesStore,
   }) : shellLayoutPreferenceController =
@@ -343,8 +345,17 @@ class ShellModel extends ShellRuntimeModel {
         selectWorkbenchRoute(BottomSurfaceTab.commandPalette);
         return;
       case AppCommandId.quickOpen:
-        await super.executeCommand(commandId);
-        selectWorkbenchRoute(BottomSurfaceTab.navigate);
+        selectWorkbenchRoute(BottomSurfaceTab.quickOpen);
+        if (!shellLayoutPreferenceController
+            .preferences
+            .primarySidebarVisible) {
+          setPrimarySidebarVisible(true);
+        }
+        appendLog('Quick open surface opened.');
+        return;
+      case AppCommandId.showWorkspaceOutline:
+        selectWorkbenchRoute(BottomSurfaceTab.outline);
+        appendLog('Document outline opened.');
         return;
       case AppCommandId.showRecentLocations:
       case AppCommandId.showWorkspaceDocumentLinks:
@@ -357,7 +368,6 @@ class ShellModel extends ShellRuntimeModel {
       case AppCommandId.showWorkspaceTypeHierarchy:
       case AppCommandId.navigateBack:
       case AppCommandId.navigateForward:
-      case AppCommandId.showWorkspaceOutline:
       case AppCommandId.renameWorkspaceSymbol:
       case AppCommandId.searchWorkspaceSymbols:
       case AppCommandId.findWorkspaceReferences:
@@ -449,6 +459,7 @@ bool _isDockedWorkbenchRoute(BottomSurfaceTab route) {
     BottomSurfaceTab.problems ||
     BottomSurfaceTab.testing ||
     BottomSurfaceTab.debug ||
+    BottomSurfaceTab.outline ||
     BottomSurfaceTab.agent => true,
     _ => false,
   };

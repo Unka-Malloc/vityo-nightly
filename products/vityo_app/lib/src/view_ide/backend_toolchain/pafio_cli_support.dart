@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../environment/configuration/host_environment.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process.dart';
 import 'project_graph_contract.dart';
@@ -73,7 +74,10 @@ Future<T> runPafioCommand<T>({
       statusMessage: 'The local service is not available for $command.',
     );
   }
-  final pafioBinary = await resolvePafioBinary(managers);
+  final pafioBinary = await resolvePafioBinary(
+    managers,
+    environment: readHostEnvironment(),
+  );
   if (pafioBinary == null) {
     return blockedPafioCommandResult(
       factory: factory,

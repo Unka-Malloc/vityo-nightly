@@ -3,6 +3,7 @@ export 'extension_host_supervisor_execution.dart';
 export 'extension_host_sandbox_launchers.dart';
 export 'runtime_replay_summary.dart';
 export 'runtime_output_channels.dart';
+export 'runtime_output_producer_bindings.dart';
 export 'runtime_output_channel_history_store.dart';
 export 'runtime_task_history_store.dart';
 export 'runtime_task_lifecycle.dart';

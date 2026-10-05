@@ -68,6 +68,11 @@ DAEMON_PACKAGE_PATHS = {
     "windows": Path("components/vityod.exe"),
     "macos": Path("Contents/Helpers/vityod"),
 }
+PAFIO_PACKAGE_PATHS = {
+    "linux": Path("components/pafio"),
+    "windows": Path("components/pafio.exe"),
+    "macos": Path("Contents/Helpers/pafio"),
+}
 RUST_COVERAGE_CLI_VERSION = "0.9.0"
 
 
@@ -717,11 +722,12 @@ def run_build_stage(options: DeliveryOptions, *, runner: Runner = run_command) -
     code = runner((flutter, *PLATFORM_BUILD_COMMANDS[platform]), app_dir, None)
     if code != 0:
         return code
-    code = runner(
-        _python("scripts/package-nightly.py", "--platform", platform, "--output-dir", str(options.output_dir)),
-        ROOT,
-        None,
+    packaging = list(
+        _python("scripts/package-nightly.py", "--platform", platform, "--output-dir", str(options.output_dir))
     )
+    if options.pafio_bin:
+        packaging.extend(("--pafio-bin", options.pafio_bin))
+    code = runner(tuple(packaging), ROOT, None)
     if code != 0:
         return code
     artifact = _artifact_path(dataclasses.replace(options, platform=platform))
@@ -851,7 +857,10 @@ def _install_macos(artifact: Path, install_root: Path) -> None:
             staged = install_root.with_name(install_root.name + ".installing")
             if staged.exists():
                 raise ValueError("a prior install transaction needs manual recovery")
-            shutil.copytree(apps[0], staged)
+            # symlinks=True keeps the sealed bundle byte-identical to the one
+            # the DMG carries; dereferencing framework links would rewrite the
+            # bundle layout and invalidate the signature's resource seal.
+            shutil.copytree(apps[0], staged, symlinks=True)
             _replace_install_tree(staged, install_root)
         finally:
             subprocess.run(["hdiutil", "detach", str(mount)], cwd=ROOT, check=False)
@@ -876,12 +885,18 @@ def run_install_stage(options: DeliveryOptions) -> int:
         executable = app_root / PACKAGE_EXECUTABLES[platform]
         agent = app_root / AGENT_PACKAGE_PATHS[platform]
         daemon = app_root / DAEMON_PACKAGE_PATHS[platform]
-        if not executable.is_file() or not agent.is_file() or not daemon.is_file():
+        pafio = app_root / PAFIO_PACKAGE_PATHS[platform]
+        if (
+            not executable.is_file()
+            or not agent.is_file()
+            or not daemon.is_file()
+            or not pafio.is_file()
+        ):
             raise ValueError("the installed package is missing a required executable component")
         if platform != "windows" and any(
-            not os.access(component, os.X_OK) for component in (agent, daemon)
+            not os.access(component, os.X_OK) for component in (agent, daemon, pafio)
         ):
-            raise ValueError("an installed Rust executable component is not executable")
+            raise ValueError("an installed bundled executable component is not executable")
         if options.mode == "ci":
             code = run_command(
                 _python(

@@ -140,7 +140,7 @@ class ProjectCoverageGatePhaseTest(unittest.TestCase):
 
         run_command.assert_not_called()
         self.assertIn("vityod Cargo manifest is missing", stderr.getvalue())
-        self.assertIn("native/vityod/Cargo.toml", stderr.getvalue())
+        self.assertIn(str(Path("native/vityod/Cargo.toml")), stderr.getvalue())
 
     def test_run_flutter_gate_propagates_a_failing_flutter_test_run(self) -> None:
         with tempfile.TemporaryDirectory(prefix="project-coverage-phases-") as tmp_name:

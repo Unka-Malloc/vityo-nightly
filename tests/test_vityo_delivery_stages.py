@@ -334,7 +334,8 @@ class GitModeCommandsTest(DeliveryStageTestCase):
             self.assertIn(expected, labels)
         release = recorded[labels.index("scripts/release-readiness-gate.py")]
         self.assertEqual(
-            release[release.index("--flutter-dir") + 1], "products/custom"
+            Path(release[release.index("--flutter-dir") + 1]),
+            Path("products/custom"),
         )
         self.assertIn("--skip-build", release)
 
@@ -452,7 +453,9 @@ class ArtifactTest(DeliveryStageTestCase):
             "run",
             return_value=SimpleNamespace(returncode=0, stdout="/repo\n"),
         ):
-            self.assertEqual(self.delivery._git_root(Path("/tmp")), Path("/repo"))
+            self.assertEqual(
+                self.delivery._git_root(Path("/tmp")), Path("/repo").resolve()
+            )
             self.assertEqual(self.delivery._git_head(Path("/tmp")), "/repo")
 
 
@@ -553,7 +556,9 @@ class LanguageFixtureTest(DeliveryStageTestCase):
             )
         argv, cwd = recorded[0]
         self.assertEqual(argv[:3], ("dart", "run", "tool/language_fixture_gate.dart"))
-        self.assertEqual(argv[argv.index("--styio") + 1], "/pinned/styio")
+        self.assertEqual(
+            Path(argv[argv.index("--styio") + 1]), Path("/pinned/styio")
+        )
         self.assertEqual(argv.count("--root"), 2)
         self.assertEqual(cwd, self.delivery.ROOT / "products/vityo_app")
 
@@ -606,7 +611,9 @@ class ProductAcceptanceTest(DeliveryStageTestCase):
         self.assertIn("scripts/run-native-pty-matrix.py", recorded[2])
         record = recorded[3]
         self.assertIn("scripts/record-product-matrix-evidence.py", record)
-        self.assertEqual(record[record.index("--styio") + 1], "/checkout")
+        self.assertEqual(
+            Path(record[record.index("--styio") + 1]), Path("/checkout")
+        )
 
     def test_product_acceptance_propagates_failures(self) -> None:
         def runner_for(failing_index: int):
@@ -901,6 +908,65 @@ class BuildStageTest(DeliveryStageTestCase):
                 0,
             )
 
+    def test_build_stage_forwards_the_explicit_pafio_override(self) -> None:
+        recorded: list[tuple[str, ...]] = []
+
+        def runner(argv, _cwd, _environment):
+            recorded.append(tuple(argv))
+            return 0
+
+        with mock.patch.object(
+            self.delivery, "ROOT", self.root
+        ), mock.patch.object(
+            self.delivery, "host_platform", return_value="macos"
+        ), mock.patch.object(
+            self.delivery, "require_rust_toolchain", return_value=True
+        ), mock.patch.object(
+            self.delivery.shutil, "which", return_value="/tools/flutter"
+        ):
+            self.write_release_versions("macos")
+            self.delivery.run_build_stage(
+                self.options(
+                    platform="macos",
+                    notices_validated=True,
+                    pafio_bin="/opt/pinned/pafio",
+                ),
+                runner=runner,
+            )
+        packaging = next(
+            command
+            for command in recorded
+            if any("package-nightly.py" in argument for argument in command)
+        )
+        self.assertEqual(packaging[packaging.index("--pafio-bin") + 1], "/opt/pinned/pafio")
+
+    def test_build_stage_omits_the_pafio_override_when_unset(self) -> None:
+        recorded: list[tuple[str, ...]] = []
+
+        def runner(argv, _cwd, _environment):
+            recorded.append(tuple(argv))
+            return 0
+
+        with mock.patch.object(
+            self.delivery, "ROOT", self.root
+        ), mock.patch.object(
+            self.delivery, "host_platform", return_value="macos"
+        ), mock.patch.object(
+            self.delivery, "require_rust_toolchain", return_value=True
+        ), mock.patch.object(
+            self.delivery.shutil, "which", return_value="/tools/flutter"
+        ):
+            self.write_release_versions("macos")
+            self.delivery.run_build_stage(
+                self.options(platform="macos", notices_validated=True), runner=runner
+            )
+        packaging = next(
+            command
+            for command in recorded
+            if any("package-nightly.py" in argument for argument in command)
+        )
+        self.assertNotIn("--pafio-bin", packaging)
+
 
 class InstallRootTest(DeliveryStageTestCase):
     def test_default_install_root_per_platform(self) -> None:
@@ -1109,6 +1175,9 @@ class PackageInstallTest(DeliveryStageTestCase):
                 bundle = mount / "Vityo.app/Contents"
                 bundle.mkdir(parents=True, exist_ok=True)
                 (bundle / "Info.plist").write_text("plist", encoding="utf-8")
+                framework = bundle / "Frameworks/App.framework"
+                (framework / "Versions/A").mkdir(parents=True, exist_ok=True)
+                (framework / "App").symlink_to("Versions/Current/App")
                 return SimpleNamespace(returncode=0)
             if argv[1] == "detach":
                 detach.append(tuple(argv))
@@ -1121,6 +1190,11 @@ class PackageInstallTest(DeliveryStageTestCase):
         ), mock.patch.object(self.delivery.subprocess, "run", side_effect=fake_run):
             self.delivery._install_macos(artifact, install_root)
         self.assertTrue((install_root / "Contents/Info.plist").is_file())
+        # A versioned framework link must stay a link: dereferencing it would
+        # rewrite the bundle the signature sealed.
+        self.assertTrue(
+            (install_root / "Contents/Frameworks/App.framework/App").is_symlink()
+        )
         self.assertEqual(len(detach), 1)
 
     def test_macos_install_rejects_mount_failures_and_wrong_bundle_count(self) -> None:
@@ -1155,6 +1229,7 @@ class InstallStageTest(DeliveryStageTestCase):
             self.delivery.PACKAGE_EXECUTABLES[platform],
             self.delivery.AGENT_PACKAGE_PATHS[platform],
             self.delivery.DAEMON_PACKAGE_PATHS[platform],
+            self.delivery.PAFIO_PACKAGE_PATHS[platform],
         ):
             target = app_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1242,6 +1317,34 @@ class InstallStageTest(DeliveryStageTestCase):
                     2,
                 )
             self.assertIn("is not executable", stderr.getvalue())
+
+    def test_install_stage_requires_the_bundled_pafio_component(self) -> None:
+        with mock.patch.object(self.delivery, "ROOT", self.root), mock.patch.object(
+            self.delivery, "host_platform", return_value="macos"
+        ):
+            artifact = self.write_candidate("vityo-nightly-macos-0.1.0.dmg", "macos")
+            install_root = self.root / "install/Vityo.app"
+
+            def install_without_pafio(_artifact, root):
+                self._layout(root)
+                (
+                    self.delivery.application_root(root, "macos")
+                    / self.delivery.PAFIO_PACKAGE_PATHS["macos"]
+                ).unlink()
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr), mock.patch.object(
+                self.delivery, "_install_macos", side_effect=install_without_pafio
+            ):
+                self.assertEqual(
+                    self.delivery.run_install_stage(
+                        self.options(
+                            platform="macos", artifact=artifact, install_root=install_root
+                        )
+                    ),
+                    2,
+                )
+            self.assertIn("missing a required executable component", stderr.getvalue())
 
     def test_install_stage_reports_agent_version_failure(self) -> None:
         with mock.patch.object(self.delivery, "ROOT", self.root), mock.patch.object(
@@ -1815,6 +1918,7 @@ class InstallDispatchTest(DeliveryStageTestCase):
             self.delivery.PACKAGE_EXECUTABLES[platform],
             self.delivery.AGENT_PACKAGE_PATHS[platform],
             self.delivery.DAEMON_PACKAGE_PATHS[platform],
+            self.delivery.PAFIO_PACKAGE_PATHS[platform],
         ):
             target = app_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)

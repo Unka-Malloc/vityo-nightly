@@ -44,6 +44,7 @@ import 'controllers/editor_navigation_command_controller.dart';
 import 'controllers/editor_quick_fix_command_controller.dart';
 import 'controllers/editor_refactor_command_controller.dart';
 import 'controllers/debug_controller.dart';
+import 'controllers/diagnostics_panel_state_controller.dart';
 import 'controllers/language_controller.dart';
 import 'controllers/language_refresh_command_controller.dart';
 import 'controllers/module_controller.dart';
@@ -169,7 +170,10 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     WorkspaceQuickFixTelemetryStore? workspaceQuickFixTelemetryStore,
     String? workspaceQuickFixTelemetryWorkspaceId,
     WorkspaceTextSearchProvider? workspaceTextSearchProvider,
-  }) : projectLanguageService =
+    DiagnosticsPanelStateStore? diagnosticsPanelStateStore,
+  }) : _styioServiceSubscriptionController = styioServiceSubscriptionController,
+       _debugAdapterLauncher = debugAdapterLauncher,
+       projectLanguageService =
            projectLanguageService ?? const ProjectStyioLanguageService(),
        runtimeOutputBuffer = runtimeOutputBuffer ?? RuntimeOutputLiveBuffer(),
        _ownsRuntimeOutputBuffer = runtimeOutputBuffer == null,
@@ -232,6 +236,11 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
           openFilePaths: () => workspaceController.openFilePaths,
           log: appendLog,
         )..addListener(_handleWorkspaceDiagnosticsChanged);
+    _diagnosticsPanelStateController = DiagnosticsPanelStateController(
+      workspaceId: () => workspaceController.activeProject.id,
+      store: diagnosticsPanelStateStore,
+      log: appendLog,
+    )..addListener(_notifyShellListeners);
     _workspaceReplaceController = WorkspaceReplaceController(
       workspaceController: workspaceController,
       documentStore: workspaceDocumentStore,
@@ -450,6 +459,12 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     );
     _debugController.addListener(_handleDebugChanged);
     unawaited(_debugController.loadConfiguredState());
+    _runtimeOutputProducerBindings =
+        RuntimeOutputProducerBindings(buffer: this.runtimeOutputBuffer)
+          ..wireAvailable(
+            emissions: _availableRuntimeOutputProducerEmissions(),
+            unavailableReasons: _unavailableRuntimeOutputProducerReasons(),
+          );
     _shellCommandFallbackController = ShellCommandFallbackController(
       log: appendLog,
       notify: notifyListeners,
@@ -659,6 +674,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   _workspaceFileConfirmationController;
   late final WorkspaceDiagnosticsRuntimeController
   _workspaceDiagnosticsRuntimeController;
+  late final DiagnosticsPanelStateController _diagnosticsPanelStateController;
+  late final RuntimeOutputProducerBindings _runtimeOutputProducerBindings;
   late final WorkspaceReplaceController _workspaceReplaceController;
   late final WorkspaceNavigationController _workspaceNavigationController;
   late final ProjectLanguageContextController _projectLanguageContextController;
@@ -697,6 +714,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   extensionHostTelemetryEvents;
   final AgentClientRegistry? agentClientRegistry;
   final AgentCollaborationService? agentCollaboration;
+  final StyioServiceSubscriptionController? _styioServiceSubscriptionController;
+  final DapDebugAdapterLauncher? _debugAdapterLauncher;
   final bool _ownsLanguageServiceStatus;
   final bool _ownsRuntimeOutputBuffer;
   StreamSubscription<DocumentResourceBindingSnapshot>?
@@ -729,6 +748,148 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   int get lastWorkspaceSearchScannedCount =>
       _workspaceSearchController.lastScannedDocumentCount;
 
+  DiagnosticsPanelState? get diagnosticsPanelState =>
+      _diagnosticsPanelStateController.state;
+
+  bool get diagnosticsPanelStateRestored =>
+      _diagnosticsPanelStateController.restored;
+
+  Future<void> loadDiagnosticsPanelState() =>
+      _diagnosticsPanelStateController.load();
+
+  void recordDiagnosticsPanelState(DiagnosticsPanelState state) =>
+      _diagnosticsPanelStateController.record(state);
+
+  RuntimeOutputProducerBindings get runtimeOutputProducerBindings =>
+      _runtimeOutputProducerBindings;
+
+  /// Streams the shell really publishes today. Producers without an entry stay
+  /// blocked with the matching reason in
+  /// [_unavailableRuntimeOutputProducerReasons].
+  Map<String, Stream<RuntimeOutputProducerEmission>>
+  _availableRuntimeOutputProducerEmissions() {
+    final emissions = <String, Stream<RuntimeOutputProducerEmission>>{};
+    final collaboration = agentCollaboration;
+    if (collaboration != null) {
+      emissions['agent'] = _mergeProducerEmissions(
+        <Stream<RuntimeOutputProducerEmission>>[
+          collaboration.changes.map(
+            (projection) => RuntimeOutputProducerEmission(
+              message:
+                  'Agent collaboration revision ${projection.revision}: '
+                  '${projection.sessions.length} session(s), '
+                  '${projection.attentionCount} awaiting attention.',
+              timestamp: DateTime.now().toUtc(),
+              channelId: 'runtime.agent',
+              label: 'Agent Runtime',
+              metadata: <String, Object?>{
+                'collaborationRevision': projection.revision,
+                'sessionCount': projection.sessions.length,
+                'attentionCount': projection.attentionCount,
+              },
+            ),
+          ),
+          collaboration.failures.map(
+            (failure) => RuntimeOutputProducerEmission.stderr(
+              message:
+                  'Agent collaboration ${failure.code}: ${failure.message}',
+              timestamp: DateTime.now().toUtc(),
+              channelId: 'runtime.agent',
+              label: 'Agent Runtime',
+              metadata: <String, Object?>{'failureCode': failure.code},
+            ),
+          ),
+        ],
+      );
+    }
+    final subscriptionController = _styioServiceSubscriptionController;
+    if (subscriptionController != null) {
+      emissions['language-service'] = subscriptionController.events.map(
+        (event) => RuntimeOutputProducerEmission(
+          message:
+              '[${event.kind.name}] ${event.documentId}@${event.revision} '
+              '${event.message}',
+          timestamp: event.emittedAt,
+          channelId: 'runtime.language-service',
+          label: 'Language Service',
+          metadata: <String, Object?>{
+            'kind': event.kind.name,
+            'documentId': event.documentId,
+            'revision': event.revision,
+            'generation': event.generation,
+            'source': event.source,
+            if (event.providerId.isNotEmpty) 'providerId': event.providerId,
+          },
+        ),
+      );
+    }
+    if (_debugAdapterLauncher != null) {
+      emissions['debug-adapter'] = _debugAdapterOutputEmissions();
+    }
+    return emissions;
+  }
+
+  /// DAP adapters publish a snapshot for every event and response. Only status
+  /// transitions and failures are forwarded so the debug channel carries real
+  /// lifecycle facts without flooding the output buffer.
+  Stream<RuntimeOutputProducerEmission> _debugAdapterOutputEmissions() async* {
+    var lastStatus = '';
+    var lastFailure = '';
+    await for (final snapshot in _debugController.dapSnapshotEvents) {
+      final status = snapshot.status.name;
+      final failure = snapshot.failureMessage ?? '';
+      if (status == lastStatus && failure == lastFailure) {
+        continue;
+      }
+      lastStatus = status;
+      lastFailure = failure;
+      yield RuntimeOutputProducerEmission(
+        message: failure.isEmpty
+            ? 'Debug session $status: ${snapshot.events.length} event(s), '
+                  '${snapshot.threads.length} thread(s).'
+            : 'Debug session $status failed: $failure',
+        timestamp: DateTime.now().toUtc(),
+        channelId: 'runtime.debug',
+        label: 'Debug Adapter',
+        metadata: <String, Object?>{
+          'status': status,
+          'eventCount': snapshot.events.length,
+          'threadCount': snapshot.threads.length,
+          if (failure.isNotEmpty) 'failure': failure,
+        },
+      );
+    }
+  }
+
+  Map<String, String> _unavailableRuntimeOutputProducerReasons() {
+    return <String, String>{
+      if (agentCollaboration == null)
+        'agent':
+            'No Agent collaboration service is configured; the agent channel '
+            'stays empty.',
+      if (_styioServiceSubscriptionController == null)
+        'language-service':
+            'No StyioService subscription controller is configured; the '
+            'language-service channel stays empty.',
+      if (_debugAdapterLauncher == null)
+        'debug-adapter':
+            'No DAP debug adapter launcher is configured; the debug channel '
+            'stays empty.',
+      'shell-manager':
+          'ShellManager execution is request-driven, so no standing shell '
+          'output stream exists in the shell runtime yet.',
+      'terminal-runtime':
+          'The production shell does not create a TerminalRuntime session '
+          'yet, so there is no standing PTY output stream to bind.',
+      'toolchain-manager':
+          'ToolchainRuntime publishes per-command results into the live '
+          'buffer and exposes no standing stdout/stderr stream.',
+      'hosted-executor':
+          'Hosted control-plane events are delivered through the hosted '
+          'backend controller, not a standing runtime output stream.',
+    };
+  }
+
   void appendLog(String message) {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
     _debugLog.insert(0, '$timestamp  $message');
@@ -745,4 +906,24 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     _disposeOwnedResources();
     super.dispose();
   }
+}
+
+Stream<RuntimeOutputProducerEmission> _mergeProducerEmissions(
+  List<Stream<RuntimeOutputProducerEmission>> streams,
+) {
+  final controller = StreamController<RuntimeOutputProducerEmission>.broadcast(
+    sync: true,
+  );
+  final subscriptions = <StreamSubscription<RuntimeOutputProducerEmission>>[];
+  for (final stream in streams) {
+    subscriptions.add(
+      stream.listen(controller.add, onError: controller.addError),
+    );
+  }
+  controller.onCancel = () async {
+    for (final subscription in subscriptions) {
+      await subscription.cancel();
+    }
+  };
+  return controller.stream;
 }

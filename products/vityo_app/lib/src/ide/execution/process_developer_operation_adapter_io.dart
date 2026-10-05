@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import '../../view_ide/environment/configuration/forwarded_host_environment.dart';
 import '../local_service/vityod_client.dart';
 import '../language/dart_analyze_diagnostic_decoder.dart';
 import '../workbench/capability_snapshot.dart';
@@ -76,10 +76,7 @@ final class ProcessDeveloperOperationAdapter
           'executable': executable,
           'arguments': arguments,
           'workingDirectory': workingDirectory,
-          'timeoutMillis': 30 * 60 * 1000,
-          // The daemon clears the child environment, so the toolchain paths this
-          // client resolved have to travel with the request.
-          'environment': _forwardedEnvironment(),
+          'environment': forwardedHostEnvironment(),
         },
       );
       _throwIfError(start);
@@ -192,36 +189,6 @@ final class ProcessDeveloperOperationAdapter
 }
 
 var _taskSequence = 0;
-
-/// Environment entries a launched tool needs that the daemon cannot infer.
-///
-/// `vityod` clears the child environment and applies only what the request
-/// supplies, filtering keys by shape. An analyzer subprocess needs its home
-/// directory to locate caches; without it the Analysis Server aborts with
-/// "An unexpected error was encountered by the Analysis Server", which surfaces
-/// as a bare non-zero exit. Values are read from this process, so the client's
-/// own toolchain paths reach the tool.
-Map<String, String> _forwardedEnvironment() {
-  const forwarded = <String>[
-    'HOME',
-    'USERPROFILE',
-    'TMPDIR',
-    'TEMP',
-    'TMP',
-    'FLUTTER_ROOT',
-    'PUB_CACHE',
-    'DART_SDK',
-    'PATH',
-  ];
-  final environment = <String, String>{};
-  for (final key in forwarded) {
-    final value = Platform.environment[key];
-    if (value != null && value.isNotEmpty) {
-      environment[key] = value;
-    }
-  }
-  return environment;
-}
 
 void _throwIfError(dynamic response) {
   if (!response.method.endsWith('.error')) return;

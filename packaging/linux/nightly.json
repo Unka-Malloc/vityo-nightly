@@ -18,6 +18,12 @@
     "package_relative_path": "components/vityo-coding-agent",
     "required_runtime_libraries": ["glibc", "libssl.so.3"]
   },
+  "pafio": {
+    "target": "x86_64-unknown-linux-gnu",
+    "package_relative_path": "components/pafio",
+    "required_runtime_libraries": ["glibc"],
+    "manifest_relative_path": "components/pafio-component.json"
+  },
   "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
   "signing": {"status": "explicit-gap", "reason": "Nightly Debian repository signing credentials are not configured."},
   "automatic_updates": false

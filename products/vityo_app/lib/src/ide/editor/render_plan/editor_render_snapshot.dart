@@ -204,8 +204,6 @@ class EditorCodeActionWidgetState {
       actions: actions
           .map(EditorCodeActionWidgetAction.fromQuickFix)
           .toList(growable: false),
-      todo:
-          'TODO: bind this widget state to the editor lightbulb popup and explicit apply command routing.',
     );
   }
 

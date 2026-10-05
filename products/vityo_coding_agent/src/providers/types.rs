@@ -153,7 +153,8 @@ impl ProviderFailure {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModelProviderCapabilities {
     pub context_tokens: u32,
-    pub output_tokens: u32,
+    /// `None` means the provider declares no finite output ceiling.
+    pub output_tokens: Option<u32>,
     pub supports_tools: bool,
     pub max_concurrency: usize,
 }
@@ -169,7 +170,9 @@ impl ProviderRequirements {
     pub fn accepts(self, capabilities: ModelProviderCapabilities) -> bool {
         (!self.requires_tools || capabilities.supports_tools)
             && capabilities.context_tokens >= self.minimum_context_tokens
-            && capabilities.output_tokens >= self.minimum_output_tokens
+            && capabilities
+                .output_tokens
+                .is_none_or(|output_tokens| output_tokens >= self.minimum_output_tokens)
     }
 }
 
@@ -186,7 +189,9 @@ pub struct ModelRequest {
     pub messages: Vec<ModelMessage>,
     pub tools: Vec<ModelToolDefinition>,
     pub estimated_context_tokens: u32,
-    pub output_token_limit: u32,
+    /// `None` means no explicit output ceiling: the request omits the provider's
+    /// max-output field and skips output budgeting.
+    pub output_token_limit: Option<u32>,
     pub retry_safety: ModelRetrySafety,
     pub idempotency_key: Option<String>,
     pub deadline: Option<tokio::time::Instant>,

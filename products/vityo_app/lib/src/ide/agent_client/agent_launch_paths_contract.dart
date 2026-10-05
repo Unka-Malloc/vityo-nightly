@@ -31,9 +31,6 @@ abstract final class AgentLaunchPaths {
       operatingSystem: operatingSystem,
       separator: pathSeparator,
     );
-    final support = _append(applicationSupportDirectory, <String>[
-      'vityo-coding-agent',
-    ], pathSeparator);
 
     return AgentLaunchDescriptor(
       id: firstPartyCodingAgentId,
@@ -41,13 +38,57 @@ abstract final class AgentLaunchPaths {
       arguments: <String>[
         '--stdio-agent',
         '--provider-config',
-        _append(support, <String>['provider.json'], pathSeparator),
+        providerConfigPath(
+          applicationSupportDirectory: applicationSupportDirectory,
+          pathSeparator: pathSeparator,
+        ),
         '--session-dir',
-        _append(support, <String>['sessions'], pathSeparator),
+        sessionDirectoryPath(
+          applicationSupportDirectory: applicationSupportDirectory,
+          pathSeparator: pathSeparator,
+        ),
       ],
       workingDirectory: workingDirectory,
     );
   }
+
+  /// The support directory the packaged agent owns:
+  /// `<applicationSupportDirectory>/vityo-coding-agent`.
+  static String agentSupportDirectory({
+    required String applicationSupportDirectory,
+    required String pathSeparator,
+  }) => _append(applicationSupportDirectory, <String>[
+    'vityo-coding-agent',
+  ], pathSeparator);
+
+  /// The provider configuration file the agent is launched with. This is the
+  /// single source of truth for the path — the launch descriptor and the
+  /// workbench's model configuration writer both read it from here, so the two
+  /// can never drift apart.
+  static String providerConfigPath({
+    required String applicationSupportDirectory,
+    required String pathSeparator,
+  }) => _append(
+    agentSupportDirectory(
+      applicationSupportDirectory: applicationSupportDirectory,
+      pathSeparator: pathSeparator,
+    ),
+    <String>['provider.json'],
+    pathSeparator,
+  );
+
+  /// The durable session journal directory the agent is launched with.
+  static String sessionDirectoryPath({
+    required String applicationSupportDirectory,
+    required String pathSeparator,
+  }) => _append(
+    agentSupportDirectory(
+      applicationSupportDirectory: applicationSupportDirectory,
+      pathSeparator: pathSeparator,
+    ),
+    <String>['sessions'],
+    pathSeparator,
+  );
 
   static String _packagedExecutable({
     required String applicationExecutable,

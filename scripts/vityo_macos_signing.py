@@ -3,10 +3,11 @@
 
 Packaging calls :func:`apply_signing` after every packaged helper binary is
 staged and before the installer definition builds the DMG. That order is
-required: ``codesign`` seals nested code from the inside out, so the ``vityod``
-and ``vityo-coding-agent`` executables under ``Contents/Helpers`` must already
-be in place, and the DMG that carries the sealed bundle must be built after it
-is sealed.
+required: ``codesign`` seals nested code from the inside out, so the ``vityod``,
+``vityo-coding-agent``, and ``pafio`` executables under ``Contents/Helpers``
+must already be in place, and the DMG that carries the sealed bundle must be
+built after it is sealed. Packaging hands in ``before_bundle_seal`` for the one
+record that sealing itself invalidates: the staged component digest.
 
 Credential boundary: signing material is read from the process environment
 only. This module never writes, caches, copies, or logs a credential value, a
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,7 +44,14 @@ SIGNING_GAP_REASON = (
 )
 
 # Helpers that live inside the bundle and must be sealed before the bundle.
-NESTED_EXECUTABLES = ("Contents/Helpers/vityod", "Contents/Helpers/vityo-coding-agent")
+# `discover_nested_code` enumerates every `Contents/Helpers/*` file, so a helper
+# placed there is sealed automatically; this tuple names the expected set and is
+# what the signing tests assert against.
+NESTED_EXECUTABLES = (
+    "Contents/Helpers/vityod",
+    "Contents/Helpers/vityo-coding-agent",
+    "Contents/Helpers/pafio",
+)
 
 
 class SigningError(RuntimeError):
@@ -267,17 +276,29 @@ def gap_status() -> dict[str, object]:
     return {"status": "explicit-gap", "reason": SIGNING_GAP_REASON}
 
 
-def apply_signing(app: Path) -> dict[str, object]:
+def apply_signing(
+    app: Path,
+    *,
+    before_bundle_seal: Callable[[Path], None] | None = None,
+) -> dict[str, object]:
     """Seal the staged bundle when configured, otherwise report the gap.
 
     Returns the ``signing`` block to record in packaging evidence. When signing
     is not configured the result is the existing explicit gap, so an unsigned
     nightly keeps its present honest status instead of claiming a sealed build.
+
+    ``before_bundle_seal`` runs once every nested code item is sealed and before
+    the enclosing bundle is sealed. Sealing the bundle also seals its resources,
+    so that window is the only place a package can still write a file the seal
+    will cover: sealing a helper binary rewrites the bytes that its recorded
+    digest describes, and macOS packaging corrects that record there.
     """
     if not signing_requested():
         return gap_status()
     configuration = resolve_configuration()
     sign_nested_executables(app, configuration)
+    if before_bundle_seal is not None:
+        before_bundle_seal(app)
     sign_app_bundle(app, configuration)
     return configured_status(configuration)
 

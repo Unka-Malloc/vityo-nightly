@@ -77,6 +77,40 @@ void main() {
     },
   );
 
+  test('the shared support paths are the ones the descriptor uses', () {
+    const String support = '/fixture/runtime/support/Vityo';
+    final descriptor = AgentLaunchPaths.fromInstalledApplication(
+      applicationExecutable: '/fixture/install/Vityo/vityo',
+      applicationSupportDirectory: support,
+      operatingSystem: 'linux',
+      pathSeparator: '/',
+      workingDirectory: '/fixture/workspace/project',
+    );
+
+    // The model configuration writer reads the same helper, so the file it
+    // writes is always the file the launch hands the executable.
+    final String providerConfig = AgentLaunchPaths.providerConfigPath(
+      applicationSupportDirectory: support,
+      pathSeparator: '/',
+    );
+    expect(providerConfig, '$support/vityo-coding-agent/provider.json');
+    expect(descriptor.arguments[2], providerConfig);
+    expect(
+      descriptor.arguments[4],
+      AgentLaunchPaths.sessionDirectoryPath(
+        applicationSupportDirectory: support,
+        pathSeparator: '/',
+      ),
+    );
+    expect(
+      AgentLaunchPaths.agentSupportDirectory(
+        applicationSupportDirectory: support,
+        pathSeparator: '/',
+      ),
+      '$support/vityo-coding-agent',
+    );
+  });
+
   test('relative app and support paths are rejected', () {
     expect(
       () => AgentLaunchPaths.fromInstalledApplication(

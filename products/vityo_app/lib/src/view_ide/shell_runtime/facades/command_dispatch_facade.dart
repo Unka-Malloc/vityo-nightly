@@ -158,9 +158,43 @@ mixin ShellRuntimeCommandDispatchFacade on ShellRuntimeFacadeHost {
     if (commandId == AppCommandId.run && _executionController.runActive) {
       return 'An execution is already running. Stop it before starting another.';
     }
+    final languageNavigationReason = _unavailableLanguageNavigationReason(
+      commandId,
+    );
+    if (languageNavigationReason != null) {
+      return languageNavigationReason;
+    }
     return _backendCommandPolicyController.blockedReason(
       commandId: commandId,
       projectGraph: workspaceController.activeProject,
     );
   }
+}
+
+/// Commands that expose position-scoped or workspace-scoped language features
+/// the StyioService connector does not publish yet. They stay disabled with an
+/// explicit reason instead of opening an empty workbench panel.
+const String _unavailableLanguageNavigationReasonValue =
+    'The StyioService language service does not expose this language '
+    'capability yet; the command stays disabled instead of opening an empty '
+    'panel.';
+
+String? _unavailableLanguageNavigationReason(AppCommandId commandId) {
+  return switch (commandId) {
+    AppCommandId.showRecentLocations ||
+    AppCommandId.showWorkspaceDocumentLinks ||
+    AppCommandId.showWorkspaceDocumentHighlights ||
+    AppCommandId.showWorkspaceCodeLenses ||
+    AppCommandId.goToWorkspaceDeclaration ||
+    AppCommandId.goToWorkspaceDefinition ||
+    AppCommandId.goToWorkspaceTypeDefinition ||
+    AppCommandId.goToWorkspaceImplementation ||
+    AppCommandId.showWorkspaceTypeHierarchy ||
+    AppCommandId.renameWorkspaceSymbol ||
+    AppCommandId.searchWorkspaceSymbols ||
+    AppCommandId.findWorkspaceReferences ||
+    AppCommandId.showWorkspaceCallHierarchy =>
+      _unavailableLanguageNavigationReasonValue,
+    _ => null,
+  };
 }

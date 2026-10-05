@@ -36,7 +36,10 @@ class VityoDeliveryTest(unittest.TestCase):
 
         self.assertEqual(command[1:3], ("scripts/project-coverage-gate.py", "--python-fail-under"))
         self.assertIn("--collect-only", command)
-        self.assertEqual(command[command.index("--flutter-dir") + 1], "products/custom-app")
+        self.assertEqual(
+            Path(command[command.index("--flutter-dir") + 1]),
+            Path("products/custom-app"),
+        )
         self.assertEqual(
             command[command.index("--rust-coverage-dir") + 1],
             "build/custom-evidence/rust-coverage",

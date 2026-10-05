@@ -75,8 +75,9 @@ class ObservableGraphController extends ChangeNotifier {
     if (managers == null) {
       return null;
     }
-    return resolvePafioBinary(managers);
+    return resolvePafioBinary(managers, environment: readHostEnvironment());
   }
+
   final ObservableRuntimeIntake? _runtimeIntake;
   final Duration debounce;
   final ObservableLineageWindow _window = ObservableLineageWindow();
@@ -139,7 +140,8 @@ class ObservableGraphController extends ChangeNotifier {
     notifyListeners();
   }
 
-  String? resolvedAnchorPath(String nodeId) => _resolveAnchor(nodeId)?.absolutePath;
+  String? resolvedAnchorPath(String nodeId) =>
+      _resolveAnchor(nodeId)?.absolutePath;
 
   RuntimeObservationDecision get runtimeObservationDecision {
     final graph = _projectGraph();
@@ -265,7 +267,8 @@ class ObservableGraphController extends ChangeNotifier {
       return;
     }
     final siteIds = [
-      for (final node in _state.projection?.nodes ?? const <ProjectedGraphNode>[])
+      for (final node
+          in _state.projection?.nodes ?? const <ProjectedGraphNode>[])
         node.id,
     ];
     final RuntimeIntakeResult result;
@@ -905,9 +908,10 @@ class ObservableGraphController extends ChangeNotifier {
       ObservableLineageWindowEntry(
         snapshotId: identity.snapshotId,
         parentSnapshotId: previousIdentity?.snapshotId,
-        changeSource: changeSet?.source ??
-            ObservableChangeSetSource.idSetComparison,
-        changeSet: changeSet ??
+        changeSource:
+            changeSet?.source ?? ObservableChangeSetSource.idSetComparison,
+        changeSet:
+            changeSet ??
             const ObservableChangeSet(
               addedNodeIds: <String>[],
               removedNodeIds: <String>[],

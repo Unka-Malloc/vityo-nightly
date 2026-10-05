@@ -1023,7 +1023,7 @@ class _FixtureNetworkManager implements NetworkManager {
   @override
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   }) async {
     final bytes = binaryResponses[uri];
     return NetworkBinaryResponse(

@@ -478,7 +478,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(seconds: 45),
     );
     final diagnostics = clangTidyDiagnosticsFromOutput(
       output: '${result.stdout}\n${result.stderr}',
@@ -545,7 +544,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(seconds: 120),
       onProcessStarted: onProcessStarted,
     );
     final testResult = <String, Object?>{
@@ -581,7 +579,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: <String>['--assume-filename=$activeDocumentPath'],
       standardInput: document.text,
-      timeout: const Duration(seconds: 20),
     );
     final processIdentity = nativeToolProcessIdentityMetadata(result);
     if (!result.succeeded) {
@@ -655,7 +652,6 @@ final class ExecutionController extends ChangeNotifier {
         ),
         arguments: arguments,
         workingDirectory: workspaceRoot,
-        timeout: const Duration(minutes: 5),
       );
       return NativeBuildCommandResult(
         commandResult: _nativeBuildCommandResult(
@@ -689,7 +685,6 @@ final class ExecutionController extends ChangeNotifier {
         ),
         arguments: configureArguments,
         workingDirectory: workspaceRoot,
-        timeout: const Duration(minutes: 5),
       );
       configureResult = <String, Object?>{
         'runner': 'cmake',
@@ -732,7 +727,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(minutes: 5),
     );
     return NativeBuildCommandResult(
       commandResult: _nativeBuildCommandResult(
@@ -1208,7 +1202,9 @@ final class ExecutionController extends ChangeNotifier {
       'Observed run unit ${runUnit.kind.name}: '
       '${runUnit.range.start}-${runUnit.range.end}.',
     );
-    log('Observed run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
+    log(
+      'Observed run ${rangedSession.status.name}: ${rangedSession.statusMessage}',
+    );
     notifyListeners();
     return ObservedExecutionRun(
       session: rangedSession,

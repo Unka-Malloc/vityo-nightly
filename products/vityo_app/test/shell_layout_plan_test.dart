@@ -181,10 +181,7 @@ void main() {
       registry.panelById('primary.extensions')?.status,
       ShellPanelContributionStatus.production,
     );
-    expect(
-      registry.panelById('bottom.observable')?.title,
-      'Observable',
-    );
+    expect(registry.panelById('bottom.observable')?.title, 'Observable');
     expect(
       registry.panelById('bottom.observable')?.surfaceId,
       'observable.graph',
@@ -194,5 +191,43 @@ void main() {
       containsAll(<String>['observable-topology', 'change-highlight']),
     );
     expect(registry.toJson()['coreIdeCoverage'], isA<Map<String, Object?>>());
+  });
+
+  test('shell panel contribution status derives from IDE capabilities', () {
+    final registry = ShellPanelContributionRegistry.defaultIdePanels();
+
+    expect(
+      registry.panelById('primary.extensions')?.status,
+      ShellPanelContributionStatus.production,
+    );
+    expect(
+      registry.panelById('primary.search')?.status,
+      ShellPanelContributionStatus.production,
+    );
+    expect(
+      registry.panelById('primary.quickOpen')?.status,
+      ShellPanelContributionStatus.production,
+    );
+    expect(
+      registry.panelById('bottom.outline')?.status,
+      ShellPanelContributionStatus.wired,
+    );
+    expect(
+      registry.panelById('bottom.runtime')?.status,
+      ShellPanelContributionStatus.scaffolded,
+    );
+    expect(
+      registry.panelById('bottom.runtime')?.metadata['capabilityId'],
+      'presentation.output-panel',
+    );
+    expect(registry.panelById('bottom.runtime')?.todo, isNotEmpty);
+    expect(
+      registry.panelById('bottom.documentLinks')?.status,
+      ShellPanelContributionStatus.scaffolded,
+    );
+    expect(
+      registry.panelById('bottom.documentLinks')?.todo,
+      contains('no IDE capability entry'),
+    );
   });
 }

@@ -54,6 +54,9 @@ void main() {
         clock: () => DateTime.utc(2026, 5, 16),
       ).probe();
       final compatibility = ProcessAdapter(facts).adapt();
+      final plan = ProcessAdapter(
+        facts,
+      ).plan(const ProcessCommandRequest(executablePath: '/usr/bin/printf'));
       final manager = LocalProcessManager(facts: facts, client: vityod!.client);
 
       final result = await manager.run(
@@ -65,6 +68,7 @@ void main() {
 
       expect(facts.supportsLinuxDebianArmTarget, isTrue);
       expect(compatibility.isLinuxDebianArm, isTrue);
+      expect(plan.timeout, isNull);
       expect(result.succeeded, isTrue);
       expect(result.stdout, 'process-ok');
     },
@@ -189,6 +193,45 @@ void main() {
   );
 
   test(
+    'process manager forwards the host environment the daemon clears',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final hostHome = Platform.environment['HOME'];
+
+      final result = await manager.run(
+        const ProcessCommandRequest(executablePath: '/usr/bin/env'),
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(hostHome, isNotNull);
+      expect(result.stdout, contains('HOME=$hostHome'));
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'process manager keeps an explicitly supplied environment',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+
+      final result = await manager.run(
+        const ProcessCommandRequest(
+          executablePath: '/usr/bin/env',
+          environment: <String, String>{'VITYO_EXPLICIT_ENV': 'kept'},
+        ),
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(result.stdout, contains('VITYO_EXPLICIT_ENV=kept'));
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
     'process manager exposes and cancels a live vityod process handle',
     () async {
       final manager = LocalProcessManager.linuxDebianArmForTest(
@@ -217,6 +260,37 @@ void main() {
       expect(result.metadata['processHandleId'], handle.processHandleId);
       expect(result.metadata['pid'], handle.pid);
       expect(result.metadata['processHandleSource'], handle.sourceManager);
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'typed Pafio process cancellation uses its namespaced task route',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final started = Completer<ProcessCommandHandle>();
+      final running = manager.run(
+        ProcessCommandRequest(
+          executablePath: '/bin/sleep',
+          arguments: const <String>['30'],
+          serviceKind: ProcessServiceKind.pafio,
+          onStarted: started.complete,
+        ),
+      );
+
+      final handle = await started.future.timeout(const Duration(seconds: 5));
+      final cancellation = await manager.cancelProcess(handle.processHandleId);
+      final result = await running.timeout(const Duration(seconds: 5));
+
+      expect(handle.processHandleId, startsWith('pafio-'));
+      expect(handle.metadata['serviceKind'], 'pafio');
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(cancellation.metadata['serviceKind'], 'pafio');
+      expect(result.succeeded, isFalse);
+      expect(result.metadata['processHandleId'], handle.processHandleId);
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );

@@ -69,6 +69,8 @@ final class AgentClientRegistry {
       <String, Map<String, Object?>>{};
   final PermissionRequestQueue _permissionQueue;
   final AgentClientPolicy policy;
+  Duration get _controlRequestTimeout =>
+      policy.requestTimeout ?? policy.controlRequestTimeout;
   var _requestSequence = 0;
   var _closed = false;
   Future<List<AgentShutdownReceipt>>? _shutdown;
@@ -114,7 +116,7 @@ final class AgentClientRegistry {
             (_operationPort?.capabilities ?? AgentClientOperationCapabilities())
                 .toJson(),
       },
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     final capabilities = _stringSet(response.params, 'capabilities');
     final snapshot = AgentConnectionSnapshot(
@@ -165,7 +167,7 @@ final class AgentClientRegistry {
         'workspacePath': workspacePath,
         'workspaceRevision': 0,
       },
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     return _createSession(
       agentId: agentId,
@@ -223,7 +225,7 @@ final class AgentClientRegistry {
         'sessionId': sessionId,
         'workspacePath': workspacePath,
       },
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     final former = _sessions.remove(sessionId);
     final initialSnapshot = former?.snapshot;
@@ -259,7 +261,7 @@ final class AgentClientRegistry {
         'extensionMethod': method,
         'extensionParams': params,
       },
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     return response.params['result'];
   }
@@ -284,7 +286,7 @@ final class AgentClientRegistry {
         'permissionId': permissionId,
         'optionId': optionId,
       },
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     _pendingPermissions.remove(permissionId);
     _permissionQueue.removeWhere((request) => request.id == permissionId);
@@ -454,31 +456,52 @@ final class AgentClientRegistry {
     await _request(
       method: 'agent.session.prompt',
       params: <String, Object?>{'sessionId': session.id, 'text': text},
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
-    final deadline = DateTime.now().add(policy.requestTimeout);
+    final timeout = policy.requestTimeout;
+    final elapsed = timeout == null ? null : (Stopwatch()..start());
     while (true) {
-      final result = await _poll(session);
-      if (result != null) return result;
-      if (DateTime.now().isAfter(deadline)) {
+      final remaining = timeout == null ? null : timeout - elapsed!.elapsed;
+      if (remaining != null && remaining <= Duration.zero) {
         throw AgentClientFailure(
           'request_timeout',
           'Agent prompt exceeded the configured deadline',
         );
       }
+      final result = await _poll(session, promptTimeRemaining: remaining);
+      if (result != null) return result;
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   }
 
-  Future<Object?> _poll(AgentClientSession session) async {
-    final response = await _request(
-      method: 'agent.session.poll',
-      params: <String, Object?>{
-        'sessionId': session.id,
-        'afterSequence': session._eventCursor,
-      },
-      deadline: const Duration(seconds: 2),
-    );
+  Future<Object?> _poll(
+    AgentClientSession session, {
+    Duration? promptTimeRemaining,
+  }) async {
+    final pollDeadline =
+        promptTimeRemaining == null ||
+            promptTimeRemaining > const Duration(seconds: 2)
+        ? const Duration(seconds: 2)
+        : promptTimeRemaining;
+    late final VityodControlEnvelope response;
+    try {
+      response = await _request(
+        method: 'agent.session.poll',
+        params: <String, Object?>{
+          'sessionId': session.id,
+          'afterSequence': session._eventCursor,
+        },
+        deadline: pollDeadline,
+      );
+    } on TimeoutException {
+      if (promptTimeRemaining != null) {
+        throw AgentClientFailure(
+          'request_timeout',
+          'Agent prompt exceeded the configured deadline',
+        );
+      }
+      rethrow;
+    }
     final events = response.params['events'];
     if (events is! List<Object?>) {
       throw AgentClientFailure(
@@ -661,7 +684,7 @@ final class AgentClientRegistry {
           'response': _clientOperationResponses[operation.operationId]!,
         },
         idempotencyKey: 'agent-client-operation-${operation.operationId}',
-        deadline: policy.requestTimeout,
+        deadline: _controlRequestTimeout,
       );
       _clientOperationResponses.remove(operation.operationId);
     } on Object catch (error) {
@@ -698,7 +721,7 @@ final class AgentClientRegistry {
     final response = await _request(
       method: 'agent.acp.session.cancel',
       params: <String, Object?>{'sessionId': session.id},
-      deadline: policy.requestTimeout,
+      deadline: _controlRequestTimeout,
     );
     _pendingPermissions.removeWhere(
       (_, permission) => permission.sessionId == session.id,
@@ -856,14 +879,21 @@ AgentClientPolicy _freezePolicy(AgentClientPolicy policy) => AgentClientPolicy(
   maxSessions: policy.maxSessions,
   maxPendingRequests: policy.maxPendingRequests,
   requestTimeout: policy.requestTimeout,
+  controlRequestTimeout: policy.controlRequestTimeout,
   shutdownTimeout: policy.shutdownTimeout,
   allowedExtensions: Set<String>.unmodifiable(policy.allowedExtensions),
 );
 
 void _validatePolicy(AgentClientPolicy policy) {
-  if (policy.requestTimeout <= Duration.zero ||
+  if ((policy.requestTimeout != null &&
+          policy.requestTimeout! <= Duration.zero) ||
+      policy.controlRequestTimeout <= Duration.zero ||
       policy.shutdownTimeout <= Duration.zero) {
-    throw ArgumentError.value(policy, 'policy', 'timeouts must be positive');
+    throw ArgumentError.value(
+      policy,
+      'policy',
+      'configured timeouts must be positive',
+    );
   }
   for (final extension in policy.allowedExtensions) {
     if (!extension.startsWith(vityoAcpExtensionPrefix) ||

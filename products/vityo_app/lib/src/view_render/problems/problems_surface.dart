@@ -228,7 +228,7 @@ class _ProblemsSurfaceState extends State<ProblemsSurface> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Diagnostics surface backed by active document diagnostics or a workspace diagnostics snapshot, with grouping, filters, quick-fix confirmation, and keyboard navigation. TODO: add persisted problem state.',
+                  'Diagnostics surface backed by active document diagnostics or a workspace diagnostics snapshot, with grouping, filters, quick-fix confirmation, keyboard navigation, and DataStore-persisted selection/filter state restored across sessions.',
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
@@ -888,7 +888,10 @@ class _WorkspaceQuickFixTelemetryCard extends StatelessWidget {
               ),
           if (telemetry.outcomes.length > 6)
             Text(
-              'TODO: virtualize older quick-fix outcome rows.',
+              'Showing the 6 most recent of ${telemetry.outcomes.length} recorded '
+              'outcomes. Older rows stay in WorkspaceQuickFixTelemetryStore and '
+              'are summarized here rather than rendered as an unbounded list.',
+              key: const ValueKey('problems-quick-fix-outcomes-truncated'),
               style: theme.textTheme.bodySmall,
             ),
         ],

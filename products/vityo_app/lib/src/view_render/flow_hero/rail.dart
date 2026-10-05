@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'controller.dart';
+import '../../view_ide/flow_hero/flow_hero.dart';
 import 'palette.dart';
 
 class HeroRail extends StatelessWidget {
@@ -49,17 +50,18 @@ class HeroRail extends StatelessWidget {
           ),
           RailBtn(
             icon: Icons.check_circle_outline,
-            tooltip: '测试',
-            onTap: () => c.postAgentNote('测试：flow_model_test 全部通过（3 秒前刚跑过）。', receipt: true),
+            tooltip: c.executionBusy
+                ? '测试执行中…'
+                : (c.canExecute ? '测试 · pafio test' : '测试'),
+            enabled: c.canExecute,
+            disabledReason: c.executionUnavailableReason,
+            onTap: () => c.runExecution(FlowHeroExecutionKind.test),
           ),
           const Spacer(),
           RailBtn(
             icon: P.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
             tooltip: P.dark ? '切到白天' : '切到黑夜',
-            onTap: () {
-              P.dark = !P.dark;
-              c.toggleTheme();
-            },
+            onTap: () => c.setDark(!P.dark),
           ),
           RailBtn(
             icon: Icons.settings_outlined,
@@ -75,22 +77,36 @@ class HeroRail extends StatelessWidget {
 }
 
 class RailBtn extends StatelessWidget {
-  const RailBtn({super.key, required this.icon, required this.tooltip, required this.onTap, this.active = false});
+  const RailBtn({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.active = false,
+    this.enabled = true,
+    this.disabledReason,
+  });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final bool active;
 
+  /// False disables the control and makes [disabledReason] the visible hover
+  /// text — the same honesty pattern the settings rows use.
+  final bool enabled;
+  final String? disabledReason;
+
   @override
   Widget build(BuildContext context) {
+    final String message = enabled ? tooltip : (disabledReason ?? tooltip);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Tooltip(
-        message: tooltip,
+        message: message,
         preferBelow: false,
         child: InkWell(
-          onTap: onTap,
+          onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(4),
           child: Stack(
             clipBehavior: Clip.none,
@@ -103,7 +119,13 @@ class RailBtn extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   border: active ? Border.all(color: P.ring) : null,
                 ),
-                child: Icon(icon, size: 17, color: active ? P.orangeBright : P.silkDim),
+                child: Icon(
+                  icon,
+                  size: 17,
+                  color: !enabled
+                      ? P.silkDim.withValues(alpha: 0.5)
+                      : (active ? P.orangeBright : P.silkDim),
+                ),
               ),
               if (active)
                 Positioned(

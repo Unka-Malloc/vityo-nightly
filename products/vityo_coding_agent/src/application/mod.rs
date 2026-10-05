@@ -96,17 +96,26 @@ impl AgentApplication {
             MAX_EVENT_BYTES,
         ));
         let output_token_limit = config.capabilities.output_tokens;
+        let context_tokens = config.capabilities.context_tokens;
         let max_tool_calls = config.limits.max_tool_calls;
         let budget = config.usage_budget();
         let provider = provider_factory(config, credentials)
             .map_err(AgentApplicationError::ProviderConfiguration)?;
-        Self::assemble(provider, budget, output_token_limit, max_tool_calls, store)
+        Self::assemble(
+            provider,
+            budget,
+            output_token_limit,
+            context_tokens,
+            max_tool_calls,
+            store,
+        )
     }
 
     fn assemble(
         provider: Arc<dyn crate::providers::ModelProvider>,
         budget: crate::providers::UsageBudget,
-        output_token_limit: u32,
+        output_token_limit: Option<u32>,
+        context_tokens: u32,
         max_tool_calls: usize,
         store: Arc<dyn SessionEventStore>,
     ) -> Result<Self, AgentApplicationError> {
@@ -117,6 +126,7 @@ impl AgentApplication {
         let runtime = ReActRuntime::new(
             provider.clone(),
             output_token_limit,
+            context_tokens,
             max_tool_calls,
             SYSTEM_PROMPT,
         )

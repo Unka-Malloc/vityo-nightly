@@ -16,6 +16,11 @@
     "lifecycle": "independent-on-demand-process",
     "discovery": "application-relative-executable-only"
   },
+  "pafio": {
+    "name": "pafio",
+    "lifecycle": "independent-on-demand-process",
+    "discovery": "application-relative-manifest-only"
+  },
   "state_policy": {
     "compatible_schema_step": 1,
     "upgrade": "candidate-health-rollback",

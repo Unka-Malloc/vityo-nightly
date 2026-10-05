@@ -46,6 +46,26 @@ CODING_AGENT_RUNTIME_LIBRARIES = {
     "macos": [],
     "linux": ["glibc", "libssl.so.3"],
 }
+PAFIO_TARGETS = {
+    "windows": "x86_64-pc-windows-msvc",
+    "macos": "native-apple-darwin",
+    "linux": "x86_64-unknown-linux-gnu",
+}
+PAFIO_PACKAGE_PATHS = {
+    "windows": "components/pafio.exe",
+    "macos": "Contents/Helpers/pafio",
+    "linux": "components/pafio",
+}
+PAFIO_RUNTIME_LIBRARIES = {
+    "windows": ["vcruntime140.dll"],
+    "macos": [],
+    "linux": ["glibc"],
+}
+PAFIO_MANIFEST_PATHS = {
+    "windows": "components/pafio-component.json",
+    "macos": "Contents/Resources/pafio-component.json",
+    "linux": "components/pafio-component.json",
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -135,6 +155,13 @@ def validate_repository(root: pathlib.Path) -> list[str]:
         "discovery": "application-relative-executable-only",
     }:
         errors.append("Coding Agent component lifecycle or discovery contract is invalid")
+    pafio = contract.get("pafio")
+    if not isinstance(pafio, dict) or pafio != {
+        "name": "pafio",
+        "lifecycle": "independent-on-demand-process",
+        "discovery": "application-relative-manifest-only",
+    }:
+        errors.append("pafio component lifecycle or discovery contract is invalid")
     state_policy = contract.get("state_policy")
     if not isinstance(state_policy, dict) or state_policy != {
         "compatible_schema_step": 1,
@@ -204,6 +231,20 @@ def validate_repository(root: pathlib.Path) -> list[str]:
                 errors.append(f"{manifest_path.relative_to(root)}: Coding Agent target is mismatched")
             if coding_agent.get("required_runtime_libraries") != CODING_AGENT_RUNTIME_LIBRARIES[platform]:
                 errors.append(f"{manifest_path.relative_to(root)}: Coding Agent runtime libraries are mismatched")
+        pafio = manifest.get("pafio")
+        if not isinstance(pafio, dict):
+            errors.append(f"{manifest_path.relative_to(root)}: pafio component is missing")
+        else:
+            package_path = str(pafio.get("package_relative_path", ""))
+            target = str(pafio.get("target", ""))
+            if package_path != PAFIO_PACKAGE_PATHS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: pafio package path is invalid")
+            if target != PAFIO_TARGETS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: pafio target is mismatched")
+            if pafio.get("required_runtime_libraries") != PAFIO_RUNTIME_LIBRARIES[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: pafio runtime libraries are mismatched")
+            if pafio.get("manifest_relative_path") != PAFIO_MANIFEST_PATHS[platform]:
+                errors.append(f"{manifest_path.relative_to(root)}: pafio manifest path is invalid")
 
     workflow_path = root / ".github" / "workflows" / "local-ci-gate.yml"
     try:

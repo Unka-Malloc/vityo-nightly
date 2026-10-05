@@ -172,7 +172,7 @@ void main() {
     expect(restored.codeActionWidget.primaryLabel, isNotEmpty);
     expect(
       (restored.toJson()['codeActionWidget']! as Map<String, Object?>)['todo'],
-      contains('lightbulb popup'),
+      isNull,
     );
   });
 

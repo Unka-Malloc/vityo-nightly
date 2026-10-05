@@ -24,6 +24,53 @@ extension AdapterKindX on AdapterKind {
   }
 }
 
+/// Live probe for a real Styio language service.
+///
+/// The default entry boots `styio_lspd` directly; when it does, it reports here
+/// so the fallback claims below stop describing the language route as
+/// mock-only. `absent` is the honest default: no real service has been observed
+/// in this process, and every existing caller keeps its previous wording.
+class StyioLanguageServiceProbe {
+  const StyioLanguageServiceProbe({
+    this.realServiceAvailable = false,
+    this.providerId = '',
+    this.version = '',
+  });
+
+  const StyioLanguageServiceProbe.absent()
+    : realServiceAvailable = false,
+      providerId = '',
+      version = '';
+
+  final bool realServiceAvailable;
+  final String providerId;
+  final String version;
+
+  static StyioLanguageServiceProbe _current =
+      const StyioLanguageServiceProbe.absent();
+
+  /// The most recently observed probe for this process.
+  static StyioLanguageServiceProbe get current => _current;
+
+  static void report(StyioLanguageServiceProbe probe) {
+    _current = probe;
+  }
+
+  static void clear() {
+    _current = const StyioLanguageServiceProbe.absent();
+  }
+
+  String get providerLabel {
+    if (!realServiceAvailable) {
+      return providerId.isEmpty ? 'local-heuristic' : providerId;
+    }
+    if (version.isEmpty) {
+      return providerId.isEmpty ? 'styio_lspd' : providerId;
+    }
+    return providerId.isEmpty ? 'styio_lspd $version' : '$providerId $version';
+  }
+}
+
 enum AdapterCapabilityLevel { available, partial, unavailable }
 
 extension AdapterCapabilityLevelX on AdapterCapabilityLevel {
@@ -184,14 +231,23 @@ AdapterCapabilitySnapshot buildCloudAdapterCapability({
   required bool supportsCloudExecution,
   required bool supportsHostedProjectGraph,
   required String detail,
+  StyioLanguageServiceProbe? languageServiceProbe,
 }) {
+  final probe = languageServiceProbe ?? StyioLanguageServiceProbe.current;
   return AdapterCapabilitySnapshot(
     adapterKind: AdapterKind.cloud,
-    languageService: const AdapterEndpointCapability(
-      level: AdapterCapabilityLevel.partial,
-      detail:
-          'Cloud language service remains a future route; local mock layers stay active today.',
-    ),
+    languageService: probe.realServiceAvailable
+        ? AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.available,
+            detail:
+                'Local ${probe.providerLabel} language service is the live route; '
+                'cloud language service remains a future route.',
+          )
+        : const AdapterEndpointCapability(
+            level: AdapterCapabilityLevel.partial,
+            detail:
+                'Cloud language service remains a future route; local mock layers stay active today.',
+          ),
     projectGraph: AdapterEndpointCapability(
       level: supportsHostedProjectGraph
           ? AdapterCapabilityLevel.partial

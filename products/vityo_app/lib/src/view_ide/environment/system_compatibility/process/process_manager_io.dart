@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../../ide/local_service/vityod_client.dart';
+import '../../configuration/forwarded_host_environment.dart';
 import '../platform_adapter/platform_adapter.dart';
 import '../platform_context/platform_context.dart';
 import 'process_adapter.dart';
@@ -97,6 +98,10 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
     final typedService = request.serviceKind != ProcessServiceKind.generic;
     final taskId =
         '$servicePrefix-${_client.clientInstanceId}-${++_globalTaskSequence}';
+    final environment =
+        plan.environment.isEmpty && compatibility.supportsEnvironmentOverlay
+        ? forwardedHostEnvironment()
+        : plan.environment;
     final stopwatch = Stopwatch()..start();
     var taskStarted = false;
     int? processId;
@@ -110,9 +115,10 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
           'executable': plan.executablePath,
           'arguments': plan.arguments,
           'workingDirectory': plan.workingDirectory,
-          'environment': plan.environment,
+          'environment': environment,
           'standardInput': plan.standardInput,
-          'timeoutMillis': plan.timeout.inMilliseconds,
+          if (plan.timeout case final timeout?)
+            'timeoutMillis': timeout.inMilliseconds,
         },
       );
       _throwIfError(start);
@@ -232,11 +238,15 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
             'Process cancellation is unavailable while vityod is disconnected.',
       );
     }
+    final typedService = _typedServiceForTaskId(taskId);
     try {
       final response = await _client.request(
-        method: 'task.cancel',
+        method: typedService == null ? 'task.cancel' : '$typedService.request',
         idempotencyKey: 'task-cancel-$taskId',
-        params: <String, Object?>{'taskId': taskId},
+        params: <String, Object?>{
+          'taskId': taskId,
+          if (typedService != null) 'action': 'cancel',
+        },
       );
       _throwIfError(response);
       final cancelled = response.params['state'] == 'cancelled';
@@ -251,6 +261,7 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
         metadata: <String, Object?>{
           'processHandleId': taskId,
           'processHandleSource': 'vityod',
+          if (typedService != null) 'serviceKind': typedService,
         },
       );
     } on Object catch (error) {
@@ -261,6 +272,7 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
         metadata: <String, Object?>{
           'processHandleId': taskId,
           'processHandleSource': 'vityod',
+          if (typedService != null) 'serviceKind': typedService,
         },
       );
     }
@@ -275,6 +287,13 @@ int? _positiveProcessId(Object? value) {
   };
   return processId != null && processId > 0 ? processId : null;
 }
+
+String? _typedServiceForTaskId(String taskId) =>
+    switch (taskId.split('-').first) {
+      'styio' => 'styio',
+      'pafio' => 'pafio',
+      _ => null,
+    };
 
 void _throwIfError(dynamic response) {
   if (!response.method.endsWith('.error')) return;

@@ -19,6 +19,12 @@
     "package_relative_path": "components/vityo-coding-agent.exe",
     "required_runtime_libraries": ["vcruntime140.dll"]
   },
+  "pafio": {
+    "target": "x86_64-pc-windows-msvc",
+    "package_relative_path": "components/pafio.exe",
+    "required_runtime_libraries": ["vcruntime140.dll"],
+    "manifest_relative_path": "components/pafio-component.json"
+  },
   "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
   "signing": {"status": "explicit-gap", "reason": "Nightly Authenticode signing credentials are not configured."},
   "automatic_updates": false

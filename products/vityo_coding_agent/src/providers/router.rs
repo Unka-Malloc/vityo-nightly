@@ -128,8 +128,9 @@ impl ProviderRouter {
 
             match result {
                 Ok(mut receipt) => {
-                    accrued_usage = add_usage(accrued_usage, receipt.usage);
-                    self.budget.validate_usage(accrued_usage)?;
+                    self.budget.validate_attempt_usage(receipt.usage)?;
+                    accrued_usage = add_usage(accrued_usage, receipt.usage)?;
+                    self.budget.validate_routed_usage(accrued_usage)?;
                     receipt.usage = accrued_usage;
                     return Ok(receipt);
                 }
@@ -138,13 +139,16 @@ impl ProviderRouter {
                         failure.usage = reducer.observed_usage();
                     }
                     if let Some(usage) = failure.usage {
-                        accrued_usage = add_usage(accrued_usage, usage);
-                        self.budget.validate_usage(accrued_usage)?;
+                        self.budget.validate_attempt_usage(usage)?;
+                        accrued_usage = add_usage(accrued_usage, usage)?;
+                        self.budget.validate_routed_usage(accrued_usage)?;
                     }
                     self.mark_unavailable(provider.id(), &failure).await;
                     if !failure.permits_fallback(&request) {
                         return Err(failure);
                     }
+                    self.budget
+                        .validate_fallback_request(&request, accrued_usage)?;
                     last_failure = Some(failure);
                 }
             }
@@ -164,6 +168,9 @@ impl ProviderRouter {
         let now = Instant::now();
         let mut saturated = None;
         let mut has_compatible = false;
+        let requested_context_tokens = request
+            .estimated_context_tokens
+            .checked_add(request.output_token_limit.unwrap_or(0));
         for (index, slot) in self.providers.iter().enumerate() {
             if attempted.contains(&index) {
                 continue;
@@ -173,9 +180,14 @@ impl ProviderRouter {
                 continue;
             }
             let capabilities = slot.provider.capabilities();
+            let output_compatible = match (capabilities.output_tokens, request.output_token_limit) {
+                (Some(available), Some(required)) => available >= required,
+                _ => true,
+            };
             if !requirements.accepts(capabilities)
-                || capabilities.context_tokens < request.estimated_context_tokens
-                || capabilities.output_tokens < request.output_token_limit
+                || requested_context_tokens
+                    .is_none_or(|tokens| capabilities.context_tokens < tokens)
+                || !output_compatible
             {
                 continue;
             }
@@ -221,15 +233,35 @@ impl ProviderRouter {
     }
 }
 
-fn add_usage(left: ModelUsage, right: ModelUsage) -> ModelUsage {
-    ModelUsage {
-        input_tokens: left.input_tokens.saturating_add(right.input_tokens),
-        output_tokens: left.output_tokens.saturating_add(right.output_tokens),
-        cost_micros: match (left.cost_micros, right.cost_micros) {
-            (Some(left), Some(right)) => Some(left.saturating_add(right)),
-            _ => None,
-        },
-    }
+fn add_usage(left: ModelUsage, right: ModelUsage) -> Result<ModelUsage, ProviderFailure> {
+    let input_tokens = left.input_tokens.checked_add(right.input_tokens);
+    let output_tokens = left.output_tokens.checked_add(right.output_tokens);
+    let cost_micros = match (left.cost_micros, right.cost_micros) {
+        (Some(left), Some(right)) => Some(left.checked_add(right)),
+        _ => None,
+    };
+    let (Some(input_tokens), Some(output_tokens)) = (input_tokens, output_tokens) else {
+        return Err(usage_budget_failure());
+    };
+    let cost_micros = match cost_micros {
+        Some(Some(cost)) => Some(cost),
+        Some(None) => return Err(usage_budget_failure()),
+        None => None,
+    };
+    Ok(ModelUsage {
+        input_tokens,
+        output_tokens,
+        cost_micros,
+    })
+}
+
+fn usage_budget_failure() -> ProviderFailure {
+    ProviderFailure::new(
+        ProviderFailureKind::BudgetExceeded,
+        "provider usage exceeds the configured generation budget",
+        false,
+        ModelEffectState::None,
+    )
 }
 
 fn check_cancelled_or_deadline(

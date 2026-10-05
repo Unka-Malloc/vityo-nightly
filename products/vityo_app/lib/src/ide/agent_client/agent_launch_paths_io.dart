@@ -17,3 +17,15 @@ Future<AgentLaunchDescriptor> resolvePackagedCodingAgentLaunch({
     workingDirectory: workingDirectory,
   );
 }
+
+/// The `provider.json` path the packaged coding agent is launched with.
+///
+/// The workbench's model configuration writes to exactly this path, so it never
+/// diverges from the launch contract.
+Future<String> resolvePackagedCodingAgentProviderConfigPath() async {
+  final supportDirectory = await getApplicationSupportDirectory();
+  return AgentLaunchPaths.providerConfigPath(
+    applicationSupportDirectory: supportDirectory.path,
+    pathSeparator: Platform.pathSeparator,
+  );
+}

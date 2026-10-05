@@ -23,8 +23,13 @@ pub struct ProviderConfig {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderCapabilitiesConfig {
+    /// The model's per-attempt input-plus-output context window. Required: it
+    /// also drives history compaction, so the runtime needs an explicit value.
     pub context_tokens: u32,
-    pub output_tokens: u32,
+    /// Optional maximum output. Omitted means the provider is treated as having
+    /// no finite output ceiling.
+    #[serde(default)]
+    pub output_tokens: Option<u32>,
     pub supports_tools: bool,
     pub max_concurrency: usize,
 }
@@ -32,7 +37,9 @@ pub struct ProviderCapabilitiesConfig {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderLimitsConfig {
-    pub max_total_tokens: u32,
+    /// Optional cumulative token ceiling. Omitted means no total-token cap.
+    #[serde(default)]
+    pub max_total_tokens: Option<u32>,
     pub max_cost_micros: Option<u64>,
     #[serde(default = "default_output_bytes")]
     pub max_buffered_output_bytes: usize,
@@ -103,16 +110,24 @@ impl ProviderConfig {
         if self.adapter != "openai_compatible_chat"
             || self.model.trim().is_empty()
             || self.capabilities.context_tokens == 0
-            || self.capabilities.output_tokens == 0
+            || self.capabilities.output_tokens == Some(0)
+            || self
+                .capabilities
+                .output_tokens
+                .is_some_and(|output| output > self.capabilities.context_tokens)
             || self.capabilities.max_concurrency == 0
-            || self.limits.max_total_tokens == 0
+            || self.limits.max_total_tokens == Some(0)
             || self.limits.max_buffered_output_bytes == 0
             || self.limits.max_tool_argument_bytes == 0
             || self.limits.max_buffered_tool_bytes == 0
             || self.limits.max_pending_tool_calls == 0
             || self.limits.max_tool_calls == 0
             || self.limits.max_tool_schema_bytes == 0
-            || self.capabilities.output_tokens > self.limits.max_total_tokens
+            || self
+                .capabilities
+                .output_tokens
+                .zip(self.limits.max_total_tokens)
+                .is_some_and(|(output, total)| output > total)
         {
             return Err(ProviderConfigError::InvalidConfiguration);
         }

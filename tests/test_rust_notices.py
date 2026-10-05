@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import runpy
 import sys
 import subprocess
@@ -98,7 +99,8 @@ class RustNoticeGeneratorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="rust-notice-test-") as temporary:
             root = Path(temporary)
             tool_root = Path("tool-cache")
-            tool = root / tool_root / "bin" / "cargo-about"
+            executable = "cargo-about.exe" if os.name == "nt" else "cargo-about"
+            tool = root / tool_root / "bin" / executable
             tool.parent.mkdir(parents=True)
             tool.write_text("old tool", encoding="utf-8")
             calls: list[list[str]] = []
@@ -158,7 +160,8 @@ class RustNoticeGeneratorTest(unittest.TestCase):
     def test_cargo_about_binary_hides_process_errors(self) -> None:
         with tempfile.TemporaryDirectory(prefix="rust-notice-test-") as temporary:
             root = Path(temporary)
-            tool = root / "tool-cache/bin/cargo-about"
+            executable = "cargo-about.exe" if os.name == "nt" else "cargo-about"
+            tool = root / "tool-cache/bin" / executable
             tool.parent.mkdir(parents=True)
             tool.touch()
             with (
@@ -170,7 +173,8 @@ class RustNoticeGeneratorTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="rust-notice-test-") as temporary:
             root = Path(temporary)
-            tool = root / "tool-cache/bin/cargo-about"
+            executable = "cargo-about.exe" if os.name == "nt" else "cargo-about"
+            tool = root / "tool-cache/bin" / executable
             tool.parent.mkdir(parents=True)
             tool.touch()
             wrong_version = subprocess.CompletedProcess([str(tool)], 0, "cargo-about 0.8.0\n", "")
@@ -313,7 +317,8 @@ class RustNoticeGeneratorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="rust-notice-test-") as temporary:
             root = Path(temporary)
             output = root / "notice.txt"
-            tool_path = REPO_ROOT / self.generator.TOOL_ROOT / "bin" / "cargo-about"
+            executable = "cargo-about.exe" if os.name == "nt" else "cargo-about"
+            tool_path = REPO_ROOT / self.generator.TOOL_ROOT / "bin" / executable
             original_is_file = Path.is_file
 
             def is_file(path: Path) -> bool:

@@ -420,7 +420,7 @@ class _MemoryNetworkManager implements NetworkManager {
   @override
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   }) async {
     final bytes = responses[uri];
     if (bytes == null) {

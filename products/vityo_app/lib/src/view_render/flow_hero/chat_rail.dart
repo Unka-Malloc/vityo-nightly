@@ -67,27 +67,32 @@ class _ChatRailState extends State<ChatRail> {
               builder: (BuildContext context, _) {
                 final permissions = c.bridge.pendingPermissions;
                 final proposals = c.bridge.pendingWorkspaceReviews;
-                return ListView(
-                  controller: _scroll,
-                  padding: const EdgeInsets.all(12),
-                  children: <Widget>[
-                    if (permissions.isNotEmpty || proposals.isNotEmpty)
-                      FlowHeroAgentReviewPanel(
-                        permissions: permissions,
-                        proposals: proposals,
-                        onResolvePermission:
-                            (AgentPermissionRequest request, String optionId) {
-                              c.bridge.decidePermission(request.id, optionId);
-                            },
-                        onResolveProposal: (String reviewId, bool apply) {
-                          c.bridge.decideWorkspaceProposal(
-                            reviewId,
-                            apply: apply,
-                          );
-                        },
-                      ),
-                    for (final message in c.messages) _MsgView(msg: message),
-                  ],
+                return SelectionArea(
+                  child: ListView(
+                    controller: _scroll,
+                    padding: const EdgeInsets.all(12),
+                    children: <Widget>[
+                      if (permissions.isNotEmpty || proposals.isNotEmpty)
+                        FlowHeroAgentReviewPanel(
+                          permissions: permissions,
+                          proposals: proposals,
+                          onResolvePermission:
+                              (
+                                AgentPermissionRequest request,
+                                String optionId,
+                              ) {
+                                c.bridge.decidePermission(request.id, optionId);
+                              },
+                          onResolveProposal: (String reviewId, bool apply) {
+                            c.bridge.decideWorkspaceProposal(
+                              reviewId,
+                              apply: apply,
+                            );
+                          },
+                        ),
+                      for (final message in c.messages) _MsgView(msg: message),
+                    ],
+                  ),
                 );
               },
             ),
@@ -308,10 +313,7 @@ class _DiffLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(top: 3),
-    child: SelectableText(
-      '$prefix $text',
-      style: P.monoStyle(color: color, size: 10),
-    ),
+    child: Text('$prefix $text', style: P.monoStyle(color: color, size: 10)),
   );
 }
 
@@ -419,7 +421,19 @@ class _MsgView extends StatelessWidget {
             right: BorderSide(color: P.seamLo),
           ),
         ),
-        child: Text(msg.text, style: P.monoStyle(color: P.silk, size: 11)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (msg.demo) ...<Widget>[
+              Text(
+                '演示内容',
+                style: P.silkStyle().copyWith(color: P.orange, fontSize: 9),
+              ),
+              const SizedBox(height: 3),
+            ],
+            Text(msg.text, style: P.monoStyle(color: P.silk, size: 11)),
+          ],
+        ),
       );
     }
     final bool isUser = msg.who == '你';
@@ -431,7 +445,19 @@ class _MsgView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(msg.who, style: P.silkStyle(dim: true)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(msg.who, style: P.silkStyle(dim: true)),
+                if (msg.demo) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Text(
+                    '演示',
+                    style: P.silkStyle().copyWith(color: P.orange, fontSize: 9),
+                  ),
+                ],
+              ],
+            ),
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

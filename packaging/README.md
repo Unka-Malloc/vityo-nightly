@@ -22,6 +22,19 @@ the daemon executable. macOS stages it under `Contents/Resources` instead, becau
 `codesign` treats `Contents/Helpers` as a directory of nested code and refuses to
 seal the bundle while an unsigned JSON record is inside it.
 
+The same package also bundles the pinned `pafio` CLI as a built-in component. Its
+binary is staged at the platform layout (`components/pafio` on Linux,
+`components/pafio.exe` on Windows, `Contents/Helpers/pafio` on macOS) and its
+identity is recorded in `pafio-component.json`, a different file name so a
+package still contains exactly one `vityod-component.json`. pafio is a pinned
+external CLI rather than an in-repository workspace, so its contract declares the
+target and runtime libraries but no build source path: packaging resolves the
+binary through the shared pinned-CLI resolution, preferring an explicit
+`--pafio-bin` and otherwise provisioning the product-matrix revision. The record
+uses the same application-relative discovery model as vityod — `manifest_relative_path`
+declares where it is staged, defaulting beside the executable, and macOS stages it
+under `Contents/Resources` for the same `codesign` reason.
+
 `python3 scripts/vityod-desktop-matrix-gate.py --fixtures-only` verifies all
 three structural lanes without claiming a launch. A matching host validates an
 installed layout with `--platform <platform> --application-root <path>`; that

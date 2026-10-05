@@ -17,7 +17,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import ExitStack, redirect_stdout
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest import mock
 
@@ -304,6 +304,13 @@ class EcosystemProductGateEdgeCaseTest(unittest.TestCase):
             self.gate._validate_privacy({"note": limit + "x"})
         with self.assertRaisesRegex(ValueError, "absolute path"):
             self.gate._validate_privacy({"note": "/private/synthetic/workspace"})
+        # Model Windows' native Path semantics even when this suite runs on a
+        # POSIX host; a POSIX-rooted path still needs to be rejected there.
+        with mock.patch.object(self.gate, "Path", PureWindowsPath):
+            with self.assertRaisesRegex(ValueError, "absolute path"):
+                self.gate._validate_privacy(
+                    {"note": "/private/synthetic/workspace"}
+                )
         with self.assertRaisesRegex(ValueError, "absolute path"):
             self.gate._validate_privacy({"note": "C:\\Users\\synthetic\\workspace"})
         self.gate._validate_privacy({"note": "src/main.styio"})

@@ -28,6 +28,8 @@ List<Widget> _buildPreviewChildren(
   required ValueChanged<DragEndDetails> onPanEnd,
   required bool showInlineLanguageFeedback,
   required bool compactInlineLanguageFeedback,
+  required bool hasCodeActionsAtCaret,
+  required VoidCallback onOpenCodeActions,
 }) {
   final children = <Widget>[];
   final blockByStart = <int, _SemanticLineBlock>{
@@ -144,6 +146,8 @@ List<Widget> _buildPreviewChildren(
                     showInlineLanguageFeedback: showInlineLanguageFeedback,
                     compactInlineLanguageFeedback:
                         compactInlineLanguageFeedback,
+                    hasCodeActionsAtCaret: hasCodeActionsAtCaret,
+                    onOpenCodeActions: onOpenCodeActions,
                   ),
                 if (collapsed)
                   _CollapsedBlockSummary(
@@ -185,6 +189,8 @@ List<Widget> _buildPreviewChildren(
         onPanEnd: onPanEnd,
         showInlineLanguageFeedback: showInlineLanguageFeedback,
         compactInlineLanguageFeedback: compactInlineLanguageFeedback,
+        hasCodeActionsAtCaret: hasCodeActionsAtCaret,
+        onOpenCodeActions: onOpenCodeActions,
       ),
     );
     lineIndex += 1;
@@ -339,6 +345,8 @@ List<Widget> _buildLineWithInlineFeedback(
   required ValueChanged<DragEndDetails> onPanEnd,
   required bool showInlineLanguageFeedback,
   required bool compactInlineLanguageFeedback,
+  required bool hasCodeActionsAtCaret,
+  required VoidCallback onOpenCodeActions,
 }) {
   final widgets = <Widget>[
     _HighlightedLineRow(
@@ -358,6 +366,8 @@ List<Widget> _buildLineWithInlineFeedback(
       onPanStart: (details) => onPanStartLine(lineIndex, details),
       onPanUpdate: (details) => onPanUpdateLine(lineIndex, details),
       onPanEnd: onPanEnd,
+      showCodeActionBulb: lineIndex == activeLineIndex && hasCodeActionsAtCaret,
+      onCodeActionBulbPressed: onOpenCodeActions,
     ),
   ];
 
@@ -421,7 +431,8 @@ List<InlineSpan> _buildLineSpans(
   final requestedCaret = selection.isCollapsed
       ? selection.end - sourceOffsetBase
       : null;
-  final caretOffset = requestedCaret != null &&
+  final caretOffset =
+      requestedCaret != null &&
           requestedCaret >= lineRange.start &&
           requestedCaret <= lineRange.end
       ? requestedCaret

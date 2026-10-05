@@ -1,6 +1,10 @@
 /// The floating source dock. Appears on node selection; its corner button is
 /// expand/collapse (pop up / tuck down) — there is no close button, and
 /// blank-canvas drags never dismiss it.
+///
+/// The lines it shows are read from the active buffer at the selected node's
+/// real source span. A node with no source location says so instead of
+/// inventing a snippet.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,8 +21,11 @@ class SourceDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FlowHeroController c = controller;
-    if (c.selectedId == null) return const SizedBox.shrink();
-    final String sig = kNodeSnippetLines[c.selectedId] ?? '// no source';
+    final String? selectedId = c.selectedId;
+    if (selectedId == null) return const SizedBox.shrink();
+    final HeroNode? node = c.byId(selectedId);
+    final List<SourceDockLine> lines = c.sourceLinesFor(selectedId);
+    final String fileName = c.engine.activeFile.name;
     return Positioned(
       right: 18,
       bottom: 18,
@@ -29,7 +36,13 @@ class SourceDock extends StatelessWidget {
           color: P.recess.withValues(alpha: 0.97),
           borderRadius: BorderRadius.circular(5),
           border: Border.all(color: P.seamLo),
-          boxShadow: const <BoxShadow>[BoxShadow(color: Colors.black87, blurRadius: 34, offset: Offset(0, 10))],
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Colors.black87,
+              blurRadius: 34,
+              offset: Offset(0, 10),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -43,9 +56,9 @@ class SourceDock extends StatelessWidget {
               ),
               child: Row(
                 children: <Widget>[
-                  Text(c.selectedId!, style: P.silkStyle(hi: true)),
+                  Text(node?.name ?? selectedId, style: P.silkStyle(hi: true)),
                   const SizedBox(width: 10),
-                  Text('user_sync.sty', style: P.silkStyle(dim: true)),
+                  Text(fileName, style: P.silkStyle(dim: true)),
                   const Spacer(),
                   // expand/collapse toggle — pops up, tucks down. No close ✕.
                   InkWell(
@@ -66,17 +79,30 @@ class SourceDock extends StatelessWidget {
             AnimatedCrossFade(
               duration: const Duration(milliseconds: 220),
               sizeCurve: Curves.easeOut,
-              crossFadeState: c.dockExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              crossFadeState: c.dockExpanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
               firstChild: SizedBox(
                 height: 180,
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: <Widget>[
-                    SourceLine(lineNo: 1, line: sig, hot: true),
-                    const SourceLine(lineNo: 2, line: '  …'),
-                    const SourceLine(lineNo: 3, line: '}'),
-                  ],
-                ),
+                child: lines.isEmpty
+                    ? Center(
+                        child: Text(
+                          '无源码位置',
+                          key: const ValueKey<String>('source-dock-empty'),
+                          style: TextStyle(color: P.silkDim, fontSize: 11.5),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        children: <Widget>[
+                          for (final SourceDockLine line in lines)
+                            SourceLine(
+                              lineNo: line.lineNo,
+                              line: line.text,
+                              hot: line.lineNo == lines.first.lineNo,
+                            ),
+                        ],
+                      ),
               ),
               secondChild: const SizedBox(width: 420, height: 0),
             ),

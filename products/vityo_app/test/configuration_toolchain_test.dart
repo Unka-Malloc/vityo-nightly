@@ -469,6 +469,8 @@ void main() {
     expect(unsupported.defaultProfileId, 'unsupported');
     expect(unsupported.defaultProfile, isNull);
     expect(fromFacts.defaultProfileId, 'default');
+    expect(fromFacts.timeout, isNull);
+    expect(fromFacts.toJson().containsKey('timeoutMs'), isFalse);
     expect(parsed.defaultProfile!.id, 'pwsh');
     expect(parsed.defaultProfile!.arguments, <String>['-NoProfile', '42']);
     expect(parsed.defaultProfile!.environment['PSModulePath'], r'C:\Modules');

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_render/flow_hero/chat_rail.dart';
 import 'package:vityo_app/src/view_render/flow_hero/editor_stage.dart';
 import 'package:vityo_app/src/view_render/flow_hero/flow_hero.dart';
+import 'package:vityo_app/src/view_render/flow_hero/hero_board.dart';
 import 'package:vityo_app/src/view_render/flow_hero/palette.dart';
 import 'package:vityo_app/src/view_render/flow_hero/rail.dart';
 import 'package:vityo_app/src/view_render/flow_hero/run_strip.dart';
@@ -63,7 +66,9 @@ void main() {
 
     // The search box keeps equal right/top/bottom margins inside the strip
     // (the strip's bottom hairline is not part of the gap).
-    final Finder searchBox = find.byKey(const ValueKey('main-title-search-box'));
+    final Finder searchBox = find.byKey(
+      const ValueKey('main-title-search-box'),
+    );
     expect(searchBox, findsOneWidget);
     final Rect searchRect = tester.getRect(searchBox);
     final Rect mainStripRect = tester.getRect(mainStrip);
@@ -140,8 +145,24 @@ void main() {
     );
     expect(tester.getRect(find.byType(RunStrip)).top, greaterThan(38));
 
-    // Select a node: the source dock pops up — a canvas component.
-    await tester.tap(find.text('FETCH_USERS'));
+    // The default canvas has no real workspace buffer, so it honestly projects
+    // nothing. Open one to get a real node, then select it: the source dock
+    // pops up — a canvas component.
+    final Directory workspace = Directory.systemTemp.createTempSync(
+      'flow_hero_layout_',
+    );
+    addTearDown(() {
+      if (workspace.existsSync()) workspace.deleteSync(recursive: true);
+    });
+    final String path = '${workspace.path}/layout.styio';
+    File(path).writeAsStringSync(
+      'pipeline layoutFlow\nlet staged := source |> normalize\n',
+    );
+    final HeroBoard board = tester.widget<HeroBoard>(find.byType(HeroBoard));
+    // Real file I/O must run outside the widget-test fake clock.
+    await tester.runAsync(() => board.controller.engine.openPath(path));
+    await tester.pump();
+    await tester.tap(find.text('NORMALIZE'));
     await tester.pump();
     expect(find.byType(SourceDock), findsOneWidget);
 
@@ -170,7 +191,9 @@ void main() {
     // The docked strip sits with equal 4pt top/bottom/right margins inside
     // the 34pt toolbar (the toolbar's bottom hairline is not part of the
     // gap) — the same rule the main strip's search box follows.
-    final Rect toolbarRect = tester.getRect(find.byKey(const ValueKey('editor-toolbar')));
+    final Rect toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('editor-toolbar')),
+    );
     final Rect stripRect = tester.getRect(docked);
     expect(toolbarRect.height, 34);
     expect(stripRect.height, 25);
@@ -183,7 +206,10 @@ void main() {
     expect(find.text('user_sync.sty'), findsNothing);
     expect(find.textContaining('真实引擎缓冲'), findsNothing);
     expect(
-      find.descendant(of: stage, matching: find.byIcon(Icons.account_tree_outlined)),
+      find.descendant(
+        of: stage,
+        matching: find.byIcon(Icons.account_tree_outlined),
+      ),
       findsNothing,
     );
     expect(
@@ -318,11 +344,14 @@ void main() {
     expect(find.byKey(const ValueKey('main-title-strip')), findsOneWidget);
     expect(find.byKey(const ValueKey('agent-title-strip')), findsOneWidget);
 
-    // The run strip shrinks with the canvas and drops the throughput counter.
+    // The run strip shrinks with the canvas and reads real execution state —
+    // the old hardcoded throughput counter is gone.
     final Finder runStrip = find.byType(RunStrip);
     expect(runStrip, findsOneWidget);
     expect(tester.getRect(runStrip).width, lessThanOrEqualTo(443 - 24));
     expect(find.text('0 EVT/S'), findsNothing);
+    expect(find.text('42 EVT/S'), findsNothing);
+    expect(find.byKey(const ValueKey('run-strip-missing')), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpWidget(const SizedBox());
@@ -340,7 +369,13 @@ void main() {
     await tester.pump();
 
     expect(find.text('搜索命令 / 文件…'), findsOneWidget);
-    expect(find.text('0 EVT/S'), findsOneWidget);
+    // No fake throughput: only the honest execution readout.
+    expect(find.text('0 EVT/S'), findsNothing);
+    expect(find.text('42 EVT/S'), findsNothing);
+    expect(find.byKey(const ValueKey('run-strip-missing')), findsOneWidget);
+    // No feature runtime is composed in this widget test, so the strip names
+    // the missing execution service instead of booting platform services.
+    expect(find.text('未接线 · 未配置执行服务'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpWidget(const SizedBox());

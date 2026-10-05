@@ -13,6 +13,10 @@ void main() {
     await tester.pump();
 
     expect(find.byType(FlowHeroApp), findsOneWidget);
+    expect(
+      tester.widget<FlowHeroApp>(find.byType(FlowHeroApp)).runtime,
+      isNotNull,
+    );
     await tester.pump(const Duration(seconds: 5));
   });
 

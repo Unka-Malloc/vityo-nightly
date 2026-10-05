@@ -2212,6 +2212,13 @@ class _SourcePreviewPaneState extends State<_SourcePreviewPane> {
                                             widget.showInlineLanguageFeedback,
                                         compactInlineLanguageFeedback: widget
                                             .compactInlineLanguageFeedback,
+                                        hasCodeActionsAtCaret: widget
+                                            .controller
+                                            .contextActionsAtSelection
+                                            .isNotEmpty,
+                                        onOpenCodeActions: () {
+                                          _openQuickFixLookup();
+                                        },
                                       ),
                                     ],
                                   ),

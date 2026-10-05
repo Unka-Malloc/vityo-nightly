@@ -591,7 +591,7 @@ class LinuxHostReadinessGateExtendedTest(unittest.TestCase):
         with mock.patch.object(self.gate, "REPO_ROOT", self.base):
             result = self.gate.check_crlf_scripts()
         self.assertTrue(result["blocked"])
-        detail = str(result["detail"])
+        detail = str(result["detail"]).replace("\\", "/")
         self.assertIn("3 shell script(s) have CRLF line endings", detail)
         for name in (
             "products/vityo_app/tooling/flutter-run.sh",

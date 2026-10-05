@@ -239,12 +239,11 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
         )
 
     def test_git_value_strips_successful_output(self) -> None:
-        self.assertEqual(
-            self.toolchains._git_value(
-                ("git", "rev-parse", "--show-toplevel"), cwd=self.origin
-            ),
-            str(self.origin.resolve()),
+        value = self.toolchains._git_value(
+            ("git", "rev-parse", "--show-toplevel"), cwd=self.origin
         )
+        self.assertEqual(value, value.strip())
+        self.assertEqual(Path(value).resolve(), self.origin.resolve())
 
     def test_checkout_matches_rejects_missing_and_plain_directories(self) -> None:
         self.assertFalse(
@@ -676,7 +675,7 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
             "clang-18": "/usr/bin/clang-18",
             "clang++-18": "/usr/bin/clang++-18",
         }
-        with self._which_map(mapping), mock.patch.object(
+        with self._clean_environment(), self._which_map(mapping), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=llvm_dir
         ), mock.patch.object(self.toolchains.sys, "platform", "linux"):
             configure, build = self.toolchains._build_commands("styio", source)
@@ -713,7 +712,7 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
     def test_build_commands_omits_clang_when_linux_lacks_clang_18(self) -> None:
         source = self.base / "styio-source"
         mapping = {"cmake": "/usr/bin/cmake"}
-        with self._which_map(mapping), mock.patch.object(
+        with self._clean_environment(), self._which_map(mapping), mock.patch.object(
             self.toolchains, "_llvm_cmake_dir", return_value=Path("/opt/llvm18")
         ), mock.patch.object(self.toolchains.sys, "platform", "linux"):
             configure, _build = self.toolchains._build_commands("styio", source)
@@ -726,7 +725,7 @@ class VityoToolchainsPinnedBuildTest(unittest.TestCase):
                 "-B",
                 str(source / "build/default"),
                 "-DCMAKE_BUILD_TYPE=Debug",
-                "-DLLVM_DIR=/opt/llvm18",
+                f"-DLLVM_DIR={Path('/opt/llvm18')}",
                 "-DSTYIO_NATIVE_TOOLCHAIN_MODE=auto",
             ),
         )

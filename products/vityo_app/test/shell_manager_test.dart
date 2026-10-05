@@ -229,6 +229,7 @@ void main() {
       'REQUEST_ENV': 'request',
     });
     expect(powershellPlan.timeout, const Duration(milliseconds: 500));
+    expect(cmdPlan.timeout, isNull);
     expect(cmdPlan.arguments, <String>['/C', r'echo "a\"b"']);
     expect(fishPlan.arguments, <String>['-c', 'echo ready']);
     expect(unknownPlan.arguments, <String>['-c', "run ''"]);

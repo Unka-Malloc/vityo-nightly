@@ -1,6 +1,7 @@
 import '../../../owner_adapters/pafio_metadata_adapter.dart';
 import '../../../owner_adapters/platform_hosted_adapter.dart';
 import '../../../owner_adapters/styio_compiler_adapter.dart';
+import '../environment/configuration/host_environment.dart';
 import '../environment/system_compatibility/file_system/file_system_manager.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process.dart';
@@ -11,12 +12,11 @@ import 'pafio_cli_discovery.dart';
 import 'project_graph_adapter.dart';
 import 'project_graph_contract.dart';
 
-Map<String, String> Function() _environmentProvider = () =>
-    const <String, String>{};
+Map<String, String> Function() _environmentProvider = readHostEnvironment;
 
 void debugOverrideProjectGraphEnvironment(Map<String, String>? environment) {
   _environmentProvider = environment == null
-      ? () => const <String, String>{}
+      ? readHostEnvironment
       : () => Map<String, String>.unmodifiable(environment);
 }
 
@@ -314,10 +314,6 @@ Future<String?> _resolveManagedStyioBinary(
           executablePath: candidate,
           arguments: const <String>['--machine-info=json'],
           environment: environment,
-          // Discovery starts a real process through the local service. A short
-          // budget kills a slow-but-healthy CLI and reports a missing toolchain,
-          // so probing uses the same request budget as other service calls.
-          timeout: const Duration(seconds: 30),
           serviceKind: ProcessServiceKind.styio,
         ),
       );

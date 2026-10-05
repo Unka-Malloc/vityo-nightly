@@ -417,14 +417,52 @@ class ShellLayoutPlan {
   }
 }
 
+/// Maps each workbench route to the IDE capability entry that owns its
+/// maturity. Routes without an entry are reported as scaffolded instead of
+/// claiming production readiness.
+String? _routeCapabilityId(BottomSurfaceTab tab) {
+  return switch (tab) {
+    BottomSurfaceTab.runtime => 'presentation.output-panel',
+    BottomSurfaceTab.terminal => 'runtime.terminal',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'interaction.command-palette',
+    BottomSurfaceTab.navigate => 'workspace.file-explorer',
+    BottomSurfaceTab.quickOpen => 'interaction.search',
+    BottomSurfaceTab.outline => 'service.styio-language',
+    BottomSurfaceTab.search ||
+    BottomSurfaceTab.locations => 'interaction.search',
+    BottomSurfaceTab.problems => 'presentation.problems-panel',
+    BottomSurfaceTab.testing => 'interaction.testing',
+    BottomSurfaceTab.debug => 'debugger.dap',
+    BottomSurfaceTab.agent => 'agent.workbench',
+    BottomSurfaceTab.sourceControl => 'interaction.source-control',
+    BottomSurfaceTab.extensions => 'extension.marketplace',
+    BottomSurfaceTab.observable => 'service.observable-topology',
+    BottomSurfaceTab.settings => 'toolchain.manager',
+    // Language-navigation routes have no wired shell surface yet. They stay
+    // unmapped so their panel contributions report scaffolded instead of
+    // borrowing another capability's readiness.
+    _ => null,
+  };
+}
+
 List<ShellPanelContribution> _defaultPanelContributions() {
+  final capabilityById = <String, IdeCapabilityDescriptor>{
+    for (final entry in const VityoIdeCapabilityFramework().snapshot().entries)
+      entry.id: entry,
+  };
   return BottomSurfaceTab.values
       .map((tab) {
         final region = _panelRegion(tab);
         final panelId = _panelId(tab);
+        final capabilityId = _routeCapabilityId(tab);
+        final capability = capabilityId == null
+            ? null
+            : capabilityById[capabilityId];
         final metadata = <String, Object?>{
           'coreIdePanel': ShellPanelContributionRegistry.coreIdePanelIds
               .contains(panelId),
+          if (capabilityId != null) 'capabilityId': capabilityId,
         };
         return ShellPanelContribution.routedPanel(
           id: panelId,
@@ -432,12 +470,31 @@ List<ShellPanelContribution> _defaultPanelContributions() {
           region: region,
           surfaceId: _routeSurfaceId(tab),
           capabilities: _routeCapabilities(tab),
-          status: ShellPanelContributionStatus.production,
+          status: _panelStatusFromCapability(capability),
           route: tab,
           metadata: metadata,
+          todo: capability?.todo ?? _missingPanelCapabilityTodo(tab),
         );
       })
       .toList(growable: false);
+}
+
+ShellPanelContributionStatus _panelStatusFromCapability(
+  IdeCapabilityDescriptor? capability,
+) {
+  if (capability == null) {
+    return ShellPanelContributionStatus.scaffolded;
+  }
+  return switch (capability.status) {
+    IdeCapabilityStatus.ready => ShellPanelContributionStatus.production,
+    IdeCapabilityStatus.wired => ShellPanelContributionStatus.wired,
+    IdeCapabilityStatus.scaffolded ||
+    IdeCapabilityStatus.todo => ShellPanelContributionStatus.scaffolded,
+  };
+}
+
+String _missingPanelCapabilityTodo(BottomSurfaceTab tab) {
+  return 'TODO: no IDE capability entry owns the ${tab.name} workbench route yet.';
 }
 
 class ShellLayoutPreferences {
@@ -912,6 +969,8 @@ String _routeTitle(BottomSurfaceTab tab) {
     BottomSurfaceTab.extensions => 'Extensions',
     BottomSurfaceTab.debug => 'Debug',
     BottomSurfaceTab.navigate => 'Navigate',
+    BottomSurfaceTab.quickOpen => 'Quick Open',
+    BottomSurfaceTab.outline => 'Outline',
     BottomSurfaceTab.settings => 'Settings',
     BottomSurfaceTab.locations => 'Locations',
     _ => '',
@@ -933,6 +992,8 @@ String _routeSurfaceId(BottomSurfaceTab tab) {
     BottomSurfaceTab.extensions => 'extensions.marketplace',
     BottomSurfaceTab.debug => 'debug.console',
     BottomSurfaceTab.navigate => 'navigate.quick',
+    BottomSurfaceTab.quickOpen => 'navigate.quick',
+    BottomSurfaceTab.outline => 'workspace.outline',
     BottomSurfaceTab.settings => 'settings.workspace',
     BottomSurfaceTab.locations => 'locations.list',
     _ => '',
@@ -941,13 +1002,13 @@ String _routeSurfaceId(BottomSurfaceTab tab) {
 
 List<String> _routeCapabilities(BottomSurfaceTab tab) {
   return switch (tab) {
-    BottomSurfaceTab.runtime => const <String>['runtime-output', 'task-activity'],
-    BottomSurfaceTab.terminal => const <String>['terminal', 'pty-session'],
-    BottomSurfaceTab.commands ||
-    BottomSurfaceTab.commandPalette => const <String>[
-      'command-search',
-      'command-execution',
+    BottomSurfaceTab.runtime => const <String>[
+      'runtime-output',
+      'task-activity',
     ],
+    BottomSurfaceTab.terminal => const <String>['terminal', 'pty-session'],
+    BottomSurfaceTab.commands || BottomSurfaceTab.commandPalette =>
+      const <String>['command-search', 'command-execution'],
     BottomSurfaceTab.agent => const <String>[
       'agent-activity',
       'coding-session-history',
@@ -974,10 +1035,11 @@ List<String> _routeCapabilities(BottomSurfaceTab tab) {
       'marketplace',
     ],
     BottomSurfaceTab.debug => const <String>['debug-console', 'debug-session'],
-    BottomSurfaceTab.navigate => const <String>[
+    BottomSurfaceTab.navigate || BottomSurfaceTab.quickOpen => const <String>[
       'quick-navigate',
       'fuzzy-file-search',
     ],
+    BottomSurfaceTab.outline => const <String>['outline', 'document-symbols'],
     BottomSurfaceTab.settings => const <String>[
       'settings',
       'toolchain-configuration',
@@ -989,6 +1051,7 @@ List<String> _routeCapabilities(BottomSurfaceTab tab) {
 ShellLayoutRegion _panelRegion(BottomSurfaceTab tab) {
   return switch (tab) {
     BottomSurfaceTab.navigate ||
+    BottomSurfaceTab.quickOpen ||
     BottomSurfaceTab.search ||
     BottomSurfaceTab.sourceControl ||
     BottomSurfaceTab.extensions ||

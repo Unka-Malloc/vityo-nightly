@@ -91,6 +91,7 @@ class _VityoAppState extends State<VityoApp> {
       sourceControlStatusController:
           widget.bootstrap.sourceControlStatusController,
       projectLanguageService: widget.bootstrap.projectLanguageService,
+      diagnosticsPanelStateStore: widget.bootstrap.diagnosticsPanelStateStore,
     );
     unawaited(_shellModel.loadThemeOverride());
     unawaited(
@@ -100,6 +101,7 @@ class _VityoAppState extends State<VityoApp> {
     );
     unawaited(_shellModel.loadExtensionMarketplace());
     unawaited(_shellModel.loadShellLayoutPreferences());
+    unawaited(_shellModel.loadDiagnosticsPanelState());
   }
 
   @override

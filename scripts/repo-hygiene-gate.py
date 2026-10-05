@@ -276,6 +276,7 @@ VIEW_IDE_LANGUAGE_BARREL = (
     "export 'semantic_snapshot_panel.dart';",
     "export 'diagnostics/diagnostics.dart';",
     "export 'features/features.dart';",
+    "export 'lsp/lsp.dart';",
     "export 'semantic/styio_symbol_index.dart';",
     "export 'service/language_analysis_scheduler.dart';",
     "export 'service/legacy_project_document_rule_provider.dart';",

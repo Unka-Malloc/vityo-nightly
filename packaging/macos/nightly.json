@@ -19,6 +19,12 @@
     "package_relative_path": "Contents/Helpers/vityo-coding-agent",
     "required_runtime_libraries": []
   },
+  "pafio": {
+    "target": "native-apple-darwin",
+    "package_relative_path": "Contents/Helpers/pafio",
+    "required_runtime_libraries": [],
+    "manifest_relative_path": "Contents/Resources/pafio-component.json"
+  },
   "rust_notices_path": "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt",
   "signing": {
     "status": "explicit-gap",

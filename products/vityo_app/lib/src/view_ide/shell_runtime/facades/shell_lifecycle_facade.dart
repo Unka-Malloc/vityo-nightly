@@ -91,6 +91,9 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
       _handleWorkspaceDiagnosticsChanged,
     );
     _workspaceDiagnosticsRuntimeController.dispose();
+    _diagnosticsPanelStateController.removeListener(_notifyShellListeners);
+    _diagnosticsPanelStateController.dispose();
+    unawaited(_runtimeOutputProducerBindings.dispose());
     _workspaceReplaceController.removeListener(_handleWorkspaceReplaceChanged);
     _workspaceReplaceController.dispose();
     _workspaceQuickFixController.removeListener(

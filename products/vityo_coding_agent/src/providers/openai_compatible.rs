@@ -155,8 +155,16 @@ impl OpenAiCompatibleProvider {
                 ModelEffectState::None,
             ));
         }
-        if request.estimated_context_tokens > self.capabilities.context_tokens
-            || request.output_token_limit > self.capabilities.output_tokens
+        let output_exceeds_capability =
+            match (request.output_token_limit, self.capabilities.output_tokens) {
+                (Some(limit), Some(maximum)) => limit > maximum,
+                _ => false,
+            };
+        let requested_context_tokens = request
+            .estimated_context_tokens
+            .checked_add(request.output_token_limit.unwrap_or(0));
+        if requested_context_tokens.is_none_or(|total| total > self.capabilities.context_tokens)
+            || output_exceeds_capability
         {
             return Err(ProviderFailure::new(
                 ProviderFailureKind::BudgetExceeded,
@@ -239,8 +247,10 @@ impl OpenAiCompatibleProvider {
             .stream_options(ChatCompletionStreamOptions {
                 include_usage: Some(true),
                 include_obfuscation: Some(false),
-            })
-            .max_completion_tokens(request.output_token_limit);
+            });
+        if let Some(limit) = request.output_token_limit {
+            builder.max_completion_tokens(limit);
+        }
         if !tools.is_empty() {
             builder.tools(tools).parallel_tool_calls(false);
         }
@@ -986,6 +996,84 @@ mod tests {
         assert_eq!(failure.effect_state, ModelEffectState::Uncertain);
     }
 
+    #[tokio::test]
+    async fn unbounded_output_omits_max_completion_tokens_and_accepts_unbounded_providers() {
+        const BODY: &str = concat!(
+            "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"done\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n",
+            "data: [DONE]\n\n"
+        );
+
+        let (endpoint, received, server) = fixture(200, BODY, None);
+        let provider = OpenAiCompatibleProvider::new_for_loopback_fixture(
+            unrestricted_config(),
+            &SyntheticCredentials,
+            &endpoint,
+        )
+        .unwrap();
+        let mut unbounded = request();
+        unbounded.output_token_limit = None;
+        drain(provider.stream(unbounded, AgentCancellationToken::new())).await;
+        let unbounded_body = request_body(&await_request(received).await);
+        server.join().unwrap();
+        assert!(unbounded_body.get("max_completion_tokens").is_none());
+
+        let (endpoint, received, server) = fixture(200, BODY, None);
+        let provider = OpenAiCompatibleProvider::new_for_loopback_fixture(
+            unrestricted_config(),
+            &SyntheticCredentials,
+            &endpoint,
+        )
+        .unwrap();
+        let mut explicit = request();
+        explicit.output_token_limit = Some(64);
+        drain(provider.stream(explicit, AgentCancellationToken::new())).await;
+        let explicit_body = request_body(&await_request(received).await);
+        server.join().unwrap();
+        assert_eq!(explicit_body["max_completion_tokens"], json!(64));
+    }
+
+    #[tokio::test]
+    async fn explicit_output_limit_above_a_declared_ceiling_is_rejected() {
+        let provider = OpenAiCompatibleProvider::new_for_loopback_fixture(
+            config(ProviderAuthMode::None),
+            &SyntheticCredentials,
+            "http://127.0.0.1:9/v1",
+        )
+        .unwrap();
+        let mut request = request();
+        request.output_token_limit = Some(64);
+        let failure = provider
+            .stream(request, AgentCancellationToken::new())
+            .next()
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(failure.kind, ProviderFailureKind::BudgetExceeded);
+    }
+
+    #[tokio::test]
+    async fn input_and_explicit_output_must_fit_the_full_context_window() {
+        let provider = OpenAiCompatibleProvider::new_for_loopback_fixture(
+            unrestricted_config(),
+            &SyntheticCredentials,
+            "http://127.0.0.1:9/v1",
+        )
+        .unwrap();
+        let mut request = request();
+        request.estimated_context_tokens = 97;
+        request.output_token_limit = Some(32);
+        let failure = provider
+            .stream(request, AgentCancellationToken::new())
+            .next()
+            .await
+            .unwrap()
+            .unwrap_err();
+
+        assert_eq!(failure.kind, ProviderFailureKind::BudgetExceeded);
+    }
+
     #[test]
     fn local_transport_seam_rejects_non_loopback_and_production_config_rejects_http() {
         let credentials = SyntheticCredentials;
@@ -1028,6 +1116,32 @@ mod tests {
         ProviderConfig::parse(&config_json(mode, "https://provider.invalid/v1")).unwrap()
     }
 
+    fn unrestricted_config() -> ProviderConfig {
+        ProviderConfig::parse(
+            &json!({
+                "adapter":"openai_compatible_chat",
+                "endpointBase":"https://provider.invalid/v1",
+                "model":"fixture-model",
+                "capabilities":{
+                    "contextTokens":128,
+                    "supportsTools":true,
+                    "maxConcurrency":2
+                },
+                "limits":{},
+                "auth":{"mode":"none"}
+            })
+            .to_string()
+            .into_bytes(),
+        )
+        .unwrap()
+    }
+
+    async fn drain(mut events: crate::providers::ProviderEventStream) {
+        while let Some(event) = events.next().await {
+            event.unwrap();
+        }
+    }
+
     fn config_json(mode: ProviderAuthMode, endpoint_base: &str) -> Vec<u8> {
         let auth = match mode {
             ProviderAuthMode::None => json!({"mode":"none"}),
@@ -1059,7 +1173,7 @@ mod tests {
             messages: vec![ModelMessage::text(ModelMessageRole::User, "read this file")],
             tools: Vec::new(),
             estimated_context_tokens: 4,
-            output_token_limit: 16,
+            output_token_limit: Some(16),
             retry_safety: super::super::types::ModelRetrySafety::ReadOnly,
             idempotency_key: None,
             deadline: None,

@@ -28,50 +28,34 @@ Color tokenColor(TokenKind kind) {
   }
 }
 
-/// The user_sync.sty buffer, raw lines. Whitespace and coloring are resolved
-/// by the lexer at render time.
-const List<String> kUserSyncLines = <String>[
-  '// user_sync.sty',
-  'pipeline user_sync {',
-  '  let flow = fetch_users(api)',
-  '    |> validate(schema_v2)',
-  '    |> dedupe(by: email)',
-  '    |> emit(to: warehouse)',
-  '}',
-  '',
-  'state sync = idle',
-  'when flow.batch => emit metrics',
-  '',
-  'fn fetch_users(api: Endpoint) -> List[User]',
-  'fn validate(s: Schema) -> Rule',
-  'fn dedupe(key: Str) -> Rule',
-];
-
-/// Per-node signature line (source dock), raw.
-const Map<String, String> kNodeSnippetLines = <String, String>{
-  'fetch': 'fn fetch_users(api: Endpoint) -> List[User] {',
-  'valid': 'fn validate(s: Schema) -> Rule {',
-  'dedup': 'fn dedupe(key: Str) -> Rule {',
-  'emit': '  |> emit(to: warehouse)',
-  'state': 'state sync = idle',
-  'enrich': 'fn enrich(u: User) -> User+Profile {',
-};
-
 /// Lex [line] with the real engine and map tokens to colored spans.
 List<TextSpan> lexSpans(String line, {double size = 11.5}) {
   final List<Token> tokens = lexStyio(line);
   if (tokens.isEmpty) {
-    return <TextSpan>[TextSpan(text: ' ', style: P.monoStyle(size: size))];
+    return <TextSpan>[
+      TextSpan(
+        text: ' ',
+        style: P.monoStyle(size: size),
+      ),
+    ];
   }
   return <TextSpan>[
     for (final Token t in tokens)
-      TextSpan(text: t.text, style: P.monoStyle(color: tokenColor(t.kind), size: size)),
+      TextSpan(
+        text: t.text,
+        style: P.monoStyle(color: tokenColor(t.kind), size: size),
+      ),
   ];
 }
 
 /// One gutter-numbered, lexer-colored source line.
 class SourceLine extends StatelessWidget {
-  const SourceLine({super.key, required this.lineNo, required this.line, this.hot = false});
+  const SourceLine({
+    super.key,
+    required this.lineNo,
+    required this.line,
+    this.hot = false,
+  });
 
   final int lineNo;
   final String line;
@@ -92,7 +76,11 @@ class SourceLine extends StatelessWidget {
         children: <Widget>[
           SizedBox(
             width: 30,
-            child: Text('$lineNo', textAlign: TextAlign.right, style: P.monoStyle(color: P.silkDim, size: 11)),
+            child: Text(
+              '$lineNo',
+              textAlign: TextAlign.right,
+              style: P.monoStyle(color: P.silkDim, size: 11),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

@@ -34,7 +34,8 @@ class HeroBoard extends StatefulWidget {
   State<HeroBoard> createState() => _HeroBoardState();
 }
 
-class _HeroBoardState extends State<HeroBoard> with SingleTickerProviderStateMixin {
+class _HeroBoardState extends State<HeroBoard>
+    with SingleTickerProviderStateMixin {
   /// Drives the hot cables' dash phase — the mock's `flow 1.1s linear
   /// infinite` keyframe.
   late final AnimationController _flow = AnimationController(
@@ -83,6 +84,21 @@ class _HeroBoardState extends State<HeroBoard> with SingleTickerProviderStateMix
                   onTap: () => c.select(n.id),
                   onDrag: (Offset delta) => c.moveNode(n.id, delta),
                 ),
+              ),
+            // Honest empty state: no real workspace buffer, nothing to project.
+            if (c.nodes.isEmpty)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _EmptyCanvas(reason: c.projectionEmptyReason),
+                ),
+              ),
+            // The projection's source, named the same way the settings panel
+            // names the language route.
+            if (c.projectionBadgeLabel.isNotEmpty)
+              Positioned(
+                left: 14,
+                top: 14,
+                child: IgnorePointer(child: _SourceBadge(controller: c)),
               ),
           ],
         );
@@ -149,7 +165,14 @@ class _StagePainter extends CustomPainter {
       final double sag = math.max(40, (p2.dx - p1.dx) * .32);
       final Path cable = Path()
         ..moveTo(p1.dx, p1.dy)
-        ..cubicTo(p1.dx + sag, p1.dy + sag * .4, p2.dx - sag, p2.dy - sag * .4, p2.dx, p2.dy);
+        ..cubicTo(
+          p1.dx + sag,
+          p1.dy + sag * .4,
+          p2.dx - sag,
+          p2.dy - sag * .4,
+          p2.dx,
+          p2.dy,
+        );
       if (e.hot) {
         canvas.drawPath(
           cable,
@@ -258,7 +281,9 @@ class _NodeCardState extends State<_NodeCard> {
                       ]
                     : <BoxShadow>[
                         BoxShadow(
-                          color: P.cardShadow.withValues(alpha: P.dark ? 0.55 : 0.3),
+                          color: P.cardShadow.withValues(
+                            alpha: P.dark ? 0.55 : 0.3,
+                          ),
                           blurRadius: P.dark ? 22 : 18,
                           offset: Offset(0, P.dark ? 6 : 5),
                         ),
@@ -274,8 +299,16 @@ class _NodeCardState extends State<_NodeCard> {
                 ],
               ),
             ),
-            const Positioned(left: -kPortD / 2, top: kPortY - kPortD / 2, child: _Port()),
-            const Positioned(right: -kPortD / 2, top: kPortY - kPortD / 2, child: _Port()),
+            const Positioned(
+              left: -kPortD / 2,
+              top: kPortY - kPortD / 2,
+              child: _Port(),
+            ),
+            const Positioned(
+              right: -kPortD / 2,
+              top: kPortY - kPortD / 2,
+              child: _Port(),
+            ),
           ],
         ),
       ),
@@ -300,7 +333,9 @@ class _NodeCardState extends State<_NodeCard> {
 
   Widget _head() {
     final NodeStatus s = widget.node.status;
-    final Color lamp = s == NodeStatus.running ? P.orangeBright : P.yellowBright;
+    final Color lamp = s == NodeStatus.running
+        ? P.orangeBright
+        : P.yellowBright;
     return Container(
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -317,7 +352,9 @@ class _NodeCardState extends State<_NodeCard> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: s == NodeStatus.idle ? P.ledOff : lamp,
-              boxShadow: s == NodeStatus.idle ? null : <BoxShadow>[BoxShadow(color: lamp, blurRadius: 6)],
+              boxShadow: s == NodeStatus.idle
+                  ? null
+                  : <BoxShadow>[BoxShadow(color: lamp, blurRadius: 6)],
             ),
           ),
           const SizedBox(width: 8),
@@ -328,6 +365,34 @@ class _NodeCardState extends State<_NodeCard> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          // A confirmed node's identity came from a real service symbol, not
+          // just the local parse — worth one honest mark.
+          if (widget.node.serviceConfirmed) ...<Widget>[
+            const SizedBox(width: 6),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF30D158)),
+              ),
+            ),
+          ],
+          // Demo content says so on the card itself, never passed off as real.
+          if (widget.node.demo) ...<Widget>[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                border: Border.all(color: P.orange),
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: Text(
+                '演示',
+                style: P.silkStyle().copyWith(color: P.orange, fontSize: 9),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -370,6 +435,74 @@ class _Port extends StatelessWidget {
         color: P.well,
         shape: BoxShape.circle,
         border: Border.all(color: P.ring, width: 2),
+      ),
+    );
+  }
+}
+
+/// The canvas's honest empty state — shown whenever there is no real workspace
+/// buffer to project. Never a placeholder graph.
+class _EmptyCanvas extends StatelessWidget {
+  const _EmptyCanvas({required this.reason});
+
+  final String reason;
+
+  @override
+  Widget build(BuildContext context) {
+    final String text = reason.isEmpty ? '打开工作区文件以生成真实图' : reason;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.hub_outlined, size: 26, color: P.silkDim),
+          const SizedBox(height: 10),
+          Text(
+            text,
+            key: const ValueKey('flow-hero-empty-state'),
+            textAlign: TextAlign.center,
+            style: P.silkStyle(dim: true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Names where the canvas projection came from — `语义服务投影` when a live
+/// `styio_lspd` route informed it, `本地解析投影` when the local engine parse
+/// backs it. Mirrors the settings panel's language row.
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.controller});
+
+  final FlowHeroController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool semantic =
+        controller.projectionSource == FlowHeroProjectionSource.semanticService;
+    final Color tint = semantic ? const Color(0xFF30D158) : P.orange;
+    return Container(
+      key: const ValueKey('flow-hero-source-badge'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: P.room.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(2),
+        border: Border.all(color: tint.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: tint),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            controller.projectionBadgeLabel,
+            style: P.silkStyle().copyWith(color: tint, fontSize: 10),
+          ),
+        ],
       ),
     );
   }

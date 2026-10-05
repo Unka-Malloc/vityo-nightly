@@ -3,7 +3,7 @@
 **Purpose:** Define the non-secret configuration contract for the first-party Coding Agent's
 OpenAI-compatible chat provider.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-05
 
 **Status:** Current Rust provider contract. A deterministic provider test does not establish live
 provider availability, account authorization, or user acceptance.
@@ -46,7 +46,7 @@ contract:
     "maxConcurrency": 1
   },
   "limits": {
-    "maxTotalTokens": 8192,
+    "maxTotalTokens": 72192,
     "maxCostMicros": null,
     "maxBufferedOutputBytes": 262144,
     "maxToolArgumentBytes": 65536,
@@ -70,14 +70,59 @@ For an endpoint that requires no authentication, use `"auth": { "mode": "none" }
 `secretRef.account`; the runtime resolves that reference from the native credential store. The
 reference identifies a credential and never contains its value.
 
+`capabilities.contextTokens` is required. It is the model's full per-generation context window,
+including both input and output, and it also drives history compaction (see below).
+
+`capabilities.outputTokens` and `limits.maxTotalTokens` are optional. Omission of
+`capabilities.outputTokens` means the provider declares no separate output ceiling: requests omit
+`max_completion_tokens` unless the caller supplies an output limit. The full context window still
+applies. An explicit output limit is checked together with estimated request input against
+`contextTokens`, and reported input plus output usage for each provider attempt must also fit the
+full context window.
+
+An explicit `maxTotalTokens` caps reported input-plus-output usage accumulated for one routed
+generation request, including any permitted provider fallback attempts. It does not span separate
+ReAct/tool rounds. When an output limit is finite, estimated input plus requested output is
+preflighted against both the context window and this routed-generation cap; reported usage is
+checked after each attempt. An omitted `maxTotalTokens` removes only this routed-generation cap,
+not the model's context-window limit. Provide both optional limits to have `outputTokens` also
+validated against `maxTotalTokens`.
+
+## Context Compaction
+
+`capabilities.contextTokens` feeds a Pi-style compaction policy so a small window compacts earlier
+than a large one:
+
+1. Before compaction, reserve at least the configured maximum output, or the proportional default
+   when that is larger: `reserve = min(contextTokens, max(outputTokens,
+   min(16384, ceil(contextTokens / 4))))`. With no configured output ceiling, the proportional
+   default is used.
+2. Compaction triggers only when the estimated request (system prompt, retained turns, current
+   prompt, and tool schemas, estimated at one token per four bytes) exceeds
+   `contextTokens - reserve`.
+3. When triggered, the newest turns are kept verbatim up to `keepRecent = min(20000,
+   ceil(contextTokens / 2), ceil((contextTokens - reserve) / 2))`, always retaining at least the
+   latest turn.
+4. Older turns are summarized deterministically by the existing conversation compactor, with the
+   summary bounded by `min(4096, contextTokens / 8)` tokens. Secret redaction is unchanged.
+
+Compaction cannot remove the current prompt or system/tool definitions. If those inputs and the
+requested output cannot fit together in the context window, the request fails its budget check
+before provider I/O.
+
+`16384` (output reserve), `20000` (hot window), and `4096` (summary) are Pi's defaults; the
+per-window fractions keep them proportional for windows smaller than those defaults.
+
 ## Validation And Safety
 
 1. The runtime reads an absolute config path. The JSON file is bounded to 64 KiB and rejects unknown
    fields.
 2. `adapter` must equal `openai_compatible_chat`; `model` and `endpointBase` must be valid and
    non-empty. Endpoint URLs cannot embed user information, query parameters, or fragments.
-3. Capability counts and limits must be positive, and `outputTokens` cannot exceed
-   `maxTotalTokens`.
+3. `capabilities.contextTokens` must be positive. A configured `outputTokens` must be positive and
+   cannot exceed `contextTokens`; when both `outputTokens` and `maxTotalTokens` are present,
+   `outputTokens` cannot exceed `maxTotalTokens`. A configured `maxTotalTokens` must be positive;
+   omission removes only the matching output or routed-generation limit.
 4. `limits.maxCostMicros` is optional. The optional buffered-output, tool-argument, buffered-tool,
    pending-tool, tool-call, and tool-schema limits default respectively to 262144, 65536, 262144,
    16, 64, and 262144 when omitted.

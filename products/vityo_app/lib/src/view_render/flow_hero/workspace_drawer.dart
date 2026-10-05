@@ -2,9 +2,11 @@
 /// between the rail and the canvas — opening it narrows the board, it never
 /// overlays anything.
 ///
-/// The tree is real: it lists the app's own package root (resolved from the
-/// running executable, falling back to the process working directory),
-/// lazily, one directory at a time.
+/// The tree is real: it lists the workspace root the user chose at runtime,
+/// falling back to the app's own package root (resolved from the running
+/// executable, then the process working directory), lazily, one directory at a
+/// time. The header's folder button opens the native directory chooser through
+/// the controller, the same entry the settings panel uses.
 library;
 
 import 'dart:io';
@@ -13,6 +15,7 @@ import 'package:flutter/material.dart';
 
 import 'controller.dart';
 import 'palette.dart';
+import '../../view_ide/flow_hero/flow_hero.dart';
 
 class WorkspaceDrawer extends StatefulWidget {
   const WorkspaceDrawer({super.key, required this.controller});
@@ -26,38 +29,35 @@ class WorkspaceDrawer extends StatefulWidget {
 class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
   static const int _maxDepth = 12;
 
-  static const Set<String> _noise = <String>{
-    'build',
-    '.dart_tool',
-    '.git',
-    '.idea',
-    'node_modules',
-    'coverage',
-    'DerivedData',
-  };
-
-  late final String _rootPath = _resolveRoot();
-  final Map<String, List<FileSystemEntity>> _cache = <String, List<FileSystemEntity>>{};
+  late String _rootPath = widget.controller.workspaceRootDisplayPath;
+  final Map<String, List<FileSystemEntity>> _cache =
+      <String, List<FileSystemEntity>>{};
   final Set<String> _expanded = <String>{};
 
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_onControllerChanged);
     unawaitedLoad(_rootPath);
   }
 
-  /// Debug layout: build/macos/Build/Products/Debug/Vityo.app/Contents/
-  /// MacOS/Vityo — walking up nine parents lands on the package root.
-  static String _resolveRoot() {
-    Directory dir = File(Platform.resolvedExecutable).parent;
-    for (int i = 0; i < 9; i++) {
-      dir = dir.parent;
-    }
-    if (File('${dir.path}/pubspec.yaml').existsSync()) return dir.path;
-    if (File('${Directory.current.path}/pubspec.yaml').existsSync()) {
-      return Directory.current.path;
-    }
-    return Platform.environment['HOME'] ?? Directory.current.path;
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  /// Follows a runtime workspace switch: the tree drops the old root's cache
+  /// and walks the new one. Other controller updates are repainted by the
+  /// enclosing AnimatedBuilder, so they need no work here.
+  void _onControllerChanged() {
+    final String root = widget.controller.workspaceRootDisplayPath;
+    if (root == _rootPath) return;
+    _rootPath = root;
+    _cache.clear();
+    _expanded.clear();
+    if (mounted) setState(() {});
+    unawaitedLoad(root);
   }
 
   static String _name(FileSystemEntity e) => e.path.split('/').last;
@@ -75,7 +75,8 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
           .list(followLinks: false)
           .where((FileSystemEntity e) {
             final String name = _name(e);
-            return !name.startsWith('.') && !_noise.contains(name);
+            return !name.startsWith('.') &&
+                !kFlowHeroWorkspaceNoise.contains(name);
           })
           .toList();
       entries.sort((FileSystemEntity a, FileSystemEntity b) {
@@ -111,7 +112,9 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
     // tracks the pointer exactly — the reveal curve would lag behind it.
     return ClipRect(
       child: AnimatedContainer(
-        duration: c.treeDragging ? Duration.zero : const Duration(milliseconds: 220),
+        duration: c.treeDragging
+            ? Duration.zero
+            : const Duration(milliseconds: 220),
         curve: Curves.easeOut,
         width: c.treeVisible ? c.treeWidth : 0,
         height: double.infinity,
@@ -166,11 +169,27 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
               ),
             ),
             InkWell(
+              key: const ValueKey<String>('flow-hero-workspace-switch'),
+              onTap: () => c.pickWorkspace(),
+              borderRadius: BorderRadius.circular(3),
+              child: Tooltip(
+                message: '切换工作区',
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.folder_open, size: 14, color: P.silkDim),
+                ),
+              ),
+            ),
+            InkWell(
               onTap: c.toggleTree,
               borderRadius: BorderRadius.circular(3),
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: Icon(Icons.keyboard_double_arrow_left, size: 14, color: P.silkDim),
+                child: Icon(
+                  Icons.keyboard_double_arrow_left,
+                  size: 14,
+                  color: P.silkDim,
+                ),
               ),
             ),
           ],
@@ -215,12 +234,19 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
       hoverColor: P.well.withValues(alpha: 0.45),
       child: Container(
         color: active ? P.panelHi : null,
-        padding: EdgeInsets.only(left: 12 + depth * 14.0, right: 8, top: 5, bottom: 5),
+        padding: EdgeInsets.only(
+          left: 12 + depth * 14.0,
+          right: 8,
+          top: 5,
+          bottom: 5,
+        ),
         child: Row(
           children: <Widget>[
             if (isDir)
               Icon(
-                _expanded.contains(e.path) ? Icons.expand_more : Icons.chevron_right,
+                _expanded.contains(e.path)
+                    ? Icons.expand_more
+                    : Icons.chevron_right,
                 size: 12,
                 color: P.silkDim,
               )
@@ -232,7 +258,10 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
             Expanded(
               child: Text(
                 name,
-                style: P.monoStyle(color: active ? P.paper : P.paperLow, size: 11),
+                style: P.monoStyle(
+                  color: active ? P.paper : P.paperLow,
+                  size: 11,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -244,7 +273,9 @@ class _WorkspaceDrawerState extends State<WorkspaceDrawer> {
 
   IconData _iconFor(FileSystemEntity e) {
     if (e is Directory) {
-      return _expanded.contains(e.path) ? Icons.folder_open : Icons.folder_outlined;
+      return _expanded.contains(e.path)
+          ? Icons.folder_open
+          : Icons.folder_outlined;
     }
     final String name = _name(e);
     final int dot = name.lastIndexOf('.');

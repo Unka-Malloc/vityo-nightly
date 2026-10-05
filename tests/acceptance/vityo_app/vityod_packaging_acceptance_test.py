@@ -120,6 +120,58 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
             )
 
 
+    def test_staging_binds_the_bundled_pafio_component_digest(self) -> None:
+        """The pinned pafio CLI stages under its declared path with its own record."""
+        packaging = _load_module(
+            "vityo_package_nightly_pafio_acceptance",
+            ROOT / "scripts" / "package-nightly.py",
+        )
+        with tempfile.TemporaryDirectory(prefix="pafio-acceptance-") as raw:
+            tmp_path = pathlib.Path(raw)
+            source = tmp_path / "pinned" / "pafio"
+            source.parent.mkdir()
+            source.write_bytes(b"fixture pafio executable\n")
+            packaging.ROOT = tmp_path
+            destination_root = tmp_path / "application"
+            relative = pathlib.Path("components/pafio")
+
+            staged = packaging.stage_pafio(
+                {
+                    "pafio": {
+                        "target": "x86_64-unknown-linux-gnu",
+                        "package_relative_path": relative.as_posix(),
+                        "required_runtime_libraries": ["glibc"],
+                    }
+                },
+                destination_root,
+                source,
+            )
+
+            self.assertEqual(staged, destination_root / relative)
+            self.assertEqual(staged.read_bytes(), source.read_bytes())
+            self.assertTrue(staged.stat().st_mode & stat.S_IXUSR)
+            component = json.loads(
+                (staged.parent / "pafio-component.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                component,
+                {
+                    "schema_version": 1,
+                    "component": "pafio",
+                    "target": "x86_64-unknown-linux-gnu",
+                    "executable_sha256": hashlib.sha256(
+                        source.read_bytes()
+                    ).hexdigest(),
+                    "required_runtime_libraries": ["glibc"],
+                    "package_relative_path": relative.as_posix(),
+                },
+            )
+            # The pafio record must never collide with the daemon manifest name.
+            self.assertNotEqual(
+                (staged.parent / "pafio-component.json").name,
+                "vityod-component.json",
+            )
+
     def test_staging_rejects_paths_outside_the_application(self) -> None:
         packaging = _load_module(
             "vityo_package_nightly_path_acceptance",
@@ -710,13 +762,16 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
                 mock.patch.object(packaging, "stage_coding_agent") as stage_agent,
                 mock.patch.object(packaging, "stage_rust_notices") as stage_notices,
             ):
-                # The DMG is written to `output`; the call returns the signing
+                # The DMG is written to `output`; the call reports the signing
                 # block that packaging records in the artifact evidence.
-                self.assertEqual(packaging.package_macos(config, output), expected_signing)
+                self.assertEqual(
+                    packaging.package_macos(config, output).signing, expected_signing
+                )
                 config["vityod"] = {"component": "vityod"}
                 with mock.patch.object(packaging, "stage_vityod") as stage:
                     self.assertEqual(
-                        packaging.package_macos(config, output), expected_signing
+                        packaging.package_macos(config, output).signing,
+                        expected_signing,
                     )
                 stage.assert_called_once()
             self.assertEqual(stage_agent.call_count, 2)
@@ -780,7 +835,9 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
             ):
                 self.assertEqual(packaging.main(), 0)
             build_agent.assert_called_once_with(config)
-            package_linux.assert_called_once_with(config, expected, "1.2.3")
+            package_linux.assert_called_once_with(
+                config, expected, "1.2.3", pafio_binary=None
+            )
             evidence = json.loads(
                 expected.with_suffix(".deb.json").read_text(encoding="utf-8")
             )

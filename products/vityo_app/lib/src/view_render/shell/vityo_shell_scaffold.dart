@@ -32,6 +32,8 @@ import '../../view_ide/services/observable_topology/observable_topology.dart';
 import '../../ide/workspace/workspace.dart';
 
 import 'hosted_workspace_lifecycle_banner.dart';
+import 'outline_surface.dart';
+import 'quick_open_surface.dart';
 import '../../app/commands/app_commands.dart';
 import 'shell_layout_plan.dart';
 import 'shell_model.dart';
@@ -226,11 +228,7 @@ class VityoShellScaffold extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           hoverColor: tokens.hover,
           onPressed: () => shell.executeCommand(AppCommandId.openSettings),
-          icon: Icon(
-            Icons.settings_outlined,
-            size: 17,
-            color: tokens.muted,
-          ),
+          icon: Icon(Icons.settings_outlined, size: 17, color: tokens.muted),
         ),
       ),
     ];
@@ -390,6 +388,8 @@ class VityoShellScaffold extends StatelessWidget {
             quickFixTelemetry: shell.workspaceQuickFixTelemetrySnapshot,
             semanticSnapshotPanelViewModel:
                 shell.semanticProblemsPanelViewModel,
+            diagnosticsPanelState: shell.diagnosticsPanelState,
+            onDiagnosticsPanelStateChanged: shell.recordDiagnosticsPanelState,
             onRefreshWorkspaceDiagnostics: () {
               return shell.executeCommand(
                 AppCommandId.refreshWorkspaceDiagnostics,
@@ -619,6 +619,26 @@ class VityoShellScaffold extends StatelessWidget {
           },
           onSaveCommandPalettePreferences: shell.saveCommandPalettePreferences,
           onSaveThemeOverride: shell.saveThemeOverride,
+        );
+      case BottomSurfaceTab.quickOpen:
+        return QuickOpenSurface(
+          viewportProfile: viewportProfile,
+          workspaceFiles: shell.workspaceController.files,
+          recentFilePaths: shell.workspaceController.openFilePaths,
+          activeFilePath: shell.workspaceController.activeFilePath,
+          onOpenFile: shell.openWorkspaceFile,
+        );
+      case BottomSurfaceTab.outline:
+        return OutlineSurface(
+          viewportProfile: viewportProfile,
+          documentId: shell.editorController.document.documentId,
+          symbols: shell.editorController.analysis.documentSymbols,
+          onSelectSymbol: (symbol) {
+            shell.editorController.selectRange(
+              baseOffset: symbol.nameRange.start,
+              extentOffset: symbol.nameRange.end,
+            );
+          },
         );
       case BottomSurfaceTab.navigate:
       case BottomSurfaceTab.locations:
@@ -2284,6 +2304,12 @@ class _WorkbenchRoutes extends StatelessWidget {
         onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.terminal),
       ),
       _SurfaceTabChip(
+        key: const ValueKey('bottom-tab-outline'),
+        label: 'Outline',
+        active: shell.activeWorkbenchRoute == BottomSurfaceTab.outline,
+        onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.outline),
+      ),
+      _SurfaceTabChip(
         key: const ValueKey('bottom-tab-problems'),
         label: 'Problems',
         active: shell.activeWorkbenchRoute == BottomSurfaceTab.problems,
@@ -2357,7 +2383,8 @@ class _WorkbenchRoutes extends StatelessWidget {
             _SurfaceTabChip(
               label: 'Settings',
               active: shell.activeWorkbenchRoute == BottomSurfaceTab.settings,
-              onTap: () => shell.selectWorkbenchRoute(BottomSurfaceTab.settings),
+              onTap: () =>
+                  shell.selectWorkbenchRoute(BottomSurfaceTab.settings),
             ),
           ]
         : bottomToolTabs;
@@ -2438,7 +2465,8 @@ bool _usesPrimarySidebar(BottomSurfaceTab tab) {
   return tab == BottomSurfaceTab.search ||
       tab == BottomSurfaceTab.sourceControl ||
       tab == BottomSurfaceTab.extensions ||
-      tab == BottomSurfaceTab.settings;
+      tab == BottomSurfaceTab.settings ||
+      tab == BottomSurfaceTab.quickOpen;
 }
 
 String _primarySidebarLabel(BottomSurfaceTab tab) {
@@ -2447,6 +2475,7 @@ String _primarySidebarLabel(BottomSurfaceTab tab) {
     BottomSurfaceTab.sourceControl => 'Source Control',
     BottomSurfaceTab.extensions => 'Extensions',
     BottomSurfaceTab.settings => 'Settings',
+    BottomSurfaceTab.quickOpen => 'Quick Open',
     _ => 'Explorer',
   };
 }
@@ -2461,7 +2490,8 @@ bool _usesBottomPanel(
     BottomSurfaceTab.commandPalette ||
     BottomSurfaceTab.problems ||
     BottomSurfaceTab.testing ||
-    BottomSurfaceTab.debug => true,
+    BottomSurfaceTab.debug ||
+    BottomSurfaceTab.outline => true,
     BottomSurfaceTab.agent => !agentUsesAuxiliaryPanel,
     _ => false,
   };

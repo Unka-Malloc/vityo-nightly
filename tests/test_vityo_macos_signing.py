@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -150,7 +151,9 @@ class SignNestedExecutablesTest(unittest.TestCase):
                 app, self.configuration, run=runner
             )
         self.assertEqual(sorted(signed), sorted(self.signing.NESTED_EXECUTABLES))
-        self.assertEqual(runner.programs, ["codesign", "codesign"])
+        self.assertEqual(
+            runner.programs, ["codesign"] * len(self.signing.NESTED_EXECUTABLES)
+        )
         for call in runner.calls:
             self.assertIn("--options", call)
             self.assertIn("runtime", call)
@@ -191,6 +194,18 @@ class SignNestedExecutablesTest(unittest.TestCase):
             (app / "Contents/MacOS").mkdir(parents=True)
             (app / "Contents/MacOS/Vityo").write_text("#!/bin/sh\n", encoding="utf-8")
             self.assertEqual(self.signing.discover_nested_code(app), [])
+
+    def test_pafio_helper_is_part_of_the_nested_code_contract(self) -> None:
+        import tempfile
+
+        self.assertIn("Contents/Helpers/pafio", self.signing.NESTED_EXECUTABLES)
+        with tempfile.TemporaryDirectory() as raw:
+            app = Path(raw) / "Vityo.app"
+            (app / "Contents/Helpers").mkdir(parents=True)
+            (app / "Contents/Helpers/pafio").write_text("#!/bin/sh\n", encoding="utf-8")
+            self.assertIn(
+                "Contents/Helpers/pafio", self.signing.discover_nested_code(app)
+            )
 
     def test_helper_failure_stops_packaging(self) -> None:
         import tempfile
@@ -334,14 +349,21 @@ class CredentialBoundaryTest(unittest.TestCase):
         self.assertNotIn(self.CREDENTIAL_SENTINEL, str(raised.exception))
 
     def test_failure_detail_redacts_credentials_and_paths(self) -> None:
+        home = Path(tempfile.gettempdir()) / "vityo-signing-home"
+        environment = {
+            **self.environment,
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+        }
+
         def failing(command, **_kwargs):
             return mock.Mock(
                 returncode=1,
                 stdout="",
-                stderr=f"codesign: --password {self.CREDENTIAL_SENTINEL} at {Path.home()}/Library/Keychains",
+                stderr=f"codesign: --password {self.CREDENTIAL_SENTINEL} at {home}/Library/Keychains",
             )
 
-        with mock.patch.dict("os.environ", self.environment, clear=True):
+        with mock.patch.dict("os.environ", environment, clear=True):
             with self.assertRaises(self.signing.SigningError) as raised:
                 self.signing.sign_app_bundle(
                     Path("/tmp/Vityo.app"),
@@ -350,7 +372,7 @@ class CredentialBoundaryTest(unittest.TestCase):
                 )
         detail = str(raised.exception)
         self.assertNotIn(self.CREDENTIAL_SENTINEL, detail)
-        self.assertNotIn(str(Path.home()), detail)
+        self.assertNotIn(str(home), detail)
         self.assertIn("<redacted>", detail)
 
     def test_packaging_rejects_incomplete_credentials_before_building(self) -> None:
@@ -405,13 +427,13 @@ class PackagerSigningWiringTest(unittest.TestCase):
                             with mock.patch.object(
                                 packager.vityo_macos_signing, "notarize"
                             ) as notarize:
-                                block = packager.package_macos(
+                                package = packager.package_macos(
                                     config, root / "vityo.dmg"
                                 )
             finally:
                 packager.ROOT = real_root
         self.assertEqual(
-            block,
+            package.signing,
             {
                 "status": "explicit-gap",
                 "reason": packager.vityo_macos_signing.SIGNING_GAP_REASON,

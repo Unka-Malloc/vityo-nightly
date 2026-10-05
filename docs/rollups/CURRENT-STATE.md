@@ -3,7 +3,7 @@
 **Purpose:** Provide the compact entry point for Vityo's product identity,
 governance, and ecosystem-owner boundaries.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-05
 
 ## Summary
 
@@ -24,7 +24,11 @@ governance, and ecosystem-owner boundaries.
    sync, build orchestration, vendor, pack, and publish clients.
 6. Compiler identity and capability come directly from
    `styio --machine-info=json`. Styio owns diagnostics, receipts, runtime
-   events, and language-service contracts.
+   events, and language-service contracts. When a `styio_lspd` binary is
+   discoverable (`VITYO_STYIO_LSPD_BIN` or the toolchain catalog), Vityo runs
+   the language service over LSP 3.17 instead of the CLI JSONL route, and the
+   request surface it relies on is `styio_lspd`'s own (`Server.cpp`,
+   `StyioServices/MANIFEST.md`).
 7. Hosted workspace lifecycle, registry control, cloud jobs, and workers come
    only from `Platform hosted-workspace v1`.
 8. Vityo does not read Pafio private storage and does not install, select, pin,
@@ -47,9 +51,15 @@ governance, and ecosystem-owner boundaries.
     `--stdio-agent` entry regardless of host, and there is no second headless
     product CLI.
 14. The Flow Hero workbench is the production boot target
-    (`products/vityo_app/lib/main.dart` boots `FlowHeroApp`). The hand-written
-    `prototype/` remains a separately maintained, permanently preserved source
-    asset with its own entrypoints, dependency governance, and tests.
+    (`products/vityo_app/lib/main.dart` boots `FlowHeroApp`). Its canvas
+    projects the real active buffer with source badges instead of a hardcoded
+    graph, the source dock reads real buffer lines, quick-open filters the real
+    workspace tree, the light/dark choice persists through
+    `flow_hero/theme_store.dart`, and RUN/TEST drive real `pafio --json
+    run|test`; scripted content is gated to explicit demo mode and marked on
+    screen. The hand-written `prototype/` remains a separately maintained,
+    permanently preserved source asset with its own entrypoints, dependency
+    governance, and tests.
 
 ## Read Order
 

@@ -543,10 +543,11 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
     def test_handshake_uses_a_unix_socket_on_posix_hosts(self) -> None:
         connection = FakeStream(daemon_frame())
         endpoint = str(self.root / "service.sock")
-        with mock.patch.object(
-            self.gate.socket, "socket", return_value=connection
-        ) as socket_factory:
-            self.assertIsNone(self.gate._handshake(endpoint, "package-probe-1"))
+        with mock.patch.object(self.gate.os, "name", "posix"):
+            with mock.patch.object(
+                self.gate.socket, "socket", return_value=connection
+            ) as socket_factory:
+                self.assertIsNone(self.gate._handshake(endpoint, "package-probe-1"))
 
         socket_factory.assert_called_once_with(
             self.gate.socket.AF_UNIX, self.gate.socket.SOCK_STREAM
@@ -589,11 +590,12 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
         endpoint = str(socket_dir / "service.sock")
 
         with self.probe_tempdir(socket_dir):
-            with mock.patch.object(
-                self.gate.subprocess, "Popen", return_value=process
-            ) as popen:
-                with mock.patch.object(self.gate, "_handshake") as handshake:
-                    result = self.gate._probe_reconnect(binary)
+            with mock.patch.object(self.gate.os, "name", "posix"):
+                with mock.patch.object(
+                    self.gate.subprocess, "Popen", return_value=process
+                ) as popen:
+                    with mock.patch.object(self.gate, "_handshake") as handshake:
+                        result = self.gate._probe_reconnect(binary)
 
         self.assertEqual(result, (True, "two authenticated client handshakes completed"))
         self.assertEqual(
@@ -675,13 +677,16 @@ class VityodDesktopMatrixGateTest(unittest.TestCase):
                     "TemporaryDirectory",
                     return_value=FakeTemporaryDirectory(socket_dir),
                 ):
-                    with mock.patch.object(
-                        self.gate.subprocess, "Popen", return_value=process
-                    ):
+                    with mock.patch.object(self.gate.os, "name", "posix"):
                         with mock.patch.object(
-                            self.gate, "_handshake", side_effect=error
+                            self.gate.subprocess, "Popen", return_value=process
                         ):
-                            result = self.gate._probe_reconnect(self.root / "vityod")
+                            with mock.patch.object(
+                                self.gate, "_handshake", side_effect=error
+                            ):
+                                result = self.gate._probe_reconnect(
+                                    self.root / "vityod"
+                                )
                 self.assertEqual(result, (False, str(error)))
         process.terminate.assert_called()
 

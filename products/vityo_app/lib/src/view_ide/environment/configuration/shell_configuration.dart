@@ -7,7 +7,7 @@ class ShellConfiguration {
     this.environmentOverlay = const <String, String>{},
     this.loginShell = false,
     this.interactive = false,
-    this.timeout = const Duration(seconds: 30),
+    this.timeout,
   });
 
   factory ShellConfiguration.fromFacts(ShellFacts facts) {
@@ -45,7 +45,7 @@ class ShellConfiguration {
   final Map<String, String> environmentOverlay;
   final bool loginShell;
   final bool interactive;
-  final Duration timeout;
+  final Duration? timeout;
 
   factory ShellConfiguration.fromJson(Map<String, Object?> json) {
     final profiles = json['profiles'];
@@ -54,16 +54,17 @@ class ShellConfiguration {
       defaultProfileId: json['defaultProfileId'] as String? ?? 'default',
       profiles: profiles is List
           ? profiles
-              .map(_shellProfileConfigurationFromJson)
-              .whereType<ShellProfileConfiguration>()
-              .toList(growable: false)
+                .map(_shellProfileConfigurationFromJson)
+                .whereType<ShellProfileConfiguration>()
+                .toList(growable: false)
           : const <ShellProfileConfiguration>[],
       environmentOverlay: _stringMapFromJson(environmentOverlay),
       loginShell: json['loginShell'] as bool? ?? false,
       interactive: json['interactive'] as bool? ?? false,
-      timeout: Duration(
-        milliseconds: json['timeoutMs'] as int? ?? 30000,
-      ),
+      timeout: switch (json['timeoutMs']) {
+        final int milliseconds => Duration(milliseconds: milliseconds),
+        _ => null,
+      },
     );
   }
 
@@ -104,7 +105,7 @@ class ShellConfiguration {
       'environmentOverlay': environmentOverlay,
       'loginShell': loginShell,
       'interactive': interactive,
-      'timeoutMs': timeout.inMilliseconds,
+      if (timeout case final value?) 'timeoutMs': value.inMilliseconds,
     };
   }
 }
@@ -180,10 +181,8 @@ Map<String, String> _stringMapFromJson(Object? value) {
   }
   if (value is Map) {
     return value.map(
-      (key, value) => MapEntry<String, String>(
-        key.toString(),
-        value.toString(),
-      ),
+      (key, value) =>
+          MapEntry<String, String>(key.toString(), value.toString()),
     );
   }
   return const <String, String>{};

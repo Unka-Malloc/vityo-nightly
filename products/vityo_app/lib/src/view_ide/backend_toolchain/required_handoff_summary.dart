@@ -35,13 +35,19 @@ List<RequiredHandoff> summarizeRequiredHandoffs({
   required PlatformTarget platformTarget,
   required ProjectGraphSnapshot projectGraph,
   required List<AdapterCapabilitySnapshot> adapterCapabilities,
+  StyioLanguageServiceProbe? languageServiceProbe,
 }) {
   final handoffs = <RequiredHandoff>[];
+  final probe = languageServiceProbe ?? StyioLanguageServiceProbe.current;
 
-  if (!_hasAvailableEndpoint(
-    adapterCapabilities,
-    (snapshot) => snapshot.languageService,
-  )) {
+  // Probe-driven: a live `styio_lspd` route means editor semantics no longer
+  // run on mock layers, so this handoff stops firing. Absent a probe (and with
+  // no adapter advertising the endpoint) it stays truthful and blocking.
+  if (!probe.realServiceAvailable &&
+      !_hasAvailableEndpoint(
+        adapterCapabilities,
+        (snapshot) => snapshot.languageService,
+      )) {
     handoffs.add(
       const RequiredHandoff(
         owner: HandoffOwner.styio,

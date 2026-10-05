@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import '../../../ide/editor/document_state.dart';
+import '../../environment/configuration/host_environment.dart';
 import '../../environment/configuration/language_service_configuration.dart';
 import '../../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../../foundation/foundation.dart';
 import '../../runtime/runtime.dart';
 import '../../toolchain/toolchain.dart';
+import '../lsp/lsp.dart';
 import 'capability_routed_styio_language_service.dart';
 import 'language_service_foundation.dart';
 import 'local_styio_language_service.dart';
@@ -488,6 +490,17 @@ Future<StyioServiceAnalysisDriver> createPlatformStyioServiceAnalysisDriver({
   ToolchainManager? toolchainManager,
 }) async {
   if (toolchainManager != null) {
+    final lspDaemonPath = await _styioLspDaemonPathFromManager(
+      toolchainManager,
+    );
+    if (lspDaemonPath != null) {
+      return StyioServiceAnalysisDriver(
+        connector: createStyioLspServiceConnector(
+          executablePath: lspDaemonPath,
+        ),
+        resultCache: resultCache,
+      );
+    }
     return StyioServiceAnalysisDriver(
       connector: ToolchainManagerStyioServiceConnector(
         manager: toolchainManager,
@@ -498,7 +511,17 @@ Future<StyioServiceAnalysisDriver> createPlatformStyioServiceAnalysisDriver({
   final platformManagers = await createDetectedPlatformManagerBundle();
   final catalog = await createPlatformStyioLanguageToolchainCatalog(
     platformManagers: platformManagers,
+    environment: readHostEnvironment(),
   );
+  final lspDaemon = catalog.lookup(styioLspDaemonToolchainId);
+  if (lspDaemon != null) {
+    return StyioServiceAnalysisDriver(
+      connector: createStyioLspServiceConnector(
+        executablePath: lspDaemon.executablePath,
+      ),
+      resultCache: resultCache,
+    );
+  }
   final runtime = ToolchainRuntime.fromPlatformManagers(
     catalog: catalog,
     platformManagers: platformManagers,
@@ -507,4 +530,33 @@ Future<StyioServiceAnalysisDriver> createPlatformStyioServiceAnalysisDriver({
     connector: ToolchainStyioServiceConnector(runtime: runtime),
     resultCache: resultCache,
   );
+}
+
+/// Builds the LSP-backed connector for a discovered `styio_lspd` executable.
+///
+/// The session stays a vityod-owned child on desktop (falling back to a direct
+/// process when vityod is unavailable); the CLI JSONL connector remains the
+/// fallback whenever no LSP daemon is discovered.
+StyioServiceConnector createStyioLspServiceConnector({
+  required String executablePath,
+}) {
+  return LspStyioServiceConnector(
+    executablePath: executablePath,
+    transportFactory: (String workingDirectory) =>
+        createPlatformStyioLspTransport(
+          executablePath: executablePath,
+          workingDirectory: workingDirectory,
+        ),
+  );
+}
+
+Future<String?> _styioLspDaemonPathFromManager(
+  ToolchainManager toolchainManager,
+) async {
+  try {
+    final catalog = await toolchainManager.loadCatalog();
+    return catalog.lookup(styioLspDaemonToolchainId)?.executablePath;
+  } on Object {
+    return null;
+  }
 }

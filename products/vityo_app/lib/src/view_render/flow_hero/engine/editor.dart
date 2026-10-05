@@ -9,6 +9,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../view_ide/flow_hero/flow_hero.dart';
+import '../../../view_ide/language/contract/language_contract.dart' as lang;
 import '../flow_model.dart';
 import 'machine.dart';
 import '../palette.dart';
@@ -76,11 +78,7 @@ class _SourceEditorState extends State<SourceEditor> {
 
   void _onBuffer() {
     if (_applying) return;
-    _host.onBufferChanged(
-      _text.text,
-      line: _cursorLine,
-      column: _cursorColumn,
-    );
+    _host.onBufferChanged(_text.text, line: _cursorLine, column: _cursorColumn);
   }
 
   int get _cursorLine => _text.value.text
@@ -89,13 +87,18 @@ class _SourceEditorState extends State<SourceEditor> {
       .length;
 
   int get _cursorColumn {
-    final String upto =
-        _text.value.text.substring(0, _text.selection.baseOffset.clamp(0, _text.text.length));
+    final String upto = _text.value.text.substring(
+      0,
+      _text.selection.baseOffset.clamp(0, _text.text.length),
+    );
     return _text.selection.baseOffset - (upto.lastIndexOf('\n') + 1) + 1;
   }
 
   void _reportCursor() {
-    _host.updateCursor(_text.selection.baseOffset < 0 ? 1 : _cursorLine, _cursorColumn);
+    _host.updateCursor(
+      _text.selection.baseOffset < 0 ? 1 : _cursorLine,
+      _cursorColumn,
+    );
   }
 
   void _insert(String text) {
@@ -115,8 +118,7 @@ class _SourceEditorState extends State<SourceEditor> {
     final TextEditingValue v = _text.value;
     final int s = v.selection.start < 0 ? v.text.length : v.selection.start;
     final String before = v.text.substring(0, s);
-    final String lineStart =
-        before.substring(before.lastIndexOf('\n') + 1);
+    final String lineStart = before.substring(before.lastIndexOf('\n') + 1);
     final RegExpMatch? m = RegExp(r'^\s*').firstMatch(lineStart);
     _insert('\n${m?.group(0) ?? ''}');
   }
@@ -147,7 +149,16 @@ class _SourceEditorState extends State<SourceEditor> {
             ],
           ),
         ),
-        if (_host.activeDiags.isNotEmpty) _DiagStrip(diags: _host.activeDiags),
+        if (_host.activeDiags.isNotEmpty)
+          _DiagStrip(
+            diags: _host.activeDiags,
+            serviceDiagnostics:
+                _host.analysisOrigin == FlowHeroAnalysisOrigin.service
+                ? _host.activeServiceDiagnostics
+                : const <lang.Diagnostic>[],
+            origin: _host.analysisOrigin,
+            serviceConfigured: _host.languageServiceConfigured,
+          ),
       ],
     );
   }
@@ -155,7 +166,9 @@ class _SourceEditorState extends State<SourceEditor> {
   Widget _editArea(double contentWidth) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
-        final double width = contentWidth > c.maxWidth ? contentWidth : c.maxWidth;
+        final double width = contentWidth > c.maxWidth
+            ? contentWidth
+            : c.maxWidth;
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           physics: width > c.maxWidth
@@ -168,7 +181,8 @@ class _SourceEditorState extends State<SourceEditor> {
               shortcuts: const <ShortcutActivator, Intent>{
                 SingleActivator(LogicalKeyboardKey.tab): _IndentIntent(),
                 SingleActivator(LogicalKeyboardKey.enter): _NewlineIntent(),
-                SingleActivator(LogicalKeyboardKey.keyS, meta: true): _SaveIntent(),
+                SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+                    _SaveIntent(),
               },
               child: Actions(
                 actions: <Type, Action<Intent>>{
@@ -245,7 +259,11 @@ class _SaveIntent extends Intent {
 /// The gutter rides the same integer line grid as the buffer, and the wheel
 /// over it falls through to the buffer it numbers.
 class _Gutter extends StatelessWidget {
-  const _Gutter({required this.lines, required this.diags, required this.scroll});
+  const _Gutter({
+    required this.lines,
+    required this.diags,
+    required this.scroll,
+  });
 
   final int lines;
   final List<Diagnostic> diags;
@@ -301,13 +319,38 @@ class _Gutter extends StatelessWidget {
 /// A 27px strip at the bottom of the editor well — the analyzer's voice on the
 /// panel, outside the text flow so the line grid never breaks.
 class _DiagStrip extends StatelessWidget {
-  const _DiagStrip({required this.diags});
+  const _DiagStrip({
+    required this.diags,
+    required this.serviceDiagnostics,
+    required this.origin,
+    required this.serviceConfigured,
+  });
+
   final List<Diagnostic> diags;
+  final List<lang.Diagnostic> serviceDiagnostics;
+  final FlowHeroAnalysisOrigin origin;
+  final bool serviceConfigured;
 
   @override
   Widget build(BuildContext context) {
     final Diagnostic d0 = diags.first;
     final String more = diags.length > 1 ? ' · +${diags.length - 1} more' : '';
+    // With real facts the strip quotes the service's own message; otherwise it
+    // speaks the local rule and names itself as the heuristic.
+    final String detail;
+    if (serviceDiagnostics.isNotEmpty) {
+      final lang.Diagnostic s0 = serviceDiagnostics.first;
+      detail =
+          '${_severityLabel(s0.severity)} · ${s0.message}$more · analyze · styio_lspd';
+    } else {
+      detail = '${d0.ident} 从未被消费 · analyze · step 06 · warning$more';
+    }
+    final String? source = switch (origin) {
+      FlowHeroAnalysisOrigin.service => 'styio_lspd',
+      FlowHeroAnalysisOrigin.heuristic =>
+        serviceConfigured ? '本地启发式（降级）' : null,
+      FlowHeroAnalysisOrigin.none => null,
+    };
     return Container(
       constraints: const BoxConstraints(minHeight: 27),
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -326,13 +369,32 @@ class _DiagStrip extends StatelessWidget {
             child: CustomPaint(painter: _WarnPainter()),
           ),
           const SizedBox(width: 8),
-          Text(
-            '${d0.ident} 从未被消费 · analyze · step 06 · warning$more',
-            style: T.diagStrip.copyWith(color: P.red),
+          Expanded(
+            child: Text(
+              detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: T.diagStrip.copyWith(color: P.red),
+            ),
           ),
+          if (source != null) ...<Widget>[
+            const SizedBox(width: 10),
+            Text(source, style: T.diagStrip.copyWith(color: P.silkDim)),
+          ],
         ],
       ),
     );
+  }
+
+  String _severityLabel(lang.DiagnosticSeverity severity) {
+    switch (severity) {
+      case lang.DiagnosticSeverity.error:
+        return 'error';
+      case lang.DiagnosticSeverity.warning:
+        return 'warning';
+      case lang.DiagnosticSeverity.hint:
+        return 'hint';
+    }
   }
 }
 
@@ -394,16 +456,42 @@ class HighlightController extends TextEditingController {
     if (host.activeFile.lang == 'plain') {
       return TextSpan(style: style ?? T.code, text: text);
     }
+    // The real service's semantic tokens win where they cover a whole token;
+    // every uncovered token keeps the lexer's colour, so nothing goes blank.
+    final bool serviceTokens =
+        host.analysisOrigin == FlowHeroAnalysisOrigin.service;
+    final List<lang.SemanticSpan> spans = serviceTokens
+        ? host.activeSemanticSpans
+        : const <lang.SemanticSpan>[];
     final List<Diagnostic> diags = host.activeDiags;
     final List<String> lines = text.split('\n');
     final List<TextSpan> out = <TextSpan>[];
+    int lineStart = 0;
     for (int i = 0; i < lines.length; i++) {
       final Diagnostic? d = _diagOn(diags, i);
       bool marked = false;
+      int column = 0;
       for (final Token t in (toml ? lexToml(lines[i]) : lexStyio(lines[i]))) {
-        TextStyle? s = T.code.copyWith(color: _colorOf(t.kind));
-        if (t.kind == TokenKind.keyword) s = s.copyWith(fontWeight: FontWeight.w600);
-        if (d != null && !marked && t.kind == TokenKind.plain && t.text == d.ident) {
+        final int tokenStart = lineStart + column;
+        final int tokenEnd = tokenStart + t.text.length;
+        column += t.text.length;
+        final lang.SemanticKind? kind = serviceTokens
+            ? _semanticKindAt(spans, tokenStart, tokenEnd)
+            : null;
+        TextStyle? s = T.code.copyWith(
+          color: kind != null ? _colorOfSemantic(kind) : _colorOf(t.kind),
+        );
+        if (kind == null && t.kind == TokenKind.keyword) {
+          s = s.copyWith(fontWeight: FontWeight.w600);
+        }
+        // The heuristic underlines plain identifiers; service findings may
+        // land on any token text, so they are matched by exact lexeme.
+        final bool underlines =
+            d != null &&
+            !marked &&
+            t.text == d.ident &&
+            (t.kind == TokenKind.plain || serviceTokens);
+        if (underlines) {
           s = s.copyWith(
             decoration: TextDecoration.underline,
             decorationStyle: TextDecorationStyle.wavy,
@@ -414,9 +502,65 @@ class HighlightController extends TextEditingController {
         }
         out.add(TextSpan(text: t.text, style: s));
       }
-      if (i < lines.length - 1) out.add(const TextSpan(text: '\n', style: T.code));
+      lineStart += lines[i].length + 1;
+      if (i < lines.length - 1) {
+        out.add(const TextSpan(text: '\n', style: T.code));
+      }
     }
     return TextSpan(style: style ?? T.code, children: out);
+  }
+
+  /// The semantic kind that fully covers `[start, end)`, if any.
+  static lang.SemanticKind? _semanticKindAt(
+    List<lang.SemanticSpan> spans,
+    int start,
+    int end,
+  ) {
+    if (end <= start) return null;
+    for (final lang.SemanticSpan span in spans) {
+      if (span.range.start <= start && span.range.end >= end) {
+        return span.kind;
+      }
+    }
+    return null;
+  }
+
+  /// Semantic kinds folded onto the palette roles the lexer already uses.
+  Color _colorOfSemantic(lang.SemanticKind kind) {
+    if (!P.dark) {
+      switch (kind) {
+        case lang.SemanticKind.function:
+          return P.paper;
+        case lang.SemanticKind.pipeline:
+          return P.red;
+        case lang.SemanticKind.state:
+          return C.orangeDeep;
+        case lang.SemanticKind.resource:
+          return C.yellowDeep;
+        case lang.SemanticKind.variable:
+          return C.orangeDeep;
+        case lang.SemanticKind.parameter:
+          return C.yellowDeep;
+        case lang.SemanticKind.typeName:
+          return P.silkHi;
+      }
+    }
+    switch (kind) {
+      case lang.SemanticKind.function:
+        return C.paper;
+      case lang.SemanticKind.pipeline:
+        return P.redBright;
+      case lang.SemanticKind.state:
+        return C.orange;
+      case lang.SemanticKind.resource:
+        return C.yellow;
+      case lang.SemanticKind.variable:
+        return C.orange;
+      case lang.SemanticKind.parameter:
+        return C.yellow;
+      case lang.SemanticKind.typeName:
+        return C.silkHi;
+    }
   }
 
   Color _colorOf(TokenKind kind) {

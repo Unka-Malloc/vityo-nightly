@@ -47,6 +47,7 @@ const String _missingLocalStyioBinaryMessage =
 
 const int _executionOverlaySnapshotMaxEntries = 20000;
 const int _executionOverlaySnapshotMaxBytes = 256 * 1024 * 1024;
+const String _workflowDiagnosticsFileName = 'diagnostics.jsonl';
 int _executionTempSequence = 0;
 
 const ExecutionSession _iosCloudOnlyExecutionSession = ExecutionSession(
@@ -216,7 +217,10 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
 }
 
 class _LocalCliExecutionAdapter
-    implements ExecutionAdapter, CancellableExecutionAdapter, ObservedExecutionAdapter {
+    implements
+        ExecutionAdapter,
+        CancellableExecutionAdapter,
+        ObservedExecutionAdapter {
   const _LocalCliExecutionAdapter({
     required this.platformTarget,
     required this.projectGraph,
@@ -696,7 +700,10 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     );
   }
 
-  final pafioBinary = await resolvePafioBinary(platformManagers);
+  final pafioBinary = await resolvePafioBinary(
+    platformManagers,
+    environment: Platform.environment,
+  );
   if (pafioBinary == null) {
     return ObservedExecutionRun(
       session: _blockedRunExecutionSession(
@@ -847,96 +854,94 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
   required Map<String, Object?> processMetadata,
   String Function(String path)? normalizePath,
 }) async {
-  final trimmed = stdout.trim();
-  if (!trimmed.startsWith('{')) {
-    return null;
+  // Pafio prints exactly one success envelope on stdout:
+  // {action, command, intent, message, mode, plan, profile, status, styio,
+  //  sync, target}. The envelope carries path pointers only: the schema-v1
+  // receipt lives at <plan.build_root>/receipt.json and the JSONL diagnostics
+  // at <plan.diag_dir>/diagnostics.jsonl. There is no inline receipt,
+  // diagnostics, or child stdout/stderr in --json mode.
+  final decoded = parseJsonObjectPayload(stdout);
+  if (decoded == null) {
+    return _workflowEnvelopeFailureSession(
+      workflow: workflow,
+      document: document,
+      processMetadata: processMetadata,
+      message:
+          'Pafio ${workflow.command} exited successfully without a JSON workflow envelope.',
+    );
   }
 
-  try {
-    final decoded = jsonDecode(trimmed);
-    if (decoded is! Map<String, dynamic>) {
-      return null;
-    }
-    if (decoded['workflow_payload_version'] != 1) {
-      return null;
-    }
+  final plan = decoded['plan'];
+  final planMap = plan is Map
+      ? Map<String, dynamic>.from(plan)
+      : const <String, dynamic>{};
+  final reportedBuildRoot = _stringValue(planMap['build_root']);
+  final buildRoot = reportedBuildRoot == null
+      ? null
+      : _rebaseReportedWorkflowPath(reportedBuildRoot, workspaceRoot);
+  final reportedDiagDir = _stringValue(planMap['diag_dir']);
+  final diagDir = reportedDiagDir == null
+      ? null
+      : _rebaseReportedWorkflowPath(reportedDiagDir, workspaceRoot);
 
-    final sessionId =
-        _workflowSessionIdFromPayload(decoded) ??
-        DateTime.now().microsecondsSinceEpoch.toString();
-    final receiptPayload = decoded['receipt'];
-    final receipt = ExecutionReceiptSnapshot.decode(
-      receiptPayload,
-      fallbackSessionId: sessionId,
+  final fallbackSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+  final receiptResult = await _readWorkflowReceipt(
+    buildRoot: buildRoot,
+    workspaceRoot: workspaceRoot,
+    fileSystem: fileSystem,
+    fallbackSessionId: fallbackSessionId,
+  );
+  if (receiptResult.error != null) {
+    return _workflowEnvelopeFailureSession(
+      workflow: workflow,
+      document: document,
+      processMetadata: processMetadata,
+      message: receiptResult.error!,
     );
-    if (receiptPayload != null && receipt == null) {
-      return ExecutionSession(
-        sessionId: sessionId,
-        kind: workflow.kind,
-        status: ExecutionSessionStatus.failed,
-        statusMessage:
-            'Workflow receipt rejected: only receipt schema version 1 is supported.',
-        diagnostics: const <Diagnostic>[],
-        stdoutEvents: const <ExecutionLogEvent>[],
-        stderrEvents: const <ExecutionLogEvent>[],
-        unitRange: SourceRange(start: 0, end: document.length),
-        metadata: processMetadata,
-      );
-    }
-    final payloadStdout = decoded['stdout'] as String? ?? '';
-    final payloadStderr = decoded['stderr'] as String? ?? '';
-    final workflowDiagnostics = await _readWorkflowDiagnostics(
-      rawDiagnostics: decoded['diagnostics'],
-      diagnosticsPath: decoded['diagnostics_path'],
-      workspaceRoot: workspaceRoot,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-      fileSystem: fileSystem,
-    );
-    final payloadStdoutChannel = _parseOutputChannel(
-      payloadStdout,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-    final payloadStderrChannel = _parseOutputChannel(
-      payloadStderr,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-    final stderrChannel = _parseOutputChannel(
-      stderr,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-
-    return ExecutionSession(
-      sessionId: sessionId,
-      kind: workflow.kind,
-      status: ExecutionSessionStatus.succeeded,
-      statusMessage: decoded['message'] as String? ?? workflow.successMessage,
-      diagnostics: <Diagnostic>[
-        ...workflowDiagnostics.diagnostics,
-        ...payloadStdoutChannel.diagnostics,
-        ...payloadStderrChannel.diagnostics,
-        ...stderrChannel.diagnostics,
-      ],
-      stdoutEvents: payloadStdoutChannel.logEvents,
-      stderrEvents: <ExecutionLogEvent>[
-        ...workflowDiagnostics.logEvents,
-        ...payloadStderrChannel.logEvents,
-        ...stderrChannel.logEvents,
-      ],
-      receipt: receipt,
-      unitRange: SourceRange(start: 0, end: document.length),
-      metadata: processMetadata,
-    );
-  } on FormatException {
-    return null;
   }
+  final receipt = receiptResult.receipt;
+  final receiptSessionId = receipt?.sessionId ?? '';
+  final sessionId = receiptSessionId.isNotEmpty
+      ? receiptSessionId
+      : fallbackSessionId;
+
+  final diagnosticsPath = diagDir == null
+      ? null
+      : _joinPath(diagDir, _workflowDiagnosticsFileName);
+  final workflowDiagnostics = await _readWorkflowDiagnostics(
+    rawDiagnostics: decoded['diagnostics'],
+    diagnosticsPath: diagnosticsPath,
+    workspaceRoot: workspaceRoot,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+    fileSystem: fileSystem,
+  );
+  final stderrChannel = _parseOutputChannel(
+    stderr,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+  );
+
+  return ExecutionSession(
+    sessionId: sessionId,
+    kind: workflow.kind,
+    status: ExecutionSessionStatus.succeeded,
+    statusMessage: _stringValue(decoded['message']) ?? workflow.successMessage,
+    diagnostics: <Diagnostic>[
+      ...workflowDiagnostics.diagnostics,
+      ...stderrChannel.diagnostics,
+    ],
+    stdoutEvents: const <ExecutionLogEvent>[],
+    stderrEvents: <ExecutionLogEvent>[
+      ...workflowDiagnostics.logEvents,
+      ...stderrChannel.logEvents,
+    ],
+    receipt: receipt,
+    unitRange: SourceRange(start: 0, end: document.length),
+    metadata: processMetadata,
+  );
 }
 
 ExecutionSession _sessionFromWorkflowFailurePayload({
@@ -950,9 +955,7 @@ ExecutionSession _sessionFromWorkflowFailurePayload({
 }) {
   final failurePayload =
       parseJsonObjectPayload(stderr) ?? parseJsonObjectPayload(stdout);
-  final sessionId =
-      _workflowSessionIdFromPayload(failurePayload) ??
-      DateTime.now().microsecondsSinceEpoch.toString();
+  final sessionId = DateTime.now().microsecondsSinceEpoch.toString();
   final payloadDiagnostics = _parsePayloadDiagnostics(
     failurePayload?['diagnostics'],
     documentText: document.text,
@@ -993,6 +996,70 @@ ExecutionSession _sessionFromWorkflowFailurePayload({
     ],
     unitRange: SourceRange(start: 0, end: document.length),
   );
+}
+
+ExecutionSession _workflowEnvelopeFailureSession({
+  required _ProjectWorkflowSelection workflow,
+  required DocumentState document,
+  required Map<String, Object?> processMetadata,
+  required String message,
+}) {
+  return ExecutionSession(
+    sessionId: DateTime.now().microsecondsSinceEpoch.toString(),
+    kind: workflow.kind,
+    status: ExecutionSessionStatus.failed,
+    statusMessage: message,
+    diagnostics: const <Diagnostic>[],
+    stdoutEvents: const <ExecutionLogEvent>[],
+    stderrEvents: const <ExecutionLogEvent>[],
+    unitRange: SourceRange(start: 0, end: document.length),
+    metadata: processMetadata,
+  );
+}
+
+class _WorkflowReceiptReadResult {
+  const _WorkflowReceiptReadResult({this.receipt, this.error});
+
+  final ExecutionReceiptSnapshot? receipt;
+  final String? error;
+}
+
+Future<_WorkflowReceiptReadResult> _readWorkflowReceipt({
+  required String? buildRoot,
+  required String workspaceRoot,
+  required FileSystemManager fileSystem,
+  required String fallbackSessionId,
+}) async {
+  if (buildRoot == null || buildRoot.isEmpty) {
+    return const _WorkflowReceiptReadResult();
+  }
+  if (!_runtimePathContained(buildRoot, workspaceRoot)) {
+    return const _WorkflowReceiptReadResult(
+      error: 'Pafio workflow build root is outside the workspace tree.',
+    );
+  }
+  final receiptPath = _joinPath(buildRoot, 'receipt.json');
+  try {
+    if (!await fileSystem.exists(receiptPath)) {
+      return const _WorkflowReceiptReadResult();
+    }
+    final raw = parseJsonObjectPayload(await fileSystem.readText(receiptPath));
+    final receipt = ExecutionReceiptSnapshot.decode(
+      raw,
+      fallbackSessionId: fallbackSessionId,
+    );
+    if (receipt == null) {
+      return const _WorkflowReceiptReadResult(
+        error:
+            'Workflow receipt rejected: only receipt schema version 1 is supported.',
+      );
+    }
+    return _WorkflowReceiptReadResult(receipt: receipt);
+  } on Object {
+    return const _WorkflowReceiptReadResult(
+      error: 'Workflow receipt could not be read from the build root.',
+    );
+  }
 }
 
 Future<_ParsedDiagnostics> _readWorkflowDiagnostics({
@@ -1058,10 +1125,8 @@ String? _locateRuntimeEventsArtifact({
   if (buildRootRaw == null) {
     return null;
   }
-  final buildRoot = _isAbsolutePath(buildRootRaw)
-      ? buildRootRaw
-      : _joinPath(workspaceRoot, buildRootRaw);
-  if (!_runtimePathContained(buildRoot, workspaceRoot)) {
+  final buildRoot = _rebaseReportedWorkflowPath(buildRootRaw, workspaceRoot);
+  if (buildRoot == null || !_runtimePathContained(buildRoot, workspaceRoot)) {
     return null;
   }
   final receiptFile = File(_joinPath(buildRoot, 'receipt.json'));
@@ -1093,9 +1158,10 @@ String? _locateRuntimeEventsArtifact({
     return null;
   }
   final resolved = _isAbsolutePath(namedPath)
-      ? namedPath
+      ? _rebaseReportedWorkflowPath(namedPath, workspaceRoot)
       : _joinPath(buildRoot, namedPath);
-  if (!_runtimePathContained(resolved, workspaceRoot) ||
+  if (resolved == null ||
+      !_runtimePathContained(resolved, workspaceRoot) ||
       !_runtimePathContained(resolved, buildRoot)) {
     return null;
   }
@@ -1185,24 +1251,6 @@ _ParsedDiagnostics _parsePayloadDiagnostics(
     }
   }
   return _ParsedDiagnostics(diagnostics: diagnostics, logEvents: logEvents);
-}
-
-String? _workflowSessionIdFromPayload(Map<String, dynamic>? payload) {
-  if (payload == null) {
-    return null;
-  }
-
-  final runtimeSessionId = _stringValue(payload['runtime_session_id']);
-  if (runtimeSessionId != null) {
-    return runtimeSessionId;
-  }
-
-  final receipt = payload['receipt'];
-  if (receipt is Map<String, dynamic>) {
-    return _stringValue(receipt['session_id']) ??
-        _stringValue(receipt['sessionId']);
-  }
-  return null;
 }
 
 _ProjectWorkflowSelection _selectProjectWorkflow({
@@ -2147,6 +2195,41 @@ String? _resolveWorkflowDiagnosticsPath(
     diagnosticsPath,
     workspaceRoot: workspaceRoot,
   );
+}
+
+/// Pafio reports artifact paths as the child process sees them, resolved through
+/// the process working directory. On macOS a temporary workspace can be reached
+/// through a symlinked prefix (`/var` -> `/private/var`), so a reported path can
+/// differ lexically from the workspace root the workbench holds. Resolve both
+/// sides before comparing, then re-express the reported path under the caller's
+/// workspace root so later scope checks and file-system reads accept it.
+String? _rebaseReportedWorkflowPath(String reportedPath, String workspaceRoot) {
+  final joined = _isAbsolutePath(reportedPath)
+      ? reportedPath
+      : _joinPath(workspaceRoot, reportedPath);
+  final resolvedPath = _resolveSymbolicPath(joined);
+  final resolvedRoot = _resolveSymbolicPath(workspaceRoot);
+  if (resolvedPath == null || resolvedRoot == null) {
+    return joined;
+  }
+  final relativePath = _relativePathWithinRoot(resolvedPath, resolvedRoot);
+  if (relativePath == null) {
+    return null;
+  }
+  return relativePath.isEmpty
+      ? workspaceRoot
+      : _joinPath(workspaceRoot, relativePath);
+}
+
+String? _resolveSymbolicPath(String path) {
+  try {
+    if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound) {
+      return null;
+    }
+    return File(path).resolveSymbolicLinksSync();
+  } on Object {
+    return null;
+  }
 }
 
 String? _stringValue(Object? value) {

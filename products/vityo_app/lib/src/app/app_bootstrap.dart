@@ -293,6 +293,7 @@ class AppBootstrap {
     this.observableGraphController,
     this.sourceControlStatusController,
     this.projectLanguageService,
+    this.diagnosticsPanelStateStore,
   }) : runtimeOutputBuffer = runtimeOutputBuffer ?? RuntimeOutputLiveBuffer(),
        languageServiceStatus =
            languageServiceStatus ??
@@ -349,6 +350,7 @@ class AppBootstrap {
   final ObservableGraphController? observableGraphController;
   final SourceControlStatusController? sourceControlStatusController;
   final ProjectStyioLanguageService? projectLanguageService;
+  final DiagnosticsPanelStateStore? diagnosticsPanelStateStore;
 
   void dispose() {
     unawaited(toolchainCatalogSubscription?.cancel());
@@ -810,6 +812,9 @@ class AppBootstrap {
         ShellLayoutPreferencesStore.fromDataStore(
           dataStore: foundationDataStore,
         );
+    final diagnosticsPanelStateStore = DiagnosticsPanelStateStore.fromDataStore(
+      dataStore: foundationDataStore,
+    );
     final debugBreakpointStore = DebugBreakpointStore.fromDataStore(
       dataStore: foundationDataStore,
     );
@@ -829,6 +834,7 @@ class AppBootstrap {
       targetId: platformManagers.context.targetId,
       defaultCatalogProvider: () => createPlatformStyioLanguageToolchainCatalog(
         platformManagers: platformManagers,
+        environment: readHostEnvironment(),
       ),
     );
     await ensureDefaultNativeCompilerToolchainCatalog(
@@ -963,8 +969,7 @@ class AppBootstrap {
         platformTarget == PlatformTarget.windows ||
         platformTarget == PlatformTarget.linux ||
         platformTarget == PlatformTarget.macos;
-    final observableGraphController =
-        ioDesktop && !projectSnapshot.isHosted
+    final observableGraphController = ioDesktop && !projectSnapshot.isHosted
         ? ObservableGraphController(
             publisher: createObservableSnapshotPublisher(),
             projectGraph: () => workspaceController.activeProject,
@@ -1091,6 +1096,7 @@ class AppBootstrap {
       observableGraphController: observableGraphController,
       sourceControlStatusController: sourceControlStatusController,
       projectLanguageService: projectLanguageService,
+      diagnosticsPanelStateStore: diagnosticsPanelStateStore,
     );
   }
 
@@ -1350,7 +1356,14 @@ class AppBootstrap {
 
     final defaultCatalog =
         await (defaultCatalogProvider ??
-            createPlatformStyioLanguageToolchainCatalog)();
+            () async {
+              final platformManagers =
+                  await createDetectedPlatformManagerBundle();
+              return createPlatformStyioLanguageToolchainCatalog(
+                platformManagers: platformManagers,
+                environment: readHostEnvironment(),
+              );
+            })();
     final defaultLanguageServices = defaultCatalog.list(
       kind: ToolchainKind.languageService,
     );

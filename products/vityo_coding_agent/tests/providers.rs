@@ -18,14 +18,14 @@ use vityo_coding_agent::{
 fn usage_budget_rejects_requests_before_provider_io() {
     let budget = UsageBudget {
         max_context_tokens: 8,
-        max_output_tokens: 4,
-        max_total_tokens: 10,
+        max_output_tokens: Some(4),
+        max_total_tokens: Some(10),
         max_cost_micros: Some(20),
         ..UsageBudget::default()
     };
     let mut request = request();
     request.estimated_context_tokens = 7;
-    request.output_token_limit = 4;
+    request.output_token_limit = Some(4);
     assert_eq!(
         budget.validate_request(&request).unwrap_err().kind,
         ProviderFailureKind::BudgetExceeded
@@ -40,6 +40,55 @@ fn usage_budget_rejects_requests_before_provider_io() {
             .unwrap_err()
             .kind,
         ProviderFailureKind::BudgetExceeded
+    );
+}
+
+#[test]
+fn usage_budget_allows_unbounded_output_only_within_the_context_window() {
+    let budget = UsageBudget {
+        max_context_tokens: 8,
+        max_output_tokens: None,
+        max_total_tokens: None,
+        ..UsageBudget::default()
+    };
+    let mut request = request();
+    request.estimated_context_tokens = 8;
+    request.output_token_limit = None;
+    assert!(budget.validate_request(&request).is_ok());
+    assert!(
+        budget
+            .validate_usage(ModelUsage {
+                input_tokens: 4,
+                output_tokens: 4,
+                cost_micros: None,
+            })
+            .is_ok()
+    );
+    assert_eq!(
+        budget
+            .validate_usage(ModelUsage {
+                input_tokens: 8,
+                output_tokens: 1,
+                cost_micros: None,
+            })
+            .unwrap_err()
+            .kind,
+        ProviderFailureKind::BudgetExceeded,
+        "unbounded output still fits only within the full context window"
+    );
+
+    request.output_token_limit = Some(u32::MAX);
+    assert_eq!(
+        budget.validate_request(&request).unwrap_err().kind,
+        ProviderFailureKind::BudgetExceeded,
+        "an explicit output limit reserves space inside the context window"
+    );
+    request.estimated_context_tokens = 9;
+    request.output_token_limit = None;
+    assert_eq!(
+        budget.validate_request(&request).unwrap_err().kind,
+        ProviderFailureKind::BudgetExceeded,
+        "the required context ceiling must still be enforced"
     );
 }
 
@@ -192,6 +241,144 @@ async fn router_uses_an_ordered_compatible_fallback() {
 }
 
 #[tokio::test]
+async fn routed_fallback_usage_uses_generation_budget_not_per_attempt_context() {
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = Arc::new(AtomicUsize::new(0));
+    let first: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "first-attempt".to_owned(),
+        calls: Arc::clone(&first_calls),
+        events: vec![Err(ProviderFailure::new(
+            ProviderFailureKind::RateLimited,
+            "provider rate limit was reached",
+            true,
+            ModelEffectState::None,
+        )
+        .with_usage(ModelUsage {
+            input_tokens: 4,
+            output_tokens: 4,
+            cost_micros: None,
+        }))],
+        capabilities: capabilities(),
+    });
+    let second: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "second-attempt".to_owned(),
+        calls: Arc::clone(&second_calls),
+        events: success_events(),
+        capabilities: capabilities(),
+    });
+    let router = ProviderRouter::new(
+        vec![first, second],
+        UsageBudget {
+            max_context_tokens: 8,
+            max_output_tokens: Some(4),
+            max_total_tokens: Some(16),
+            ..UsageBudget::default()
+        },
+    )
+    .unwrap();
+    let mut request = request();
+    request.estimated_context_tokens = 4;
+    request.output_token_limit = Some(4);
+    let receipt = router
+        .generate(
+            request,
+            ProviderRequirements::default(),
+            AgentCancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(receipt.provider_id, "second-attempt");
+    assert_eq!(receipt.usage.input_tokens, 5);
+    assert_eq!(receipt.usage.output_tokens, 5);
+    assert_eq!(first_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(second_calls.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn routed_fallback_stops_before_the_total_generation_budget_is_exceeded() {
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = Arc::new(AtomicUsize::new(0));
+    let first: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "first-attempt".to_owned(),
+        calls: Arc::clone(&first_calls),
+        events: vec![Err(ProviderFailure::new(
+            ProviderFailureKind::RateLimited,
+            "provider rate limit was reached",
+            true,
+            ModelEffectState::None,
+        )
+        .with_usage(ModelUsage {
+            input_tokens: 6,
+            output_tokens: 2,
+            cost_micros: None,
+        }))],
+        capabilities: capabilities(),
+    });
+    let second: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "must-not-run".to_owned(),
+        calls: Arc::clone(&second_calls),
+        events: success_events(),
+        capabilities: capabilities(),
+    });
+    let router = ProviderRouter::new(
+        vec![first, second],
+        UsageBudget {
+            max_context_tokens: 8,
+            max_output_tokens: Some(4),
+            max_total_tokens: Some(12),
+            ..UsageBudget::default()
+        },
+    )
+    .unwrap();
+    let mut request = request();
+    request.estimated_context_tokens = 4;
+    request.output_token_limit = Some(4);
+    let failure = router
+        .generate(
+            request,
+            ProviderRequirements::default(),
+            AgentCancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(failure.kind, ProviderFailureKind::BudgetExceeded);
+    assert_eq!(first_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(second_calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn router_requires_input_and_requested_output_to_fit_the_provider_window() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let provider: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "small-window".to_owned(),
+        calls: Arc::clone(&calls),
+        events: success_events(),
+        capabilities: ModelProviderCapabilities {
+            context_tokens: 8,
+            output_tokens: Some(4),
+            ..capabilities()
+        },
+    });
+    let router = ProviderRouter::new(vec![provider], UsageBudget::default()).unwrap();
+    let mut request = request();
+    request.estimated_context_tokens = 5;
+    request.output_token_limit = Some(4);
+    let failure = router
+        .generate(
+            request,
+            ProviderRequirements::default(),
+            AgentCancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(failure.kind, ProviderFailureKind::CapabilityUnavailable);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
 async fn router_does_not_replay_after_an_uncertain_provider_effect() {
     let first_calls = Arc::new(AtomicUsize::new(0));
     let second_calls = Arc::new(AtomicUsize::new(0));
@@ -226,13 +413,40 @@ async fn router_does_not_replay_after_an_uncertain_provider_effect() {
     assert_eq!(second_calls.load(Ordering::Relaxed), 0);
 }
 
+#[tokio::test]
+async fn router_accepts_a_provider_without_a_declared_output_ceiling() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let provider: Arc<dyn ModelProvider> = Arc::new(FixtureProvider {
+        id: "unbounded".to_owned(),
+        calls: Arc::clone(&calls),
+        events: success_events(),
+        capabilities: ModelProviderCapabilities {
+            output_tokens: None,
+            ..capabilities()
+        },
+    });
+    let router = ProviderRouter::new(vec![provider], UsageBudget::default()).unwrap();
+    let mut request = request();
+    request.output_token_limit = Some(64);
+    let receipt = router
+        .generate(
+            request,
+            ProviderRequirements::default(),
+            AgentCancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(receipt.provider_id, "unbounded");
+    assert_eq!(receipt.text, "ready");
+}
+
 fn request() -> ModelRequest {
     ModelRequest {
         request_id: "request-1".to_owned(),
         messages: vec![ModelMessage::text(ModelMessageRole::User, "hello")],
         tools: Vec::new(),
         estimated_context_tokens: 1,
-        output_token_limit: 8,
+        output_token_limit: Some(8),
         retry_safety: ModelRetrySafety::ReadOnly,
         idempotency_key: None,
         deadline: None,
@@ -246,7 +460,7 @@ fn reducer() -> ProviderStreamReducer {
 fn capabilities() -> ModelProviderCapabilities {
     ModelProviderCapabilities {
         context_tokens: 128,
-        output_tokens: 32,
+        output_tokens: Some(32),
         supports_tools: true,
         max_concurrency: 2,
     }

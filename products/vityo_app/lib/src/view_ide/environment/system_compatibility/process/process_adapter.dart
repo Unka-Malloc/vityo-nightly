@@ -33,7 +33,7 @@ class ProcessAdapter {
       workingDirectory: compatibility.supportsWorkingDirectory
           ? request.workingDirectory
           : null,
-      timeout: request.timeout ?? const Duration(seconds: 30),
+      timeout: request.timeout,
       standardInput: request.standardInput,
       supported: true,
     );
@@ -83,7 +83,7 @@ class ProcessExecutionPlan {
     arguments: const <String>[],
     environment: const <String, String>{},
     workingDirectory: null,
-    timeout: request.timeout ?? const Duration(seconds: 30),
+    timeout: request.timeout,
     standardInput: null,
     supported: false,
     unsupportedMessage: message,
@@ -94,7 +94,7 @@ class ProcessExecutionPlan {
   final List<String> arguments;
   final Map<String, String> environment;
   final String? workingDirectory;
-  final Duration timeout;
+  final Duration? timeout;
   final String? standardInput;
   final bool supported;
   final String? unsupportedMessage;

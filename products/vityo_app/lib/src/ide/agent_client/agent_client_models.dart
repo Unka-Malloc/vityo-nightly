@@ -58,7 +58,8 @@ final class AgentClientPolicy {
     this.maxQueuedUpdateBytesPerSession = 512 * 1024,
     this.maxSessions = 64,
     this.maxPendingRequests = 128,
-    this.requestTimeout = const Duration(seconds: 30),
+    this.requestTimeout,
+    this.controlRequestTimeout = const Duration(seconds: 30),
     this.shutdownTimeout = const Duration(seconds: 3),
     this.allowedExtensions = const <String>{},
   }) : assert(maxMessageBytes > 0),
@@ -76,7 +77,13 @@ final class AgentClientPolicy {
   final int maxQueuedUpdateBytesPerSession;
   final int maxSessions;
   final int maxPendingRequests;
-  final Duration requestTimeout;
+
+  /// Optional end-to-end Agent request deadline. When omitted, an Agent prompt
+  /// may run until it completes or is explicitly cancelled.
+  final Duration? requestTimeout;
+
+  /// Maximum wait for short control requests when [requestTimeout] is omitted.
+  final Duration controlRequestTimeout;
   final Duration shutdownTimeout;
   final Set<String> allowedExtensions;
 }

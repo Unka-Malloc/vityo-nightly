@@ -18,6 +18,8 @@ class _HighlightedLineRow extends StatelessWidget {
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
+    this.showCodeActionBulb = false,
+    this.onCodeActionBulbPressed,
   });
 
   final DocumentState document;
@@ -35,6 +37,11 @@ class _HighlightedLineRow extends StatelessWidget {
   final ValueChanged<DragStartDetails> onPanStart;
   final ValueChanged<DragUpdateDetails> onPanUpdate;
   final ValueChanged<DragEndDetails> onPanEnd;
+
+  /// True only when the caret position has real code actions. The editor
+  /// lightbulb is never shown as a placeholder.
+  final bool showCodeActionBulb;
+  final VoidCallback? onCodeActionBulbPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -80,13 +87,34 @@ class _HighlightedLineRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                Container(
-                  width: 2,
-                  height: 20,
-                  margin: const EdgeInsets.only(left: 10, right: 10),
-                  decoration: BoxDecoration(
-                    color: _diagnosticStripeColor(context, lineDiagnostics),
-                  ),
+                SizedBox(
+                  width: 22,
+                  child: showCodeActionBulb
+                      ? Tooltip(
+                          message: 'Show code actions (Alt+Enter)',
+                          child: InkWell(
+                            key: ValueKey('source-code-action-bulb-$lineIndex'),
+                            onTap: onCodeActionBulbPressed,
+                            borderRadius: BorderRadius.circular(999),
+                            child: Icon(
+                              Icons.lightbulb_outline_rounded,
+                              size: 15,
+                              color: VityoWorkbenchTokens.of(context).warning,
+                            ),
+                          ),
+                        )
+                      : Center(
+                          child: Container(
+                            width: 2,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: _diagnosticStripeColor(
+                                context,
+                                lineDiagnostics,
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
                 Expanded(
                   child: Text.rich(

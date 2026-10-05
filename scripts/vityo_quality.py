@@ -570,7 +570,7 @@ def ide_quality() -> int:
                 "analyze",
                 "--no-pub",
                 "lib/src/ide/agent_client",
-                "lib/src/ide/platform",
+                "lib/src/view_ide/platform",
                 "lib/src/presentation/agent_workbench",
                 "benchmark/agent_collaboration_benchmark.dart",
                 "test/ide_quality",

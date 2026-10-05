@@ -5,3 +5,10 @@ Future<AgentLaunchDescriptor> resolvePackagedCodingAgentLaunch({
 }) => Future<AgentLaunchDescriptor>.error(
   UnsupportedError('The packaged Vityo Coding Agent requires a desktop app.'),
 );
+
+Future<String> resolvePackagedCodingAgentProviderConfigPath() =>
+    Future<String>.error(
+      UnsupportedError(
+        'The packaged Vityo Coding Agent requires a desktop app.',
+      ),
+    );

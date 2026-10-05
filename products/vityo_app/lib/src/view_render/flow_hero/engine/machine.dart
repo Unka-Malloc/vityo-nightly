@@ -1,6 +1,17 @@
 /// The machine: one charcoal panel holding a rail, the PROGRAM well, the
 /// instrument body, the sixteen-step transport band and the status strip. This
 /// file also owns the operator's state — buffers, tempo, the run, the interlock.
+///
+/// Demo-script isolation: FlowHeroApp drives this engine as a *library* — it
+/// opens real workspace buffers, projects their real graph and runs the real
+/// `pafio` route (controller.dart / execution_service.dart). It never renders
+/// the `Machine` shell below, so the scripted demo cluster is unreachable from
+/// the app: `authorize()` (which plants a fake receipt), the sixteen-step
+/// `run()`/`replayFault()`, and the synthetic labels in `StatusStrip`
+/// (`Rev 0142`, `Workspace demo/app`, `Demonstration data — synthetic`). Those
+/// surfaces exist only for the standalone demo entry, which has its own copy
+/// in `lib/src/view_render/workbench_demo/`. Keep them demo-only: nothing on
+/// the FlowHeroApp path may call them or render them.
 library;
 
 import 'dart:async';
@@ -12,6 +23,10 @@ import 'package:flutter/services.dart';
 
 import '../../../ide/editor/document/document_state.dart';
 import '../../../ide/workspace/workspace_document_store_types.dart';
+import '../../../view_ide/flow_hero/flow_hero.dart';
+import '../../../view_ide/language/contract/language_contract.dart' as lang;
+import '../../../view_ide/language/service/styio_language_service.dart'
+    show StyioLanguageService;
 import 'editor.dart';
 import 'flow_board.dart';
 import '../flow_model.dart';
@@ -167,7 +182,7 @@ class Receipt {
 }
 
 class WorkbenchController extends ChangeNotifier {
-  WorkbenchController() {
+  WorkbenchController({StyioLanguageService? languageService}) {
     files.addAll(<BufferFile>[
       BufferFile('main.styio', kMainStyio, lang: 'styio'),
       BufferFile('util.styio', kUtilStyio, lang: 'styio'),
@@ -180,6 +195,7 @@ class WorkbenchController extends ChangeNotifier {
     readTempoFromToml();
     cursorLine = 1;
     cursorColumn = 1;
+    if (languageService != null) attachLanguageService(languageService);
   }
 
   final List<BufferFile> files = <BufferFile>[];
@@ -194,6 +210,213 @@ class WorkbenchController extends ChangeNotifier {
 
   List<Diagnostic> activeDiags = <Diagnostic>[];
   List<Diagnostic> mainDiags = <Diagnostic>[];
+
+  // ---- language service ------------------------------------------------------
+  /// The routed Styio language service when Flow Hero booted one. Null means the
+  /// engine answers with its own heuristic, and says so.
+  StyioLanguageService? _languageService;
+
+  /// Async half of the routed service; set only when the service supplies it.
+  FlowHeroAsyncLanguageSource? _languageSource;
+
+  final Map<BufferFile, _ServiceFacts> _serviceFacts =
+      <BufferFile, _ServiceFacts>{};
+  final Map<BufferFile, int> _analysisTokens = <BufferFile, int>{};
+  Timer? _analysisDebounce;
+  int _analysisSeq = 0;
+
+  /// True once a language service has been handed to the engine at all.
+  bool get languageServiceConfigured => _languageService != null;
+
+  /// True when the configured route is a live `styio_lspd` session.
+  bool get languageServiceLive =>
+      _languageSource?.live ?? _languageService != null;
+
+  /// Where [activeDiags] came from — the editor's honest source marker.
+  FlowHeroAnalysisOrigin analysisOrigin = FlowHeroAnalysisOrigin.none;
+
+  /// Real semantic tokens for the active buffer (empty in heuristic mode).
+  List<lang.SemanticSpan> get activeSemanticSpans =>
+      _serviceFacts[activeFile]?.semanticSpans ?? const <lang.SemanticSpan>[];
+
+  /// Real service diagnostics for the active buffer (empty in heuristic mode).
+  List<lang.Diagnostic> get activeServiceDiagnostics =>
+      _serviceFacts[activeFile]?.serviceDiagnostics ??
+      const <lang.Diagnostic>[];
+
+  /// True once a real workspace document store is bound to the engine. The
+  /// built-in pathless buffers never set it, so a bound store is the honest
+  /// signal that this session owns real workspace files.
+  bool get hasWorkspaceDocumentStore => _documentStore != null;
+
+  /// Real document symbols the live service reports for the active buffer.
+  ///
+  /// Empty unless a live route and a path-bound Styio buffer are both present;
+  /// the synchronous read only touches the routed cache the async driver fills.
+  List<lang.DocumentSymbol> get activeDocumentSymbols {
+    final String? path = activeFile.path;
+    final StyioLanguageService? service = _languageService;
+    if (!languageServiceLive ||
+        !activeFile.drawable ||
+        path == null ||
+        service == null) {
+      return const <lang.DocumentSymbol>[];
+    }
+    try {
+      return service
+          .analyzeDocument(
+            DocumentState(
+              documentId: path,
+              text: activeFile.text,
+              revision: activeFile.sourceRevision,
+            ),
+          )
+          .documentSymbols;
+    } on Object {
+      return const <lang.DocumentSymbol>[];
+    }
+  }
+
+  /// Attach (or replace) the language service; null reverts to the heuristic.
+  ///
+  /// FlowHeroApp calls this after its async boot, so a late-arriving service
+  /// takes effect without rebuilding the engine.
+  void attachLanguageService(StyioLanguageService? service) {
+    _analysisDebounce?.cancel();
+    _languageService = service;
+    _languageSource = service is FlowHeroAsyncLanguageSource
+        ? service as FlowHeroAsyncLanguageSource
+        : null;
+    _serviceFacts.clear();
+    _analysisTokens.clear();
+    _refreshActiveDocument();
+    notifyListeners();
+  }
+
+  /// Synchronous services (the routed interface without an async half) are
+  /// re-asked on every change; async routes debounce instead.
+  void _applySyncServiceFactsIfConfigured() {
+    if (_languageService == null || _languageSource != null) return;
+    _applySyncServiceFacts();
+  }
+
+  Iterable<BufferFile> _serviceCandidates() sync* {
+    yield activeFile;
+    if (!identical(files.first, activeFile)) yield files.first;
+  }
+
+  void _applySyncServiceFacts() {
+    final StyioLanguageService? service = _languageService;
+    if (service == null) return;
+    for (final BufferFile f in _serviceCandidates()) {
+      if (!f.drawable) continue;
+      try {
+        final lang.StyioDocumentAnalysis analysis = service.analyzeDocument(
+          DocumentState(
+            documentId: f.path ?? f.name,
+            text: f.text,
+            revision: f.sourceRevision,
+          ),
+        );
+        _serviceFacts[f] = _factsFrom(analysis, f.text);
+      } on Object {
+        _serviceFacts.remove(f);
+      }
+    }
+  }
+
+  static const Duration _analysisDebounceDelay = Duration(milliseconds: 220);
+
+  bool _canAnalyzeWithSource(BufferFile f) =>
+      _languageSource?.live == true && f.drawable && f.path != null;
+
+  /// Debounced daemon analysis. Edits wait out the debounce; file switches and
+  /// attach run at once.
+  void _scheduleServiceAnalysis(BufferFile f, {bool immediate = false}) {
+    if (!_canAnalyzeWithSource(f)) return;
+    _analysisDebounce?.cancel();
+    if (immediate) {
+      unawaited(_runServiceAnalysis(f));
+      return;
+    }
+    _analysisDebounce = Timer(_analysisDebounceDelay, () {
+      unawaited(_runServiceAnalysis(f));
+    });
+  }
+
+  Future<void> _runServiceAnalysis(BufferFile f) async {
+    final FlowHeroAsyncLanguageSource? source = _languageSource;
+    final String? path = f.path;
+    if (source == null || !source.live || path == null) return;
+    final int token = ++_analysisSeq;
+    _analysisTokens[f] = token;
+    final String text = f.text;
+    FlowHeroLanguageResult? result;
+    try {
+      result = await source.analyzeFresh(
+        DocumentState(documentId: path, text: text, revision: f.sourceRevision),
+        filePath: path,
+      );
+    } on Object {
+      result = null;
+    }
+    if (!identical(_languageSource, source) || _analysisTokens[f] != token) {
+      return; // superseded by a newer pass or a replaced service
+    }
+    if (f.text != text) {
+      // The buffer moved on while the daemon answered; the newer pass owns it.
+      // The previous result stays on screen as last-known state.
+      return;
+    }
+    if (result != null && result.authoritative) {
+      _serviceFacts[f] = _factsFrom(result.analysis, text);
+    } else {
+      _serviceFacts.remove(f);
+    }
+    if (identical(f, activeFile)) {
+      _analyzeActive();
+      if (f.drawable) _graph = _buildGraphFor(f);
+    } else if (identical(f, files.first)) {
+      _analyzeMain();
+    } else {
+      return;
+    }
+    notifyListeners();
+  }
+
+  _ServiceFacts _factsFrom(lang.StyioDocumentAnalysis analysis, String text) {
+    return _ServiceFacts(
+      serviceDiagnostics: analysis.diagnostics,
+      diagnostics: <Diagnostic>[
+        for (final lang.Diagnostic d in analysis.diagnostics)
+          Diagnostic(
+            _lineOfOffset(text, d.range.start),
+            _identAt(text, d.range, d.message),
+          ),
+      ],
+      semanticSpans: analysis.semanticSpans,
+    );
+  }
+
+  int _lineOfOffset(String text, int offset) {
+    final int limit = offset.clamp(0, text.length);
+    int line = 0;
+    for (int i = 0; i < limit; i++) {
+      if (text.codeUnitAt(i) == 10) line++;
+    }
+    return line;
+  }
+
+  String _identAt(String text, lang.SourceRange range, String message) {
+    final int start = range.start.clamp(0, text.length);
+    final int end = range.end.clamp(start, text.length);
+    final String slice = text.substring(start, end).trim();
+    if (slice.isNotEmpty) return slice;
+    final RegExpMatch? m = RegExp(
+      r'[A-Za-z_][A-Za-z0-9_]*',
+    ).firstMatch(message);
+    return m?.group(0) ?? '?';
+  }
 
   double bpm = 128;
   final List<bool> armed = List<bool>.filled(16, true);
@@ -276,18 +499,43 @@ class WorkbenchController extends ChangeNotifier {
   GraphBoard _buildGraphFor(BufferFile f) => buildGraph(
     parseStyio(f.text),
     fileName: f.name,
-    hanging: lintText(f.text).map((Diagnostic d) => d.ident).toSet(),
+    hanging: _hangingFor(f),
     glyphs: const FlutterGlyphs(),
   );
 
+  /// Input routes the engine treats as hanging: the real service's findings
+  /// when it produced facts for this buffer, the local rule otherwise.
+  Set<String> _hangingFor(BufferFile f) {
+    final _ServiceFacts? facts = _serviceFacts[f];
+    if (facts != null) {
+      return facts.diagnostics.map((Diagnostic d) => d.ident).toSet();
+    }
+    return lintText(f.text).map((Diagnostic d) => d.ident).toSet();
+  }
+
   void _analyzeMain() {
-    mainDiags = lintText(files.first.text);
+    final BufferFile f = files.first;
+    if (!f.drawable) {
+      mainDiags = const <Diagnostic>[];
+      return;
+    }
+    mainDiags = _serviceFacts[f]?.diagnostics ?? lintText(f.text);
   }
 
   void _analyzeActive() {
-    activeDiags = activeFile.drawable
-        ? lintText(activeFile.text)
-        : <Diagnostic>[];
+    if (!activeFile.drawable) {
+      activeDiags = const <Diagnostic>[];
+      analysisOrigin = FlowHeroAnalysisOrigin.none;
+      return;
+    }
+    final _ServiceFacts? facts = _serviceFacts[activeFile];
+    if (facts != null) {
+      activeDiags = facts.diagnostics;
+      analysisOrigin = FlowHeroAnalysisOrigin.service;
+      return;
+    }
+    activeDiags = lintText(activeFile.text);
+    analysisOrigin = FlowHeroAnalysisOrigin.heuristic;
   }
 
   /// Editing: the buffer is the instrument; the board answers every keystroke.
@@ -297,12 +545,14 @@ class WorkbenchController extends ChangeNotifier {
     if (activeFile.savable) activeFile.dirty = true;
     cursorLine = line;
     cursorColumn = column;
+    _applySyncServiceFactsIfConfigured();
     _analyzeActive();
     _analyzeMain();
     if (activeFile.drawable) {
       _graph = _buildGraphFor(activeFile);
     }
     if (activeFile.lang == 'toml') readTempoFromToml();
+    _scheduleServiceAnalysis(activeFile);
     notifyListeners();
   }
 
@@ -322,10 +572,12 @@ class WorkbenchController extends ChangeNotifier {
     activeFile = files.firstWhere((BufferFile f) => f.name == name);
     bufferEpoch++;
     if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+    _applySyncServiceFactsIfConfigured();
     _analyzeActive();
     _analyzeMain();
     cursorLine = 1;
     cursorColumn = 1;
+    _scheduleServiceAnalysis(activeFile, immediate: true);
     notifyListeners();
   }
 
@@ -338,7 +590,9 @@ class WorkbenchController extends ChangeNotifier {
       activeFile = opened;
       bufferEpoch++;
       if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+      _applySyncServiceFactsIfConfigured();
       _analyzeActive();
+      _scheduleServiceAnalysis(activeFile, immediate: true);
       notifyListeners();
       return true;
     }
@@ -390,9 +644,40 @@ class WorkbenchController extends ChangeNotifier {
     activeFile = f;
     bufferEpoch++;
     if (f.drawable) _graph = _buildGraphFor(f);
+    _applySyncServiceFactsIfConfigured();
     _analyzeActive();
     cursorLine = 1;
     cursorColumn = 1;
+    _scheduleServiceAnalysis(f, immediate: true);
+    notifyListeners();
+    return true;
+  }
+
+  /// Drops every buffer opened from disk and returns to the seeded in-memory
+  /// buffers. Returns false when nothing was open.
+  ///
+  /// Used when the workspace root switches: a buffer read through the previous
+  /// root's document store must not stay authoritative against the new root,
+  /// whose Agent workspace binding rejects documents outside its canonical
+  /// roots.
+  bool resetWorkspaceBuffers() {
+    if (_pathBuffers.isEmpty) return false;
+    final Set<BufferFile> dropped = _pathBuffers.values.toSet();
+    files.removeWhere(dropped.contains);
+    _pathBuffers.clear();
+    for (final BufferFile f in dropped) {
+      _serviceFacts.remove(f);
+      _analysisTokens.remove(f);
+    }
+    activeFile = files.first;
+    bufferEpoch++;
+    _graph = _buildGraphFor(activeFile);
+    _analyzeMain();
+    _analyzeActive();
+    readTempoFromToml();
+    cursorLine = 1;
+    cursorColumn = 1;
+    _scheduleServiceAnalysis(activeFile, immediate: true);
     notifyListeners();
     return true;
   }
@@ -590,10 +875,12 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void _refreshActiveDocument() {
+    _applySyncServiceFactsIfConfigured();
     _analyzeActive();
     _analyzeMain();
     if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
     if (activeFile.lang == 'toml') readTempoFromToml();
+    _scheduleServiceAnalysis(activeFile, immediate: true);
   }
 
   void setInstrument(Instrument i) {
@@ -651,6 +938,9 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------- the loop ---
+  /// DEMO ONLY. FlowHeroApp never calls this: a real run goes through
+  /// FlowHeroExecutionRuntime (`pafio --json run`) and the run strip reads its
+  /// real phase. The sixteen-step chase is the standalone demo's theatre.
   Future<void> run() async {
     if (running) return;
     if (faulted) {
@@ -789,6 +1079,9 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   // ------------------------------------------------------- permission gate ---
+  /// DEMO ONLY. Plants a synthetic `Receipt('0142', 3)` for the demo shell.
+  /// FlowHeroApp never calls this; a real receipt comes from pafio and is
+  /// echoed by `FlowHeroController.runExecution`.
   void authorize() {
     if (authorized || authorizeArmed) return;
     authorizeArmed = true;
@@ -888,11 +1181,33 @@ class WorkbenchController extends ChangeNotifier {
   @override
   void dispose() {
     _sinkTimer?.cancel();
+    _analysisDebounce?.cancel();
     super.dispose();
   }
 }
 
+/// Facts the real language service produced for one buffer. Kept until a newer
+/// pass replaces them, so edits never blank the board while the daemon thinks.
+class _ServiceFacts {
+  const _ServiceFacts({
+    required this.diagnostics,
+    required this.serviceDiagnostics,
+    required this.semanticSpans,
+  });
+
+  /// The same findings in the board's (line, ident) shape.
+  final List<Diagnostic> diagnostics;
+
+  /// The untouched service diagnostics, for the editor's strip.
+  final List<lang.Diagnostic> serviceDiagnostics;
+
+  final List<lang.SemanticSpan> semanticSpans;
+}
+
 /// --------------------------------------------------------------- the shell ---
+/// DEMO ONLY. Nothing in FlowHeroApp renders `Machine` (or its rail, transport
+/// and status strip), so the synthetic labels it prints never reach the app.
+/// The standalone demo entry uses its own copy under `workbench_demo/`.
 class Machine extends StatefulWidget {
   const Machine({super.key, required this.controller});
   final WorkbenchController controller;

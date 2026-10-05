@@ -551,7 +551,7 @@ class ToolchainInstallExecutor {
     try {
       final response = await _platformManagers.network.getBytes(
         uri,
-        timeout: timeout ?? const Duration(seconds: 30),
+        timeout: timeout,
       );
       if (!response.succeeded) {
         return ToolchainInstallExecutionResult(

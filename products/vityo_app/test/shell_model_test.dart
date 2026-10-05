@@ -385,10 +385,10 @@ void main() {
 
       await shell.executeCommand(AppCommandId.quickOpen);
 
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.navigate);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.quickOpen);
       expect(
         shell.debugLog.any(
-          (entry) => entry.contains('Quick Open route requested'),
+          (entry) => entry.contains('Quick open surface opened'),
         ),
         isTrue,
       );
@@ -403,142 +403,52 @@ void main() {
         isTrue,
       );
 
-      await shell.executeCommand(AppCommandId.showRecentLocations);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Recent Locations route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceDocumentLinks);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Document Links route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceDocumentHighlights);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Document Highlights route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceCodeLenses);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Code Lens route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceDeclaration);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Declaration route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceDefinition);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Definition route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceTypeDefinition);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Type Definition route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceImplementation);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Implementation route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceTypeHierarchy);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Type Hierarchy route requested'),
-        ),
-        isTrue,
-      );
+      // Position-scoped language navigation commands have no backing
+      // StyioService capability yet, so they stay disabled with a reason
+      // instead of switching the workbench to an empty panel.
+      const unavailableLanguageCommands = <AppCommandId>[
+        AppCommandId.showRecentLocations,
+        AppCommandId.showWorkspaceDocumentLinks,
+        AppCommandId.showWorkspaceDocumentHighlights,
+        AppCommandId.showWorkspaceCodeLenses,
+        AppCommandId.goToWorkspaceDeclaration,
+        AppCommandId.goToWorkspaceDefinition,
+        AppCommandId.goToWorkspaceTypeDefinition,
+        AppCommandId.goToWorkspaceImplementation,
+        AppCommandId.showWorkspaceTypeHierarchy,
+        AppCommandId.renameWorkspaceSymbol,
+        AppCommandId.searchWorkspaceSymbols,
+        AppCommandId.findWorkspaceReferences,
+        AppCommandId.showWorkspaceCallHierarchy,
+      ];
+      for (final commandId in unavailableLanguageCommands) {
+        expect(
+          shell.blockedReasonForCommand(commandId),
+          isNotNull,
+          reason: '$commandId must report an unavailable capability',
+        );
+        await shell.executeCommand(commandId);
+        expect(
+          shell.activeWorkbenchRoute,
+          BottomSurfaceTab.commandPalette,
+          reason: '$commandId must not switch the workbench route',
+        );
+        expect(
+          shell.debugLog.any(
+            (entry) =>
+                entry.contains('does not expose this language capability yet'),
+          ),
+          isTrue,
+          reason: '$commandId must log the capability reason',
+        );
+      }
 
       await shell.executeCommand(AppCommandId.showWorkspaceOutline);
 
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.outline);
       expect(
         shell.debugLog.any(
-          (entry) => entry.contains('Outline route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.renameWorkspaceSymbol);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Rename Symbol route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.searchWorkspaceSymbols);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Symbols route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.findWorkspaceReferences);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Find Usages route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceCallHierarchy);
-
-      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Call Hierarchy route requested'),
+          (entry) => entry.contains('Document outline opened'),
         ),
         isTrue,
       );
@@ -1077,14 +987,8 @@ void main() {
       await artifact.writeAsString(
         readObservableRuntimeFixture('canonical.jsonl')
             .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
-            .replaceAll(
-              'n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-              nodes.first.id,
-            )
-            .replaceAll(
-              'n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-              nodes[1].id,
-            ),
+            .replaceAll('n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', nodes.first.id)
+            .replaceAll('n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', nodes[1].id),
       );
       observedAdapter.runtimeEventsPath = artifact.path;
       recordRuntimeEventsForSession(
@@ -1126,10 +1030,7 @@ void main() {
             .instancesCreated,
         1,
       );
-      expect(
-        shell.lastExecutionSession?.sessionId,
-        'observed-facade-session',
-      );
+      expect(shell.lastExecutionSession?.sessionId, 'observed-facade-session');
       expect(
         shell.lastRuntimeEvents.map((event) => event.eventKind),
         contains('compile.started'),
@@ -1808,7 +1709,6 @@ class _SuccessfulExecutionAdapter implements ExecutionAdapter {
   }
 }
 
-
 class _FakeObservablePublisher implements ObservableSnapshotPublisher {
   _FakeObservablePublisher(this._bytes);
 
@@ -1840,27 +1740,27 @@ class _FakeObservedExecutionAdapter
   RuntimeObservationRequest? lastObservation;
 
   @override
-  AdapterCapabilitySnapshot get capabilitySnapshot =>
-      const AdapterCapabilitySnapshot(
-        adapterKind: AdapterKind.cli,
-        languageService: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Execution adapter does not provide language services.',
-        ),
-        projectGraph: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Execution adapter does not own project graph data.',
-        ),
-        execution: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.available,
-          detail:
-              'Project execution is live through published compile-plan support.',
-        ),
-        runtimeEvents: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.partial,
-          detail: 'Runtime events are replayed from published artifacts.',
-        ),
-      );
+  AdapterCapabilitySnapshot
+  get capabilitySnapshot => const AdapterCapabilitySnapshot(
+    adapterKind: AdapterKind.cli,
+    languageService: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Execution adapter does not provide language services.',
+    ),
+    projectGraph: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Execution adapter does not own project graph data.',
+    ),
+    execution: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.available,
+      detail:
+          'Project execution is live through published compile-plan support.',
+    ),
+    runtimeEvents: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.partial,
+      detail: 'Runtime events are replayed from published artifacts.',
+    ),
+  );
 
   @override
   Future<ExecutionSession> runActiveDocument({

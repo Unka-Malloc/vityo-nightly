@@ -176,6 +176,8 @@ final class DebugController extends ChangeNotifier {
   DebugRuntimeExecutionAdapter? _runtimeExecutionAdapter;
   DapDebugSessionHandle? _sessionHandle;
   StreamSubscription<DapSessionSnapshot>? _sessionSubscription;
+  final StreamController<DapSessionSnapshot> _dapSnapshotEvents =
+      StreamController<DapSessionSnapshot>.broadcast(sync: true);
   bool _inspectionRequestInFlight = false;
   Future<void> _runtimeTaskHistoryAppendQueue = Future<void>.value();
   Future<void> _breakpointPersistenceQueue = Future<void>.value();
@@ -192,6 +194,10 @@ final class DebugController extends ChangeNotifier {
   DebugRuntimeExecutionResult? get lastRuntimeExecutionResult =>
       _lastRuntimeExecutionResult;
   DapDebugSessionHandle? get sessionHandle => _sessionHandle;
+
+  /// Every DAP session snapshot the attached adapter publishes, across session
+  /// restarts. Runtime output binds this instead of polling the handle.
+  Stream<DapSessionSnapshot> get dapSnapshotEvents => _dapSnapshotEvents.stream;
   DebugLaunchConfigurationSet get launchConfigurations => _launchConfigurations;
   DebugLaunchProfile? get selectedLaunchProfile =>
       _launchConfigurations.selectedProfile;
@@ -594,7 +600,12 @@ final class DebugController extends ChangeNotifier {
     final previousHandle = _sessionHandle;
     await _sessionSubscription?.cancel();
     _sessionHandle = handle;
-    _sessionSubscription = handle.snapshotEvents.listen(onSnapshot);
+    _sessionSubscription = handle.snapshotEvents.listen((snapshot) {
+      if (!_dapSnapshotEvents.isClosed) {
+        _dapSnapshotEvents.add(snapshot);
+      }
+      onSnapshot(snapshot);
+    });
     if (previousHandle != null && !identical(previousHandle, handle)) {
       unawaited(previousHandle.close());
     }
@@ -1521,6 +1532,7 @@ final class DebugController extends ChangeNotifier {
     if (handle != null) {
       unawaited(handle.close());
     }
+    unawaited(_dapSnapshotEvents.close());
     super.dispose();
   }
 }
