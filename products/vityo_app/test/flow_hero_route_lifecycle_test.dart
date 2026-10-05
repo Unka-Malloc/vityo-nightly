@@ -12,6 +12,7 @@ import 'package:vityo_app/src/view_ide/language/service/local_styio_language_ser
 import 'package:vityo_app/src/view_render/flow_hero/chat_rail.dart';
 import 'package:vityo_app/src/view_render/flow_hero/controller.dart';
 import 'package:vityo_app/src/view_render/flow_hero/flow_hero.dart';
+import 'package:vityo_app/src/view_render/flow_hero/run_strip.dart';
 
 class _WorkspaceStore implements FlowHeroWorkspaceStore {
   _WorkspaceStore(this.root);
@@ -26,6 +27,19 @@ class _WorkspaceStore implements FlowHeroWorkspaceStore {
 
   @override
   Future<void> save(String path) async => root = path;
+}
+
+class _DelayedWorkspaceStore implements FlowHeroWorkspaceStore {
+  final Completer<String?> loaded = Completer<String?>();
+
+  @override
+  bool get persistent => true;
+
+  @override
+  Future<String?> load() => loaded.future;
+
+  @override
+  Future<void> save(String path) async {}
 }
 
 class _ToolchainStore implements FlowHeroToolchainStore {
@@ -149,6 +163,50 @@ class _ExecutionSource implements FlowHeroExecutionSource {
 }
 
 void main() {
+  testWidgets('unchanged delayed restore enables the live RunStrip', (
+    WidgetTester tester,
+  ) async {
+    final _DelayedWorkspaceStore store = _DelayedWorkspaceStore();
+    final _ExecutionSource source = _ExecutionSource('fixture');
+    final FlowHeroController controller = FlowHeroController(
+      initialWorkspaceRoot: '/fixture/current',
+      workspaceStore: store,
+      executionBoot: (_, _) async => source,
+      providerConfigWriter: const FlowHeroUnavailableProviderConfigWriter(),
+    );
+    addTearDown(controller.dispose);
+
+    final List<bool> readinessNotifications = <bool>[];
+    controller.addListener(
+      () => readinessNotifications.add(controller.canExecute),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: RunStrip(controller: controller)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(controller.executionLive, isTrue);
+    expect(controller.canExecute, isFalse);
+    final Finder runButton = find.descendant(
+      of: find.byKey(const ValueKey<String>('run-strip-run')),
+      matching: find.byType(InkWell),
+    );
+    expect(tester.widget<InkWell>(runButton).onTap, isNull);
+    readinessNotifications.clear();
+
+    store.loaded.complete(null);
+    await tester.pump();
+    await controller.workspaceBootSettled;
+    await tester.pump();
+
+    expect(controller.canExecute, isTrue);
+    expect(readinessNotifications, contains(true));
+    expect(tester.widget<InkWell>(runButton).onTap, isNotNull);
+  });
+
   testWidgets(
     'restored workspace and toolchain own both routes; late startup boot is disposed',
     (WidgetTester tester) async {

@@ -35,6 +35,7 @@ final class FlowHeroAgentOperationPort
   final String workspaceRoot;
   final Map<String, _FlowHeroTerminal> _terminals =
       <String, _FlowHeroTerminal>{};
+  final Map<String, int> _sessionOperationGenerations = <String, int>{};
   final Map<String, Map<String, _AgentDocumentBaseline>> _documentBaselines =
       <String, Map<String, _AgentDocumentBaseline>>{};
   final Map<String, _PendingWorkspaceProposal> _pendingProposals =
@@ -61,18 +62,22 @@ final class FlowHeroAgentOperationPort
   Stream<String> get resolvedProposalReviews => _resolvedProposalReviews.stream;
 
   @override
-  Future<Map<String, Object?>> dispatch(AgentClientOperation operation) =>
-      switch (operation.kind) {
-        AgentClientOperationKind.readTextFile => _readTextFile(operation),
-        AgentClientOperationKind.writeTextFile => _writeTextFile(operation),
-        AgentClientOperationKind.terminal => _terminal(operation),
-        AgentClientOperationKind.workspaceChangeProposal =>
-          _workspaceChangeProposal(operation),
-      };
+  Future<Map<String, Object?>> dispatch(AgentClientOperation operation) async {
+    if (_closed) throw _operationPortClosed();
+    return switch (operation.kind) {
+      AgentClientOperationKind.readTextFile => _readTextFile(operation),
+      AgentClientOperationKind.writeTextFile => _writeTextFile(operation),
+      AgentClientOperationKind.terminal => _terminal(operation),
+      AgentClientOperationKind.workspaceChangeProposal =>
+        _workspaceChangeProposal(operation),
+    };
+  }
 
   Future<Map<String, Object?>> _readTextFile(
     AgentClientOperation operation,
   ) async {
+    final sessionGeneration =
+        _sessionOperationGenerations[operation.sessionId] ?? 0;
     final observationSequence = ++_documentObservationSequence;
     final path = _requiredString(operation.params, 'path');
     final relativePath = _resolvePath(path);
@@ -97,6 +102,7 @@ final class FlowHeroAgentOperationPort
           isDirty: isDirty,
           proposalEligible: false,
         ),
+        sessionGeneration: sessionGeneration,
       );
       throw AgentClientOperationFailure(
         'document_missing',
@@ -145,6 +151,7 @@ final class FlowHeroAgentOperationPort
       snapshot.resourceId,
       observationSequence,
       baseline,
+      sessionGeneration: sessionGeneration,
     );
     final content = _selectTextLines(source, line ?? 1, limit);
     return <String, Object?>{
@@ -171,6 +178,8 @@ final class FlowHeroAgentOperationPort
   Future<Map<String, Object?>> _writeTextFile(
     AgentClientOperation operation,
   ) async {
+    final sessionGeneration =
+        _sessionOperationGenerations[operation.sessionId] ?? 0;
     final observationSequence = ++_documentObservationSequence;
     final path = _requiredString(operation.params, 'path');
     final content = _requiredString(
@@ -194,6 +203,7 @@ final class FlowHeroAgentOperationPort
         'Read the workspace document before writing it.',
       );
     }
+    final storeGeneration = _engine.documentStoreGeneration;
     final openBuffer = _engine.openedBuffer(absolutePath);
     final expectedSourceRevision = baseline.sourceRevision;
     if (baseline.isOpenBuffer &&
@@ -268,8 +278,11 @@ final class FlowHeroAgentOperationPort
         'The workspace did not return a document revision.',
       );
     }
-    if (expectedSourceRevision != null) {
+    if (expectedSourceRevision != null && openBuffer != null) {
       _engine.acceptAgentDocumentWrite(
+        expectedStore: _documentStore,
+        expectedStoreGeneration: storeGeneration,
+        expectedBuffer: openBuffer,
         absolutePath: absolutePath,
         text: content,
         expectedSourceRevision: expectedSourceRevision,
@@ -301,6 +314,7 @@ final class FlowHeroAgentOperationPort
           isDirty: false,
           proposalEligible: true,
         ),
+        sessionGeneration: sessionGeneration,
       );
     }
     return <String, Object?>{};
@@ -310,8 +324,13 @@ final class FlowHeroAgentOperationPort
     String sessionId,
     String relativePath,
     int observationSequence,
-    _AgentDocumentBaseline baseline,
-  ) {
+    _AgentDocumentBaseline baseline, {
+    required int sessionGeneration,
+  }) {
+    if (_closed ||
+        (_sessionOperationGenerations[sessionId] ?? 0) != sessionGeneration) {
+      return;
+    }
     final sessionBaselines = _documentBaselines.putIfAbsent(
       sessionId,
       () => <String, _AgentDocumentBaseline>{},
@@ -476,6 +495,7 @@ final class FlowHeroAgentOperationPort
     required VityoWorkspaceChangeProposal proposal,
     required List<_PreparedWorkspaceProposalResource> prepared,
   }) async {
+    final sessionGeneration = _sessionOperationGenerations[sessionId] ?? 0;
     final sessionBaselines = _documentBaselines[sessionId];
     if (sessionBaselines == null) {
       return _proposalResult(
@@ -484,6 +504,11 @@ final class FlowHeroAgentOperationPort
         code: 'revision_conflict',
       );
     }
+    final storeGeneration = _engine.documentStoreGeneration;
+    final originalBuffers = {
+      for (final resource in prepared)
+        resource.resourceId: _engine.openedBuffer(resource.absolutePath),
+    };
     for (final resource in prepared) {
       final current = await _documentStore.readWorkspaceSnapshot(
         resource.absolutePath,
@@ -553,8 +578,14 @@ final class FlowHeroAgentOperationPort
         );
       }
       documentRevisions[resource.resourceId] = revision;
-      if (resource.isOpenBuffer && resource.sourceRevision != null) {
+      final originalBuffer = originalBuffers[resource.resourceId];
+      if (resource.isOpenBuffer &&
+          resource.sourceRevision != null &&
+          originalBuffer != null) {
         _engine.acceptAgentDocumentWrite(
+          expectedStore: _documentStore,
+          expectedStoreGeneration: storeGeneration,
+          expectedBuffer: originalBuffer,
           absolutePath: resource.absolutePath,
           text: resource.text,
           expectedSourceRevision: resource.sourceRevision!,
@@ -579,6 +610,7 @@ final class FlowHeroAgentOperationPort
           isDirty: false,
           proposalEligible: true,
         ),
+        sessionGeneration: sessionGeneration,
       );
     }
     return VityoWorkspaceChangeProposalResponse(
@@ -598,7 +630,7 @@ final class FlowHeroAgentOperationPort
   @override
   void cancelSessionOperations(String sessionId) {
     for (final terminal in _terminals.values) {
-      if (terminal.sessionId == sessionId) terminal.interruptWaits();
+      if (terminal.ownerSessionId == sessionId) terminal.interruptWaits();
     }
     for (final pending in _pendingProposals.values) {
       if (pending.sessionId == sessionId && !pending.decision.isCompleted) {
@@ -609,6 +641,8 @@ final class FlowHeroAgentOperationPort
 
   @override
   Future<void> closeSessionOperations(String sessionId) async {
+    _sessionOperationGenerations[sessionId] =
+        (_sessionOperationGenerations[sessionId] ?? 0) + 1;
     _documentBaselines.remove(sessionId);
     for (final entry in _pendingProposals.entries.toList(growable: false)) {
       final pending = entry.value;
@@ -619,7 +653,7 @@ final class FlowHeroAgentOperationPort
     }
     for (final terminal
         in _terminals.values
-            .where((terminal) => terminal.sessionId == sessionId)
+            .where((terminal) => terminal.ownerSessionId == sessionId)
             .toList(growable: false)) {
       _terminals.remove(terminal.id);
       terminal.interruptWaits();
@@ -653,6 +687,9 @@ final class FlowHeroAgentOperationPort
   Future<Map<String, Object?>> _createTerminal(
     AgentClientOperation operation,
   ) async {
+    final operationSessionId = operation.sessionId;
+    final sessionOperationGeneration =
+        _sessionOperationGenerations[operationSessionId] ?? 0;
     final sessionId = _requiredString(operation.params, 'sessionId');
     final command = _requiredString(operation.params, 'command');
     final rawArguments = operation.params['args'] ?? const <Object?>[];
@@ -702,9 +739,16 @@ final class FlowHeroAgentOperationPort
         'The local service returned an invalid terminal stream.',
       );
     }
+    if (_closed ||
+        (_sessionOperationGenerations[operationSessionId] ?? 0) !=
+            sessionOperationGeneration) {
+      await _closeUnclaimedTerminal(terminalId, streamId);
+      throw _closed ? _operationPortClosed() : _operationSessionClosed();
+    }
     _terminals[terminalId] = _FlowHeroTerminal(
       id: terminalId,
       sessionId: sessionId,
+      ownerSessionId: operationSessionId,
       streamId: streamId,
       outputByteLimit: outputByteLimit,
     );
@@ -880,7 +924,22 @@ final class FlowHeroAgentOperationPort
     return relative.isEmpty ? normalizedRoot : '$normalizedRoot/$relative';
   }
 
+  Future<void> _closeUnclaimedTerminal(String terminalId, int streamId) async {
+    try {
+      await _client.request(
+        method: 'pty.close',
+        idempotencyKey: 'agent-pty-release-$terminalId',
+        workspaceId: workspaceId,
+        params: <String, Object?>{'streamId': streamId},
+      );
+    } on Object {
+      // The caller already retired this session; release when the daemon is
+      // reachable and otherwise let daemon/session teardown own the stream.
+    }
+  }
+
   Future<void> close() async {
+    if (_closed) return;
     _closed = true;
     for (final pending in _pendingProposals.values) {
       if (!pending.decision.isCompleted) {
@@ -889,20 +948,12 @@ final class FlowHeroAgentOperationPort
     }
     _pendingProposals.clear();
     _documentBaselines.clear();
-    for (final terminal in _terminals.values.toList(growable: false)) {
-      terminal.interruptWaits();
-      try {
-        await _client.request(
-          method: 'pty.close',
-          idempotencyKey: 'agent-pty-release-${terminal.id}',
-          workspaceId: workspaceId,
-          params: <String, Object?>{'streamId': terminal.streamId},
-        );
-      } on Object {
-        // Shutdown still drops local terminal ownership if vityod is gone.
-      }
-    }
+    final terminals = _terminals.values.toList(growable: false);
     _terminals.clear();
+    for (final terminal in terminals) {
+      terminal.interruptWaits();
+      await _closeUnclaimedTerminal(terminal.id, terminal.streamId);
+    }
     await _proposalReviews.close();
     await _resolvedProposalReviews.close();
   }
@@ -1058,12 +1109,18 @@ final class _FlowHeroTerminal {
   _FlowHeroTerminal({
     required this.id,
     required this.sessionId,
+    required this.ownerSessionId,
     required this.streamId,
     required this.outputByteLimit,
   });
 
   final String id;
+
+  /// ACP session ID used by the terminal tool payload.
   final String sessionId;
+
+  /// IDE registry session ID that owns this terminal resource.
+  final String ownerSessionId;
   final int streamId;
   final int outputByteLimit;
   final List<int> outputBytes = <int>[];
@@ -1297,3 +1354,15 @@ AgentClientOperationFailure _documentTooLarge() => AgentClientOperationFailure(
   'document_too_large',
   'The requested document exceeds the Agent protocol message limit.',
 );
+
+AgentClientOperationFailure _operationPortClosed() =>
+    AgentClientOperationFailure(
+      'operation_port_closed',
+      'The operation port is closed.',
+    );
+
+AgentClientOperationFailure _operationSessionClosed() =>
+    AgentClientOperationFailure(
+      'operation_session_closed',
+      'The operation session is closed.',
+    );

@@ -854,8 +854,8 @@ class FlowHeroController extends ChangeNotifier {
     toolchainSelection: _toolchainSelection,
   );
 
-  /// Loads both persisted choices before starting either route. Manual choices
-  /// made while a store read is pending supersede that read.
+  /// Starts the selected routes while loading persisted choices. A restored
+  /// choice replaces them only if no newer manual choice superseded the read.
   Future<void> _initializeRoutes() async {
     final int workspaceGeneration = _workspaceChoiceGeneration;
     final int toolchainGeneration = _toolchainChoiceGeneration;
@@ -891,8 +891,9 @@ class FlowHeroController extends ChangeNotifier {
         routeChanged = true;
       }
     }
+    final bool restoreWasPending = _startupRestorePending;
     _startupRestorePending = false;
-    if (routeChanged) notifyListeners();
+    if (routeChanged || restoreWasPending) notifyListeners();
     final Future<void> activation = _activateCurrentRoutes();
     final Future<void> reconnect = workspaceChanged
         ? bridge.reconnect()

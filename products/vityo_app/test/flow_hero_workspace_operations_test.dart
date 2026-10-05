@@ -18,6 +18,129 @@ import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 void main() {
   test(
+    'workspace reset retires the document store even without open files',
+    () async {
+      final engine = WorkbenchController();
+      addTearDown(engine.dispose);
+      await engine.attachWorkspaceDocumentStore(
+        _MemoryDocumentStore(root: '/workspace'),
+      );
+
+      expect(engine.hasWorkspaceDocumentStore, isTrue);
+      expect(engine.resetWorkspaceBuffers(), isFalse);
+      expect(engine.hasWorkspaceDocumentStore, isFalse);
+    },
+  );
+
+  test('late workspace attachment cannot publish after root reset', () async {
+    const path = '/workspace/src/main.styio';
+    final engine = WorkbenchController();
+    addTearDown(engine.dispose);
+    final currentStore = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/main.styio': DocumentState(
+          documentId: 'src/main.styio',
+          text: 'current root',
+          revision: 1,
+        ),
+      },
+    );
+    await engine.attachWorkspaceDocumentStore(currentStore);
+    expect(await engine.openPath(path), isTrue);
+
+    final replacementStore = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/main.styio': DocumentState(
+          documentId: 'src/main.styio',
+          text: 'replacement root',
+          revision: 1,
+        ),
+      },
+    );
+    final readStarted = Completer<void>();
+    final finishRead = Completer<void>();
+    replacementStore.blockNextRead(readStarted, finishRead);
+    final notifications = <int>[];
+    engine.addListener(() => notifications.add(engine.bufferEpoch));
+    final attachment = engine.attachWorkspaceDocumentStore(replacementStore);
+    await readStarted.future;
+
+    expect(engine.resetWorkspaceBuffers(), isTrue);
+    expect(engine.hasWorkspaceDocumentStore, isFalse);
+    final notificationsAtReset = notifications.length;
+    finishRead.complete();
+    await attachment;
+
+    expect(notifications, hasLength(notificationsAtReset));
+    expect(engine.openedBuffer(path), isNull);
+    expect(engine.files.where((file) => file.savable), isEmpty);
+  });
+
+  test('late document open is discarded after its store is detached', () async {
+    const path = '/workspace/src/late.styio';
+    final engine = WorkbenchController();
+    addTearDown(engine.dispose);
+    final store = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/late.styio': DocumentState(
+          documentId: 'src/late.styio',
+          text: 'late result',
+          revision: 1,
+        ),
+      },
+    );
+    await engine.attachWorkspaceDocumentStore(store);
+    final readStarted = Completer<void>();
+    final finishRead = Completer<void>();
+    store.blockNextRead(readStarted, finishRead);
+    final opening = engine.openPath(path);
+    await readStarted.future;
+
+    engine.detachWorkspaceDocumentStore();
+    finishRead.complete();
+
+    expect(await opening, isFalse);
+    expect(engine.openedBuffer(path), isNull);
+    expect(engine.hasWorkspaceDocumentStore, isFalse);
+  });
+
+  test(
+    'save does not start a workspace write after owner retirement',
+    () async {
+      const path = '/workspace/src/main.styio';
+      final engine = WorkbenchController();
+      addTearDown(engine.dispose);
+      final store = _MemoryDocumentStore(
+        root: '/workspace',
+        seed: const <String, DocumentState>{
+          'src/main.styio': DocumentState(
+            documentId: 'src/main.styio',
+            text: 'disk source',
+            revision: 1,
+          ),
+        },
+      );
+      await engine.attachWorkspaceDocumentStore(store);
+      expect(await engine.openPath(path), isTrue);
+      engine.onBufferChanged('edited source', line: 1, column: 1);
+      final readStarted = Completer<void>();
+      final finishRead = Completer<void>();
+      store.blockNextRead(readStarted, finishRead);
+      final saving = engine.saveActive();
+      await readStarted.future;
+
+      engine.resetWorkspaceBuffers();
+      finishRead.complete();
+
+      expect(await saving, isFalse);
+      expect(store.documents['src/main.styio']!.text, 'disk source');
+    },
+  );
+
+  test(
     'Flow Hero callbacks read unsaved buffers and commit into the editor',
     () async {
       const path = '/workspace/src/main.styio';
@@ -278,6 +401,80 @@ void main() {
     },
   );
 
+  test('a late read cannot restore a closed session write baseline', () async {
+    const path = '/workspace/src/session.styio';
+    final engine = WorkbenchController();
+    addTearDown(engine.dispose);
+    final documents = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/session.styio': DocumentState(
+          documentId: 'src/session.styio',
+          text: 'initial',
+          revision: 2,
+        ),
+      },
+    );
+    await engine.attachWorkspaceDocumentStore(documents);
+    final client = _newClient(_OperationTransport());
+    await client.connect();
+    addTearDown(client.dispose);
+    final port = FlowHeroAgentOperationPort(
+      engine: engine,
+      documentStore: documents,
+      client: client,
+      workspaceId: 'flow-hero',
+      workspaceRoot: '/workspace',
+    );
+    addTearDown(port.close);
+    final readStarted = Completer<void>();
+    final finishRead = Completer<void>();
+    documents.blockNextRead(readStarted, finishRead);
+    final read = port.dispatch(
+      _operation(
+        id: 'late-read',
+        method: 'fs/read_text_file',
+        params: const <String, Object?>{'path': path},
+      ),
+    );
+    await readStarted.future;
+    await port.closeSessionOperations('session-1');
+    finishRead.complete();
+    await read;
+    await expectLater(
+      port.dispatch(
+        _operation(
+          id: 'unauthorized-write',
+          method: 'fs/write_text_file',
+          params: const <String, Object?>{'path': path, 'content': 'late edit'},
+        ),
+      ),
+      throwsA(
+        isA<AgentClientOperationFailure>().having(
+          (failure) => failure.code,
+          'code',
+          'document_snapshot_required',
+        ),
+      ),
+    );
+    expect(documents.documents['src/session.styio']!.text, 'initial');
+    await port.dispatch(
+      _operation(
+        id: 'fresh-read',
+        method: 'fs/read_text_file',
+        params: const <String, Object?>{'path': path},
+      ),
+    );
+    await port.dispatch(
+      _operation(
+        id: 'fresh-write',
+        method: 'fs/write_text_file',
+        params: const <String, Object?>{'path': path, 'content': 'fresh edit'},
+      ),
+    );
+    expect(documents.documents['src/session.styio']!.text, 'fresh edit');
+  });
+
   test(
     'a newer user buffer survives an Agent commit already in flight',
     () async {
@@ -340,6 +537,78 @@ void main() {
       expect(documents.documents['src/race.styio']!.text, 'agent commit');
     },
   );
+
+  test('a replacement workspace ignores an old Agent commit receipt', () async {
+    const path = '/workspace/src/race.styio';
+    final engine = WorkbenchController();
+    addTearDown(engine.dispose);
+    final documents = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/race.styio': DocumentState(
+          documentId: 'src/race.styio',
+          text: 'initial',
+          revision: 2,
+        ),
+      },
+    );
+    await engine.attachWorkspaceDocumentStore(documents);
+    expect(await engine.openPath(path), isTrue);
+    final client = _newClient(_OperationTransport());
+    await client.connect();
+    final port = FlowHeroAgentOperationPort(
+      engine: engine,
+      documentStore: documents,
+      client: client,
+      workspaceId: 'flow-hero',
+      workspaceRoot: '/workspace',
+    );
+    addTearDown(client.dispose);
+
+    await port.dispatch(
+      _operation(
+        id: 'read-race',
+        method: 'fs/read_text_file',
+        params: const <String, Object?>{'path': path},
+      ),
+    );
+
+    final commitStarted = Completer<void>();
+    final finishCommit = Completer<void>();
+    documents.blockNextCommit(commitStarted, finishCommit);
+    final agentWrite = port.dispatch(
+      _operation(
+        id: 'write-race',
+        method: 'fs/write_text_file',
+        params: const <String, Object?>{
+          'path': path,
+          'content': 'agent commit',
+        },
+      ),
+    );
+    await commitStarted.future;
+    engine.resetWorkspaceBuffers();
+    final replacement = _MemoryDocumentStore(
+      root: '/workspace',
+      seed: const <String, DocumentState>{
+        'src/race.styio': DocumentState(
+          documentId: 'src/race.styio',
+          text: 'replacement workspace',
+          revision: 2,
+        ),
+      },
+    );
+    await engine.attachWorkspaceDocumentStore(replacement);
+    expect(await engine.openPath(path), isTrue);
+    finishCommit.complete();
+    await agentWrite;
+
+    final file = engine.openedBuffer(path)!;
+    expect(file.text, 'replacement workspace');
+    expect(file.dirty, isFalse);
+    expect(file.documentRevision, 2);
+    expect(documents.documents['src/race.styio']!.text, 'agent commit');
+  });
 
   test(
     'a paused workspace read cannot authorize overwriting a concurrent write',
@@ -1016,6 +1285,57 @@ void main() {
     });
   }
 
+  for (final ending in ['session-close', 'port-close']) {
+    test('pending terminal create releases its receipt on $ending', () async {
+      final startStarted = Completer<void>();
+      final finishStart = Completer<void>();
+      final transport = _OperationTransport(
+        ptyStartStarted: startStarted,
+        ptyStartGate: finishStart,
+      );
+      final client = _newClient(transport);
+      await client.connect();
+      final engine = WorkbenchController();
+      addTearDown(engine.dispose);
+      final port = FlowHeroAgentOperationPort(
+        engine: engine,
+        documentStore: _MemoryDocumentStore(root: '/workspace'),
+        client: client,
+        workspaceId: 'flow-hero',
+        workspaceRoot: '/workspace',
+      );
+      addTearDown(client.dispose);
+      addTearDown(port.close);
+      final creating = port.dispatch(
+        _operation(
+          id: 'pending-create',
+          method: 'terminal/create',
+          params: const <String, Object?>{
+            'sessionId': 'session-1',
+            'command': 'shell',
+          },
+        ),
+      );
+      await startStarted.future;
+
+      if (ending == 'session-close') {
+        await port.closeSessionOperations('session-1');
+      } else {
+        await port.close();
+      }
+      finishStart.complete();
+
+      await expectLater(creating, throwsA(isA<AgentClientOperationFailure>()));
+      expect(
+        transport.requests
+            .where((request) => request.method == 'pty.close')
+            .map((request) => request.params['streamId']),
+        <Object?>[7],
+      );
+      if (ending == 'session-close') await port.close();
+    });
+  }
+
   test('terminal output remains readable after kill until release', () async {
     final transport = _OperationTransport();
     final client = _newClient(transport);
@@ -1384,11 +1704,15 @@ final class _OperationTransport implements VityodTransport {
     this.includeClientOperation = false,
     this.failOperationResponses = false,
     this.emitTerminalOutput = true,
+    this.ptyStartStarted,
+    this.ptyStartGate,
   });
 
   final bool includeClientOperation;
   final bool failOperationResponses;
   final bool emitTerminalOutput;
+  final Completer<void>? ptyStartStarted;
+  final Completer<void>? ptyStartGate;
   final Completer<void> terminalCredit = Completer<void>();
   final StreamController<Uint8List> _control =
       StreamController<Uint8List>.broadcast(sync: true);
@@ -1417,6 +1741,11 @@ final class _OperationTransport implements VityodTransport {
     if (!_connected) throw StateError('disconnected');
     final request = VityodControlCodec.decode(payload);
     requests.add(request);
+    if (request.method == 'pty.start') {
+      final started = ptyStartStarted;
+      if (started != null && !started.isCompleted) started.complete();
+      await ptyStartGate?.future;
+    }
     if (request.method == 'agent.acp.client_operation.respond' &&
         !clientOperationResponse.isCompleted) {
       clientOperationResponse.complete(request);

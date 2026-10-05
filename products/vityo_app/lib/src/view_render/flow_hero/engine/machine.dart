@@ -201,6 +201,8 @@ class WorkbenchController extends ChangeNotifier {
   final List<BufferFile> files = <BufferFile>[];
   final Map<String, BufferFile> _pathBuffers = <String, BufferFile>{};
   WorkspaceDocumentOperationStore? _documentStore;
+  int _documentStoreGeneration = 0;
+  bool _disposed = false;
   late BufferFile activeFile;
   bool showFlow = true;
 
@@ -248,6 +250,16 @@ class WorkbenchController extends ChangeNotifier {
   /// built-in pathless buffers never set it, so a bound store is the honest
   /// signal that this session owns real workspace files.
   bool get hasWorkspaceDocumentStore => _documentStore != null;
+
+  /// Changes when the active workspace document owner is replaced or retired.
+  int get documentStoreGeneration => _documentStoreGeneration;
+
+  /// Whether [store] still owns the engine attachment captured by
+  /// [generation].
+  bool ownsWorkspaceDocumentStore(
+    WorkspaceDocumentOperationStore store, {
+    required int generation,
+  }) => _ownsDocumentStore(store, generation);
 
   /// Real document symbols the live service reports for the active buffer.
   ///
@@ -585,6 +597,7 @@ class WorkbenchController extends ChangeNotifier {
   /// the path is already open; returns false when the file is not readable
   /// text (binary, permissions).
   Future<bool> openPath(String path) async {
+    if (_disposed) return false;
     final BufferFile? opened = _pathBuffers[_canonicalDocumentPath(path)];
     if (opened != null) {
       activeFile = opened;
@@ -600,9 +613,11 @@ class WorkbenchController extends ChangeNotifier {
     int? documentRevision;
     int? workspaceRevision;
     final store = _documentStore;
+    final documentStoreGeneration = _documentStoreGeneration;
     if (store != null) {
       try {
         final snapshot = await store.readWorkspaceSnapshot(path);
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
         final document = snapshot.document;
         if (document == null) return false;
         text = document.text;
@@ -614,6 +629,9 @@ class WorkbenchController extends ChangeNotifier {
     } else {
       try {
         text = await File(path).readAsString();
+        if (!_hasDocumentStoreGeneration(documentStoreGeneration)) {
+          return false;
+        }
       } on FileSystemException {
         return false;
       } on FormatException {
@@ -661,6 +679,8 @@ class WorkbenchController extends ChangeNotifier {
   /// whose Agent workspace binding rejects documents outside its canonical
   /// roots.
   bool resetWorkspaceBuffers() {
+    if (_disposed) return false;
+    detachWorkspaceDocumentStore();
     if (_pathBuffers.isEmpty) return false;
     final Set<BufferFile> dropped = _pathBuffers.values.toSet();
     files.removeWhere(dropped.contains);
@@ -685,15 +705,18 @@ class WorkbenchController extends ChangeNotifier {
   /// ⌘S: write the active buffer back to its file. Returns false when there
   /// is nothing to save to (demo buffers) or the write failed.
   Future<bool> saveActive() async {
+    if (_disposed) return false;
     final BufferFile f = activeFile;
     if (!f.savable || !f.dirty) return f.savable && !f.dirty;
     final store = _documentStore;
+    final documentStoreGeneration = _documentStoreGeneration;
     if (store != null) {
       final sourceRevision = f.sourceRevision;
       final contents = f.text;
       try {
         final relativePath = store.relativeDocumentPath(f.path!);
         final snapshot = await store.readWorkspaceSnapshot(f.path!);
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
         final currentDocument = snapshot.document;
         final expectedWorkspaceRevision = f.workspaceRevision;
         if (currentDocument == null ||
@@ -702,6 +725,7 @@ class WorkbenchController extends ChangeNotifier {
             currentDocument.text != f.persistedText) {
           return false;
         }
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
         final receipt = await store.saveDocumentsAtomically(
           <DocumentState>[
             DocumentState(
@@ -715,6 +739,7 @@ class WorkbenchController extends ChangeNotifier {
             f.path!: f.documentRevision ?? 0,
           },
         );
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
         final revision = receipt.documentRevisions[relativePath];
         if (revision == null) return false;
         f.documentRevision = revision;
@@ -729,6 +754,7 @@ class WorkbenchController extends ChangeNotifier {
     }
     try {
       await File(f.path!).writeAsString(f.text);
+      if (!_hasDocumentStoreGeneration(documentStoreGeneration)) return false;
     } on FileSystemException {
       return false;
     }
@@ -744,6 +770,8 @@ class WorkbenchController extends ChangeNotifier {
   Future<void> attachWorkspaceDocumentStore(
     WorkspaceDocumentOperationStore store,
   ) async {
+    if (_disposed) return;
+    final documentStoreGeneration = ++_documentStoreGeneration;
     _documentStore = store;
     final snapshots = <(BufferFile, int, String, int)>[];
     var activeBufferChanged = false;
@@ -752,6 +780,7 @@ class WorkbenchController extends ChangeNotifier {
       final baseline = file.persistedText;
       final wasDirty = file.dirty;
       final workspaceSnapshot = await store.readWorkspaceSnapshot(file.path!);
+      if (!_ownsDocumentStore(store, documentStoreGeneration)) return;
       final document = workspaceSnapshot.document;
       file.workspaceRevision = workspaceSnapshot.workspaceRevision;
       if (document == null) {
@@ -821,6 +850,7 @@ class WorkbenchController extends ChangeNotifier {
           snapshot.$1.path!: snapshot.$1.documentRevision ?? 0,
       },
     );
+    if (!_ownsDocumentStore(store, documentStoreGeneration)) return;
     for (final (file, sourceRevision, committedText, _) in snapshots) {
       final relativePath = store.relativeDocumentPath(file.path!);
       final revision = receipt.documentRevisions[relativePath];
@@ -842,27 +872,51 @@ class WorkbenchController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Retires the current workspace document owner and any reads/imports that
+  /// were started through it. Workspace switches call this before awaiting a
+  /// replacement session so late results cannot publish into the new route.
+  void detachWorkspaceDocumentStore() {
+    _documentStoreGeneration++;
+    _documentStore = null;
+  }
+
+  bool _ownsDocumentStore(
+    WorkspaceDocumentOperationStore store,
+    int generation,
+  ) =>
+      _hasDocumentStoreGeneration(generation) &&
+      identical(_documentStore, store);
+
+  bool _hasDocumentStoreGeneration(int generation) =>
+      !_disposed && _documentStoreGeneration == generation;
+
   BufferFile? openedBuffer(String absolutePath) =>
-      _pathBuffers[_canonicalDocumentPath(absolutePath)];
+      _disposed ? null : _pathBuffers[_canonicalDocumentPath(absolutePath)];
 
   /// Reflects a committed Agent write only if no user edit arrived while the
   /// workspace transaction was pending.
-  void acceptAgentDocumentWrite({
+  bool acceptAgentDocumentWrite({
+    required WorkspaceDocumentOperationStore expectedStore,
+    required int expectedStoreGeneration,
+    required BufferFile expectedBuffer,
     required String absolutePath,
     required String text,
     required int expectedSourceRevision,
     required int documentRevision,
     required int workspaceRevision,
   }) {
+    if (!_ownsDocumentStore(expectedStore, expectedStoreGeneration)) {
+      return false;
+    }
     final file = openedBuffer(absolutePath);
-    if (file == null) return;
+    if (file == null || !identical(file, expectedBuffer)) return false;
     file.documentRevision = documentRevision;
     file.workspaceRevision = workspaceRevision;
     file.persistedText = text;
     if (file.sourceRevision != expectedSourceRevision) {
       file.dirty = true;
       notifyListeners();
-      return;
+      return true;
     }
     file.text = text;
     file.sourceRevision++;
@@ -872,6 +926,7 @@ class WorkbenchController extends ChangeNotifier {
       bufferEpoch++;
     }
     notifyListeners();
+    return true;
   }
 
   void _refreshActiveDocument() {
@@ -1180,6 +1235,8 @@ class WorkbenchController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    detachWorkspaceDocumentStore();
     _sinkTimer?.cancel();
     _analysisDebounce?.cancel();
     super.dispose();
