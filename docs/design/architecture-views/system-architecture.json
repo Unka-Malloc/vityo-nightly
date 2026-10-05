@@ -380,7 +380,9 @@
       "id": "app_entry",
       "path": "products/vityo_app/lib/main.dart",
       "contains": [
-        "runDesktopStartupProbe(arguments, const FlowHeroApp())"
+        "ProductionFlowHeroRuntime runtime = ProductionFlowHeroRuntime()",
+        "startup_probe.runDesktopStartupProbe(",
+        "FlowHeroApp(runtime: runtime)"
       ]
     },
     {
@@ -627,7 +629,7 @@
       "id": "flow_hero_agent_bridge",
       "path": "products/vityo_app/lib/src/view_render/flow_hero/agent_bridge.dart",
       "contains": [
-        "resolvePackagedCodingAgentLaunch(",
+        "launchResolver ?? resolvePackagedCodingAgentLaunch",
         "FlowHeroAgentOperationPort("
       ]
     },

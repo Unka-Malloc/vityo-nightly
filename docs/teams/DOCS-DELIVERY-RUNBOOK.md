@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-06
 
 ## Mission
 
@@ -301,3 +301,8 @@ credentials remain unprovisioned, so nightly packages keep their explicit gap.
 No `prototype/` change.
 
 <!-- codex merge: docs/build/scripts assets imported -->
+
+2026-10-06: Updated architecture source anchors for the production Flow Hero runtime
+composition and the injectable packaged Agent launch resolver. Registered the existing
+BSD-3-Clause workspace chooser in the dependency license gate. Keep unfinished repairs
+on the same Draft PR and validate architecture and governance before pushing.
