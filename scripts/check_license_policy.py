@@ -32,6 +32,7 @@ ALLOWED_EXTERNAL_DART_PACKAGES = {
     "flutter",
     "crypto",
     "ffi",
+    "file_selector",
     "flutter_secure_storage",
     "cupertino_icons",
     "shared_preferences",

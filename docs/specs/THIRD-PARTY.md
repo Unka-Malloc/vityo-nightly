@@ -12,6 +12,7 @@
 | Dart SDK | Accepted | Flutter 语言运行时 | 作为 Flutter 的直接依赖。 |
 | `styio` upstream repository | Accepted (first-party upstream) | 语言与编译器核心 | 非第三方，但属于本仓依赖边界。 |
 | LLVM | Accepted (via `styio`) | CodeGen / JIT / IR 后端 | 由上游 `styio` 维护。 |
+| `file_selector` | Accepted | Platform-native workspace directory chooser | BSD-3-Clause; exact locked version and runtime boundary are registered in [Dependency Usage](../../DEPENDENCY-USAGE.md). |
 | `flutter_secure_storage` | Accepted | 系统安全凭据存储 | 桌面与移动端使用操作系统密钥存储；Web 不作为长期凭据的生产持久化路径。BSD-3-Clause。 |
 
 ## 1.1 Rust Runtime And Delivery Dependencies
