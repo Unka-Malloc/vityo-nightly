@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import stat
 import struct
@@ -14,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -95,7 +97,8 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
 
             self.assertEqual(staged, destination_root / relative)
             self.assertEqual(staged.read_bytes(), source.read_bytes())
-            self.assertTrue(staged.stat().st_mode & stat.S_IXUSR)
+            if os.name != "nt":
+                self.assertTrue(staged.stat().st_mode & stat.S_IXUSR)
             component = json.loads(
                 (staged.parent / "vityod-component.json").read_text(
                     encoding="utf-8"
@@ -149,7 +152,8 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
 
             self.assertEqual(staged, destination_root / relative)
             self.assertEqual(staged.read_bytes(), source.read_bytes())
-            self.assertTrue(staged.stat().st_mode & stat.S_IXUSR)
+            if os.name != "nt":
+                self.assertTrue(staged.stat().st_mode & stat.S_IXUSR)
             component = json.loads(
                 (staged.parent / "pafio-component.json").read_text(encoding="utf-8")
             )
@@ -418,17 +422,19 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
 
         fake_socket = FakeSocket()
         with (
-            mock.patch.object(matrix.os, "name", "posix"),
-            mock.patch.object(matrix.socket, "socket", return_value=fake_socket),
+            mock.patch.object(matrix, "os", SimpleNamespace(name="posix", getpid=os.getpid)),
+            mock.patch.object(matrix.socket, "AF_UNIX", mock.sentinel.af_unix, create=True),
+            mock.patch.object(matrix.socket, "socket", return_value=fake_socket) as socket_factory,
             mock.patch.object(matrix, "_exchange_handshake") as exchange,
         ):
             matrix._handshake("service.sock", "client")
+        socket_factory.assert_called_once_with(mock.sentinel.af_unix, matrix.socket.SOCK_STREAM)
         exchange.assert_called_once_with(fake_socket, "client")
 
         file_connection = mock.MagicMock()
         file_connection.__enter__.return_value = file_connection
         with (
-            mock.patch.object(matrix.os, "name", "nt"),
+            mock.patch.object(matrix, "os", SimpleNamespace(name="nt", getpid=os.getpid)),
             mock.patch("builtins.open", return_value=file_connection) as opened,
             mock.patch.object(matrix, "_exchange_handshake") as exchange,
         ):
@@ -439,7 +445,7 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
         process = mock.Mock()
         process.poll.return_value = None
         with (
-            mock.patch.object(matrix.os, "name", "posix"),
+            mock.patch.object(matrix, "os", SimpleNamespace(name="posix", getpid=os.getpid)),
             mock.patch.object(pathlib.Path, "exists", return_value=True),
             mock.patch.object(matrix.subprocess, "Popen", return_value=process),
             mock.patch.object(matrix, "_handshake") as handshake,
@@ -456,7 +462,7 @@ class VityodPackagingAcceptanceTest(unittest.TestCase):
         failed_process.poll.return_value = None
         failed_process.wait.side_effect = [subprocess.TimeoutExpired("vityod", 3), 0]
         with (
-            mock.patch.object(matrix.os, "name", "posix"),
+            mock.patch.object(matrix, "os", SimpleNamespace(name="posix", getpid=os.getpid)),
             mock.patch.object(pathlib.Path, "exists", return_value=True),
             mock.patch.object(matrix.subprocess, "Popen", return_value=failed_process),
             mock.patch.object(matrix, "_handshake", side_effect=RuntimeError("probe failed")),
