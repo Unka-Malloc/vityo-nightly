@@ -1236,6 +1236,33 @@ class InstallStageTest(DeliveryStageTestCase):
             target.write_text("binary", encoding="utf-8")
             target.chmod(0o755)
 
+    def test_linux_package_paths_match_the_deb_layout(self) -> None:
+        # The Debian data archive ships `opt/vityo/...` and `application_root`
+        # contributes that prefix. Every package-relative constant is therefore
+        # relative to `application_root`; declaring `opt/vityo` again resolved to
+        # `<install-root>/opt/vityo/opt/vityo/vityo_app` and rejected every
+        # correctly built Linux package.
+        install_root = Path("/tmp/vityo-install")
+        app_root = self.delivery.application_root(install_root, "linux")
+
+        self.assertEqual(app_root, install_root / "opt/vityo")
+        self.assertEqual(
+            app_root / self.delivery.PACKAGE_EXECUTABLES["linux"],
+            install_root / "opt/vityo/vityo_app",
+        )
+        self.assertEqual(
+            app_root / self.delivery.AGENT_PACKAGE_PATHS["linux"],
+            install_root / "opt/vityo/components/vityo-coding-agent",
+        )
+        self.assertEqual(
+            app_root / self.delivery.DAEMON_PACKAGE_PATHS["linux"],
+            install_root / "opt/vityo/components/vityod",
+        )
+        self.assertEqual(
+            app_root / self.delivery.PAFIO_PACKAGE_PATHS["linux"],
+            install_root / "opt/vityo/components/pafio",
+        )
+
     def test_install_stage_requires_matching_host(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr), mock.patch.object(

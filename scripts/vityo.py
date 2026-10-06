@@ -53,8 +53,12 @@ PLATFORM_BUILD_COMMANDS = {
     "macos": ("build", "macos", "--release"),
 }
 PACKAGE_SUFFIXES = {"linux": ".deb", "windows": ".zip", "macos": ".dmg"}
+# Package-relative to `application_root`, which already contributes the Linux
+# `opt/vityo` prefix. Declaring it here again resolved to
+# `<install-root>/opt/vityo/opt/vityo/vityo_app`, so the install stage rejected
+# every correctly built Linux package.
 PACKAGE_EXECUTABLES = {
-    "linux": Path("opt/vityo/vityo_app"),
+    "linux": Path("vityo_app"),
     "windows": Path("vityo_app.exe"),
     "macos": Path("Contents/MacOS/Vityo"),
 }
