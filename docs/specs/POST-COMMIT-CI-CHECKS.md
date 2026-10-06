@@ -67,7 +67,7 @@ Cross-repository gates must use the same workspace checkout set that will be vis
 
 ## Delivery Ruleset Governance
 
-Required GitHub merge gates are maintained through GitHub Rulesets, not legacy classic branch protection. `release`, `stable`, and `nightly` must have an active Ruleset requiring the `audit` status check from the `styio-audit` workflow, with strict required status checks enabled. Downstream `nightly` may additionally require pull requests and the repository-local `local-ci-gate`, `windows-native`, and `macos-native` checks before merge. Every other branch name is temporary and must not receive branch-name-specific rules.
+Required GitHub merge gates are maintained through GitHub Rulesets, not legacy classic branch protection. `release`, `stable`, and `nightly` must have an active Ruleset requiring the `styio-audit` status check from the `general-auditor` workflow, with strict required status checks enabled. Downstream `nightly` may additionally require pull requests and the repository-local `local-ci-gate`, `windows-native`, and `macos-native` checks before merge. Every other branch name is temporary and must not receive branch-name-specific rules.
 
 Gate audits must inspect effective branch rules, for example:
 
