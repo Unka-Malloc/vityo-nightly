@@ -42,6 +42,61 @@ function fail(message) {
   process.exitCode = 1;
 }
 
+// Cleanup must never be able to hang the step. An unbounded `browser.close()`
+// after the browser had already gone away, plus a dev-server child whose pipes
+// were still referenced, froze the macOS delivery until its job timeout.
+async function settle(promise, timeoutMs) {
+  let timer;
+  try {
+    await Promise.race([
+      promise.then(
+        () => {},
+        () => {},
+      ),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function waitForExit(child, timeoutMs) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    function onExit() {
+      clearTimeout(timer);
+      resolve(true);
+    }
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopServer(child) {
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  if (await waitForExit(child, 0)) return;
+  child.kill("SIGTERM");
+  if (await waitForExit(child, 5000)) return;
+  child.kill("SIGKILL");
+  await waitForExit(child, 5000);
+}
+
+// Set the exit code, then force termination shortly afterwards so a stray
+// handle cannot keep the step alive. The timer is unref'd, so a clean run still
+// exits as soon as its work is drained.
+function exitWhenDrained(code) {
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 2000).unref();
+}
+
 async function ensureArtifactDir() {
   await fs.mkdir(ARTIFACT_DIR, { recursive: true });
 }
@@ -132,7 +187,10 @@ async function runSelfTest() {
   const browser = await chromium.launch({
     headless: true,
     executablePath: chromePath,
-    args: ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check"],
+    // Playwright supplies its own headless flag. Passing `--headless=new` as
+    // well produced a browser that exited between launch and the first page on
+    // the macOS CI runner, so let Playwright own the mode.
+    args: ["--disable-gpu", "--no-first-run", "--no-default-browser-check"],
   });
 
   const page = await browser.newPage({
@@ -804,14 +862,19 @@ async function runSelfTest() {
         .join("\n\n"),
     );
   } finally {
-    await browser.close();
+    await settle(browser.close(), 15000);
     if (server.started && server.child) {
-      server.child.kill("SIGTERM");
+      await stopServer(server.child);
     }
   }
 }
 
-runSelfTest().catch(async (error) => {
-  fail(`editor load self-test failed: ${error?.message ?? error}`);
-  process.exitCode = 1;
-});
+runSelfTest().then(
+  () => {
+    exitWhenDrained(process.exitCode ?? 0);
+  },
+  (error) => {
+    fail(`editor load self-test failed: ${error?.message ?? error}`);
+    exitWhenDrained(1);
+  },
+);

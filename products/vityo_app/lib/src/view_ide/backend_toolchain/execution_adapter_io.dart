@@ -45,6 +45,13 @@ _iosLocalCliExecutionCapabilitySnapshot = AdapterCapabilitySnapshot(
 const String _missingLocalStyioBinaryMessage =
     'No local styio binary was resolved. Set VITYO_STYIO_BIN or install styio on PATH.';
 
+/// The platform manager bundle carries the filesystem, shell, process and PTY
+/// services the local execution route needs. Reporting a missing styio binary
+/// for an absent bundle sends readers to the wrong subsystem, so keep the two
+/// blocked states distinct.
+const String _missingPlatformServicesMessage =
+    'Local platform services are unavailable, so local execution cannot start. Connect the local service and retry.';
+
 const int _executionOverlaySnapshotMaxEntries = 20000;
 const int _executionOverlaySnapshotMaxBytes = 256 * 1024 * 1024;
 const String _workflowDiagnosticsFileName = 'diagnostics.jsonl';
@@ -264,7 +271,13 @@ class _LocalCliExecutionAdapter
 
     final resolvedCompiler = compiler;
     final managers = platformManagers;
-    if (resolvedCompiler == null || managers == null) {
+    if (managers == null) {
+      return _blockedRunExecutionSession(
+        sessionId: 'missing-platform-services',
+        message: _missingPlatformServicesMessage,
+      );
+    }
+    if (resolvedCompiler == null) {
       return _blockedRunExecutionSession(
         sessionId: 'missing-styio-binary',
         message: _missingLocalStyioBinaryMessage,
@@ -398,7 +411,16 @@ class _LocalCliExecutionAdapter
 
     final resolvedCompiler = compiler;
     final managers = platformManagers;
-    if (resolvedCompiler == null || managers == null) {
+    if (managers == null) {
+      return ObservedExecutionRun(
+        session: _blockedRunExecutionSession(
+          sessionId: 'missing-platform-services',
+          message: _missingPlatformServicesMessage,
+        ),
+        unavailableReason: ObservableReasonCode.missingCapability,
+      );
+    }
+    if (resolvedCompiler == null) {
       return ObservedExecutionRun(
         session: _blockedRunExecutionSession(
           sessionId: 'missing-styio-binary',

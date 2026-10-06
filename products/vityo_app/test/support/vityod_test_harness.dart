@@ -1,8 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
 
+import 'vityod_test_endpoint.dart';
+
+/// Drives a real `vityod` child process for tests.
+///
+/// Endpoint naming, bundled component naming and the readiness probe are
+/// host-specific and live in [VityodTestEndpoint]; this class stays free of
+/// host conditionals.
 class VityodTestHarness {
   VityodTestHarness._({
     required this.client,
@@ -11,11 +19,13 @@ class VityodTestHarness {
   }) : _daemon = daemon,
        _directory = directory;
 
+  static const VityodTestEndpoint _endpoint = VityodTestEndpoint();
+
   final VityodClient client;
   final Process _daemon;
   final Directory _directory;
 
-  static bool get isSupported => Platform.isLinux || Platform.isMacOS;
+  static bool get isSupported => _endpoint.isSupported;
 
   static Future<VityodTestHarness> start({required String clientId}) async {
     final executable = _findExecutable();
@@ -25,18 +35,38 @@ class VityodTestHarness {
       );
     }
     final directory = await Directory.systemTemp.createTemp('vd-test-');
-    final endpoint = '${directory.path}/service.sock';
+    final stateDirectory = Directory('${directory.path}/state');
+    await stateDirectory.create(recursive: true);
+    final endpointPath = _endpoint.pathFor(directory.path);
     final daemon = await Process.start(executable.path, <String>[
       '--serve',
       '--endpoint',
-      endpoint,
+      endpointPath,
+      '--state-dir',
+      stateDirectory.path,
     ]);
-    unawaited(daemon.stdout.drain<void>());
-    unawaited(daemon.stderr.drain<void>());
+    final daemonLog = <String>[];
+    for (final stream in <Stream<List<int>>>[daemon.stdout, daemon.stderr]) {
+      unawaited(
+        stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .forEach(daemonLog.add),
+      );
+    }
     try {
-      await _waitForEndpoint(endpoint);
+      try {
+        await _endpoint.waitUntilServing(endpointPath);
+      } on TimeoutException catch (error) {
+        final tail = daemonLog.length > 10
+            ? daemonLog.sublist(daemonLog.length - 10)
+            : daemonLog;
+        throw TimeoutException(
+          '${error.message} (vityod output: ${tail.join(' | ')})',
+        );
+      }
       final client = VityodClient(
-        transport: SocketVityodTransport(endpointPath: endpoint),
+        transport: SocketVityodTransport(endpointPath: endpointPath),
         clientInstanceId: clientId,
       );
       await client.connect();
@@ -62,38 +92,23 @@ class VityodTestHarness {
 }
 
 File _findExecutable() {
-  final bundled = File(
-    '${File(Platform.resolvedExecutable).parent.parent.path}/Helpers/vityod',
-  );
-  if (bundled.existsSync()) return bundled;
+  final name = VityodTestHarness._endpoint.daemonExecutableName;
+  for (final candidate
+      in VityodTestHarness._endpoint.bundledCandidates(
+        Platform.resolvedExecutable,
+      )) {
+    final bundled = File(candidate);
+    if (bundled.existsSync()) return bundled;
+  }
   var directory = Directory.current.absolute;
   for (var depth = 0; depth < 12; depth += 1) {
     final candidate = File(
-      '${directory.path}/native/vityod/target/debug/vityod',
+      '${directory.path}/native/vityod/target/debug/$name',
     );
     if (candidate.existsSync()) return candidate;
     final parent = directory.parent;
     if (parent.path == directory.path) break;
     directory = parent;
   }
-  return File('native/vityod/target/debug/vityod');
-}
-
-Future<void> _waitForEndpoint(String endpoint) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 5));
-  while (true) {
-    try {
-      final probe = await Socket.connect(
-        InternetAddress(endpoint, type: InternetAddressType.unix),
-        0,
-      );
-      probe.destroy();
-      return;
-    } on SocketException {
-      if (DateTime.now().isAfter(deadline)) {
-        throw TimeoutException('vityod test endpoint was not created');
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-  }
+  return File('native/vityod/target/debug/$name');
 }

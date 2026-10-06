@@ -50,8 +50,13 @@ final class WindowsNamedPipeConnection {
   Future<void> write(Uint8List bytes) {
     if (_closed) throw StateError('named pipe is closed');
     final payload = Uint8List.fromList(bytes);
+    // Copy the handle into a local. Reading the field from inside the closure
+    // captured `this`, so `Isolate.run` had to send the whole connection —
+    // including its unsendable `_writeTail` future — and every write failed
+    // with "Illegal argument in isolate message".
+    final handle = _handle;
     final operation = _writeTail.then(
-      (_) => Isolate.run(() => _writePipeBytes(_handle, payload)),
+      (_) => Isolate.run(() => _writePipeBytes(handle, payload)),
     );
     _writeTail = operation.then<void>((_) {}, onError: (_, _) {});
     return operation;
@@ -61,6 +66,11 @@ final class WindowsNamedPipeConnection {
     if (_closed) return;
     _closed = true;
     await _writeTail;
+    // The reader isolate blocks in a synchronous ReadFile on this handle.
+    // Closing a handle with a pending synchronous read blocks CloseHandle
+    // indefinitely, which hung endpoint discovery and every test that closed a
+    // probe connection. Cancel the pending I/O first so the read returns.
+    _cancelIoEx(_handle, nullptr);
     _closeHandle(_handle);
     _reader?.kill(priority: Isolate.immediate);
     _reader = null;
@@ -114,6 +124,8 @@ typedef _WriteFileDart =
     int Function(int, Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Void>);
 typedef _CloseHandleNative = Int32 Function(IntPtr);
 typedef _CloseHandleDart = int Function(int);
+typedef _CancelIoExNative = Int32 Function(IntPtr, Pointer<Void>);
+typedef _CancelIoExDart = int Function(int, Pointer<Void>);
 typedef _GetLastErrorNative = Uint32 Function();
 typedef _GetLastErrorDart = int Function();
 
@@ -129,6 +141,8 @@ final _WriteFileDart _writeFile = _kernel32
     .lookupFunction<_WriteFileNative, _WriteFileDart>('WriteFile');
 final _CloseHandleDart _closeHandleFunction = _kernel32
     .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
+final _CancelIoExDart _cancelIoEx = _kernel32
+    .lookupFunction<_CancelIoExNative, _CancelIoExDart>('CancelIoEx');
 final _GetLastErrorDart _getLastError = _kernel32
     .lookupFunction<_GetLastErrorNative, _GetLastErrorDart>('GetLastError');
 
