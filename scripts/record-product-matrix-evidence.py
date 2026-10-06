@@ -34,6 +34,7 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 MAX_JSON_INPUT_BYTES = 1_048_576
 MAX_GATE_REPORT_BYTES = 65_536
+MAX_CLEAN_CHECKOUT_ENTRIES = 20
 EXPECTED_SOURCE_DIGEST = hashlib.sha256(b'>_("vityo-observed-r1")\n').hexdigest()
 EXPECTED_OBSERVATION_DIGEST = hashlib.sha256(b"vityo-observed-r1").hexdigest()
 
@@ -54,8 +55,16 @@ def require_clean_checkout(repository: Path, *, name: str) -> None:
         capture_output=True,
         text=True,
     ).stdout
-    if status.strip():
-        raise ValueError(f"{name} checkout contains uncommitted changes")
+    entries = [line for line in status.splitlines() if line.strip()]
+    if not entries:
+        return
+    listed = entries[:MAX_CLEAN_CHECKOUT_ENTRIES]
+    detail = "\n".join(f"  {entry}" for entry in listed)
+    if len(entries) > len(listed):
+        detail = f"{detail}\n  ... and {len(entries) - len(listed)} more"
+    raise ValueError(
+        f"{name} checkout contains uncommitted changes:\n{detail}"
+    )
 
 
 def load_json_object(path: Path) -> dict[str, object]:
