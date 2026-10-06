@@ -1,136 +1,180 @@
-import 'dart:io' as io;
-
+import '../backend_toolchain/bundled_toolchain_candidates.dart';
 import '../environment/environment.dart';
 import 'toolchain_catalog.dart';
+
+/// Catalog id for the discovered `styio_lspd` language server.
+const String styioLspDaemonToolchainId = 'local-styio-lsp-daemon';
 
 const List<String> _defaultStyioExecutableCandidates = <String>[
   '/usr/local/bin/styio',
   '/usr/bin/styio',
   '/opt/homebrew/bin/styio',
-  '/home/linuxbrew/.linuxbrew/bin/styio',
+];
+
+const List<String> _defaultStyioLspDaemonDirectories = <String>[
+  '/usr/local/bin',
+  '/usr/bin',
+  '/opt/homebrew/bin',
 ];
 
 Future<ToolchainCatalog> createPlatformStyioLanguageToolchainCatalog({
-  PlatformManagerBundle? platformManagers,
-  Map<String, String>? environment,
+  required PlatformManagerBundle platformManagers,
+  Map<String, String> environment = const <String, String>{},
   Iterable<String> candidatePaths = _defaultStyioExecutableCandidates,
+  String? bundledExecutablePath,
 }) async {
   final catalog = ToolchainCatalog();
-  final executablePath = platformManagers == null
-      ? _discoverLocalStyioExecutablePath(
-          environment: environment ?? io.Platform.environment,
-          candidatePaths: candidatePaths,
-        )
-      : await _discoverManagedStyioExecutablePath(
-          platformManagers,
-          environment: environment ?? const <String, String>{},
-          candidatePaths: candidatePaths,
-        );
-  if (executablePath == null) {
+  final executablePath = await _discoverManagedStyioExecutablePath(
+    platformManagers,
+    environment: environment,
+    candidatePaths: candidatePaths,
+    bundledExecutablePath: bundledExecutablePath,
+  );
+
+  final lspDaemonPath = await _discoverManagedStyioLspDaemonPath(
+    platformManagers,
+    environment: environment,
+    candidatePaths: candidatePaths,
+    bundledExecutablePath: bundledExecutablePath,
+    styioExecutablePath: executablePath,
+  );
+
+  if (executablePath == null && lspDaemonPath == null) {
     return catalog;
   }
 
-  catalog.register(
-    ToolchainDescriptor(
-      id: 'local-styio-language-service',
-      kind: ToolchainKind.languageService,
-      displayName: 'Local Styio Language Service',
-      executablePath: executablePath,
-      metadata: const <String, Object?>{
-        'source': 'platform-discovery',
-        'contract': 'styio-cli-jsonl-v1',
-      },
-    ),
-    activate: true,
-  );
+  if (executablePath != null) {
+    catalog.register(
+      ToolchainDescriptor(
+        id: 'local-styio-language-service',
+        kind: ToolchainKind.languageService,
+        displayName: 'Local Styio Language Service',
+        executablePath: executablePath,
+        metadata: const <String, Object?>{
+          'source': 'platform-discovery',
+          'contract': 'styio-cli-jsonl-v1',
+        },
+      ),
+      activate: true,
+    );
+  }
+
+  if (lspDaemonPath != null) {
+    // Registered as an alternative language-service asset, never activated:
+    // `styio_lspd` is not a drop-in replacement for the `styio` CLI.
+    catalog.register(
+      ToolchainDescriptor(
+        id: styioLspDaemonToolchainId,
+        kind: ToolchainKind.languageService,
+        displayName: 'Local Styio LSP Daemon',
+        executablePath: lspDaemonPath,
+        metadata: const <String, Object?>{
+          'source': 'platform-discovery',
+          'contract': 'styio-lsp-3.17',
+          'transport': 'lsp-stdio',
+        },
+      ),
+    );
+  }
   return catalog;
-}
-
-String? _discoverLocalStyioExecutablePath({
-  required Map<String, String> environment,
-  required Iterable<String> candidatePaths,
-}) {
-  final isWindows = io.Platform.isWindows;
-  final override = environment['VITYO_STYIO_BIN'];
-  for (final candidate in _styioExecutableCandidates(override, isWindows)) {
-    if (_isExecutableFile(candidate)) {
-      return candidate;
-    }
-  }
-
-  for (final candidate in candidatePaths) {
-    for (final executable in _styioExecutableCandidates(candidate, isWindows)) {
-      if (_isExecutableFile(executable)) {
-        return executable;
-      }
-    }
-  }
-
-  try {
-    final lookupExecutable = isWindows ? 'where.exe' : 'which';
-    final result = io.Process.runSync(lookupExecutable, const <String>['styio']);
-    if (result.exitCode == 0) {
-      for (final line in result.stdout.toString().split(RegExp(r'\r?\n'))) {
-        final path = line.trim();
-        if (_isExecutableFile(path)) {
-          return path;
-        }
-      }
-    }
-  } on Object {
-    return null;
-  }
-
-  return null;
 }
 
 Future<String?> _discoverManagedStyioExecutablePath(
   PlatformManagerBundle platformManagers, {
   required Map<String, String> environment,
   required Iterable<String> candidatePaths,
+  String? bundledExecutablePath,
 }) async {
   final isWindows =
       platformManagers.context.fileSystem.operatingSystem.toLowerCase() ==
       'windows';
   final override = environment['VITYO_STYIO_BIN'];
-  for (final candidate in _styioExecutableCandidates(override, isWindows)) {
+  for (final candidate in _executablePathCandidates(override, isWindows)) {
     if (await _isExecutablePath(platformManagers, candidate)) {
       return candidate;
     }
   }
 
-  for (final candidate in candidatePaths) {
-    for (final executable in _styioExecutableCandidates(candidate, isWindows)) {
+  for (final candidate in bundledToolchainCandidatePaths(
+    'styio',
+    executablePath: bundledExecutablePath,
+  )) {
+    for (final executable in _executablePathCandidates(candidate, isWindows)) {
       if (await _isExecutablePath(platformManagers, executable)) {
         return executable;
       }
     }
   }
 
-  final lookupExecutable = isWindows ? 'where.exe' : 'which';
-  final lookup = await platformManagers.process.run(
-    ProcessCommandRequest(
-      executablePath: lookupExecutable,
-      arguments: const <String>['styio'],
-      environment: environment,
-    ),
-  );
-  if (!lookup.succeeded) {
-    return null;
-  }
-  for (final line in lookup.stdout.split(RegExp(r'\r?\n'))) {
-    final path = line.trim();
-    if (await _isExecutablePath(platformManagers, path)) {
-      return path;
+  for (final candidate in candidatePaths) {
+    for (final executable in _executablePathCandidates(candidate, isWindows)) {
+      if (await _isExecutablePath(platformManagers, executable)) {
+        return executable;
+      }
     }
   }
+
   return null;
 }
 
-Iterable<String> _styioExecutableCandidates(
-  String? path,
-  bool isWindows,
-) sync* {
+Future<String?> _discoverManagedStyioLspDaemonPath(
+  PlatformManagerBundle platformManagers, {
+  required Map<String, String> environment,
+  required Iterable<String> candidatePaths,
+  String? bundledExecutablePath,
+  required String? styioExecutablePath,
+}) async {
+  final isWindows =
+      platformManagers.context.fileSystem.operatingSystem.toLowerCase() ==
+      'windows';
+  final override = environment['VITYO_STYIO_LSPD_BIN'];
+  for (final candidate in _executablePathCandidates(override, isWindows)) {
+    if (await _isExecutablePath(platformManagers, candidate)) {
+      return candidate;
+    }
+  }
+
+  // A daemon bundled beside the app executable, including the copy shipped
+  // next to an app-bundled `styio` (same `Helpers`/`components` directory).
+  for (final candidate in bundledToolchainCandidatePaths(
+    'styio_lspd',
+    executablePath: bundledExecutablePath,
+  )) {
+    for (final executable in _executablePathCandidates(candidate, isWindows)) {
+      if (await _isExecutablePath(platformManagers, executable)) {
+        return executable;
+      }
+    }
+  }
+
+  final directories = <String>{..._defaultStyioLspDaemonDirectories};
+  for (final candidate in candidatePaths) {
+    final directory = _directoryOf(candidate);
+    if (directory.isNotEmpty) {
+      directories.add(directory);
+    }
+  }
+  final styioDirectory = _directoryOf(styioExecutablePath ?? '');
+  if (styioDirectory.isNotEmpty) {
+    directories.add(styioDirectory);
+  }
+
+  for (final directory in directories) {
+    final base = platformManagers.fileSystem.joinPath(<String>[
+      directory,
+      'styio_lspd',
+    ]);
+    for (final candidate in _executablePathCandidates(base, isWindows)) {
+      if (await _isExecutablePath(platformManagers, candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+Iterable<String> _executablePathCandidates(String? path, bool isWindows) sync* {
   if (path == null || path.isEmpty) {
     return;
   }
@@ -140,6 +184,18 @@ Iterable<String> _styioExecutableCandidates(
     yield '$path.bat';
   }
   yield path;
+}
+
+String _directoryOf(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  final separator = normalized.lastIndexOf('/');
+  if (separator < 0) {
+    return '';
+  }
+  if (separator == 0) {
+    return '/';
+  }
+  return normalized.substring(0, separator);
 }
 
 bool _hasWindowsExecutableExtension(String path) {
@@ -153,19 +209,12 @@ Future<bool> _isExecutablePath(
   if (path == null || path.isEmpty) {
     return false;
   }
-  if (!await platformManagers.fileSystem.exists(path)) {
+  try {
+    if (!await platformManagers.fileSystem.exists(path)) {
+      return false;
+    }
+    return await platformManagers.fileSystem.isExecutable(path);
+  } on Object {
     return false;
   }
-  return platformManagers.fileSystem.isExecutable(path);
-}
-
-bool _isExecutableFile(String? path) {
-  if (path == null || path.isEmpty) {
-    return false;
-  }
-  final stat = io.FileStat.statSync(path);
-  if (stat.type != io.FileSystemEntityType.file) {
-    return false;
-  }
-  return true;
 }

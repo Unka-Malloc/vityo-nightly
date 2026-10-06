@@ -1,0 +1,1617 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VITYO — Step Row Workbench · Direction Proof</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --room:#0b0b0b;
+  --panel:#1a1a1a;
+  --panel-hi:#212121;
+  --recess:#121212;
+  --well:#0e0e0e;
+  --seam-hi:#2d2d2d;
+  --seam-lo:#000000;
+  --red:#ff3b30;
+  --orange:#ff9a00;
+  --yellow:#ffe100;
+  --paper:#f2f2f2;
+  --silk:#8d8d8d;
+  --silk-hi:#c9c9c9;
+  --bone:#e9e7e1;
+  --led-off:#2a2a2a;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;
+  --cond:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--room);
+  color:var(--bone);
+  font-family:var(--sans);
+  font-size:13px;
+  display:flex;
+  overflow:hidden;
+}
+::selection{background:rgba(255,59,48,.32);color:#fff}
+:focus-visible{outline:1px solid var(--red);outline-offset:2px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--recess)}
+::-webkit-scrollbar-thumb{background:#2e2e2e;border:2px solid var(--recess);border-radius:5px}
+
+.silk{
+  font-family:var(--sans);font-weight:600;
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--silk);white-space:nowrap;
+}
+.silk.hi{color:var(--silk-hi)}
+.silk.dim{color:#6f6f6f}
+
+/* ---------- machine ---------- */
+.machine{
+  flex:1;display:flex;flex-direction:column;min-width:0;
+  background:var(--panel);
+  position:relative;
+}
+.machine::after{ /* textured plastic, tiled raster, 5% */
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:.05;
+  mix-blend-mode:overlay;
+  background-image:url("plastic-noise.png");
+  background-size:128px 128px;
+}
+.screw{position:absolute;width:10px;height:10px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#3c3c3c,#151515 70%);
+  box-shadow:inset 0 0 2px #000,0 1px 0 rgba(255,255,255,.05)}
+.screw::after{content:"";position:absolute;left:1.5px;top:4.2px;width:7px;height:1.4px;
+  background:#050505;border-radius:1px;transform:rotate(var(--r,24deg))}
+
+/* seam: black cut above, highlight below */
+.seam-b{border-bottom:1px solid var(--seam-lo);box-shadow:0 1px 0 var(--seam-hi)}
+.seam-t{border-top:1px solid var(--seam-lo);box-shadow:inset 0 1px 0 var(--seam-hi)}
+
+/* ---------- maker's mark: the faceplate signs itself small, at the bottom edge ---------- */
+.maker{
+  font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.08em;
+  color:var(--silk-hi);line-height:1;display:flex;align-items:center;gap:7px;
+}
+.maker .led{position:static;width:6px;height:6px;border-radius:50%}
+
+.readout{
+  background:var(--well);border:1px solid #000;border-radius:4px;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.8),0 1px 0 var(--seam-hi);
+  padding:5px 9px 3px;display:flex;align-items:center;
+}
+
+/* physical keys */
+.key{
+  border:none;cursor:pointer;border-radius:5px;
+  font-family:var(--cond);font-weight:700;letter-spacing:.1em;
+  box-shadow:0 3px 0 rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.22);
+  transition:transform .04s,box-shadow .04s,filter .12s;
+}
+.key:hover{filter:brightness(1.07)}
+.key:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.12)}
+.key-red{background:linear-gradient(180deg,#ff5a4d,#e02820);color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35)}
+.key-dark{background:linear-gradient(180deg,#2c2c2c,#1d1d1d);color:var(--silk-hi)}
+.key-run,.key-clear{flex:1;height:36px;padding:0 10px}
+.key-run{font-size:14px}
+.key-clear{font-size:11px}
+.key-red.held{filter:none;transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.55),inset 0 2px 5px rgba(0,0,0,.45)}
+.key-run.lit{animation:keylight 1.6s ease-in-out infinite} /* the machine invites its first run */
+.t-adj{flex:none;width:30px;height:30px;border-radius:4px;font-size:15px;letter-spacing:0;padding:0 0 2px}
+
+/* ---------- transport: tempo + run keys ride with the step row ---------- */
+.transport{
+  flex:none;width:220px;padding:10px 12px;border-radius:6px;
+  background:var(--well);border:1px solid #000;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.75),0 1px 0 var(--seam-hi);
+  display:flex;flex-direction:column;gap:8px;
+}
+.t-row{display:flex;align-items:center;gap:8px}
+.t-mid{justify-content:space-between}
+.t-keys{align-items:stretch}
+
+/* ---------- LED: the only glow ---------- */
+.led{
+  width:6px;height:6px;border-radius:50%;flex:none;
+  background:var(--led-off);
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.8);
+}
+.led.dim-on{ /* armed step at rest */
+  background:rgba(255,59,48,.62);
+  box-shadow:0 0 4px rgba(255,59,48,.4);
+}
+.led.on{
+  background:var(--red);
+  box-shadow:0 0 6px rgba(255,59,48,.9),0 0 16px rgba(255,59,48,.45);
+}
+.led.on.white{background:var(--paper);box-shadow:0 0 6px rgba(242,242,242,.85),0 0 14px rgba(242,242,242,.4)}
+.led.on.amber{background:var(--orange);box-shadow:0 0 6px rgba(255,154,0,.9),0 0 14px rgba(255,154,0,.4)}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:.18}}
+.led.blink{animation:blink .5s steps(1,end) infinite}
+
+/* ---------- loop bar (the signature); the transport rides at its right hand ---------- */
+.loopbar{position:relative;flex:none;padding:12px 18px 10px;background:var(--panel);display:flex;gap:16px;align-items:stretch}
+.loopmain{flex:1;min-width:0;display:flex;flex-direction:column}
+.loop-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.steps{display:flex;gap:6px}
+.step{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.stepkey{
+  width:100%;height:38px;border:none;border-radius:5px;cursor:pointer;position:relative;
+  box-shadow:0 3px 0 rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.25);
+  transition:transform .04s,box-shadow .04s,filter .08s;
+}
+.stepkey::before{ /* slot window near the top of the cap */
+  content:"";position:absolute;left:18%;right:18%;top:7px;height:5px;border-radius:2px;
+  background:rgba(0,0,0,.38);box-shadow:inset 0 1px 2px rgba(0,0,0,.6);
+}
+.stepkey:hover{filter:brightness(1.07)}
+.stepkey:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.12)}
+.q1 .stepkey{background:linear-gradient(180deg,#ff5a4d,#e02820)}
+.q2 .stepkey{background:linear-gradient(180deg,#ffab33,#e68a00)}
+.q3 .stepkey{background:linear-gradient(180deg,#ffe94d,#e6ca00)}
+.q4 .stepkey{background:linear-gradient(180deg,#ffffff,#dcdcdc)}
+.stepnum{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--silk)}
+.step.off .stepkey{background:linear-gradient(180deg,#262626,#1b1b1b);box-shadow:inset 0 2px 4px rgba(0,0,0,.7),0 1px 0 rgba(255,255,255,.04)}
+.step.off .stepnum{color:#7a7a7a}
+.step.chase .stepkey{filter:brightness(1.22) saturate(1.1)}
+.step.chase .stepnum{color:var(--bone)}
+.step.fault .stepkey{filter:brightness(1.28) saturate(1.15)}
+.step.fault .stepnum{color:var(--red);font-weight:600}
+.phases{display:flex;margin-top:8px}
+.phase{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.phase .bracket{border-top:1px solid #3a3a3a;margin:0 2px}
+.phase .silk{text-align:center}
+
+/* ---------- main region ---------- */
+.main{flex:1;min-height:0;display:grid;grid-template-columns:68px minmax(0,1fr) 322px}
+.rail{
+  background:var(--panel-hi);display:flex;flex-direction:column;align-items:center;
+  gap:14px;padding:14px 0;border-right:1px solid var(--seam-lo);
+  box-shadow:inset -1px 0 0 var(--seam-hi);
+}
+.railkey{
+  width:56px;border:none;background:none;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;padding:0;
+}
+.railkey .cap{
+  width:44px;height:44px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--silk);
+  background:linear-gradient(180deg,#2b2b2b,#1e1e1e);
+  box-shadow:0 2px 0 rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.09);
+}
+.railkey:hover .cap{filter:brightness(1.12)}
+.railkey.on .cap{
+  color:var(--bone);
+  background:linear-gradient(180deg,#242424,#161616);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.75);
+}
+.railkey:active .cap{transform:translateY(1px)}
+.rail-spacer{flex:1}
+
+/* panels sit in recessed wells */
+.panel{
+  min-width:0;min-height:0;display:flex;flex-direction:column;
+  background:var(--recess);
+}
+.panel-head{
+  flex:none;height:38px;display:flex;align-items:center;gap:14px;padding:0 14px;
+  background:var(--panel);
+}
+.editor{border-right:1px solid var(--seam-lo)}
+.tabs{display:flex;gap:4px;margin-left:6px}
+.tab{
+  display:inline-flex;align-items:center;gap:6px;
+  border:none;cursor:pointer;height:26px;padding:0 12px;border-radius:3px;
+  font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.06em;
+  background:linear-gradient(180deg,#2b2b2b,#1e1e1e);color:var(--silk);
+  box-shadow:0 2px 0 rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);
+}
+.tab:hover{filter:brightness(1.1)}
+.tab.on{
+  color:var(--well);background:linear-gradient(180deg,#ffffff,#dcdcdc);
+  box-shadow:0 2px 0 rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.6);
+}
+.panel-head .tail{margin-left:auto}
+
+/* inline icons: hand-drawn 24-grid strokes, one weight with the rail glyphs */
+.ic{display:inline-flex;align-items:center;justify-content:center;flex:none}
+.ic[hidden]{display:none}
+.ic svg{display:block}
+.key-run,.key-clear{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.t-cap{display:flex;align-items:center;gap:7px}
+.t-cap .ic{color:var(--silk)}
+.auth{display:flex;align-items:center;justify-content:center;gap:8px}
+.frow .ic{color:var(--silk)}
+
+/* editor: a real buffer — a transparent textarea rides the highlight layer on one 24px line grid */
+.code{flex:1;min-height:0;display:flex;flex-direction:column}
+.code-main{flex:1;min-height:0;display:flex}
+.gutter-col{
+  flex:none;width:58px;overflow:hidden;padding:14px 0 18px;user-select:none;
+  border-right:1px solid #232323;
+  font-family:var(--mono);font-size:11px;line-height:24px;color:#828282;
+}
+.gl{height:24px;display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-right:12px}
+.gl .led{width:5px;height:5px}
+.editwrap{position:relative;flex:1;min-width:0}
+.hl,.editor-input{
+  font-family:var(--mono);font-size:13px;line-height:24px;letter-spacing:0;tab-size:2;
+  padding:14px 16px 18px;white-space:pre;
+}
+.hl{position:absolute;inset:0;overflow:hidden;pointer-events:none;color:var(--bone)}
+.hl-line{height:24px}
+.editor-input{
+  position:absolute;inset:0;width:100%;height:100%;border:none;outline:none;resize:none;
+  background:transparent;color:transparent;caret-color:var(--red);overflow:auto;
+}
+.editor-input::selection{background:rgba(255,59,48,.32);color:transparent}
+.editor-input:focus-visible{outline:none}
+.editwrap:focus-within{box-shadow:inset 0 0 0 1px rgba(255,154,0,.28)}
+.tk-k{color:var(--paper);font-weight:600}
+.tk-n{color:var(--orange)}
+.tk-s{color:var(--yellow)}
+.tk-o{color:var(--silk-hi)}
+.tk-p{color:var(--silk)}
+.tk-c{color:#828282}
+.diag{
+  text-decoration:underline wavy var(--red);text-underline-offset:4px;
+  text-decoration-thickness:1px;
+}
+.diag-strip{
+  flex:none;display:flex;align-items:center;gap:8px;min-height:27px;padding:0 16px;
+  border-top:1px solid var(--seam-lo);box-shadow:inset 0 1px 0 var(--seam-hi);
+  font-family:var(--mono);font-size:11px;color:var(--red);letter-spacing:.04em;
+}
+.diag-strip[hidden]{display:none}
+
+/* agent + instrument bodies */
+.agent-steps{flex:none;padding:12px 14px 4px;display:flex;flex-direction:column;gap:2px}
+.arow{
+  display:flex;align-items:center;gap:10px;min-height:30px;
+  font-family:var(--mono);font-size:11px;
+}
+.arow .no{color:var(--orange);font-weight:600;width:22px;flex:none}
+.arow .what{color:var(--bone);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .what .tk-p{font-size:11px}
+.gate{
+  margin:12px 14px 0;padding:12px;border-radius:5px;
+  background:var(--well);border:1px solid #000;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.75),0 1px 0 var(--seam-hi);
+  display:flex;flex-direction:column;gap:9px;
+}
+.gate .ghead{display:flex;align-items:center;gap:8px}
+.gate .ghead .silk{white-space:normal;line-height:1.5}
+.auth{
+  border:none;cursor:pointer;border-radius:5px;height:44px;
+  font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.08em;color:#fff;
+  background:linear-gradient(180deg,#ff5a4d,#e02820);
+  text-shadow:0 1px 1px rgba(0,0,0,.4);
+  box-shadow:0 3px 0 rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.25);
+  transition:transform .04s,box-shadow .04s,filter .12s;
+}
+.auth:hover{filter:brightness(1.06)}
+.auth.lit{animation:keylight 1.1s ease-in-out infinite}
+@keyframes keylight{0%,100%{filter:brightness(1)}50%{filter:brightness(1.22)}}
+.auth:active{transform:translateY(2px)}
+.auth.done{ /* latched down: the interlock holds its position */
+  background:linear-gradient(180deg,#1c1c1c,#141414);color:var(--silk);cursor:default;
+  transform:translateY(2px);
+  box-shadow:inset 0 2px 5px rgba(0,0,0,.8);text-shadow:none;animation:none;
+}
+.gate .fine{font-size:11px;line-height:1.55;white-space:normal}
+.receipts{flex:1;min-height:0;overflow:auto;margin-top:12px;padding:0 14px 14px;display:flex;flex-direction:column;gap:6px}
+.receipt{
+  display:flex;align-items:center;gap:9px;min-height:28px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--silk-hi);
+}
+.receipt .id{color:var(--paper);font-weight:600}
+.receipt-empty{padding:14px 0}
+.receipt-empty .silk{white-space:normal;line-height:1.6}
+.frow{
+  display:flex;align-items:center;gap:10px;min-height:30px;width:100%;
+  border:none;background:none;cursor:pointer;text-align:left;padding:0 4px;border-radius:3px;
+  font-family:var(--mono);font-size:11px;color:var(--bone);
+}
+.frow:hover{background:rgba(255,255,255,.03)}
+.frow .fsize{color:var(--silk);margin-left:auto}
+.fact{
+  display:flex;align-items:baseline;justify-content:space-between;min-height:30px;
+  font-family:var(--mono);font-size:11px;color:var(--bone);
+  border-bottom:1px solid #1e1e1e;
+}
+.fact .k{color:var(--silk)}
+.fact .v{color:var(--paper);font-weight:600}
+.ibody{padding:12px 14px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.ibody .silk{margin-bottom:8px}
+
+/* ---------- status strip ---------- */
+.status{
+  position:relative;flex:none;height:32px;display:flex;align-items:center;gap:18px;
+  padding:0 16px;background:var(--panel-hi);
+}
+.status .left{display:flex;align-items:center;gap:10px;min-width:250px}
+.status .mid{display:flex;gap:18px;overflow:hidden}
+.status .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+#loopState{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--silk-hi)}
+
+/* ---------- flow notation: the program as patched signal routing ---------- */
+.notation{flex:1;min-height:0;display:flex;flex-direction:column}
+.flow{flex:1;min-height:0;display:flex;padding:14px}
+.flow[hidden]{display:none}
+.code[hidden]{display:none}
+.flow-well{
+  flex:1;min-width:0;display:flex;align-items:center;justify-content:center;
+  background:var(--well);border:1px solid #000;border-radius:6px;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.75),0 1px 0 var(--seam-hi);
+  overflow:auto;
+}
+/* the board fills the well; it never scales below 760×480 (1 unit = 1 px keeps the 11px type floor), narrow screens pan instead */
+.flow-well svg{flex:none;width:100%;height:100%;min-width:760px;min-height:480px}
+#notationTabs{margin-left:0}
+
+#flowSvg text{user-select:none}
+.f-title{font:600 11px var(--sans);letter-spacing:.14em;fill:var(--silk)}
+.f-dim{font:500 11px var(--mono);letter-spacing:.1em;fill:#6f6f6f}
+.mod-name{font:600 12px var(--sans);letter-spacing:.12em;fill:var(--silk-hi)}
+.mod-kind{font:500 11px var(--mono);letter-spacing:.08em;fill:#6f6f6f}
+.cable{fill:none;stroke:#8d8d8d;stroke-width:2.5;stroke-linecap:round}
+.cable-sh{fill:none;stroke:#000;stroke-width:4.5;stroke-linecap:round;opacity:.45;transform:translateY(2px)}
+.cv{stroke:#6f6f6f;stroke-width:1.8;stroke-dasharray:6 5}
+.jack{fill:#0e0e0e;stroke:#3a3a3a;stroke-width:1.5}
+.plug{fill:#242424;stroke:#3a3a3a;stroke-width:1}
+.plug-ring{stroke:#4c4c4c;stroke-width:1.5}
+.stray{fill:none;stroke:#8d8d8d;stroke-width:1.2;stroke-linecap:round}
+.tap{fill:#8d8d8d}
+.f-label{font:500 11px var(--mono);letter-spacing:.05em;fill:#6f6f6f}
+.f-warn{font:500 11px var(--mono);letter-spacing:.05em;fill:var(--orange)}
+/* generated board furniture */
+.mod-face{fill:url(#modFace);stroke:#2d2d2d;stroke-width:1}
+.mod-top{stroke:rgba(255,255,255,.07);stroke-width:1}
+.jack-hole{fill:#000}
+.chip{fill:#121212;stroke:#262626;stroke-width:1}
+.chip-warn{fill:#151310;stroke:#3a2a10;stroke-width:1}
+.chip-cv{fill:#141414;stroke:#333;stroke-width:1;stroke-dasharray:3 3}
+.f-label-chip{font:500 11px var(--mono);letter-spacing:.04em;fill:#9a9a9a}
+.tab:disabled{opacity:.38;cursor:default}
+.tab:disabled:hover{filter:none}
+/* a signal pulse is the same class of light as an LED: identical glow recipe */
+.pulse{
+  fill:#ff3b30;
+  filter:drop-shadow(0 0 3px rgba(255,59,48,.9)) drop-shadow(0 0 8px rgba(255,59,48,.4));
+}
+.sled{fill:#2a2a2a}
+.sled.on{fill:var(--red);filter:drop-shadow(0 0 3px rgba(255,59,48,.9)) drop-shadow(0 0 8px rgba(255,59,48,.4))}
+.sled.on.amber{fill:var(--orange);filter:drop-shadow(0 0 3px rgba(255,154,0,.9)) drop-shadow(0 0 8px rgba(255,154,0,.4))}
+.sled.on.white{fill:var(--paper);filter:drop-shadow(0 0 3px rgba(242,242,242,.85))}
+
+/* ---------- responsive ---------- */
+@media (max-width:720px){
+  body{overflow:auto}
+  .machine{min-height:100vh}
+  .main{display:flex;flex-direction:column}
+  .rail{flex-direction:row;order:-1;border-right:none;border-bottom:1px solid var(--seam-lo);
+    box-shadow:0 1px 0 var(--seam-hi);padding:8px 12px;gap:10px;overflow-x:auto}
+  .railkey{width:56px}
+  .railkey .cap{width:44px;height:44px}
+  .rail-spacer{display:none}
+  .editor{min-height:554px;border-right:none;border-bottom:1px solid var(--seam-lo)}
+  .panel-head{height:auto;min-height:38px;flex-wrap:wrap;row-gap:6px;padding:5px 10px}
+  #pgmTail{display:none}
+  .flow{padding:10px}
+  .flow-well{display:block} /* let the routing diagram pan instead of crop */
+  .agent{min-height:280px}
+  /* the step row never wraps: one scrolling track, touch-size keys, phases ride along */
+  .loopbar{flex-direction:column}
+  .looptrack{overflow-x:auto;padding-bottom:4px}
+  .steps{width:794px}
+  .phases{width:794px}
+  .step{flex:0 0 44px}
+  .stepkey{height:44px}
+  .tab{height:44px;padding:0 16px}
+  .transport{width:auto;flex-direction:row;align-items:center}
+  .transport .t-cap{display:none}
+  .transport .t-mid{flex:none}
+  .transport .t-keys{flex:1}
+  .key-run,.key-clear{height:48px}
+  .status{flex-wrap:wrap;height:auto;padding:8px 12px;gap:8px}
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: Vityo 是一台节奏机器——edit→analyze→test→run→observe 是一个可以亲手编程的循环;IDE 的信任不来自说明文字,而来自十六颗步进键、一枚巡扫的追光灯和需要操作员亲手按下的授权键。拒绝品类的“活动栏+侧栏+标签页”默认排布作为表达主体。
+OWN-WORLD: 早期 80 年代鼓机。炭黑磨砂面板 #1A1A1A 与凹槽 #121212;步进键按相位四分红 #FF3B30 / 橙 #FF9A00 / 黄 #FFE100 / 白 #F2F2F2;丝印白字 #8D8D8D 全大写;LED 与信号灯是唯一的光源;红色七段数码管报告速度事实;IBM Plex Sans Condensed 作标题、IBM Plex Mono 作代码与数据。
+STORY: 操作员看到循环的十六个工序(EDIT/ANALYZE/TEST/RUN 各四步),按下 RUN,追光灯巡扫——只有一盏“当下”在走——并在第十一工序(golden 测试)被故障留住,常亮红灯直到操作员 CLEAR;Agent 的变更以“PERMISSION GATE”物理互锁等待授权,按下 AUTHORIZE 键闩入,签发本 session 第一张 RECEIPT。信任 = 可见的工序 + 亲手授权。用户钦定愿景(2026-09-30):Vityo 像音符一样流动,依赖/数据流/执行图以图像为先——因此 PROGRAM 井的第一记谱是 FLOW 信号路由图,源码 SOURCE 一键可达;诊断在图上是一根未插到底的 routeIn 裸线头(琥珀常亮),运行时红色信号脉冲由步进循环直接发车、沿线缆流动,故障时在途信号收拢为 RENDER 入口一枚被留住的信号。
+FIRST VIEWPORT: 无顶栏——主区直上:左仪器轨(FILES/AGENT/RUN 方形图标键,手绘内联 SVG,未装入不上轨)、PROGRAM 双记谱井(默认 FLOW:缓冲区源码实时解析生成的信号路由板满井铺开——点阵底板、渐变模块面、插孔/插头、切线垂度线缆与热缩标签扣,诊断=未接的 routeIn 散线琥珀常亮;一键切 SOURCE:真实可编辑缓冲区)+ 右侧仪器(默认 AGENT:工序行 + 红色授权互锁 + 回执);底部运输带横贯(16 步进排,LED 在上编号在下,相位括线;右端运输舱:TEMPO 数码管 ±/CLEAR/RUN,RUN 待机呼吸邀请首跑);最底丝印状态条:左端 VITYO 制造商铭牌,运行时播报当前工序名,右端光标坐标。演示数据已标注 SYNTHETIC。
+FORM: challenger signals-instruments-drum-machine-step-row,经决策页采纳(原裁决 declined,用户行使 Adopt Anyway);seed key 82e2aec9;code-led(本环境无图像生成)。评审修正:追光灯单一且熄灭身后;故障于 step 11 停机常亮;读数管只报 TEMPO,运行耗时入状态条;互锁键去环境光晕、授权后闩入;UI 字阶 ≥11px 与对比度按质量条执行;移动端步进键 44px 单列滚动;键盘 Space/C;回执空态为初始态;bank 只切换其真实拥有的状态。二轮复审(FLOW 区)修正:SVG 固定 760×480 令 1 用户单位=1px 守住字阶;STATE 增 HELD 灯,停机不再误报 RUNNING;冻结信号只留 RENDER 入口一枚;信号灯与 LED 同一辉光配方;脉冲由步进循环发车与追光同拍;已接线缆坐插头、routeIn 裸线头常亮琥珀;移动带 panel-head 换行不溢出;tablist 补 aria-controls/tabpanel/方向键,SVG 加 lang="en"。沉浸修订:未装入仪器/空音库/空页签一律不上机(SCM/EXT/SET/BANK A-D/UTIL.STYIO 移除),RUN 待机呼吸邀请首跑,运行中状态条播报当前工序名;轨键改方形图标(folder/spark/pulse 手绘内联 SVG,44×44,title 给全词),步进排降为底部运输带、键高 38px(移动带 44px)。真实化修订:顶机壳条废除(运输控制并入底部运输带、铭牌降为状态条左端 maker's mark);SOURCE 为真实编辑器(透明 textarea 叠高亮层,24px 行格对齐,Tab 插入缩进、回车续缩进、状态条报 Ln/Col);FILES 真实打开三缓冲区(main.styio/util.styio/styio.toml),字节数按 UTF-8 实算;分析仪一条真实规则「输入路由(a <- b)必须被消费」:诊断=标识符波线 + gutter 红灯 + 井底诊断条,并驱动 FLOW routeIn 输入路由三态(悬挂散线/接入声明目标/不存在)与 RUN 结局(有诊断→step 11 HELD 常亮,修复后→16 步全通 PASS);TEMPO 真实:± 键与 ↑↓ 调速(stepMs=60000/bpm/4),styio.toml 的 tempo 字段开机读取、编辑即生效;bank/instEmpty 死代码清除。生成器修订:手摆静态 SVG 废除,FLOW 变为程序自己长出来的图——parseStyio 解析 pipeline/|> 链/-> 路由/<- 输入路由/state 转移/emit/字面量 const,renderGraph 建 DAG 分层布局(数据带层距 196、控制带居下、STATE 居 fn 右 200)再一次性绘制:数据边为切线贝塞尔垂度线缆(插头角度由切线 atan2 算),标签一律热缩扣骑线缆中点(控制电压用虚线边 chip-cv 区分),输入路由垂直走线接声明目标底插孔、未消费则末端垂落散线+琥珀灯+警告牌,emit 为 fn 顶到目标线缆的虚线 tap,STATE 盒列全部状态灯(initial 琥珀常亮,held 永远追加);脉冲引擎经 FR 绑定对象动态重挂(主路径=从 CHANNEL 反向 walk 数据边,冻结脉冲=路径末 stage 左插孔);viewBox/标题/aria-label 按生成内容重算;击键即重画,toml 缓冲区禁用 FLOW 页签(诚实不可用);.mod-box 死 CSS 清偿,transition 补 to 字段修复 FR.run。图标修订:关键控件补手绘 24 格描边图标(与轨键同一笔重)——FLOW 页签跳线、SOURCE 页签尖括号、TEMPO 节拍器、RUN 三角、CLEAR 方停、AUTHORIZE 锁形互锁(闩入后锁钩抬起)、文件行类型符(styio=跳线,toml=滑子)、诊断三角补叹号;图标一律 .ic 包裹随 currentColor,.ic[hidden] 显式压 display 防 hidden 失效。回放修订:HELD 不再是死胡同——停机后 RUN 键换形 REPLAY(回旋箭头),按下重放 0→11 工序并在同一故障点再次闩住,可反复观看;状态条回放期播报「REPLAY · STEP n · FAULT IN m」倒计时;tempo 地板 40→10 BPM 且脉冲速度随 bpm 线性缩放(0.55×bpm/128 px/ms),stepMs 每步实时读 bpm——操作员可在故障逼近途中继续放慢,时间显微镜成立;CLEAR 复位键形与全部状态。
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<div class="machine" id="machine">
+  <!-- ══ main ══ -->
+  <main class="main">
+    <nav class="rail" id="rail" aria-label="instruments">
+      <button class="railkey" data-inst="EXP" aria-pressed="false" aria-label="Files" title="Files"><span class="cap"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="led"></span></button>
+      <button class="railkey on" data-inst="AGT" aria-pressed="true" aria-label="Agent" title="Agent"><span class="cap"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></span><span class="led on amber"></span></button>
+      <button class="railkey" data-inst="RUN" aria-pressed="false" aria-label="Run" title="Run"><span class="cap"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5"/></svg></span><span class="led"></span></button>
+    </nav>
+
+    <section class="panel editor" aria-label="editor">
+      <div class="panel-head seam-b">
+        <span class="silk hi">Program</span>
+        <div class="tabs" id="notationTabs" role="tablist" aria-label="notation">
+          <button class="tab on" id="tabFlow" role="tab" aria-selected="true" aria-controls="viewFlow"><span class="ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M7.2 10c2.4 4.5 7.2 4.5 9.6 0"/></svg></span>FLOW</button>
+          <button class="tab" id="tabSource" role="tab" aria-selected="false" aria-controls="code" tabindex="-1"><span class="ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 7.5L5 12l4.5 4.5M14.5 7.5L19 12l-4.5 4.5"/></svg></span>SOURCE</button>
+        </div>
+        <span class="silk dim tail" id="pgmTail">Styio · Graph · main.styio</span>
+      </div>
+      <div class="notation">
+        <div class="flow" id="viewFlow" role="tabpanel" aria-labelledby="tabFlow" tabindex="0">
+          <div class="flow-well">
+            <svg id="flowSvg" viewBox="0 0 760 480" lang="en" role="img" aria-label="Signal routing board, generated from the open buffer">
+              <defs>
+                <pattern id="gridDots" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <circle cx="1.2" cy="1.2" r="1.2" fill="rgba(255,255,255,.04)"/>
+                </pattern>
+                <linearGradient id="modFace" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#1f1f1f"/><stop offset="1" stop-color="#171717"/>
+                </linearGradient>
+              </defs>
+              <rect id="gridBg" x="0" y="0" width="760" height="480" fill="url(#gridDots)"/>
+              <!-- everything on the board is generated from the buffer; nothing is placed by hand -->
+              <g id="graphRoot"></g>
+              <circle class="pulse" id="frozenPulse" cx="0" cy="0" r="4" visibility="hidden"/>
+              <g id="pulses"></g>
+            </svg>
+          </div>
+        </div>
+        <div class="code" id="code" role="tabpanel" aria-labelledby="tabSource" tabindex="0" hidden>
+          <div class="code-main">
+            <div class="gutter-col" id="gutterCol" aria-hidden="true"></div>
+            <div class="editwrap">
+              <div class="hl" id="codeHl" aria-hidden="true"></div>
+              <textarea class="editor-input" id="editor" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="source editor"></textarea>
+            </div>
+          </div>
+          <div class="diag-strip" id="diagStrip" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel agent" aria-label="instrument">
+      <div class="panel-head seam-b">
+        <span class="silk hi" id="instTitle">Agent — Task 07</span>
+        <span class="silk dim tail" id="instState">Review</span>
+      </div>
+
+      <div id="instAgent">
+        <div class="agent-steps">
+          <div class="arow"><span class="no">01</span><span class="what">READ <span class="tk-p">main.styio</span></span><span class="led on white"></span></div>
+          <div class="arow"><span class="no">02</span><span class="what">PLAN <span class="tk-p">3 hunks</span></span><span class="led on white"></span></div>
+          <div class="arow"><span class="no">03</span><span class="what">EDIT <span class="tk-p">lines 4–9</span></span><span class="led on white"></span></div>
+          <div class="arow"><span class="no">04</span><span class="what">VERIFY <span class="tk-p">run golden</span></span><span class="led" id="verifyLed"></span></div>
+          <div class="arow"><span class="no">05</span><span class="what">RECEIPT <span class="tk-p">pending</span></span><span class="led" id="receiptLed"></span></div>
+        </div>
+        <div class="gate">
+          <div class="ghead"><span class="led blink" id="gateLed"></span><span class="silk">Permission Gate · Requires Operator</span></div>
+          <button class="auth lit" id="authBtn"><span class="ic" id="authIcLock"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="10.5" width="12" height="9" rx="2"/><path d="M9 10.5V8a3 3 0 0 1 6 0v2.5"/><circle cx="12" cy="15" r="1.3" fill="currentColor" stroke="none"/></svg></span><span class="ic" id="authIcOpen" hidden><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="10.5" width="12" height="9" rx="2"/><path d="M9 10.5V8a3 3 0 0 1 5.9-1.2"/><circle cx="12" cy="15" r="1.3" fill="currentColor" stroke="none"/></svg></span><span id="authLabel">AUTHORIZE — APPLY 3 HUNKS</span></button>
+          <span class="silk dim fine">Agent 无法自行落章 · 验证回执在授权后签发</span>
+        </div>
+        <div class="receipts" id="receipts"></div>
+      </div>
+
+      <div id="instExplorer" hidden>
+        <div class="ibody">
+          <span class="silk">Explorer · <span id="explorerWs">demo/app</span></span>
+          <div id="explorerFiles"></div>
+        </div>
+      </div>
+
+      <div id="instRun" hidden>
+        <div class="ibody">
+          <span class="silk">Runtime · Loop Facts</span>
+          <div class="fact"><span class="k">TEMPO</span><span class="v" id="factTempo">128.0 BPM</span></div>
+          <div class="fact"><span class="k">LAST RUN</span><span class="v" id="factLastRun">—</span></div>
+          <div class="fact"><span class="k">ARMED</span><span class="v" id="factArmed">16/16</span></div>
+          <div class="fact"><span class="k">FAULTS</span><span class="v" id="factFaults">0</span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ══ loop bar: the transport rides at the bottom ══ -->
+  <section class="loopbar seam-t" aria-label="pipeline loop">
+    <div class="loopmain">
+      <div class="loop-head">
+        <span class="silk hi">Loop — Sixteen Steps</span>
+        <span class="silk" id="armedCount">16/16 Armed</span>
+      </div>
+      <div class="looptrack">
+        <div class="steps" id="steps"></div>
+        <div class="phases">
+          <div class="phase"><div class="bracket"></div><div class="silk">Edit</div></div>
+          <div class="phase"><div class="bracket"></div><div class="silk">Analyze</div></div>
+          <div class="phase"><div class="bracket"></div><div class="silk">Test</div></div>
+          <div class="phase"><div class="bracket"></div><div class="silk">Run</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="transport" aria-label="transport">
+      <div class="t-row t-cap"><span class="ic"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 20l1.6-13h1.8l1.6 13"/><path d="M5.5 20h13"/><path d="M12 14.5l4.5-5.5"/></svg></span><span class="silk">Tempo · BPM</span></div>
+      <div class="t-row t-mid">
+        <button class="key key-dark t-adj" id="bpmDown" aria-label="Tempo down">–</button>
+        <div class="readout" id="readout" aria-live="off"></div>
+        <button class="key key-dark t-adj" id="bpmUp" aria-label="Tempo up">+</button>
+      </div>
+      <div class="t-row t-keys">
+        <button class="key key-dark key-clear" id="clearBtn"><span class="ic"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span>CLEAR</button>
+        <button class="key key-red key-run lit" id="runBtn" title="Run the loop"><span class="ic" id="runIcPlay"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M8.5 6l10.5 6-10.5 6z"/></svg></span><span class="ic" id="runIcReplay" hidden><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span><span id="runLabel">RUN</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ status ══ -->
+  <footer class="status seam-t">
+    <span class="screw" style="--r:41deg;left:6px;bottom:6px"></span>
+    <span class="screw" style="--r:78deg;right:6px;bottom:6px"></span>
+    <div class="left">
+      <span class="maker">VITYO<span class="led on" id="brandLed"></span></span>
+      <span class="led on amber" id="loopLed"></span><span id="loopState" role="status">LOOP IDLE</span>
+    </div>
+    <div class="mid silk">
+      <span>Rev 0142</span><span id="wsLabel">Workspace demo/app</span><span id="lastRunLabel">Last Run —</span><span>Space Run · C Clear · ↑↓ Tempo</span>
+    </div>
+    <div class="right"><span class="silk" id="cursorPos">Ln 1, Col 1</span><span class="silk">Demonstration data — synthetic</span></div>
+  </footer>
+</div>
+
+<script>
+/* ── 7-segment readout (SVG geometry, no font dependency) ── */
+const SEG = {
+  a:"M5 2 L17 2 L19 4 L17 6 L5 6 L3 4 Z",
+  b:"M18 7 L20 5 L22 7 L22 18 L20 20 L18 18 Z",
+  c:"M18 22 L20 20 L22 22 L22 33 L20 35 L18 33 Z",
+  d:"M5 34 L17 34 L19 36 L17 38 L5 38 L3 36 Z",
+  e:"M0 22 L2 20 L4 22 L4 33 L2 35 L0 33 Z",
+  f:"M0 7 L2 5 L4 7 L4 18 L2 20 L0 18 Z",
+  g:"M5 18 L17 18 L19 20 L17 22 L5 22 L3 20 Z"
+};
+const DIGITS = {
+  "0":["a","b","c","d","e","f"], "1":["b","c"], "2":["a","b","g","e","d"],
+  "3":["a","b","g","c","d"], "4":["f","g","b","c"], "5":["a","f","g","c","d"],
+  "6":["a","f","g","e","c","d"], "7":["a","b","c"], "8":["a","b","c","d","e","f","g"],
+  "9":["a","b","c","d","f","g"], "-":["g"], " ":[]
+};
+function segDigit(ch){
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns,"svg");
+  svg.setAttribute("viewBox","0 0 22 40");
+  svg.setAttribute("width","15");svg.setAttribute("height","27");
+  const lit = DIGITS[ch] || [];
+  for(const k of ["a","b","c","d","e","f","g"]){
+    const p = document.createElementNS(ns,"path");
+    p.setAttribute("d",SEG[k]);
+    const on = lit.includes(k);
+    p.setAttribute("fill", on ? "#ff3b30" : "rgba(255,59,48,.06)");
+    if(on) p.setAttribute("filter","drop-shadow(0 0 2px rgba(255,59,48,.8))");
+    svg.appendChild(p);
+  }
+  return svg;
+}
+function segDot(){
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns,"svg");
+  svg.setAttribute("viewBox","0 0 8 40");svg.setAttribute("width","6");svg.setAttribute("height","27");
+  const r = document.createElementNS(ns,"rect");
+  r.setAttribute("x","1");r.setAttribute("y","33");r.setAttribute("width","5");r.setAttribute("height","5");r.setAttribute("rx","1");
+  r.setAttribute("fill","#ff3b30");r.setAttribute("filter","drop-shadow(0 0 2px rgba(255,59,48,.8))");
+  svg.appendChild(r);
+  return svg;
+}
+function renderReadout(el,str){
+  el.innerHTML = "";
+  for(const ch of str){
+    el.appendChild(ch === "." ? segDot() : segDigit(ch));
+  }
+}
+const readoutEl = document.getElementById("readout");
+renderReadout(readoutEl,"128.0"); /* the machine's set tempo */
+
+/* ── workspace: real buffers — the editor edits, the explorer opens, the graph answers ── */
+const FILES = {
+  "main.styio": {lang:"styio", text:
+`pipeline mainFlow
+let staged := source |> normalize
+let routeOut = staged -> render
+let routeIn = source <- bridge
+let promote = state => running
+let fallback = state <= idle
+fn main(input) {
+  state idle
+  when input.ready -> state running
+  emit staged
+}`},
+  "util.styio": {lang:"styio", text:
+`fn clamp01(x) {
+  when x < 0 -> 0
+  when x > 1 -> 1
+  emit x
+}
+let gain := 0.8
+let bias := 0.02`},
+  "styio.toml": {lang:"toml", text:
+`[workspace]
+name = "demo/app"
+rev = 142
+
+[loop]
+tempo = 128.0
+steps = 16`}
+};
+let activeFile = "main.styio";
+const codeEl = document.getElementById("code");
+const gutterCol = document.getElementById("gutterCol");
+const codeHl = document.getElementById("codeHl");
+const editor = document.getElementById("editor");
+const diagStrip = document.getElementById("diagStrip");
+const cursorPos = document.getElementById("cursorPos");
+
+/* the analyzer's one honest rule: an input route (a <- b) must be consumed */
+function lintText(text){
+  const diags = [];
+  text.split("\n").forEach((ln,i)=>{
+    const m = ln.match(/^\s*let\s+([A-Za-z_][A-Za-z0-9_]*)\s*:?=\s*.*?<-/);
+    if(!m) return;
+    const uses = text.match(new RegExp("\\b"+m[1]+"\\b","g")) || [];
+    if(uses.length < 2) diags.push({line:i, ident:m[1]});
+  });
+  return diags;
+}
+let mainDiags = []; /* main.styio's findings — they steer the loop and the graph */
+let activeDiags = [];
+
+/* tiny real lexers — enough grammar for the buffers on board */
+const KW = new Set(["pipeline","let","fn","state","when","emit"]);
+const ST = new Set(["idle","running","held"]);
+function lexStyio(line){
+  const toks = []; let i = 0, expectName = false;
+  while(i < line.length){
+    const rest = line.slice(i);
+    let m;
+    if(m = rest.match(/^\s+/)){ toks.push({t:m[0]}); }
+    else if(m = rest.match(/^(:=|\|>|->|<-|=>|<=|=)/)){ toks.push({t:m[0],c:"tk-o"}); }
+    else if(m = rest.match(/^\d+(\.\d+)?/)){ toks.push({t:m[0],c:"tk-s"}); }
+    else if(m = rest.match(/^[A-Za-z_][A-Za-z0-9_]*/)){
+      const w = m[0]; let c = "";
+      if(KW.has(w)){ c = "tk-k"; expectName = (w === "fn"); }
+      else if(ST.has(w)) c = "tk-s";
+      else if(expectName){ c = "tk-n"; expectName = false; }
+      toks.push({t:w,c});
+      i += w.length; continue;
+    }
+    else { toks.push({t:rest[0], c:/[{}()\[\],.;]/.test(rest[0]) ? "tk-p" : ""}); i++; continue; }
+    i += m[0].length;
+  }
+  return toks;
+}
+function lexToml(line){
+  if(/^\s*\[.*\]\s*$/.test(line)) return [{t:line,c:"tk-n"}];
+  if(/^\s*#/.test(line)) return [{t:line,c:"tk-c"}];
+  const m = line.match(/^(\s*)([A-Za-z0-9_.-]+)(\s*=\s*)(.*)$/);
+  if(!m) return [{t:line}];
+  const v = m[4];
+  const vc = /^"/.test(v) || /^\d/.test(v) ? "tk-s" : "tk-k";
+  return [{t:m[1]},{t:m[2]},{t:m[3],c:"tk-o"},{t:v,c:vc}];
+}
+
+/* render: the highlight layer and the gutter ride the same 24px grid as the textarea */
+function renderBuffer(){
+  const f = FILES[activeFile];
+  const lines = f.text.split("\n");
+  const lex = f.lang === "toml" ? lexToml : lexStyio;
+  activeDiags = f.lang === "styio" ? lintText(f.text) : [];
+  codeHl.innerHTML = "";
+  lines.forEach((ln,i)=>{
+    const d = document.createElement("div");
+    d.className = "hl-line";
+    const dg = activeDiags.find(x=>x.line===i);
+    let marked = false;
+    for(const s of lex(ln)){
+      const sp = document.createElement("span");
+      if(s.c) sp.className = s.c;
+      if(dg && !marked && !s.c && s.t === dg.ident){ sp.className = "diag"; marked = true; }
+      sp.textContent = s.t;
+      d.appendChild(sp);
+    }
+    codeHl.appendChild(d);
+  });
+  gutterCol.innerHTML = "";
+  lines.forEach((_,i)=>{
+    const g = document.createElement("div");
+    g.className = "gl";
+    if(activeDiags.some(x=>x.line===i)){
+      const l = document.createElement("span");
+      l.className = "led on blink";
+      g.appendChild(l);
+    }
+    const num = document.createElement("span");
+    num.textContent = i+1;
+    g.appendChild(num);
+    gutterCol.appendChild(g);
+  });
+  if(activeDiags.length){
+    const d0 = activeDiags[0];
+    diagStrip.innerHTML = '<svg width="11" height="10" viewBox="0 0 12 11" aria-hidden="true"><path d="M6 1 L11 10 L1 10 Z" fill="none" stroke="#ff3b30" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 4.5v2.6M6 8.5v.2" stroke="#ff3b30" stroke-width="1.3" stroke-linecap="round"/></svg><span></span>';
+    diagStrip.querySelector("span").textContent =
+      d0.ident + " 从未被消费 · analyze · step 06 · warning" + (activeDiags.length > 1 ? " · +" + (activeDiags.length-1) + " more" : "");
+    diagStrip.hidden = false;
+  }else{
+    diagStrip.hidden = true;
+  }
+  updateTail();
+}
+function updateTail(){
+  pgmTail.textContent = viewFlow.hidden
+    ? activeFile + " · " + FILES[activeFile].text.split("\n").length + " lines · LF"
+    : "Styio · Graph · main.styio"; /* the graph always projects the program's entry file */
+}
+
+/* main's buffer steers the loop's fate; the board itself is regenerated from whatever buffer is open */
+function analyzeMain(){
+  mainDiags = lintText(FILES["main.styio"].text);
+}
+
+/* editing: the textarea is the instrument; the highlight layer just answers */
+function loadFile(name){
+  activeFile = name;
+  editor.value = FILES[name].text;
+  editor.scrollTop = 0; editor.scrollLeft = 0;
+  editor.setSelectionRange(0,0);
+  const drawable = FILES[name].lang === "styio"; /* FLOW only projects real programs */
+  tabFlow.disabled = !drawable;
+  tabFlow.title = drawable ? "" : "FLOW 只投影 styio 程序";
+  renderBuffer();
+  analyzeMain();
+  renderGraph();
+  updateCursor();
+  renderExplorer();
+}
+function openFile(name){
+  if(name !== activeFile) loadFile(name);
+  setNotation(false); /* opening a file means: show me its source */
+}
+editor.addEventListener("input",()=>{
+  FILES[activeFile].text = editor.value;
+  renderBuffer();
+  analyzeMain();
+  renderGraph(); /* the board answers every keystroke */
+  if(activeFile === "styio.toml") readTempoFromToml(); /* the config file genuinely configures the machine */
+  updateCursor();
+});
+editor.addEventListener("scroll",()=>{
+  codeHl.scrollTop = editor.scrollTop;
+  codeHl.scrollLeft = editor.scrollLeft;
+  gutterCol.scrollTop = editor.scrollTop;
+});
+gutterCol.addEventListener("wheel",e=>{ /* the gutter is not a wall: wheel falls through to the buffer */
+  e.preventDefault();
+  editor.scrollTop += e.deltaY;
+  editor.scrollLeft += e.deltaX;
+},{passive:false});
+editor.addEventListener("keydown",e=>{
+  if(e.key === "Tab"){
+    e.preventDefault();
+    editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end");
+    editor.dispatchEvent(new Event("input"));
+    return;
+  }
+  if(e.key === "Enter"){ /* carry the line's indent forward, like a real editor */
+    e.preventDefault();
+    const s = editor.selectionStart;
+    const before = editor.value.slice(0,s);
+    const indent = (before.slice(before.lastIndexOf("\n")+1).match(/^\s*/)||[""])[0];
+    editor.setRangeText("\n"+indent, s, editor.selectionEnd, "end");
+    editor.dispatchEvent(new Event("input"));
+  }
+});
+function updateCursor(){
+  const pos = editor.selectionStart;
+  const upto = editor.value.slice(0,pos);
+  cursorPos.textContent = "Ln " + upto.split("\n").length + ", Col " + (pos - (upto.lastIndexOf("\n")+1) + 1);
+}
+editor.addEventListener("keyup",updateCursor);
+editor.addEventListener("click",updateCursor);
+editor.addEventListener("select",updateCursor);
+
+/* ── tempo is real: the readout reports the loop's actual beat ── */
+let bpm = 128;
+function stepMs(){ return 60000/bpm/4; } /* sixteenth notes */
+function setBpm(v){
+  bpm = Math.min(240, Math.max(10, Math.round(v))); /* floor 10: slow enough to watch a single signal think */
+  renderReadout(readoutEl, bpm.toFixed(1));
+  document.getElementById("factTempo").textContent = bpm.toFixed(1) + " BPM";
+}
+document.getElementById("bpmDown").addEventListener("click",()=>setBpm(bpm-1));
+document.getElementById("bpmUp").addEventListener("click",()=>setBpm(bpm+1));
+function readTempoFromToml(){
+  const m = FILES["styio.toml"].text.match(/tempo\s*=\s*(\d+(?:\.\d+)?)/);
+  if(m) setBpm(parseFloat(m[1]));
+}
+
+/* ── step row ── */
+const STEP_NAMES = [
+  "buffer","tokens","blocks","save",
+  "parse","sema","diag","facts",
+  "build","unit","golden","bench",
+  "launch","trace","observe","receipt"
+];
+const FAULT_STEP = 10; /* step 11 · golden */
+const stepsEl = document.getElementById("steps");
+const stepEls = [];
+STEP_NAMES.forEach((name,i)=>{
+  const wrap = document.createElement("div");
+  wrap.className = "step q" + (Math.floor(i/4)+1);
+  const led = document.createElement("span");
+  led.className = "led dim-on";
+  const key = document.createElement("button");
+  key.className = "stepkey";
+  key.setAttribute("aria-label","step " + (i+1) + " " + name);
+  key.setAttribute("aria-pressed","true");
+  const num = document.createElement("span");
+  num.className = "stepnum";
+  num.textContent = i+1;
+  key.addEventListener("click",()=>{
+    if(running) return;
+    if(faulted && i === FAULT_STEP){
+      setStatus("STEP 11 GOLDEN · 2 SUBPIXEL DIFFS · PRESS CLEAR","red");
+      return;
+    }
+    wrap.classList.toggle("off");
+    const armed = !wrap.classList.contains("off");
+    led.className = armed ? "led dim-on" : "led";
+    key.setAttribute("aria-pressed", String(armed));
+    updateArmed();
+  });
+  wrap.appendChild(led);wrap.appendChild(key);wrap.appendChild(num);
+  stepsEl.appendChild(wrap);
+  stepEls.push({wrap,led,key});
+});
+function isArmed(i){ return !stepEls[i].wrap.classList.contains("off"); }
+function updateArmed(){
+  const armed = stepEls.filter(s=>!s.wrap.classList.contains("off")).length;
+  document.getElementById("armedCount").textContent = armed + "/16 Armed";
+  document.getElementById("factArmed").textContent = armed + "/16";
+}
+function restLeds(){
+  stepEls.forEach((s,i)=>{
+    s.wrap.classList.remove("chase","fault");
+    s.led.className = isArmed(i) ? "led dim-on" : "led";
+  });
+}
+
+/* ── instruments (rail) ── */
+const INST = {
+  EXP:{title:"Explorer",state:"demo/app",body:"instExplorer"},
+  AGT:{title:"Agent — Task 07",state:"Review",body:"instAgent"},
+  RUN:{title:"Runtime",state:"Loop Facts",body:"instRun"}
+};
+const instTitle = document.getElementById("instTitle");
+const instState = document.getElementById("instState");
+document.querySelectorAll(".railkey").forEach(k=>{
+  k.addEventListener("click",()=>{
+    document.querySelectorAll(".railkey").forEach(x=>{x.classList.remove("on");x.querySelector(".led").className="led";x.setAttribute("aria-pressed","false");});
+    k.classList.add("on");
+    k.setAttribute("aria-pressed","true");
+    k.querySelector(".led").className = "led on amber";
+    const inst = INST[k.dataset.inst];
+    instTitle.textContent = inst.title;
+    instState.textContent = inst.state;
+    ["instAgent","instExplorer","instRun"].forEach(id=>{
+      document.getElementById(id).hidden = id !== inst.body;
+    });
+  });
+});
+
+/* ── explorer: every row opens a real buffer; sizes are measured, not declared ── */
+function byteSize(t){ return new TextEncoder().encode(t).length + " B"; }
+function renderExplorer(){
+  const box = document.getElementById("explorerFiles");
+  box.innerHTML = "";
+  for(const name of Object.keys(FILES)){
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "frow";
+    const on = name === activeFile;
+    b.setAttribute("aria-pressed", String(on));
+    b.title = "Open " + name;
+    const led = document.createElement("span");
+    led.className = on ? "led on amber" : "led";
+    b.appendChild(led);
+    const ic = document.createElement("span");
+    ic.className = "ic";
+    ic.innerHTML = name.endsWith(".toml")
+      ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.2" fill="#181818"/><circle cx="15" cy="16" r="2.2" fill="#181818"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 12h8"/></svg>';
+    b.appendChild(ic);
+    b.appendChild(document.createTextNode(name));
+    const sz = document.createElement("span");
+    sz.className = "fsize";
+    sz.textContent = byteSize(FILES[name].text);
+    b.appendChild(sz);
+    b.addEventListener("click",()=>openFile(name));
+    box.appendChild(b);
+  }
+}
+renderExplorer();
+
+/* ── receipts: the session starts with none ── */
+let receipts = [];
+function renderReceipts(){
+  const box = document.getElementById("receipts");
+  box.innerHTML = "";
+  if(receipts.length === 0){
+    const e = document.createElement("div");
+    e.className = "receipt-empty";
+    e.innerHTML = '<span class="silk dim">No receipts · awaiting first authorization</span>';
+    box.appendChild(e);
+    return;
+  }
+  for(const r of receipts){
+    const el = document.createElement("div");
+    el.className = "receipt";
+    el.innerHTML = '<span class="led on white"></span><span class="id">RECEIPT ' + r.id + '</span><span>VERIFIED · ' + r.hunks + ' HUNKS</span>';
+    box.appendChild(el);
+  }
+}
+renderReceipts();
+
+/* ── the authored moment: RUN sweeps the loop ── */
+const runBtn = document.getElementById("runBtn");
+const clearBtn = document.getElementById("clearBtn");
+const loopState = document.getElementById("loopState");
+const loopLed = document.getElementById("loopLed");
+const verifyLed = document.getElementById("verifyLed");
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+let running = false, faulted = false, runToken = 0;
+
+function setStatus(text,mode){
+  loopState.textContent = text;
+  loopLed.className = mode === "red" ? "led on" : "led on amber";
+}
+
+function setRunKey(mode){ /* the transport key says what pressing it will do */
+  document.getElementById("runIcPlay").hidden = mode !== "run";
+  document.getElementById("runIcReplay").hidden = mode === "run";
+  document.getElementById("runLabel").textContent = mode === "run" ? "RUN" : "REPLAY";
+  runBtn.title = mode === "run" ? "Run the loop" : "Replay the run-up to the fault — slow the tempo to watch";
+}
+
+async function run(){
+  if(running) return;
+  if(faulted){ replayFault(); return; } /* HELD is not a dead end */
+  running = true;
+  const runGeneration = ++runToken;
+  const willHold = mainDiags.length > 0; /* the analyzer decides where this run ends: a hanging input route holds the loop at golden */
+  runBtn.classList.add("held");
+  runBtn.classList.remove("lit"); /* the invitation is spent */
+  restLeds();
+  flowStart(); /* signals begin to ride the staged path */
+  const t0 = performance.now();
+  for(let i=0;i<16;i++){
+    if(runGeneration !== runToken) return;
+    const s = stepEls[i];
+    /* the chase is one light: extinguish where it has been */
+    if(i > 0){
+      const p = stepEls[i-1];
+      p.wrap.classList.remove("chase");
+      p.led.className = isArmed(i-1) ? "led dim-on" : "led";
+    }
+    if(isArmed(i)){
+      s.wrap.classList.add("chase");
+      s.led.className = "led on";
+    }
+    setStatus("RUNNING · " + String(i+1).padStart(2,"0") + " " + STEP_NAMES[i].toUpperCase(),"red"); /* the strip narrates the current station */
+    if(i % 2 === 0) flowEmit(); /* signals are emitted on the chase's own beat */
+    if(i === FAULT_STEP && willHold){ /* golden holds the machine while an input route hangs */
+      await sleep(stepMs());
+      if(runGeneration !== runToken) return;
+      s.wrap.classList.remove("chase");
+      s.wrap.classList.add("fault");
+      s.led.className = "led on"; /* steady red until the operator clears */
+      verifyLed.className = "led on";
+      flowFreeze(); /* the signal is held at RENDER's door */
+      const secs = ((performance.now()-t0)/1000).toFixed(1);
+      setStatus("HELD · STEP 11 GOLDEN · REPLAY OR CLEAR","red");
+      document.getElementById("lastRunLabel").textContent = "Last Run " + secs + "s · held";
+      document.getElementById("factLastRun").textContent = secs + "s · held";
+      document.getElementById("factFaults").textContent = "1";
+      runBtn.classList.remove("held");
+      setRunKey("replay"); /* the fault offers its own microscope */
+      running = false;
+      faulted = true;
+      return; /* the loop stops here; steps 12–16 never ran */
+    }
+    await sleep(stepMs());
+  }
+  /* full pass: every station clean */
+  const last = stepEls[15];
+  last.wrap.classList.remove("chase");
+  last.led.className = isArmed(15) ? "led dim-on" : "led";
+  const secs = ((performance.now()-t0)/1000).toFixed(1);
+  document.getElementById("lastRunLabel").textContent = "Last Run " + secs + "s";
+  document.getElementById("factLastRun").textContent = secs + "s";
+  document.getElementById("factFaults").textContent = "0";
+  setStatus("PASS · 16/16 · GOLDEN CLEAN","amber");
+  verifyLed.className = "led on white";
+  flowStop(); /* signals drain out of the cables */
+  runBtn.classList.remove("held");
+  running = false;
+}
+
+async function replayFault(){ /* wind the fault back and watch it happen again, as slow as the tempo is set */
+  running = true;
+  const runGeneration = ++runToken;
+  runBtn.classList.add("held");
+  for(let i=0;i<=FAULT_STEP;i++){ /* clear the stage for the replay */
+    stepEls[i].wrap.classList.remove("fault","chase");
+    stepEls[i].led.className = isArmed(i) ? "led dim-on" : "led";
+  }
+  verifyLed.className = "led";
+  frozenPulse.setAttribute("visibility","hidden");
+  flowStart();
+  const t0 = performance.now();
+  for(let i=0;i<=FAULT_STEP;i++){
+    if(runGeneration !== runToken) return;
+    const s = stepEls[i];
+    if(i > 0){
+      const p = stepEls[i-1];
+      p.wrap.classList.remove("chase");
+      p.led.className = isArmed(i-1) ? "led dim-on" : "led";
+    }
+    if(isArmed(i)){
+      s.wrap.classList.add("chase");
+      s.led.className = "led on";
+    }
+    setStatus("REPLAY · STEP " + String(i+1).padStart(2,"0") + " " + STEP_NAMES[i].toUpperCase() + " · FAULT IN " + (FAULT_STEP-i),"red");
+    if(i % 2 === 0) flowEmit();
+    await sleep(stepMs()); /* stepMs reads bpm live: the operator can slow the microscope as the fault approaches */
+    if(runGeneration !== runToken) return;
+  }
+  /* the fault happens again, exactly where it always happens */
+  const s = stepEls[FAULT_STEP];
+  s.wrap.classList.remove("chase");
+  s.wrap.classList.add("fault");
+  s.led.className = "led on";
+  verifyLed.className = "led on";
+  flowFreeze();
+  const secs = ((performance.now()-t0)/1000).toFixed(1);
+  setStatus("HELD · STEP 11 GOLDEN · REPLAY OR CLEAR","red");
+  document.getElementById("lastRunLabel").textContent = "Last Run " + secs + "s · replay";
+  runBtn.classList.remove("held");
+  running = false; /* faulted stays true: the microscope is repeatable */
+}
+
+function clearLoop(){
+  runToken++;
+  running = false;
+  faulted = false;
+  runBtn.classList.remove("held");
+  setRunKey("run");
+  restLeds();
+  verifyLed.className = "led";
+  flowReset();
+  setStatus("LOOP IDLE","amber");
+  document.getElementById("lastRunLabel").textContent = "Last Run —";
+  document.getElementById("factLastRun").textContent = "—";
+  document.getElementById("factFaults").textContent = "0";
+}
+/* ── notation switch: FLOW is the first score, SOURCE one tap away ── */
+const tabFlow = document.getElementById("tabFlow");
+const tabSource = document.getElementById("tabSource");
+const viewFlow = document.getElementById("viewFlow");
+const pgmTail = document.getElementById("pgmTail");
+function setNotation(flow){
+  if(flow && tabFlow.disabled) return; /* this buffer has no program to project */
+  tabFlow.classList.toggle("on",flow);
+  tabSource.classList.toggle("on",!flow);
+  tabFlow.setAttribute("aria-selected",String(flow));
+  tabSource.setAttribute("aria-selected",String(!flow));
+  tabFlow.tabIndex = flow ? 0 : -1; /* roving tabindex: only the active tab is in the tab order */
+  tabSource.tabIndex = flow ? -1 : 0;
+  viewFlow.hidden = !flow;
+  codeEl.hidden = flow;
+  updateTail();
+  if(flow) flowKick(); /* repaint graph truth when it becomes visible */
+}
+tabFlow.addEventListener("click",()=>setNotation(true));
+tabSource.addEventListener("click",()=>setNotation(false));
+document.getElementById("notationTabs").addEventListener("keydown",e=>{
+  if(e.code === "ArrowRight" || e.code === "ArrowLeft"){
+    e.preventDefault();
+    setNotation(viewFlow.hidden);
+    (viewFlow.hidden ? tabSource : tabFlow).focus(); /* focus follows the selected notation */
+  }
+});
+
+/* ── graph generator: the board is drawn from the buffer, never by hand ── */
+const SVGNS = "http://www.w3.org/2000/svg";
+const graphRoot = document.getElementById("graphRoot");
+const gridBg = document.getElementById("gridBg");
+const flowSvgEl = document.getElementById("flowSvg");
+function svgEl(tag, attrs, parent){
+  const el = document.createElementNS(SVGNS, tag);
+  for(const k in attrs) el.setAttribute(k, attrs[k]);
+  if(parent) parent.appendChild(el);
+  return el;
+}
+function svgText(cls, x, y, str, parent, anchor){
+  const t = svgEl("text",{class:cls, x:x, y:y}, parent);
+  if(anchor) t.setAttribute("text-anchor",anchor);
+  t.textContent = str;
+  return t;
+}
+
+/* parse: just enough of styio to know what connects to what */
+function parseStyio(text){
+  const M = {pipeline:null, chains:[], routes:[], consts:[], fns:[], states:[], transitions:[], emits:[]};
+  let fn = null;
+  for(const ln of text.split("\n")){
+    let m;
+    if(m = ln.match(/^\s*pipeline\s+([A-Za-z_]\w*)/)){ M.pipeline = m[1]; continue; }
+    if(m = ln.match(/^\s*fn\s+([A-Za-z_]\w*)/)){ fn = m[1]; M.fns.push(fn); continue; }
+    if(/^\s*\}/.test(ln)){ fn = null; continue; }
+    if(fn){
+      if(m = ln.match(/^\s*state\s+([A-Za-z_]\w*)/)){ M.states.push({name:m[1], initial:true}); continue; }
+      if(m = ln.match(/^\s*when\s+(.+?)\s*->\s*state\s+([A-Za-z_]\w*)/)){ M.transitions.push({label:m[1].trim()+" →", back:false, to:m[2]}); continue; }
+      if(m = ln.match(/^\s*emit\s+([A-Za-z_]\w*)/)){ M.emits.push({fn:fn, value:m[1]}); continue; }
+      continue;
+    }
+    if(m = ln.match(/^\s*let\s+([A-Za-z_]\w*)\s*:?=\s*(.+?)\s*$/)){
+      const name = m[1], rhs = m[2];
+      if(rhs.includes("<-")){
+        const p = rhs.split("<-").map(s=>s.trim());
+        M.routes.push({name:name, target:p[0], source:p[1]});
+      }else if(rhs.includes("|>")){
+        M.chains.push({kind:"pipe", parts:rhs.split("|>").map(s=>s.trim()), out:name});
+      }else if(rhs.includes("=>")){
+        const p = rhs.split("=>").map(s=>s.trim());
+        if(p[0] === "state"){ M.states.push({name:p[1]}); M.transitions.push({label:name+" => "+p[1], back:false, to:p[1]}); }
+      }else if(rhs.includes("<=")){
+        const p = rhs.split("<=").map(s=>s.trim());
+        if(p[0] === "state"){ M.states.push({name:p[1]}); M.transitions.push({label:name+" <= "+p[1], back:true, to:p[1]}); }
+      }else if(rhs.includes("->")){
+        M.chains.push({kind:"route", parts:rhs.split("->").map(s=>s.trim()), out:name});
+      }else{
+        M.consts.push({name:name, value:rhs});
+      }
+    }
+  }
+  return M;
+}
+
+/* the pulse engine's bindings into whatever the generator last drew */
+const FR = {segs:[], lens:[], nodeLeds:[], sinkLed:null, mainLed:null, rest:null, run:null, held:null, hasFrozen:false};
+const frozenPulse = document.getElementById("frozenPulse");
+const pulseLayer = document.getElementById("pulses");
+
+function renderGraph(){
+  if(FILES[activeFile].lang !== "styio") return;
+  const text = FILES[activeFile].text;
+  const M = parseStyio(text);
+  const hanging = new Set(lintText(text).map(d=>d.ident));
+  graphRoot.innerHTML = "";
+
+  /* nodes + edges from the parsed model; a value's producer is found, not assumed */
+  const nodes = new Map();
+  const edges = [];
+  function node(name){
+    if(!nodes.has(name)) nodes.set(name,{name:name, kind:null, x:0, y:0, w:96, h:48, layer:0, ledEl:null});
+    return nodes.get(name);
+  }
+  const producers = {};
+  for(const c of M.chains){
+    if(c.kind === "pipe"){
+      for(let k=0;k<c.parts.length-1;k++){
+        const from = producers[c.parts[k]] || c.parts[k];
+        edges.push({from:from, to:c.parts[k+1], label:c.parts[k]});
+        node(from); node(c.parts[k+1]);
+      }
+      producers[c.out] = c.parts[c.parts.length-1];
+    }else{ /* a route sends a value through a stage into a named channel */
+      const from = producers[c.parts[0]] || c.parts[0];
+      edges.push({from:from, to:c.parts[1], label:c.parts[0]});
+      node(from); node(c.parts[1]);
+      edges.push({from:c.parts[1], to:c.out, label:c.out, sink:true});
+      node(c.out).kind = "CHANNEL";
+      producers[c.out] = c.out;
+    }
+  }
+  for(const r of M.routes){
+    node(r.source).kind = "EXTERNAL";
+    edges.push({from:r.source, to:r.target, label:r.name, route:true, name:r.name});
+    node(r.target);
+  }
+  const outDeg = {}, inDeg = {};
+  for(const e of edges){
+    if(e.route) continue; /* input routes don't make a node a pipe */
+    outDeg[e.from] = (outDeg[e.from]||0)+1;
+    inDeg[e.to] = (inDeg[e.to]||0)+1;
+  }
+  for(const n of nodes.values()){
+    if(n.kind) continue;
+    n.kind = inDeg[n.name] ? "PIPE" : "ORIGIN";
+  }
+
+  /* layers over the data-flow DAG; input routes hang below, not across */
+  for(let pass=0; pass<8; pass++){
+    for(const e of edges){
+      if(e.route) continue;
+      const a = nodes.get(e.from), b = nodes.get(e.to);
+      if(b.layer < a.layer+1) b.layer = a.layer+1;
+    }
+  }
+  const byLayer = {};
+  for(const n of nodes.values()){
+    if(n.kind === "EXTERNAL") continue;
+    (byLayer[n.layer] = byLayer[n.layer]||[]).push(n);
+  }
+  for(const L in byLayer) byLayer[L].forEach((n,i)=>{ n.x = 64 + n.layer*196; n.y = 108 + i*96; });
+  for(const n of nodes.values()){
+    n.w = Math.max(96, 26 + Math.max(n.name.length*7.4, (n.kind||"").length*6.8));
+    n.h = 48;
+  }
+  M.routes.forEach((r,i)=>{
+    const e = nodes.get(r.source), t = nodes.get(r.target);
+    if(e && t){ e.x = t.x + t.w/2 - e.w/2 + i*24; e.y = 252; }
+  });
+  const hasData = edges.some(e=>!e.route);
+  M.fns.forEach((f,i)=>{
+    const n = node(f); n.kind = "FN · ENTRY";
+    n.w = Math.max(110, 30 + f.length*7.4);
+    n.h = 48;
+    if(hasData){
+      const emit = M.emits.find(e=>e.fn === f);
+      const tapped = emit && edges.find(e=>!e.route && e.label === emit.value);
+      const anchor = tapped ? nodes.get(tapped.from) : (byLayer[1] ? byLayer[1][0] : null);
+      n.x = anchor ? anchor.x + anchor.w/2 - n.w/2 : 64 + i*200;
+      n.y = 252;
+    }else{
+      n.x = 64 + i*200; n.y = 108;
+    }
+  });
+  let stateNode = null;
+  const stateList = [];
+  const seenState = new Set();
+  for(const s of M.states){ if(!seenState.has(s.name)){ seenState.add(s.name); stateList.push(s); } }
+  if(M.states.length && !seenState.has("held")) stateList.push({name:"held"}); /* the machine's own state */
+  if(M.states.length){
+    stateNode = node("state"); stateNode.kind = "STATE";
+    stateNode.w = 140;
+    stateNode.h = 34 + stateList.length*15 + 12;
+    const f0 = M.fns.length ? node(M.fns[0]) : null;
+    stateNode.x = f0 ? f0.x + f0.w + 200 : 64;
+    stateNode.y = f0 ? f0.y - 8 : 108;
+  }
+  M.consts.forEach((c,i)=>{
+    const n = node(c.name);
+    if(n.kind && n.kind !== "PIPE" && n.kind !== "ORIGIN") return;
+    n.kind = "CONST"; n.kindDetail = c.value;
+    n.w = Math.max(96, 26 + Math.max(c.name.length*7.4, c.value.length*6.8));
+    if(hasData){ n.x = (stateNode ? stateNode.x + stateNode.w + 40 : 64) + i*150; n.y = 252; }
+    else{ n.x = 64 + (M.fns.length+i)*200; n.y = 108; }
+  });
+
+  /* draw: cables first, modules over them, jacks and plugs on top, labels last */
+  const gCables = svgEl("g",{},graphRoot);
+  const gCV = svgEl("g",{},graphRoot);
+  const gMods = svgEl("g",{},graphRoot);
+  const gJacks = svgEl("g",{},graphRoot);
+  const gPlugs = svgEl("g",{},graphRoot);
+  const gChips = svgEl("g",{},graphRoot);
+  const jackSet = new Set(); const jacks = [];
+  function jack(x,y){ const k = Math.round(x)+","+Math.round(y); if(!jackSet.has(k)){ jackSet.add(k); jacks.push([x,y]); } }
+  function plugAt(x,y,deg){
+    const pg = svgEl("g",{transform:"translate("+x+" "+y+") rotate("+deg+")"},gPlugs);
+    svgEl("rect",{class:"plug",x:-6.5,y:-4,width:13,height:8,rx:3},pg);
+    svgEl("line",{class:"plug-ring",x1:3.5,y1:-4,x2:3.5,y2:4},pg);
+  }
+  function cableD(x1,y1,x2,y2,sag){
+    const gap = Math.max(40, Math.abs(x2-x1));
+    const s = sag != null ? sag : Math.min(30, Math.max(12, gap*0.16));
+    const c = Math.max(24, gap*0.36);
+    return {d:"M"+x1+" "+y1+" C"+(x1+c)+" "+(y1+s)+", "+(x2-c)+" "+(y2+s)+", "+x2+" "+y2,
+            a0:Math.atan2(s,c)*180/Math.PI, a1:Math.atan2(-s,c)*180/Math.PI};
+  }
+  function chipOn(pe, label, at, cv){
+    const L = pe.getTotalLength();
+    const pt = pe.getPointAtLength(L*(at != null ? at : 0.5));
+    const w = label.length*6.8+16;
+    svgEl("rect",{class: cv ? "chip-cv" : "chip", x:pt.x-w/2, y:pt.y-8, width:w, height:16, rx:3},gChips);
+    svgText("f-label-chip", pt.x, pt.y+4, label, gChips, "middle");
+  }
+  for(const e of edges){
+    const a = nodes.get(e.from), b = nodes.get(e.to);
+    if(e.route){
+      /* an input route rises from the external's top edge to the target's underside */
+      const x1 = a.x + a.w - 20, y1 = a.y;
+      const bare = hanging.has(e.name);
+      const x2 = b.x + 20, y2 = b.y + b.h + (bare ? 26 : 0);
+      const d = "M"+x1+" "+y1+" C"+x1+" "+(y1-36)+", "+x2+" "+(y2+40)+", "+x2+" "+y2;
+      svgEl("path",{class:"cable-sh", d:d},gCables);
+      svgEl("path",{class:"cable", d:d},gCables);
+      if(bare){ /* declared but never consumed: the cable frays before it seats */
+        svgEl("path",{class:"stray", d:"M"+x2+" "+y2+" l-5 8 M"+x2+" "+y2+" l0 9 M"+x2+" "+y2+" l5 7"},gCables);
+        svgEl("circle",{class:"sled on amber", cx:x2, cy:y2, r:2.6},gChips);
+        const label = e.name + " — never consumed";
+        const w = label.length*6.3+16;
+        svgEl("rect",{class:"chip-warn", x:x2+12, y:y2-8, width:w, height:16, rx:3},gChips);
+        svgText("f-warn", x2+12+w/2, y2+4, label, gChips, "middle");
+        jack(x1,y1);
+      }else{
+        jack(x1,y1); jack(b.x+20, b.y+b.h);
+        plugAt(x1,y1,-90); plugAt(b.x+20, b.y+b.h,-90);
+        chipOn(gCables.lastChild, e.name);
+      }
+      continue;
+    }
+    const x1 = a.x+a.w, y1 = a.y+24, x2 = b.x, y2 = b.y+24;
+    const c = cableD(x1,y1,x2,y2);
+    svgEl("path",{class:"cable-sh", d:c.d},gCables);
+    const pe = svgEl("path",{class:"cable", d:c.d},gCables);
+    e.pathEl = pe;
+    jack(x1,y1); jack(x2,y2);
+    plugAt(x1,y1,c.a0); plugAt(x2,y2,c.a1);
+    chipOn(pe, e.label);
+  }
+  /* modules */
+  for(const n of nodes.values()){
+    const mg = svgEl("g",{class:"mod"},gMods);
+    svgEl("rect",{class:"mod-face", x:n.x, y:n.y, width:n.w, height:n.h, rx:5},mg);
+    svgEl("line",{class:"mod-top", x1:n.x+1, y1:n.y+1, x2:n.x+n.w-1, y2:n.y+1},mg);
+    svgText("mod-name", n.x+14, n.y+22, n.name.toUpperCase(), mg);
+    if(n.kind === "STATE"){
+      stateList.forEach((s,i)=>{
+        const cy = n.y + 42 + i*15;
+        s.lampEl = svgEl("circle",{class: s.initial ? "sled on amber" : "sled", cx:n.x+20, cy:cy, r:3},mg);
+        svgText("mod-kind", n.x+32, cy+4, s.name.toUpperCase(), mg);
+      });
+    }else{
+      svgText("mod-kind", n.x+14, n.y+37, n.kind === "CONST" ? n.kindDetail : n.kind, mg);
+      n.ledEl = svgEl("circle",{class:"sled", cx:n.x+n.w-13, cy:n.y+10, r:3},mg);
+    }
+  }
+  for(const j of jacks){
+    svgEl("circle",{class:"jack", cx:j[0], cy:j[1], r:5},gJacks);
+    svgEl("circle",{class:"jack-hole", cx:j[0], cy:j[1], r:1.6},gJacks);
+  }
+  /* control voltages: transitions ride below the data band, labels buckled on like every cable */
+  if(stateNode && M.fns.length){
+    const f0 = node(M.fns[0]);
+    let fwd = 0, back = 0;
+    for(const t of M.transitions){
+      if(t.back){
+        const x1 = stateNode.x + 20, y1 = stateNode.y + stateNode.h;
+        const x2 = f0.x + f0.w - 20, y2 = f0.y + f0.h;
+        const drop = 34 + back*18;
+        const pe = svgEl("path",{class:"cable cv", d:"M"+x1+" "+y1+" C"+x1+" "+(y1+drop)+", "+x2+" "+(y2+drop)+", "+x2+" "+y2},gCV);
+        jack(x1,y1); jack(x2,y2);
+        chipOn(pe, t.label, 0.5, true);
+        back++;
+      }else{
+        const x1 = f0.x + f0.w, y1 = f0.y + 18 + fwd*14;
+        const x2 = stateNode.x, y2 = stateNode.y + 30 + fwd*15;
+        const sag = 14 + fwd*26;
+        const c = cableD(x1,y1,x2,y2,sag);
+        const pe = svgEl("path",{class:"cable cv", d:c.d},gCV);
+        jack(x1,y1); jack(x2,y2);
+        chipOn(pe, t.label, fwd%2 ? 0.62 : 0.38, true);
+        fwd++;
+      }
+    }
+  }
+  /* emit taps: a dashed feeler from the fn up to the cable that carries the value */
+  for(const em of M.emits){
+    const f0 = node(em.fn);
+    const tapped = edges.find(e=>!e.route && e.label === em.value);
+    if(!f0 || !tapped || !tapped.pathEl) continue;
+    const L = tapped.pathEl.getTotalLength();
+    const pt = tapped.pathEl.getPointAtLength(L/2);
+    const x1 = f0.x + 20, y1 = f0.y;
+    const pe = svgEl("path",{class:"cable cv", d:"M"+x1+" "+y1+" C"+x1+" "+(y1-40)+", "+pt.x+" "+(pt.y+42)+", "+pt.x+" "+pt.y},gCV);
+    svgEl("circle",{class:"tap", cx:pt.x, cy:pt.y, r:3},gCV);
+    chipOn(pe, "emit "+em.value, 0.5, true);
+  }
+
+  /* bind the pulse engine to what was just drawn */
+  const sink = [...nodes.values()].find(n=>n.kind === "CHANNEL");
+  const pathEdges = [];
+  if(sink){
+    let cur = sink.name, guard = 0;
+    while(guard++ < 24){
+      const e = edges.find(e=>!e.route && e.to === cur && e.pathEl);
+      if(!e) break;
+      pathEdges.unshift(e);
+      cur = e.from;
+    }
+  }
+  const pathNodes = pathEdges.map(e=>nodes.get(e.from));
+  FR.segs = pathEdges.map(e=>e.pathEl);
+  FR.lens = FR.segs.map(p=>p.getTotalLength());
+  FR.nodeLeds = pathNodes.map(n=>n.ledEl || null);
+  FR.sinkLed = sink ? sink.ledEl : null;
+  FR.mainLed = M.fns.length ? node(M.fns[0]).ledEl : null;
+  const lastStage = pathNodes[pathNodes.length-1];
+  if(lastStage){
+    frozenPulse.setAttribute("cx", lastStage.x);
+    frozenPulse.setAttribute("cy", lastStage.y+24);
+    FR.hasFrozen = true;
+  }else{
+    FR.hasFrozen = false;
+    frozenPulse.setAttribute("visibility","hidden");
+  }
+  const stI = stateList.findIndex(s=>s.initial);
+  FR.rest = stI >= 0 ? stateList[stI].lampEl : null;
+  const firstTarget = M.transitions.length ? M.transitions[0].to : null;
+  const stR = stateList.findIndex(s=>s.name === firstTarget);
+  FR.run = stR >= 0 ? stateList[stR].lampEl : null;
+  const stH = stateList.findIndex(s=>s.name === "held");
+  FR.held = stH >= 0 ? stateList[stH].lampEl : null;
+
+  /* bounds, titles, and a truthful aria summary */
+  let maxX = 760, maxY = 480;
+  for(const n of nodes.values()){ maxX = Math.max(maxX, n.x+n.w+48); maxY = Math.max(maxY, n.y+n.h+72); }
+  flowSvgEl.setAttribute("viewBox","0 0 "+maxX+" "+maxY);
+  flowSvgEl.style.minWidth = maxX+"px";
+  flowSvgEl.style.minHeight = maxY+"px";
+  gridBg.setAttribute("width",maxX); gridBg.setAttribute("height",maxY);
+  svgText("f-title", 24, 32, (M.pipeline ? "PIPELINE " + M.pipeline.toUpperCase() : activeFile.toUpperCase()) + " — SIGNAL ROUTING", graphRoot);
+  svgText("f-dim", maxX-24, 32, "LIVE PROJECTION · " + activeFile.toUpperCase(), graphRoot, "end");
+  const chainDesc = edges.filter(e=>!e.route).map(e=>e.label).join(" through ");
+  const hangDesc = hanging.size ? "; hanging input routes: " + [...hanging].join(", ") : "";
+  flowSvgEl.setAttribute("aria-label", "Signal routing of " + (M.pipeline || activeFile) + ": " + (chainDesc || "no data cables yet") + hangDesc);
+}
+
+/* ── signal pulses: data rides the cables the generator just drew ── */
+const PULSE_SPEED = 0.55; /* px/ms at the 128 BPM reference beat — signals crawl when the tempo does */
+let pulses = [], flowOn = false, flowHold = false, flowRaf = 0, lastTick = 0;
+const setCls = (el,c)=>{ if(el) el.setAttribute("class",c); }; /* SVGElement.className is read-only */
+
+function flowEmit(){ /* called by the step loop: one pulse every two steps */
+  if(!flowOn || flowHold || !FR.segs.length || pulses.length >= 5) return; /* a full line drops the beat by design, no queue */
+  const c = document.createElementNS(SVGNS,"circle");
+  c.setAttribute("r","4");
+  c.setAttribute("class","pulse");
+  pulseLayer.appendChild(c);
+  pulses.push({seg:0,d:0,el:c});
+}
+function flowFrame(now){
+  const dt = Math.min(now - lastTick, 50);
+  lastTick = now;
+  const visible = !viewFlow.hidden;
+  const N = FR.segs.length;
+  if(!flowHold){
+    for(const p of pulses){
+      p.d += PULSE_SPEED*(bpm/128)*dt;
+      while(p.seg < N && p.d >= FR.lens[p.seg]){
+        p.d -= FR.lens[p.seg];
+        p.seg++;
+        if(p.seg === N && visible){ /* arrived at the channel */
+          setCls(FR.sinkLed,"sled on");
+          setTimeout(()=>{ setCls(FR.sinkLed,"sled"); },140);
+        }
+      }
+    }
+    pulses = pulses.filter(p=>{
+      if(p.seg >= N){ p.el.remove(); return false; }
+      if(visible){
+        const pt = FR.segs[p.seg].getPointAtLength(p.d);
+        p.el.setAttribute("cx",pt.x);
+        p.el.setAttribute("cy",pt.y);
+      }
+      return true;
+    });
+  }
+  if(visible){
+    FR.nodeLeds.forEach((led,k)=>{
+      setCls(led, pulses.some(p=>p.seg===k) ? "sled on" : "sled");
+    });
+    setCls(FR.mainLed,(flowOn || flowHold) ? "sled on" : "sled");
+  }
+  if(flowOn || pulses.length){
+    flowRaf = requestAnimationFrame(flowFrame);
+  }else{
+    flowRaf = 0;
+  }
+}
+function flowKick(){
+  if(!flowRaf){ lastTick = performance.now(); flowRaf = requestAnimationFrame(flowFrame); }
+}
+function flowStart(){
+  flowOn = true; flowHold = false;
+  setCls(FR.rest,"sled");
+  setCls(FR.run,"sled on");
+  setCls(FR.held,"sled");
+  flowKick();
+}
+function flowFreeze(){ /* the loop is held: in-flight signals collapse to the one held at the last stage's door */
+  flowOn = false; flowHold = true;
+  pulses.forEach(p=>p.el.remove());
+  pulses = [];
+  if(FR.hasFrozen) frozenPulse.removeAttribute("visibility");
+  FR.nodeLeds.forEach(l=>setCls(l,"sled"));
+  setCls(FR.mainLed,"sled on");
+  setCls(FR.rest,"sled");
+  setCls(FR.run,"sled");
+  setCls(FR.held,"sled on");
+}
+function flowStop(){ /* a clean pass: signals drain, state falls back to rest */
+  flowOn = false;
+  setCls(FR.rest,"sled on amber");
+  setCls(FR.run,"sled");
+  setCls(FR.held,"sled");
+  flowKick();
+}
+function flowReset(){
+  flowOn = false; flowHold = false;
+  pulses.forEach(p=>p.el.remove());
+  pulses = [];
+  frozenPulse.setAttribute("visibility","hidden");
+  FR.nodeLeds.forEach(l=>setCls(l,"sled"));
+  setCls(FR.sinkLed,"sled");
+  setCls(FR.mainLed,"sled");
+  setCls(FR.rest,"sled on amber");
+  setCls(FR.run,"sled");
+  setCls(FR.held,"sled");
+}
+
+/* ── boot: the buffer loads, the machine reads its config ── */
+loadFile("main.styio");
+readTempoFromToml();
+
+runBtn.addEventListener("click",run);
+clearBtn.addEventListener("click",clearLoop);
+
+/* keyboard: Space runs, C clears, arrows set the tempo; a focused button or the editor keeps its native keys */
+document.addEventListener("keydown",e=>{
+  const t = document.activeElement;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
+  if(typing) return;
+  if(e.code === "KeyC"){ clearLoop(); }
+  if(e.code === "Space" && !(t && t.tagName === "BUTTON")){
+    e.preventDefault();
+    faulted ? clearLoop() : run();
+  }
+  if(e.code === "ArrowUp"){ e.preventDefault(); setBpm(bpm + 1); }
+  if(e.code === "ArrowDown"){ e.preventDefault(); setBpm(bpm - 1); }
+});
+
+/* ── permission gate: a key the operator must press ── */
+const authBtn = document.getElementById("authBtn");
+const authLabel = document.getElementById("authLabel");
+const gateLed = document.getElementById("gateLed");
+authBtn.addEventListener("click",()=>{
+  if(authBtn.classList.contains("done")) return;
+  authBtn.classList.remove("lit");
+  authLabel.textContent = "ARMED — APPLYING…";
+  gateLed.className = "led on";
+  setTimeout(()=>{
+    authBtn.classList.add("done"); /* latched */
+    authBtn.setAttribute("aria-disabled","true");
+    authLabel.textContent = "AUTHORIZED";
+    document.getElementById("authIcLock").hidden = true;
+    document.getElementById("authIcOpen").hidden = false; /* the interlock shows itself open */
+    gateLed.className = "led on white";
+    document.getElementById("receiptLed").className = "led on white";
+    receipts.unshift({id:"0142",hunks:3});
+    renderReceipts();
+  },700);
+});
+</script>
+</body>
+</html>

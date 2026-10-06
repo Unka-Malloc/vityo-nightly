@@ -4,6 +4,7 @@ import 'dart:io';
 
 final _pendingPrompts = <String, _PendingPrompt>{};
 final _permissionToSession = <String, String>{};
+final _proposalToSession = <String, String>{};
 var _sessionSequence = 0;
 var _permissionSequence = 0;
 var _effectCount = 0;
@@ -170,9 +171,24 @@ void _handlePrompt(Object? id, Map<String, Object?> message, String mode) {
         'kind': 'allow_once',
       },
       <String, Object?>{
+        'optionId': 'allow-once-secondary-$permissionId',
+        'name': 'Allow related operation',
+        'kind': 'allow_once',
+      },
+      <String, Object?>{
+        'optionId': 'allow-always-$permissionId',
+        'name': 'Always allow',
+        'kind': 'allow_always',
+      },
+      <String, Object?>{
         'optionId': 'reject-once-$permissionId',
         'name': 'Reject',
         'kind': 'reject_once',
+      },
+      <String, Object?>{
+        'optionId': 'reject-always-$permissionId',
+        'name': 'Always reject',
+        'kind': 'reject_always',
       },
     ],
   });
@@ -182,12 +198,43 @@ void _handlePrompt(Object? id, Map<String, Object?> message, String mode) {
 }
 
 void _handleClientResponse(Map<String, Object?> response) {
-  final permissionId = response['id'].toString();
+  final responseId = response['id'].toString();
+  final permissionId = responseId;
   final sessionId = _permissionToSession.remove(permissionId);
-  if (sessionId == null) {
+  if (sessionId != null) {
+    _handlePermissionResponse(response, permissionId, sessionId);
     return;
   }
-  final pending = _pendingPrompts.remove(sessionId);
+  final proposalSessionId = _proposalToSession.remove(responseId);
+  if (proposalSessionId == null) {
+    return;
+  }
+  final pending = _pendingPrompts.remove(proposalSessionId);
+  if (pending == null) {
+    return;
+  }
+  final result =
+      response['result'] as Map<String, Object?>? ?? const <String, Object?>{};
+  final outcome = result['outcome'];
+  _notification('session/update', <String, Object?>{
+    'sessionId': proposalSessionId,
+    'update': <String, Object?>{
+      'sessionUpdate': 'agent_message_chunk',
+      'content': <String, Object?>{
+        'type': 'text',
+        'text': 'proposal-receipt:$outcome',
+      },
+    },
+  });
+  _success(pending.id, <String, Object?>{'stopReason': 'end_turn'});
+}
+
+void _handlePermissionResponse(
+  Map<String, Object?> response,
+  String permissionId,
+  String sessionId,
+) {
+  final pending = _pendingPrompts[sessionId];
   if (pending == null) {
     return;
   }
@@ -196,7 +243,8 @@ void _handleClientResponse(Map<String, Object?> response) {
   final outcome =
       result['outcome'] as Map<String, Object?>? ?? const <String, Object?>{};
   if (outcome['outcome'] != 'selected' ||
-      outcome['optionId'] != 'allow-once-$permissionId') {
+      outcome['optionId'] != 'allow-once-secondary-$permissionId') {
+    _pendingPrompts.remove(sessionId);
     _success(pending.id, <String, Object?>{'stopReason': 'refusal'});
     return;
   }
@@ -211,28 +259,37 @@ void _handleClientResponse(Map<String, Object?> response) {
     },
   });
   if (pending.text == 'propose-change') {
-    _notification('_vityo.dev/workspace-change-proposal', <String, Object?>{
-      'sessionId': sessionId,
-      'proposal': <String, Object?>{
-        'id': 'change-$sessionId',
-        'baseWorkspaceRevision': 0,
-        'resources': <Object?>[
-          <String, Object?>{
-            'resourceId': 'file',
-            'baseDocumentRevision': 0,
-            'edits': <Object?>[
-              <String, Object?>{'start': 0, 'end': 6, 'replacement': 'after'},
-            ],
-          },
-        ],
+    final requestId = 'proposal-$permissionId';
+    _proposalToSession[requestId] = sessionId;
+    _request(
+      requestId,
+      '_vityo.dev/workspace-change-proposal',
+      <String, Object?>{
+        'sessionId': sessionId,
+        'proposal': <String, Object?>{
+          'id': 'change-$sessionId',
+          'baseWorkspaceRevision': 0,
+          'resources': <Object?>[
+            <String, Object?>{
+              'resourceId': 'file',
+              'baseDocumentRevision': 0,
+              'edits': <Object?>[
+                <String, Object?>{'start': 0, 'end': 6, 'replacement': 'after'},
+              ],
+            },
+          ],
+        },
       },
-    });
+    );
+    return;
   }
+  _pendingPrompts.remove(sessionId);
   _success(pending.id, <String, Object?>{'stopReason': 'end_turn'});
 }
 
 void _cancel(String sessionId) {
   _permissionToSession.removeWhere((_, owner) => owner == sessionId);
+  _proposalToSession.removeWhere((_, owner) => owner == sessionId);
   final pending = _pendingPrompts.remove(sessionId);
   if (pending == null) {
     return;

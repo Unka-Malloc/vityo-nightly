@@ -7,7 +7,10 @@ import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/interaction/interaction.dart';
 import 'package:vityo_app/src/view_ide/language/language.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
+import 'package:vityo_app/src/view_ide/shell_runtime/controllers/diagnostics_panel_state_controller.dart';
 import 'package:vityo_app/src/ide/workspace/workspace.dart';
+
+import 'support/test_file_system_manager.dart';
 
 void main() {
   test('diagnostics interaction model exposes groups and actions', () {
@@ -326,6 +329,58 @@ void main() {
       expect(binding.toJson()['outputEventCount'], 3);
     },
   );
+
+  test(
+    'diagnostics panel state controller persists and restores selection',
+    () async {
+      final store = DiagnosticsPanelStateStore.fromDataStore(
+        dataStore: await _createDataStore(),
+      );
+      final controller = DiagnosticsPanelStateController(
+        workspaceId: () => 'demo',
+        store: store,
+      );
+      addTearDown(controller.dispose);
+
+      expect(controller.state, isNull);
+      expect(controller.restored, isFalse);
+
+      const diagnostic = WorkspaceDiagnostic(
+        documentId: 'src/main.styio',
+        source: 'styio',
+        diagnostic: Diagnostic(
+          severity: DiagnosticSeverity.error,
+          code: 'syntax-error',
+          message: 'Unexpected token.',
+          range: SourceRange(start: 0, end: 1),
+        ),
+      );
+      controller.record(
+        DiagnosticsPanelState.fromDiagnostic(
+          workspaceId: 'demo',
+          diagnostic: diagnostic,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.restored, isTrue);
+      expect(controller.state?.selectedDiagnosticCode, 'syntax-error');
+
+      final restored = DiagnosticsPanelStateController(
+        workspaceId: () => 'demo',
+        store: store,
+      );
+      addTearDown(restored.dispose);
+      await restored.load();
+
+      expect(restored.state?.selectedDocumentId, 'src/main.styio');
+      expect(restored.state?.selectedDiagnosticCode, 'syntax-error');
+      expect(
+        (await store.readState(workspaceId: 'demo')).selectedDiagnosticCode,
+        'syntax-error',
+      );
+    },
+  );
 }
 
 Future<FoundationDataStore> _createDataStore() async {
@@ -333,7 +388,7 @@ Future<FoundationDataStore> _createDataStore() async {
     'vityo_diagnostics_panel_state_test_',
   );
   addTearDown(() => tempRoot.delete(recursive: true));
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: tempRoot.path,

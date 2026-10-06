@@ -2,12 +2,32 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain.dart';
 
+import 'support/test_file_system_manager.dart';
+import 'support/vityod_test_harness.dart';
+
 void main() {
+  VityodTestHarness? vityod;
+  late ShellManager shellManager;
+
+  setUpAll(() async {
+    if (!VityodTestHarness.isSupported) return;
+    vityod = await VityodTestHarness.start(clientId: 'terminal-runtime-test');
+    shellManager = LocalShellManager(
+      facts: ShellFacts.linuxDebianArm(defaultShellPath: '/bin/sh'),
+      processManager: LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      ),
+    );
+  });
+
+  tearDownAll(() => vityod?.close());
+
   test('terminal runtime exposes a serializable PTY start plan', () async {
     final session = _FakePtySession();
     addTearDown(() async {
@@ -171,7 +191,7 @@ void main() {
           await tempRoot.delete(recursive: true);
         }
       });
-      final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+      final fileSystemManager = TestFileSystemManager.linuxDebianArm();
       final resourceManager = LocalResourceManager(
         facts: ResourceFacts.linuxDebianArm(
           systemTempPath: tempRoot.path,
@@ -437,9 +457,7 @@ void main() {
       );
       addTearDown(buffer.dispose);
       final adapter = ShellManagerRuntimeOutputAdapter(
-        shellManager: LocalShellManager.linuxDebianArmForTest(
-          shellPath: '/bin/sh',
-        ),
+        shellManager: shellManager,
         clock: () => DateTime.utc(2026, 5, 20, 10),
       );
 
@@ -481,9 +499,7 @@ void main() {
       final buffer = RuntimeOutputLiveBuffer();
       addTearDown(buffer.dispose);
       final adapter = ShellManagerRuntimeExecutionAdapter(
-        shellManager: LocalShellManager.linuxDebianArmForTest(
-          shellPath: '/bin/sh',
-        ),
+        shellManager: shellManager,
         clock: () => DateTime.utc(2026, 5, 20, 11),
       );
 
@@ -556,6 +572,53 @@ void main() {
     },
   );
 
+  test(
+    'shell manager runtime execution adapter cancels its live process handle',
+    () async {
+      const definition = RuntimeTaskDefinition(
+        id: 'shell-cancel',
+        label: 'Shell cancel',
+        kind: RuntimeTaskKind.shell,
+        command: 'sleep',
+        arguments: <String>['30'],
+      );
+      final binding = const RuntimeExecutionPlanner()
+          .plan(definition: definition)
+          .createHandoff(
+            target: RuntimeExecutionHandoffTarget.shellManager,
+            outputChannelId: 'shell.runtime',
+          )
+          .bind();
+      final buffer = RuntimeOutputLiveBuffer();
+      addTearDown(buffer.dispose);
+      final adapter = ShellManagerRuntimeExecutionAdapter(
+        shellManager: shellManager,
+        clock: () => DateTime.utc(2026, 5, 20, 11, 30),
+      );
+      final started = Completer<ProcessCommandHandle>();
+
+      final running = adapter.executeHandoff(
+        binding: binding,
+        buffer: buffer,
+        onProcessStarted: started.complete,
+      );
+      final handle = await started.future.timeout(const Duration(seconds: 5));
+      final cancellation = await (shellManager as CancellableShellManager)
+          .cancelProcess(handle.processHandleId);
+      final result = await running.timeout(const Duration(seconds: 5));
+
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.pid, greaterThan(0));
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(result.executed, isTrue);
+      expect(result.succeeded, isFalse);
+      expect(result.processHandle?.processHandleId, handle.processHandleId);
+      expect(result.processHandle?.pid, handle.pid);
+    },
+    skip: Platform.isWindows ? 'POSIX shell fixture.' : false,
+  );
+
   test('shell manager runtime execution adapter rejects wrong route', () async {
     const definition = RuntimeTaskDefinition(
       id: 'tool-run',
@@ -605,7 +668,7 @@ void main() {
           await tempRoot.delete(recursive: true);
         }
       });
-      final manager = await _createToolchainManager(tempRoot);
+      final manager = await _createToolchainManager(tempRoot, vityod!.client);
       final registration = await manager.registerToolchain(
         const ToolchainDescriptor(
           id: 'sh-test-runner',
@@ -636,16 +699,26 @@ void main() {
         toolchainManager: manager,
         clock: () => DateTime.utc(2026, 5, 20, 12),
       );
+      final started = Completer<ProcessCommandHandle>();
 
       final result = await adapter.executeHandoff(
         binding: binding,
         buffer: buffer,
+        onProcessStarted: started.complete,
       );
+      final handle = await started.future.timeout(const Duration(seconds: 5));
 
       expect(registration.succeeded, isTrue);
       expect(result.executed, isTrue);
       expect(result.succeeded, isTrue);
       expect(result.runtimeResult?.toolchainId, 'sh-test-runner');
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.pid, greaterThan(0));
+      expect(
+        result.runtimeResult?.metadata['processHandleId'],
+        handle.processHandleId,
+      );
+      expect(result.runtimeResult?.metadata['pid'], handle.pid);
       expect(result.toJson()['succeeded'], isTrue);
       expect(
         buffer.snapshot.visibleEvents.map((event) => event.message),
@@ -674,7 +747,7 @@ void main() {
           await tempRoot.delete(recursive: true);
         }
       });
-      final manager = await _createToolchainManager(tempRoot);
+      final manager = await _createToolchainManager(tempRoot, vityod!.client);
       const definition = RuntimeTaskDefinition(
         id: 'shell-run',
         label: 'Shell run',
@@ -753,8 +826,11 @@ class _IdentityShellManager implements ShellManager {
   }
 }
 
-Future<ToolchainManager> _createToolchainManager(Directory root) async {
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+Future<ToolchainManager> _createToolchainManager(
+  Directory root,
+  VityodClient client,
+) async {
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: root.path,
@@ -782,6 +858,8 @@ Future<ToolchainManager> _createToolchainManager(Directory root) async {
         defaultShellPath: '/bin/sh',
       ),
     ),
+    vityodClient: client,
+    workspaceRoot: root.path,
   );
   return ToolchainManager(
     configurationStore: ToolchainConfigurationStore(

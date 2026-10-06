@@ -17,6 +17,7 @@ class TestingSurface extends StatelessWidget {
     this.failedRetryHistory = const <FailedTestRetryRecord>[],
     this.configurationSet,
     this.failedDebugCancellationRoute,
+    this.testRunActive = false,
     this.onRunTests,
     this.onRunConfiguration,
     this.onDebugConfiguration,
@@ -35,6 +36,7 @@ class TestingSurface extends StatelessWidget {
   final List<FailedTestRetryRecord> failedRetryHistory;
   final TestRunConfigurationSet? configurationSet;
   final FailedTestDebugCancellationRoute? failedDebugCancellationRoute;
+  final bool testRunActive;
   final Future<void> Function()? onRunTests;
   final Future<void> Function(TestRunConfiguration configuration)?
   onRunConfiguration;
@@ -59,6 +61,11 @@ class TestingSurface extends StatelessWidget {
     final failedTests = _failedTests(testResult);
     final diagnosticCount = latest?.diagnostics.length ?? 0;
     final selectedConfiguration = configurationSet?.selectedConfiguration;
+    final selectedDebugRoute = selectedConfiguration == null
+        ? null
+        : const TestDebugLaunchRoutePlanner().plan(
+            selectedConfiguration.copyWith(debug: true),
+          );
 
     return Card(
       key: const ValueKey('testing-surface'),
@@ -97,12 +104,21 @@ class TestingSurface extends StatelessWidget {
                           : 'config blocked',
                     ),
                   ),
+                if (selectedDebugRoute != null)
+                  Chip(
+                    label: Text(
+                      selectedDebugRoute.ready
+                          ? 'debug route ready'
+                          : 'debug route blocked',
+                    ),
+                  ),
                 if (failedDebugCancellationRoute != null)
                   Chip(
                     label: Text(
                       'debug-cancel ${failedDebugCancellationRoute!.status}',
                     ),
                   ),
+                if (testRunActive) const Chip(label: Text('test task running')),
                 if (discovery != null)
                   Chip(label: Text('discovered ${discovery!.testCount}')),
                 Chip(label: Text('status ${testResult['status'] ?? 'none'}')),
@@ -123,7 +139,7 @@ class TestingSurface extends StatelessWidget {
               children: [
                 FilledButton.icon(
                   key: const ValueKey('testing-run-tests'),
-                  onPressed: onRunTests,
+                  onPressed: testRunActive ? null : onRunTests,
                   icon: const Icon(Icons.science_outlined),
                   label: const Text('Run Tests'),
                 ),
@@ -131,7 +147,8 @@ class TestingSurface extends StatelessWidget {
                   FilledButton.tonalIcon(
                     key: const ValueKey('testing-run-selected-configuration'),
                     onPressed:
-                        selectedConfiguration.ready &&
+                        !testRunActive &&
+                            selectedConfiguration.ready &&
                             onRunConfiguration != null
                         ? () {
                             onRunConfiguration!(selectedConfiguration);
@@ -141,22 +158,31 @@ class TestingSurface extends StatelessWidget {
                     label: const Text('Run Selected'),
                   ),
                 if (selectedConfiguration != null)
-                  OutlinedButton.icon(
-                    key: const ValueKey('testing-debug-selected-configuration'),
-                    onPressed:
-                        selectedConfiguration.ready &&
-                            onDebugConfiguration != null
-                        ? () {
-                            onDebugConfiguration!(selectedConfiguration);
-                          }
-                        : null,
-                    icon: const Icon(Icons.bug_report_outlined),
-                    label: const Text('Debug Selected'),
+                  Tooltip(
+                    message: selectedDebugRoute!.handoff.plan.message,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey(
+                        'testing-debug-selected-configuration',
+                      ),
+                      onPressed:
+                          !testRunActive &&
+                              selectedConfiguration.ready &&
+                              selectedDebugRoute.ready &&
+                              onDebugConfiguration != null
+                          ? () {
+                              onDebugConfiguration!(selectedConfiguration);
+                            }
+                          : null,
+                      icon: const Icon(Icons.bug_report_outlined),
+                      label: const Text('Debug Selected'),
+                    ),
                   ),
                 if (failedTests.isNotEmpty)
                   OutlinedButton.icon(
                     key: const ValueKey('testing-rerun-failed'),
-                    onPressed: onRerunFailed ?? onRunTests,
+                    onPressed: testRunActive
+                        ? null
+                        : onRerunFailed ?? onRunTests,
                     icon: const Icon(Icons.replay_rounded),
                     label: const Text('Rerun Failed'),
                   ),
@@ -328,7 +354,11 @@ class TestingSurface extends StatelessWidget {
                         dense: true,
                         leading: const Icon(Icons.cancel_schedule_send),
                         title: const Text('Failed-test debug cancellation'),
-                        subtitle: Text(failedDebugCancellationRoute!.message),
+                        subtitle: Text(
+                          _failedDebugCancellationSummary(
+                            failedDebugCancellationRoute!,
+                          ),
+                        ),
                       ),
                     Padding(
                       padding: const EdgeInsets.only(
@@ -375,6 +405,13 @@ class TestingSurface extends StatelessWidget {
       ),
     );
   }
+}
+
+String _failedDebugCancellationSummary(FailedTestDebugCancellationRoute route) {
+  if (!route.processHandleBound || route.processHandleId.isEmpty) {
+    return route.message;
+  }
+  return '${route.message} · process ${route.processHandleId}';
 }
 
 String _failedRetrySummary(FailedTestRetryRecord record) {

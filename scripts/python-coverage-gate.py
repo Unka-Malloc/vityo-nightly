@@ -33,29 +33,15 @@ COVERAGE_OMIT = [
     "scripts/supply-chain-governance-gate.py",
     "scripts/vityo-product-gate.py",
 ]
-TEST_MODULES = (
-    "tests.test_repo_hygiene_gate",
-    "tests.test_architecture_boundaries",
-    "tests.test_release_readiness_gate",
-    "tests.test_ecosystem_cli_doc_gate",
-    "tests.test_ecosystem_product_gate",
-    "tests.test_delivery_gate_product_policy",
-    "tests.test_web_preview_security",
-    "tests.test_record_product_matrix_evidence",
-    "tests.test_package_nightly",
-    "tests.test_docs_tooling_coverage",
-    "tests.test_repo_hygiene_coverage",
-    "tests.test_python_coverage_gate",
-    "tests.test_project_coverage_gate",
-    "tests.test_run_native_pty_matrix",
-    "tests.test_vityo_quality",
-    "tests.test_vityo_validation_receipt",
-    "tests.test_performance_budgets",
-    "tests.test_dependency_policy_gate",
-    "tests.test_supply_chain_governance_gate",
-    "tests.test_linux_host_readiness_gate",
-    "tests.test_linux_packaging_gate",
-    "prototype.test_dev_server_security",
+UNIT_TEST_DISCOVERY = (
+    ("tests", "test_*.py"),
+    ("tests/acceptance/vityo_app", "*_test.py"),
+    ("prototype", "test_*.py"),
+)
+STANDALONE_TEST_SCRIPTS = (
+    "tests/acceptance/product_lines/cutover_acceptance_test.py",
+    "tests/acceptance/vityo_app/desktop_evidence_binding_acceptance_test.py",
+    "tests/acceptance/vityo_coding_agent/full_runner_acceptance_test.py",
 )
 
 
@@ -75,30 +61,67 @@ def run_command(command: list[str]) -> int:
     return proc.returncode
 
 
-def run_gate(fail_under: int) -> int:
+def collect_coverage() -> int:
     if not coverage_available():
         print(
-            "coverage.py is required. Install it with: python3 -m pip install coverage",
+            "coverage.py is required. Activate a project virtual environment and install coverage; see docs/BUILD-AND-DEV-ENV.md.",
             file=sys.stderr,
         )
         return 2
 
     omit_flag = ["--omit", ",".join(COVERAGE_OMIT)] if COVERAGE_OMIT else []
 
-    commands = (
-        [sys.executable, "-m", "coverage", "erase"],
-        [
-            sys.executable,
-            "-m",
-            "coverage",
-            "run",
+    def coverage_run(test_command: list[str], *, append: bool) -> list[str]:
+        command = [sys.executable, "-m", "coverage", "run"]
+        if append:
+            command.append("--append")
+        return [
+            *command,
             "--source",
             SOURCE_SCOPE,
             *omit_flag,
-            "-m",
-            "unittest",
-            *TEST_MODULES,
-        ],
+            *test_command,
+        ]
+
+    commands = [[sys.executable, "-m", "coverage", "erase"]]
+    for index, (start_directory, pattern) in enumerate(UNIT_TEST_DISCOVERY):
+        commands.append(
+            coverage_run(
+                [
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "--start-directory",
+                    start_directory,
+                    "--pattern",
+                    pattern,
+                ],
+                append=index > 0,
+            )
+        )
+    for script in STANDALONE_TEST_SCRIPTS:
+        commands.append(
+            coverage_run(
+                [script],
+                append=True,
+            )
+        )
+    for command in commands:
+        code = run_command(command)
+        if code != 0:
+            return code
+    return 0
+
+
+def report_coverage(fail_under: int) -> int:
+    if not coverage_available():
+        print(
+            "coverage.py is required. Activate a project virtual environment and install coverage; see docs/BUILD-AND-DEV-ENV.md.",
+            file=sys.stderr,
+        )
+        return 2
+    omit_flag = ["--omit", ",".join(COVERAGE_OMIT)] if COVERAGE_OMIT else []
+    return run_command(
         [
             sys.executable,
             "-m",
@@ -109,20 +132,48 @@ def run_gate(fail_under: int) -> int:
             *omit_flag,
             "--fail-under",
             str(fail_under),
-        ],
+        ]
     )
-    for command in commands:
-        code = run_command(command)
+
+
+def run_gate(
+    fail_under: int,
+    *,
+    collect: bool = True,
+    report: bool = True,
+) -> int:
+    if not collect and not report:
+        print("coverage collection or reporting must be selected", file=sys.stderr)
+        return 2
+    if collect:
+        code = collect_coverage()
         if code != 0:
             return code
+    if report:
+        return report_coverage(fail_under)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Python coverage gate for Vityo tooling.")
     parser.add_argument("--fail-under", type=int, default=DEFAULT_FAIL_UNDER)
+    phase = parser.add_mutually_exclusive_group()
+    phase.add_argument(
+        "--collect-only",
+        action="store_true",
+        help="Run the discovered tests and save coverage without evaluating the threshold.",
+    )
+    phase.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Evaluate the existing coverage data without rerunning tests.",
+    )
     args = parser.parse_args(argv)
-    return run_gate(args.fail_under)
+    return run_gate(
+        args.fail_under,
+        collect=not args.report_only,
+        report=not args.collect_only,
+    )
 
 
 if __name__ == "__main__":

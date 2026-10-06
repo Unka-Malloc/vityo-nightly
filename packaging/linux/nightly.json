@@ -6,6 +6,25 @@
   "build_relative_path": "products/vityo_app/build/linux/x64/release/bundle",
   "icon_relative_path": "products/vityo_app/web/icons/Icon-512.png",
   "installer_definition": "packaging/linux/DEBIAN/control",
+  "vityod": {
+    "target": "x86_64-unknown-linux-gnu",
+    "source_relative_path": "products/vityo_app/native/vityod/target/release/vityod",
+    "package_relative_path": "components/vityod",
+    "required_runtime_libraries": ["glibc"]
+  },
+  "coding_agent": {
+    "target": "x86_64-unknown-linux-gnu",
+    "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+    "package_relative_path": "components/vityo-coding-agent",
+    "required_runtime_libraries": ["glibc", "libssl.so.3"]
+  },
+  "pafio": {
+    "target": "x86_64-unknown-linux-gnu",
+    "package_relative_path": "components/pafio",
+    "required_runtime_libraries": ["glibc"],
+    "manifest_relative_path": "components/pafio-component.json"
+  },
+  "rust_notices_path": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
   "signing": {"status": "explicit-gap", "reason": "Nightly Debian repository signing credentials are not configured."},
   "automatic_updates": false
 }

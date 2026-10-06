@@ -90,6 +90,8 @@ value = 1
       },
     );
     final service = WorkspaceCodeActionsService(documentStore: store);
+    // The overlay declares the persisted revision it was derived from, so the
+    // service can reject an overlay built on a stale workspace observation.
     const overlay = DocumentState(
       documentId: 'main.styio',
       text: '''
@@ -97,6 +99,7 @@ value = 1
 value = 1
 ''',
       revision: 1,
+      baseDocumentRevision: 0,
     );
 
     final preview = await service.collectCodeActions(

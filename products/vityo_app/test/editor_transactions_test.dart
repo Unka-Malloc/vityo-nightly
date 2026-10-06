@@ -93,6 +93,36 @@ void main() {
     );
   });
 
+  test('synchronous input can use a revision-only precondition', () {
+    const document = DocumentState(
+      documentId: 'sample.styio',
+      text: 'alpha',
+      revision: 2,
+    );
+    final edit = WorkspaceEdit.singleDocument(
+      document: document,
+      source: WorkspaceEditSource.userInput,
+      edits: const <WorkspaceTextEdit>[
+        WorkspaceTextEdit(
+          documentId: 'sample.styio',
+          range: SourceRange(start: 5, end: 5),
+          newText: 'x',
+        ),
+      ],
+      includeContentHash: false,
+    );
+
+    expect(edit.precondition!.expectedRevision, 2);
+    expect(edit.precondition!.expectedContentHash, isNull);
+    expect(
+      const EditorTransactionService()
+          .applyToDocument(document: document, edit: edit)
+          .document
+          .text,
+      'alphax',
+    );
+  });
+
   test('editor formatting edits route through transaction service', () {
     final controller = EditorSessionController(
       initialDocument: const DocumentState(
@@ -106,10 +136,7 @@ void main() {
 
     controller.applyFormattingEdits(
       const <FormattingEdit>[
-        FormattingEdit(
-          range: SourceRange(start: 0, end: 5),
-          newText: 'one',
-        ),
+        FormattingEdit(range: SourceRange(start: 0, end: 5), newText: 'one'),
         FormattingEdit(
           range: SourceRange(start: 11, end: 16),
           newText: 'three',

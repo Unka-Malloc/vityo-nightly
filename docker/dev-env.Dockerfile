@@ -65,6 +65,7 @@ RUN set -eux; \
         git \
         libblkid-dev \
         libgtk-3-dev \
+        libsecret-1-dev \
         liblzma-dev \
         libwebp-dev \
         mesa-utils \

@@ -1,38 +1,69 @@
-# Delivery Gate
+# Delivery Pipeline
 
-**Purpose:** Define the common delivery-floor entrypoint for `Vityo` so contributors can run repository hygiene, the unified docs gate, external `styio-audit`, and checkpoint health through one command before checkpoint merge or branch delivery.
+**Purpose:** Describe the shared local and CI stage pipeline for privacy, architecture, deterministic verification, native package delivery, installation, and launch.
 
-**Last updated:** 2026-06-19
+**Last updated:** 2026-10-03
 
-## Command
+## Entrypoints
 
-Checkpoint delivery floor:
-
-```bash
-./scripts/delivery-gate.sh --mode checkpoint
-```
-
-Push or branch-delivery floor:
+The canonical full local delivery is:
 
 ```bash
-./scripts/delivery-gate.sh --mode push --base origin/main
+python3 scripts/vityo.py deliver
 ```
 
-Docs/process-only delivery:
+The same Python implementation exposes each stage for focused diagnosis and repair:
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
+python3 scripts/vityo.py privacy
+python3 scripts/vityo.py architecture
+python3 scripts/vityo.py test
+python3 scripts/vityo.py coverage
+python3 scripts/vityo.py build
+python3 scripts/vityo.py install
+python3 scripts/vityo.py launch
 ```
 
-Use `--audit-bin ../styio-audit/bin/styio-audit` to force a specific audit checkout. Use `--skip-audit` only when external audit is enforced by the separate required `styio-audit` check or for explicitly scoped docs/process recovery where external audit is run separately. The ecosystem CLI doc check runs by default as non-blocking evidence; reserve `--skip-ecosystem` for targeted recovery, not normal CI.
+CI calls the same stage implementation with its resolved event range, platform, package artifact, and isolated install destination. It does not use a separate shell orchestration path.
 
-## What It Runs
+## Stage Order
 
-1. `python3 scripts/repo-hygiene-gate.py`
-2. `./scripts/docs-gate.sh`
-3. external `styio-audit gate --project Vityo`
-4. `./scripts/checkpoint-health.sh`, including the `95%` project coverage gate and release-readiness static checks for `toolchain/maintenance-tools.json`
+| Stage | Owner and result |
+|---|---|
+| `privacy` | Runs the privacy scan and repository hygiene check. |
+| `architecture` | Checks the architecture model and generated views, documentation and contributor contracts, security/license policy, architecture and product boundaries, import boundaries, dependency/supply-chain policy, and static release readiness. |
+| `test` | Prepares the pinned Rust coverage tools, then runs Flutter analysis, Python and Flutter coverage collection, the Rust Coding Agent full requirement suite with one instrumented locked Cargo collection, the daemon workspace tests, nine portable IDE selectors, Prototype checks, required pinned Styio language fixtures, and the CI-only native and product-matrix suites. |
+| `coverage` | Evaluates the Python, Flutter, Coding Agent, and daemon reports produced by `test`; it does not collect or rerun the suites. Rust reports remain separate by product and require executed first-party source coverage; the Agent report also requires mapped module coverage. Neither Rust report has a default percentage floor. |
+| `build` | Builds the host's Flutter release target and creates/verifies its nightly package candidate, including required companion executables. |
+| `install` | Installs the verified candidate to a per-user local location or CI's isolated `--install-root`, then checks the installed client and Agent executable. |
+| `launch` | Locally opens the installed client. In CI, runs the candidate-bound startup probe and validates its launch/first-frame evidence. |
 
-The standalone `project-coverage-gate` GitHub Actions workflow is the direct coverage evidence lane. It runs `python3 scripts/project-coverage-gate.py --python-fail-under 95 --flutter-fail-under 85` and uploads the Flutter LCOV report without waiting on sibling repository build steps.
+The stage runner stops with a nonzero result at the first failed stage and identifies that stage. Repair the failing tool or client behavior, run its focused checks, then rerun the same public stage. Do not treat missing tools, unresolved language fixtures, or an absent test mapping as a skip or pass.
 
-The `local-ci-gate` workflow mirrors this delivery floor on `ubuntu-latest`, `windows-latest`, and `macos-latest`. GitHub Rulesets for `nightly` must require `audit`, `styio-audit`, `local-ci-gate`, `windows-native`, and `macos-native`.
+## Toolchain And Product Matrix
+
+The required Styio language-fixture stage accepts an explicit `--styio-bin` or
+`VITYO_STYIO_BIN`/`STYIO` override only when it resolves to the exact
+`toolchain/product-matrix.json` revision. Otherwise, it reuses a built pinned sibling executable or
+fetches/builds the exact revision under ignored `build/toolchains/styio-nightly/<sha>`; an invalid
+explicit override or failed provision fails `test`, and unpinned `PATH` binaries are not used. CI
+and local runs with `VITYO_PRODUCT_GATE=1` also require the real Pafio/Styio matrix. Pafio is
+resolved or provisioned for that matrix only; the matrix creates its project through public `pafio
+new` without importing sibling repository scripts.
+
+The Rust Coding Agent and `vityod` daemon require Cargo/Rust `1.88` or newer; hosted jobs pin `1.88.0`. Existing developer bootstrap scripts do not install Rust. The Linux host-readiness script does not detect Cargo, so verify this prerequisite separately before running Rust suites or builds.
+
+The canonical `test` stage requires `rustup` and Cargo on `PATH`, installs or verifies
+`llvm-tools-preview` for the selected toolchain, and verifies or installs `cargo-llvm-cov` `0.9.0`.
+If Rust coverage tool setup fails, `test` fails rather than skipping collection. Direct calls to
+the lower-level Rust coverage helper require the component and pinned collector already available.
+
+## CI Platform Lanes
+
+Configured Linux, Windows, and macOS jobs reuse the same Python pipeline. Linux and macOS run the desktop reconnect integration; macOS also runs the 14-file native UI and credential integration selector. The current app integration root has no Windows-target native integration test. Windows package, install, startup, and portable-test evidence must not be described as a Windows native UI integration pass.
+
+Workflow files and registered suite commands are configuration evidence only. Record only a result observed for the exact candidate revision; an unobserved or queued job remains unresolved.
+
+## Delivery Boundary
+
+Local `install` and `launch` prove package installation and application startup only. The CI startup probe checks the installed candidate identity, runtime platform, successful launch, and first frame; it does not inspect the UI or prove Agent behavior. This pipeline does not conduct a real model-provider conversation or user-assigned development task. The engineering handoff stops after launch; live acceptance belongs to the user's designated Agent on an explicit task.

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../debugger/debug_breakpoint_store.dart';
 import '../../debugger/debug_launch_contract.dart';
 import '../../debugger/debug_launch_telemetry_store.dart';
 import '../../debugger/debug_runtime_task_history.dart';
@@ -35,6 +36,14 @@ class DebugBreakpoint {
   final bool enabled;
 
   String get key => '$filePath:$line';
+
+  DebugBreakpoint copyWith({String? filePath, int? line, bool? enabled}) {
+    return DebugBreakpoint(
+      filePath: filePath ?? this.filePath,
+      line: line ?? this.line,
+      enabled: enabled ?? this.enabled,
+    );
+  }
 }
 
 class DebugStackFrame {
@@ -121,18 +130,30 @@ final class DebugController extends ChangeNotifier {
     required String runtimeTaskHistoryWorkspaceId,
     required int runtimeTaskHistoryMaxEntries,
     required void Function(String message) log,
+    String Function()? workspaceId,
+    DebugBreakpointStore? breakpointStore,
+    DebugLaunchConfigurationStore? launchConfigurationStore,
+    Iterable<DebugLaunchProfile> initialLaunchProfiles =
+        const <DebugLaunchProfile>[],
   }) : _configuredToolchainManager = toolchainManager,
        _configuredWorkspaceRoot = workspaceRoot,
+       _configuredWorkspaceId = workspaceId ?? workspaceRoot,
        _configuredLauncher = launcher,
        _configuredRuntimeOutputBuffer = runtimeOutputBuffer,
        _configuredRuntimeTaskHistoryBinder = runtimeTaskHistoryBinder,
        _configuredRuntimeTaskHistoryStore = runtimeTaskHistoryStore,
        _configuredRuntimeTaskHistoryWorkspaceId = runtimeTaskHistoryWorkspaceId,
        _configuredRuntimeTaskHistoryMaxEntries = runtimeTaskHistoryMaxEntries,
+       _breakpointStore = breakpointStore,
+       _launchConfigurationStore = launchConfigurationStore,
+       _initialLaunchProfiles = List<DebugLaunchProfile>.unmodifiable(
+         initialLaunchProfiles,
+       ),
        _configuredLog = log;
 
   ToolchainManager? _configuredToolchainManager;
   String Function()? _configuredWorkspaceRoot;
+  String Function()? _configuredWorkspaceId;
   DapDebugAdapterLauncher? _configuredLauncher;
   RuntimeOutputLiveBuffer? _configuredRuntimeOutputBuffer;
   DebugRuntimeTaskHistoryBinder? _configuredRuntimeTaskHistoryBinder;
@@ -140,17 +161,32 @@ final class DebugController extends ChangeNotifier {
   String? _configuredRuntimeTaskHistoryWorkspaceId;
   int? _configuredRuntimeTaskHistoryMaxEntries;
   void Function(String message)? _configuredLog;
+  DebugBreakpointStore? _breakpointStore;
+  DebugLaunchConfigurationStore? _launchConfigurationStore;
+  List<DebugLaunchProfile> _initialLaunchProfiles =
+      const <DebugLaunchProfile>[];
 
   final List<DebugBreakpoint> _breakpoints = <DebugBreakpoint>[];
+  final List<DebugBreakpoint> _pendingBreakpointToggles = <DebugBreakpoint>[];
   DebugSessionSnapshot _session = const DebugSessionSnapshot(
     status: DebugSessionStatus.idle,
     message: 'No debug session has been started.',
   );
   DebugRuntimeExecutionResult? _lastRuntimeExecutionResult;
+  DebugRuntimeExecutionAdapter? _runtimeExecutionAdapter;
   DapDebugSessionHandle? _sessionHandle;
   StreamSubscription<DapSessionSnapshot>? _sessionSubscription;
+  final StreamController<DapSessionSnapshot> _dapSnapshotEvents =
+      StreamController<DapSessionSnapshot>.broadcast(sync: true);
   bool _inspectionRequestInFlight = false;
   Future<void> _runtimeTaskHistoryAppendQueue = Future<void>.value();
+  Future<void> _breakpointPersistenceQueue = Future<void>.value();
+  Future<void> _launchConfigurationPersistenceQueue = Future<void>.value();
+  Future<void>? _workspaceStateLoad;
+  String? _loadingWorkspaceId;
+  String? _loadedWorkspaceId;
+  DebugLaunchConfigurationSet _launchConfigurations =
+      const DebugLaunchConfigurationSet(workspaceId: '');
 
   DebugSessionSnapshot get session => _session;
   List<DebugBreakpoint> get breakpoints =>
@@ -158,6 +194,320 @@ final class DebugController extends ChangeNotifier {
   DebugRuntimeExecutionResult? get lastRuntimeExecutionResult =>
       _lastRuntimeExecutionResult;
   DapDebugSessionHandle? get sessionHandle => _sessionHandle;
+
+  /// Every DAP session snapshot the attached adapter publishes, across session
+  /// restarts. Runtime output binds this instead of polling the handle.
+  Stream<DapSessionSnapshot> get dapSnapshotEvents => _dapSnapshotEvents.stream;
+  DebugLaunchConfigurationSet get launchConfigurations => _launchConfigurations;
+  DebugLaunchProfile? get selectedLaunchProfile =>
+      _launchConfigurations.selectedProfile;
+
+  Future<void> loadConfiguredState({bool force = false}) {
+    final workspaceRoot = _configuredWorkspaceRoot;
+    final workspaceId = _configuredWorkspaceId;
+    if (workspaceRoot == null || workspaceId == null) {
+      return Future<void>.value();
+    }
+    return _ensureWorkspaceState(
+      workspaceId: workspaceId(),
+      workspaceRoot: workspaceRoot(),
+      toolchainManager: _configuredToolchainManager,
+      force: force,
+    );
+  }
+
+  Future<void> _ensureWorkspaceState({
+    required String workspaceId,
+    required String workspaceRoot,
+    required ToolchainManager? toolchainManager,
+    bool force = false,
+  }) {
+    final normalizedId = workspaceId.trim().isEmpty
+        ? workspaceRoot
+        : workspaceId.trim();
+    if (!force && _loadedWorkspaceId == normalizedId) {
+      return Future<void>.value();
+    }
+    final loading = _workspaceStateLoad;
+    if (!force && loading != null && _loadingWorkspaceId == normalizedId) {
+      return loading;
+    }
+    _loadingWorkspaceId = normalizedId;
+    late final Future<void> future;
+    future =
+        _loadWorkspaceState(
+          workspaceId: normalizedId,
+          workspaceRoot: workspaceRoot,
+          toolchainManager: toolchainManager,
+        ).whenComplete(() {
+          if (identical(_workspaceStateLoad, future)) {
+            _workspaceStateLoad = null;
+            _loadingWorkspaceId = null;
+          }
+        });
+    _workspaceStateLoad = future;
+    return future;
+  }
+
+  Future<void> _loadWorkspaceState({
+    required String workspaceId,
+    required String workspaceRoot,
+    required ToolchainManager? toolchainManager,
+  }) async {
+    DebugBreakpointSet storedBreakpoints = DebugBreakpointSet(
+      workspaceId: workspaceId,
+    );
+    final breakpointStore = _breakpointStore;
+    if (breakpointStore != null) {
+      try {
+        storedBreakpoints = await breakpointStore.readBreakpointSet(
+          workspaceId: workspaceId,
+        );
+      } on Object catch (error) {
+        _configuredLog?.call('Debug breakpoints could not be loaded: $error');
+      }
+    }
+
+    DebugLaunchConfigurationSet storedConfigurations =
+        DebugLaunchConfigurationSet(workspaceId: workspaceId);
+    final launchStore = _launchConfigurationStore;
+    if (launchStore != null) {
+      try {
+        storedConfigurations = await launchStore.loadConfigurationSet(
+          workspaceId: workspaceId,
+        );
+      } on Object catch (error) {
+        _configuredLog?.call(
+          'Debug launch configurations could not be loaded: $error',
+        );
+      }
+    }
+
+    ToolchainCatalog? toolchainCatalog;
+    if (toolchainManager != null) {
+      try {
+        toolchainCatalog = await toolchainManager.loadCatalog();
+      } on Object catch (error) {
+        _configuredLog?.call('Debug adapters could not be loaded: $error');
+      }
+    }
+    final activeDebuggerId = toolchainCatalog
+        ?.active(ToolchainKind.debugger)
+        ?.id;
+    final profilesById = <String, DebugLaunchProfile>{};
+    for (final debugger
+        in toolchainCatalog?.list(kind: ToolchainKind.debugger) ??
+            const <ToolchainDescriptor>[]) {
+      profilesById[debugger.id] = DebugLaunchProfile.fromConfiguration(
+        id: debugger.id,
+        displayName: debugger.displayName,
+        isDefault: debugger.id == activeDebuggerId,
+        configuration: DebugLaunchConfiguration.fromToolchainDescriptor(
+          debugger: debugger,
+          workspaceRoot: workspaceRoot,
+        ),
+        metadata: <String, Object?>{
+          ...debugger.metadata,
+          'source': 'toolchain-catalog',
+        },
+      );
+    }
+    for (final profile in _initialLaunchProfiles) {
+      profilesById[profile.id] = profile;
+    }
+    for (final profile in storedConfigurations.profiles) {
+      profilesById[profile.id] = profile;
+    }
+    final profiles = profilesById.values.toList(growable: false)
+      ..sort((left, right) => left.displayName.compareTo(right.displayName));
+    var selectedProfileId = storedConfigurations.selectedProfileId;
+    if (selectedProfileId == null ||
+        !profilesById.containsKey(selectedProfileId)) {
+      selectedProfileId = profilesById.containsKey(activeDebuggerId)
+          ? activeDebuggerId
+          : _firstDefaultProfileId(profiles) ??
+                (profiles.isEmpty ? null : profiles.first.id);
+    }
+    _launchConfigurations = DebugLaunchConfigurationSet(
+      workspaceId: workspaceId,
+      selectedProfileId: selectedProfileId,
+      profiles: List<DebugLaunchProfile>.unmodifiable(profiles),
+      updatedAt: storedConfigurations.updatedAt,
+    );
+
+    if (breakpointStore != null) {
+      _breakpoints
+        ..clear()
+        ..addAll(
+          storedBreakpoints.breakpoints.map(
+            (breakpoint) => DebugBreakpoint(
+              filePath: breakpoint.filePath,
+              line: breakpoint.line,
+              enabled: breakpoint.enabled,
+            ),
+          ),
+        );
+      for (final pending in _pendingBreakpointToggles) {
+        final index = _breakpoints.indexWhere(
+          (breakpoint) => breakpoint.key == pending.key,
+        );
+        if (index < 0) {
+          _breakpoints.add(pending);
+        } else {
+          _breakpoints.removeAt(index);
+        }
+      }
+    } else if (_loadedWorkspaceId != null &&
+        _loadedWorkspaceId != workspaceId) {
+      _breakpoints.clear();
+    }
+    _sortBreakpoints();
+    _loadedWorkspaceId = workspaceId;
+    final persistPendingBreakpoints = _pendingBreakpointToggles.isNotEmpty;
+    _pendingBreakpointToggles.clear();
+    refreshSessionBreakpoints();
+    notifyListeners();
+    if (persistPendingBreakpoints) {
+      unawaited(_persistBreakpoints());
+    }
+  }
+
+  Future<DebugCommandResult> saveBreakpoint({
+    DebugBreakpoint? previous,
+    required String filePath,
+    required int line,
+    required bool enabled,
+  }) async {
+    await loadConfiguredState();
+    final normalizedPath = filePath.trim();
+    if (normalizedPath.isEmpty || line < 0) {
+      return const DebugCommandResult(
+        applied: false,
+        message: 'Breakpoint requires a file path and a positive line number.',
+      );
+    }
+    if (previous != null) {
+      _breakpoints.removeWhere((breakpoint) => breakpoint.key == previous.key);
+    }
+    final replacement = DebugBreakpoint(
+      filePath: normalizedPath,
+      line: line,
+      enabled: enabled,
+    );
+    final index = _breakpoints.indexWhere(
+      (breakpoint) => breakpoint.key == replacement.key,
+    );
+    if (index < 0) {
+      _breakpoints.add(replacement);
+    } else {
+      _breakpoints[index] = replacement;
+    }
+    _sortBreakpoints();
+    refreshSessionBreakpoints();
+    notifyListeners();
+    await _persistBreakpoints();
+    final message =
+        'Saved breakpoint at $normalizedPath:${line + 1}${enabled ? '' : ' (disabled)'}.';
+    _configuredLog?.call(message);
+    return DebugCommandResult(applied: true, message: message);
+  }
+
+  Future<DebugCommandResult> removeBreakpoint(
+    DebugBreakpoint breakpoint,
+  ) async {
+    final removed = _breakpoints.any(
+      (candidate) => candidate.key == breakpoint.key,
+    );
+    if (!removed) {
+      return const DebugCommandResult(
+        applied: false,
+        message: 'Breakpoint was already removed.',
+      );
+    }
+    _breakpoints.removeWhere((candidate) => candidate.key == breakpoint.key);
+    refreshSessionBreakpoints();
+    notifyListeners();
+    await _persistBreakpoints();
+    final message =
+        'Removed breakpoint at ${breakpoint.filePath}:${breakpoint.line + 1}.';
+    _configuredLog?.call(message);
+    return DebugCommandResult(applied: true, message: message);
+  }
+
+  Future<DebugCommandResult> setBreakpointEnabled(
+    DebugBreakpoint breakpoint,
+    bool enabled,
+  ) async {
+    final index = _breakpoints.indexWhere(
+      (candidate) => candidate.key == breakpoint.key,
+    );
+    if (index < 0) {
+      return const DebugCommandResult(
+        applied: false,
+        message: 'Breakpoint was not found.',
+      );
+    }
+    _breakpoints[index] = _breakpoints[index].copyWith(enabled: enabled);
+    refreshSessionBreakpoints();
+    notifyListeners();
+    await _persistBreakpoints();
+    final message =
+        '${enabled ? 'Enabled' : 'Disabled'} breakpoint at ${breakpoint.filePath}:${breakpoint.line + 1}.';
+    _configuredLog?.call(message);
+    return DebugCommandResult(applied: true, message: message);
+  }
+
+  Future<DebugCommandResult> selectLaunchProfile(String profileId) async {
+    await loadConfiguredState();
+    if (!_launchConfigurations.profiles.any(
+      (profile) => profile.id == profileId,
+    )) {
+      return DebugCommandResult(
+        applied: false,
+        message: 'Debug adapter $profileId is not available.',
+      );
+    }
+    _launchConfigurations = _launchConfigurations.selectProfile(profileId);
+    notifyListeners();
+    await _persistLaunchConfigurations();
+    final profile = _launchConfigurations.selectedProfile!;
+    final message = 'Selected debug adapter ${profile.displayName}.';
+    _configuredLog?.call(message);
+    return DebugCommandResult(applied: true, message: message);
+  }
+
+  Future<DebugCommandResult> updateSelectedLaunchConfiguration({
+    required String programPath,
+    required String cwd,
+    required List<String> arguments,
+    required bool stopOnEntry,
+  }) async {
+    await loadConfiguredState();
+    final profile = _launchConfigurations.selectedProfile;
+    if (profile == null) {
+      return const DebugCommandResult(
+        applied: false,
+        message: 'No debug adapter is selected.',
+      );
+    }
+    final configuration = profile.configuration.reconfigure(
+      programPath: programPath,
+      clearProgramPath: programPath.trim().isEmpty,
+      cwd: cwd.trim().isEmpty ? (_configuredWorkspaceRoot?.call() ?? '') : cwd,
+      arguments: arguments,
+      stopOnEntry: stopOnEntry,
+    );
+    _launchConfigurations = _launchConfigurations.upsertProfile(
+      profile.copyWith(configuration: configuration),
+    );
+    notifyListeners();
+    await _persistLaunchConfigurations();
+    final message = configuration.ready
+        ? 'Saved launch configuration ${profile.displayName}.'
+        : configuration.reason;
+    _configuredLog?.call(message);
+    return DebugCommandResult(applied: configuration.ready, message: message);
+  }
 
   DebugCommandResult toggleBreakpointAt({
     required String filePath,
@@ -186,6 +536,7 @@ final class DebugController extends ChangeNotifier {
     }
     final result = await startSession(
       toolchainManager: _configuredToolchainManager,
+      workspaceId: _configuredWorkspaceId?.call(),
       workspaceRoot: workspaceRoot(),
       launcher: _configuredLauncher,
       runtimeOutputBuffer: runtimeOutputBuffer,
@@ -197,6 +548,12 @@ final class DebugController extends ChangeNotifier {
 
   Future<DebugCommandResult> stopConfiguredSession() async {
     final result = await stopSession();
+    _configuredLog?.call(result.message);
+    return result;
+  }
+
+  Future<DebugCommandResult> forceStopConfiguredSession() async {
+    final result = await stopSession(force: true);
     _configuredLog?.call(result.message);
     return result;
   }
@@ -243,7 +600,12 @@ final class DebugController extends ChangeNotifier {
     final previousHandle = _sessionHandle;
     await _sessionSubscription?.cancel();
     _sessionHandle = handle;
-    _sessionSubscription = handle.snapshotEvents.listen(onSnapshot);
+    _sessionSubscription = handle.snapshotEvents.listen((snapshot) {
+      if (!_dapSnapshotEvents.isClosed) {
+        _dapSnapshotEvents.add(snapshot);
+      }
+      onSnapshot(snapshot);
+    });
     if (previousHandle != null && !identical(previousHandle, handle)) {
       unawaited(previousHandle.close());
     }
@@ -379,6 +741,9 @@ final class DebugController extends ChangeNotifier {
   }
 
   bool toggleBreakpoint(DebugBreakpoint breakpoint) {
+    if (_breakpointStore != null && _loadedWorkspaceId == null) {
+      _pendingBreakpointToggles.add(breakpoint);
+    }
     final existingIndex = _breakpoints.indexWhere(
       (candidate) => candidate.key == breakpoint.key,
     );
@@ -388,9 +753,77 @@ final class DebugController extends ChangeNotifier {
     } else {
       _breakpoints.removeAt(existingIndex);
     }
+    _sortBreakpoints();
     refreshSessionBreakpoints();
     notifyListeners();
+    unawaited(_persistBreakpoints());
     return added;
+  }
+
+  void _sortBreakpoints() {
+    _breakpoints.sort((left, right) {
+      final pathOrder = left.filePath.compareTo(right.filePath);
+      return pathOrder == 0 ? left.line.compareTo(right.line) : pathOrder;
+    });
+  }
+
+  String? _firstDefaultProfileId(List<DebugLaunchProfile> profiles) {
+    for (final profile in profiles) {
+      if (profile.isDefault) {
+        return profile.id;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _persistBreakpoints() {
+    final store = _breakpointStore;
+    final workspaceId = _loadedWorkspaceId ?? _configuredWorkspaceId?.call();
+    if (store == null || workspaceId == null || workspaceId.trim().isEmpty) {
+      return Future<void>.value();
+    }
+    final snapshot = DebugBreakpointSet(
+      workspaceId: workspaceId,
+      breakpoints: _breakpoints
+          .map(
+            (breakpoint) => DebugLaunchBreakpoint(
+              filePath: breakpoint.filePath,
+              line: breakpoint.line,
+              enabled: breakpoint.enabled,
+            ),
+          )
+          .toList(growable: false),
+    );
+    final previous = _breakpointPersistenceQueue;
+    _breakpointPersistenceQueue = () async {
+      await previous;
+      try {
+        await store.saveBreakpointSet(snapshot);
+      } on Object catch (error) {
+        _configuredLog?.call('Debug breakpoints could not be saved: $error');
+      }
+    }();
+    return _breakpointPersistenceQueue;
+  }
+
+  Future<void> _persistLaunchConfigurations() {
+    final store = _launchConfigurationStore;
+    if (store == null || _launchConfigurations.workspaceId.trim().isEmpty) {
+      return Future<void>.value();
+    }
+    final snapshot = _launchConfigurations;
+    final previous = _launchConfigurationPersistenceQueue;
+    _launchConfigurationPersistenceQueue = () async {
+      await previous;
+      try {
+        await store.saveConfigurationSet(snapshot);
+      } on Object catch (error) {
+        _configuredLog?.call(
+          'Debug launch configurations could not be saved: $error',
+        );
+      }
+    }();
+    return _launchConfigurationPersistenceQueue;
   }
 
   void replaceSession(DebugSessionSnapshot snapshot) {
@@ -600,20 +1033,49 @@ final class DebugController extends ChangeNotifier {
     );
   }
 
-  Future<DebugCommandResult> stopSession() async {
+  Future<DebugCommandResult> stopSession({bool force = false}) async {
     final handle = await detachSession();
     if (handle != null) {
-      await handle.sendRequest(
-        const DapProtocolRequestFactory().disconnect(
-          seq: handle.bridge.session.reserveSeq(),
-        ),
-      );
       final adapterSnapshot = handle.snapshot;
-      unawaited(handle.close());
+      DebugSessionTerminationExecutionResult termination;
+      final runtimeExecution = _lastRuntimeExecutionResult;
+      final runtimeAdapter = _runtimeExecutionAdapter;
+      final runtimeOutputBuffer = _configuredRuntimeOutputBuffer;
+      if (runtimeExecution != null &&
+          runtimeAdapter != null &&
+          runtimeOutputBuffer != null &&
+          identical(runtimeExecution.handle, handle)) {
+        final cancelled = await runtimeAdapter.cancelExecution(
+          execution: runtimeExecution,
+          buffer: runtimeOutputBuffer,
+          reason: force
+              ? 'Debug adapter process force-stopped by the user.'
+              : 'Debug session stopped by the user.',
+          force: force,
+        );
+        _lastRuntimeExecutionResult = cancelled;
+        termination = cancelled.terminationExecution!;
+      } else {
+        termination = await const DebugSessionTerminationExecutor().execute(
+          handle: handle,
+          plan: handle.terminationPlan(force: force),
+          reason: force
+              ? 'Debug adapter process force-stopped by the user.'
+              : 'Debug session stopped by the user.',
+        );
+      }
+      if (!termination.executed) {
+        await handle.close();
+      }
+      final stopped =
+          termination.executed ||
+          termination.status == DebugSessionTerminationExecutionStatus.skipped;
       return _applyCommandSnapshot(
         DebugSessionSnapshot(
-          status: DebugSessionStatus.stopped,
-          message: 'Stop Debugging request sent to DAP adapter.',
+          status: stopped
+              ? DebugSessionStatus.stopped
+              : DebugSessionStatus.blocked,
+          message: termination.message,
           breakpoints: breakpoints,
           launchConfiguration: _session.launchConfiguration,
           adapterSessionStatus: adapterSnapshot.status.name,
@@ -633,12 +1095,19 @@ final class DebugController extends ChangeNotifier {
 
   Future<DebugCommandResult> startSession({
     required ToolchainManager? toolchainManager,
+    String? workspaceId,
     required String workspaceRoot,
     required DapDebugAdapterLauncher? launcher,
     required RuntimeOutputLiveBuffer runtimeOutputBuffer,
     required void Function(DapSessionSnapshot snapshot) onSnapshot,
   }) async {
-    if (toolchainManager == null) {
+    await _ensureWorkspaceState(
+      workspaceId: workspaceId ?? workspaceRoot,
+      workspaceRoot: workspaceRoot,
+      toolchainManager: toolchainManager,
+    );
+    final profile = _launchConfigurations.selectedProfile;
+    if (profile == null && toolchainManager == null) {
       return _applyCommandSnapshot(
         const DebugSessionSnapshot(
           status: DebugSessionStatus.blocked,
@@ -647,26 +1116,19 @@ final class DebugController extends ChangeNotifier {
         ),
       );
     }
-    final catalog = await toolchainManager.loadCatalog();
-    final activeDebugger =
-        catalog.active(ToolchainKind.debugger) ??
-        (() {
-          final debuggers = catalog.list(kind: ToolchainKind.debugger);
-          return debuggers.isEmpty ? null : debuggers.first;
-        })();
-    if (activeDebugger == null) {
+    if (profile == null) {
       return _applyCommandSnapshot(
         DebugSessionSnapshot(
           status: DebugSessionStatus.blocked,
-          message: 'Start Debugging blocked: no native debugger is registered.',
+          message:
+              'Start Debugging blocked: no DAP debug adapter is registered.',
           breakpoints: breakpoints,
         ),
       );
     }
-    final launchConfiguration =
-        DebugLaunchConfiguration.fromToolchainDescriptor(
-          debugger: activeDebugger,
-          workspaceRoot: workspaceRoot,
+    final launchConfiguration = profile.configuration
+        .resolveForWorkspace(workspaceRoot)
+        .reconfigure(
           breakpoints: breakpoints
               .map(
                 (breakpoint) => DebugLaunchBreakpoint(
@@ -682,8 +1144,8 @@ final class DebugController extends ChangeNotifier {
         DebugSessionSnapshot(
           status: DebugSessionStatus.blocked,
           message: launchConfiguration.reason,
-          debuggerId: activeDebugger.id,
-          debuggerLabel: activeDebugger.displayName,
+          debuggerId: profile.id,
+          debuggerLabel: profile.displayName,
           breakpoints: breakpoints,
           launchConfiguration: launchConfiguration,
         ),
@@ -694,9 +1156,9 @@ final class DebugController extends ChangeNotifier {
         DebugSessionSnapshot(
           status: DebugSessionStatus.configured,
           message:
-              'Debug session configured with ${activeDebugger.displayName} for ${launchConfiguration.programPath}; process launch adapter is not attached yet.',
-          debuggerId: activeDebugger.id,
-          debuggerLabel: activeDebugger.displayName,
+              'Debug session configured with ${profile.displayName} for ${launchConfiguration.programPath}; process launch adapter is not attached yet.',
+          debuggerId: profile.id,
+          debuggerLabel: profile.displayName,
           breakpoints: breakpoints,
           launchConfiguration: launchConfiguration,
         ),
@@ -704,13 +1166,18 @@ final class DebugController extends ChangeNotifier {
     }
     try {
       final executionPlan = DapDebugAdapterExecutionPlan.fromConfiguration(
-        profileId: activeDebugger.id,
+        profileId: profile.id,
         launchConfiguration: launchConfiguration,
       );
-      final executionResult = await DebugRuntimeExecutionAdapter(
+      final runtimeAdapter = DebugRuntimeExecutionAdapter(
         launcher: launcher,
         workspaceId: workspaceRoot,
-      ).executePlan(plan: executionPlan, buffer: runtimeOutputBuffer);
+      );
+      _runtimeExecutionAdapter = runtimeAdapter;
+      final executionResult = await runtimeAdapter.executePlan(
+        plan: executionPlan,
+        buffer: runtimeOutputBuffer,
+      );
       _lastRuntimeExecutionResult = executionResult;
       if (!executionResult.launched || executionResult.handle == null) {
         final record = executionResult.telemetry.records.isEmpty
@@ -720,8 +1187,8 @@ final class DebugController extends ChangeNotifier {
           DebugSessionSnapshot(
             status: DebugSessionStatus.blocked,
             message: record?.message ?? executionResult.dispatchResult.message,
-            debuggerId: activeDebugger.id,
-            debuggerLabel: activeDebugger.displayName,
+            debuggerId: profile.id,
+            debuggerLabel: profile.displayName,
             breakpoints: breakpoints,
             launchConfiguration: launchConfiguration,
           ),
@@ -735,8 +1202,8 @@ final class DebugController extends ChangeNotifier {
           status: statusFromDapSession(adapterSnapshot.status),
           message:
               'Debug adapter launch plan sent with ${adapterSnapshot.pendingRequests.length} pending DAP request(s).',
-          debuggerId: activeDebugger.id,
-          debuggerLabel: activeDebugger.displayName,
+          debuggerId: profile.id,
+          debuggerLabel: profile.displayName,
           breakpoints: breakpoints,
           launchConfiguration: launchConfiguration,
           adapterSessionStatus: adapterSnapshot.status.name,
@@ -749,8 +1216,8 @@ final class DebugController extends ChangeNotifier {
         DebugSessionSnapshot(
           status: DebugSessionStatus.blocked,
           message: 'Start Debugging failed: $error',
-          debuggerId: activeDebugger.id,
-          debuggerLabel: activeDebugger.displayName,
+          debuggerId: profile.id,
+          debuggerLabel: profile.displayName,
           breakpoints: breakpoints,
           launchConfiguration: launchConfiguration,
         ),
@@ -1065,6 +1532,7 @@ final class DebugController extends ChangeNotifier {
     if (handle != null) {
       unawaited(handle.close());
     }
+    unawaited(_dapSnapshotEvents.close());
     super.dispose();
   }
 }

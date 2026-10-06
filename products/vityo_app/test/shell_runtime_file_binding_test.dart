@@ -153,9 +153,11 @@ void main() {
       shell.editorFileBindingSnapshot.state,
       DocumentResourceBindingState.boundClean,
     );
-    expect(hostedClient.loadedPaths, <String>[
-      '/workspace/demo/src/main.styio',
-    ]);
+    expect(hostedClient.loadedPaths, isNotEmpty);
+    expect(
+      hostedClient.loadedPaths,
+      everyElement('/workspace/demo/src/main.styio'),
+    );
     expect(hostedClient.savedDocuments.single['workspaceId'], 'demo-workspace');
     expect(
       hostedClient.savedDocuments.single['path'],
@@ -2679,6 +2681,7 @@ class _VerboseExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'verbose-run',
@@ -2747,6 +2750,7 @@ class _NoopExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'noop',

@@ -3,9 +3,9 @@
 **Purpose:** Define the product workflow contract for first launch, workspace lifecycle, editing, command routing, run/debug, diagnostics, agent review, settings, modules, hosted export, and recovery UX.
 
 **Owner:** `products/vityo_app/lib/src/` (app bootstrap, shell/runtime, workspace, editor, commands, runtime, agent, diagnostics, settings, module host, hosted lifecycle)
-**Last updated:** 2026-07-30
-**Plan traceability:** [Vityo requirements](../plan/vityo/Requirements.md)
-`REQ-IDE-002`, `REQ-IDE-003`, `REQ-IDE-004`, and `REQ-IDE-008`
+**Last updated:** 2026-10-03
+**Requirement traceability:** [Product requirements](../design/Vityo-Product-Spec.md)
+and [registered validation](../assets/workflow/TEST-CATALOG.md)
 
 ---
 
@@ -27,7 +27,8 @@
 | `HostedWorkspaceLifecycle` | `products/vityo_app/lib/src/ide/workspace/hosted_workspace_lifecycle.dart` | Close-plan, pending-deletion, connector-parity. |
 | `WorkspaceFileOperationService` | `products/vityo_app/lib/src/ide/workspace/workspace_file_operations.dart` | File CRUD operations with path validation. |
 | `WorkspaceFileCommandRouter` | `products/vityo_app/lib/src/ide/workspace/workspace_file_command_router.dart` | Routes file commands. |
-| `WorkspaceFileExplorerController` | `products/vityo_app/lib/src/ide/workspace/workspace_file_explorer_controller.dart` | File tree state: expanded nodes, selection, filtering. |
+| `WorkspaceFileExplorerController` | `products/vityo_app/lib/src/ide/workspace/workspace_file_explorer_controller.dart` | Single file-tree authority: recursive discovery, canonical paths, persisted expansion/selection/sort, bounded watcher batches, overflow/backpressure telemetry, and batch action plans. |
+| Explorer sidebar | `products/vityo_app/lib/src/view_render/shell/explorer_sidebar.dart` | Compact IDE tree with filtering, sorting, dirty/open state, create/rename dialogs, multi-select, and destructive batch confirmation. |
 | `VFS` | `products/vityo_app/lib/src/ide/workspace/vfs.dart` | Virtual filesystem abstraction for path resolution. |
 
 ### 1.4 Command Palette
@@ -46,14 +47,15 @@
 
 | Artifact | File | Role |
 |----------|------|------|
-| `ExecutionAdapter` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter.dart` | Abstract compile/run adapter. |
-| `ExecutionAdapterIO` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter_io.dart` | IO implementation via local CLI. |
+| `ExecutionAdapter` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter.dart` | Abstract compile/run adapter with live process-start and cancellation contracts. |
+| `ExecutionAdapterIO` | `products/vityo_app/lib/src/view_ide/backend_toolchain/execution_adapter_io.dart` | Local CLI implementation that preserves managed process handle and PID metadata. |
+| `ExecutionController` | `products/vityo_app/lib/src/view_ide/shell_runtime/controllers/execution_controller.dart` | Owns starting/running/final session state, process binding, cancellation, and lifecycle cleanup. |
 | `HostedControlPlaneClient` | `products/vityo_app/lib/src/view_ide/backend_toolchain/hosted_control_plane.dart` | Cloud execution client. |
 | `HostedExecutionCodec` | `products/vityo_app/lib/src/view_ide/backend_toolchain/hosted_execution_codec.dart` | Decodes backend responses into `ExecutionSession` + runtime events. |
 | `RuntimeTaskDefinition` | `products/vityo_app/lib/src/view_ide/runtime/runtime_task_lifecycle.dart` | Canonical task definition with kind (`shell`, `run`, `build`, `test`, `debug`, `agent`, `toolchain`). |
 | `RuntimeTaskLifecycleEvent` | `products/vityo_app/lib/src/view_ide/runtime/runtime_task_lifecycle.dart` | Unified lifecycle event: status transitions. |
 | `RuntimeExecutionPlanner` | `products/vityo_app/lib/src/view_ide/runtime/runtime_execution_plan.dart` | Execution planning: plan, handoff, binding. |
-| `RuntimeSurface` | `products/vityo_app/lib/src/view_render/runtime/runtime_surface.dart` | Runtime surface widget. |
+| `RuntimeSurface` | `products/vityo_app/lib/src/view_render/runtime/runtime_surface.dart` | Theme-aware Run/Stop surface with live process identity and final execution state. |
 | `RuntimeOutputChannelBuffer` | `products/vityo_app/lib/src/view_ide/runtime/runtime_output_channels.dart` | Output channel model: 7 channel kinds. |
 
 ### 1.6 Diagnostics
@@ -71,18 +73,19 @@
 
 ### 1.7 Agent Review
 
-The Agent workflow is protocol-backed Workbench review. The IDE owns process supervision, bounded
-context export, permission presentation, revision-bound change preview, and workspace transactions.
+The Agent workflow is protocol-backed Workbench review. `vityod` owns ACP process supervision and
+bounded MCP context export. Flutter owns permission presentation, revision-bound change preview,
+and workspace transactions.
 The connected Agent owns provider/model access, tool loops, policy, and durable sessions.
 
 | Artifact | File | Role |
 |----------|------|------|
-| `AgentClientRegistry` | `products/vityo_app/lib/src/ide/agent_client/agent_client_registry.dart` | Supervises compatible Agent processes, negotiation, requests, sessions, permissions, and reconnect. |
+| `AgentClientRegistry` | `products/vityo_app/lib/src/ide/agent_client/agent_client_registry.dart` | Projects daemon-owned Agent sessions, permissions, and reconnect state through typed requests. |
 | `AgentCollaborationService` | `products/vityo_app/lib/src/ide/workbench/agent_collaboration/agent_collaboration_service.dart` | Binds protocol sessions to immutable Workbench state and revisioned proposals. |
 | `AgentCollaborationStore` | `products/vityo_app/lib/src/ide/workbench/agent_collaboration/collaboration_store.dart` | Bounded task, timeline, permission, and change-review projection. |
 | `AgentWorkbenchSurface` | `products/vityo_app/lib/src/presentation/agent_workbench/agent_workbench_surface.dart` | Agent Workbench view for task state, permission, change preview, and receipts. |
-| `ContextExportService` | `products/vityo_app/lib/src/ide/agent_client/tools/context_export_service.dart` | Revisioned, redacted, bounded IDE fact export. |
-| `IdeMcpServer` | `products/vityo_app/lib/src/ide/agent_client/mcp/ide_mcp_server.dart` | Root-scoped IDE tool and resource host with grants and audit receipts. |
+| `VityodMcpGateway` | `products/vityo_app/lib/src/ide/agent_client/mcp/vityod_mcp_gateway.dart` | Typed access to daemon-owned, revisioned, redacted, bounded workspace fact export. |
+| `Vityod ACP host` | `products/vityo_app/native/vityod/crates/vityod-agent-host/src/acp.rs` | Owns bounded Agent process lifecycle, negotiation, correlation, cancellation, and capability enforcement. |
 | `WorkspaceTransactionService` | `products/vityo_app/lib/src/ide/workspace/workspace_transaction_service.dart` | Authoritative preview, commit, reject, and rollback boundary for proposed changes. |
 
 ### 1.8 Settings
@@ -133,7 +136,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `IdeCapabilityFramework` | `products/vityo_app/lib/src/view_ide/foundation/ide_capability_framework.dart` | 12 layers, 32 required capabilities. |
 | `IdeCapabilityRegistry` | `products/vityo_app/lib/src/view_ide/workbench/ide_capability_registry.dart` | Single truth for capability metadata. |
 | `SurfaceRegistry` | `products/vityo_app/lib/src/view_ide/workbench/surface_registry.dart` | Surface registry with placement types. |
-| `BottomSurfaceTab` enum | `products/vityo_app/lib/src/view_render/shell/shell_model.dart` | 27 bottom-surface tabs. |
+| `BottomSurfaceTab` enum | `products/vityo_app/lib/src/view_render/shell/shell_model.dart` | 29 bottom-surface tabs. |
 
 ---
 
@@ -201,27 +204,31 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 ### Settings
 29. `SettingsSurface` renders toolchain, prefs, theme, capabilities.
 30. Theme changes persisted and reflected immediately.
+31. Toolchain bootstrap actions dispatch through `ToolchainBootstrapExecutionBridge`; project
+    validation checks the workspace and executable before reporting readiness.
+32. Managed-download and external-command install plans require an in-product review confirmation
+    before the manager executes them.
 
 ### Modules
-31. `canMount` requires `installed && enabled && trusted`.
-32. Extension lifecycle: `registered` -> `activated` (or `blocked`/`failed`).
-33. Module visibility resolved per `PlatformTarget`.
+33. `canMount` requires `installed && enabled && trusted`.
+34. Extension lifecycle: `registered` -> `activated` (or `blocked`/`failed`).
+35. Module visibility resolved per `PlatformTarget`.
 
 ### Hosted Export
-34. Close plan includes `requiresClearConfirmation` when not deleted.
-35. Export URL and expiration in banner when `exportReady`.
-36. Pending deletion computes retention/deadline/remaining/expired.
+36. Close plan includes `requiresClearConfirmation` when not deleted.
+37. Export URL and expiration in banner when `exportReady`.
+38. Pending deletion computes retention/deadline/remaining/expired.
 
 ### Recovery UX
-37. Toolchain recovery dispatched via `onToolchainRecoveryAction`.
-38. Language service recovery transitions through session event states.
-39. Retry action result reports `completed`/`blocked`/`unsupported`/`failed`.
+39. Toolchain recovery dispatched via `onToolchainRecoveryAction`.
+40. Language service recovery transitions through session event states.
+41. Retry action result reports `completed`/`blocked`/`unsupported`/`failed`.
 
 ### Cross-Surface State Projection
-40. `ShellModel` is single entry point via `ShellScope.of(context)`.
-41. `IdeCapabilityRegistry` is single truth; no widget-tree inference.
-42. `FoundationLifecycleCoordinator` registers all before `initializeAll`.
-43. `BottomSurfaceTab` has exactly one mapping to `ShellPanelDescriptor`.
+42. `ShellModel` is single entry point via `ShellScope.of(context)`.
+43. `IdeCapabilityRegistry` is single truth; no widget-tree inference.
+44. `FoundationLifecycleCoordinator` registers all before `initializeAll`.
+45. `BottomSurfaceTab` has exactly one mapping to `ShellPanelDescriptor`.
 
 ---
 
@@ -248,10 +255,22 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 
 ### 4.4 Run / Debug
 - **Success:** CompileAndRun succeeds; output to runtime surface.
+- **Debug success:** Select any registered DAP profile (including extension-provided Python or
+  JavaScript adapters), edit its program, working directory, arguments, and stop-on-entry setting,
+  add or edit persisted breakpoints, then Start. The Debug Console exposes the real daemon process
+  handle and OS PID alongside launch telemetry, threads, frames, scopes, variables, and output.
+- **Debug stop:** Stop sends the graceful DAP disconnect route. Force Stop requires confirmation and
+  terminates the adapter through its production transport owner; both routes close the session and
+  record termination telemetry.
 - **Blocked compiler not installed:** Install prompt.
 - **Blocked unrunnable:** `RuntimeExecutionPlanStatus.blockedUnrunnable`.
 - **Blocked hosted:** Retry actions.
 - **Recovery:** Install toolchain or retry.
+- **Toolchain validation:** Settings verifies the current workspace and resolved executable through
+  the platform file-system manager; an optional explicit probe command can add process-level health.
+- **Toolchain install:** A trusted managed-download or external-command plan is rendered for review,
+  requires confirmation, executes through `ToolchainManager`, and records the result and recovery
+  actions in Settings.
 
 ### 4.5 Diagnostics
 - **Success:** Snapshot dispatched; problems surface updated.
@@ -340,7 +359,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 - Barrel files: `workspace.dart`, `runtime.dart`, `commands.dart`, `module_host.dart`, `app_bootstrap.dart`
 - `AppCommandId` enum: 80+ unique command IDs.
 - `requiredVityoIdeCapabilityIds`: 32 capabilities, 12 layers.
-- `BottomSurfaceTab`: 27 unique tabs.
+- `BottomSurfaceTab`: 29 unique tabs.
 - `RuntimeOutputChannelKind`: 7 channel kinds.
 - `IdeCapabilityLayer`: 12 layers.
 
@@ -355,6 +374,12 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 | `command_palette_surface_test.dart` | Widget rendering, keyboard nav, keybinding editor |
 | `runtime_task_lifecycle_test.dart` | Status transitions, serialization |
 | `runtime_execution_plan_test.dart` | Planning, handoff, binding, dispatch |
+| `runtime_execution_desktop_matrix_test.dart` | Hermetic Linux and Windows process identity, shell routing, and cancellation |
+| `runtime_execution_native_ui_test.dart` | Native macOS Flutter Run/Stop clicks against a real vityod-managed process |
+| `debugger_dap_desktop_matrix_test.dart` | Hermetic Linux Python and Windows JavaScript DAP launch identity and force termination |
+| `debugger_dap_native_ui_test.dart` | Native macOS adapter selection, launch editing, first-line breakpoint, real PID, and confirmed force-stop clicks |
+| `toolchain_project_validation_desktop_matrix_test.dart` | Hermetic Linux and Windows workspace/executable validation and ready-plan bridge dispatch |
+| `toolchain_manager_native_ui_test.dart` | Native macOS project validation plus reviewed and confirmed real installer execution |
 | `runtime_output_channel_test.dart` | Event production, subscription, channel summary |
 | `debug_console_surface_test.dart` | Replay, graph digest, debug lanes |
 | `workspace_diagnostics_controller_test.dart` | Producer lifecycle, snapshot dispatch, retry |
@@ -378,7 +403,7 @@ The connected Agent owns provider/model access, tool loops, policy, and durable 
 ### Invariant Coverage
 - [x] All 43 invariants in Section 3 backed by test assertions.
 - [x] All `AppCommandId` values (80+) unique.
-- [x] All 27 `BottomSurfaceTab` values map to `ShellPanelDescriptor`.
+- [x] All 29 `BottomSurfaceTab` values map to `ShellPanelDescriptor`.
 - [x] Single implementation path enforced by barrel exports and no duplicates.
 - [x] All 7 `RuntimeOutputChannelKind` values consumed by runtime/debug surfaces.
 - [x] All 32 required capabilities documented.

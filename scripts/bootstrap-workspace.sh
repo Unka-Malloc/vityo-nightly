@@ -80,6 +80,17 @@ verify_platforms() {
   esac
 }
 
+restore_workspace_state() {
+  for state_file in .metadata pubspec.lock; do
+    if [[ -f "$WORKSPACE_SNAPSHOT_DIR/$state_file" ]]; then
+      cp "$WORKSPACE_SNAPSHOT_DIR/$state_file" "$ROOT/products/vityo_app/$state_file"
+    else
+      rm -f "$ROOT/products/vityo_app/$state_file"
+    fi
+  done
+  rm -rf "$WORKSPACE_SNAPSHOT_DIR"
+}
+
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -127,6 +138,16 @@ main() {
   if [[ ! -x "$FLUTTER_BIN" ]]; then
     FLUTTER_BIN="$(command -v flutter)"
   fi
+
+  # Flutter rewrites SDK metadata and dependency constraints during create/pub get.
+  # Preserve the input checkout, including any caller-owned edits, as on Windows.
+  WORKSPACE_SNAPSHOT_DIR="$(mktemp -d)"
+  for state_file in .metadata pubspec.lock; do
+    if [[ -f "$ROOT/products/vityo_app/$state_file" ]]; then
+      cp "$ROOT/products/vityo_app/$state_file" "$WORKSPACE_SNAPSHOT_DIR/$state_file"
+    fi
+  done
+  trap restore_workspace_state EXIT
 
   if [[ $SKIP_PLATFORM_BOOTSTRAP -eq 0 ]]; then
     log "generating Flutter runners for platforms: $PLATFORMS"

@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'text_position.dart';
 import 'text_range.dart';
 
@@ -139,11 +141,27 @@ class PieceTreeTextBuffer implements TextBuffer {
     }
     nextPieces.addAll(suffixPieces);
 
+    final pieces = _coalescePieces(nextPieces);
+    final nextLength = length - normalizedRange.length + replacement.length;
+    final nextLineMap = _snapshot?._lineMapAfterSingleLineEdit(
+      range: normalizedRange,
+      replacement: replacement,
+    );
+    final nextSnapshot = nextLineMap == null
+        ? null
+        : TextBufferSnapshot._(
+            original: _original,
+            add: nextAdd,
+            pieces: pieces,
+            length: nextLength,
+            lineMap: nextLineMap,
+          );
     return PieceTreeTextBuffer._(
       original: _original,
       add: nextAdd,
-      pieces: _coalescePieces(nextPieces),
-      length: length - normalizedRange.length + replacement.length,
+      pieces: pieces,
+      length: nextLength,
+      snapshot: nextSnapshot,
     );
   }
 
@@ -180,10 +198,12 @@ class TextBufferSnapshot implements TextBuffer {
     required String add,
     required List<_Piece> pieces,
     required int length,
+    _LineMap? lineMap,
   }) : _original = original,
        _add = add,
        _pieces = List<_Piece>.unmodifiable(pieces),
-       _length = length;
+       _length = length,
+       _cachedLineMap = lineMap;
 
   factory TextBufferSnapshot.fromText(String text) {
     return PieceTreeTextBuffer.fromText(text).snapshot();
@@ -199,7 +219,14 @@ class TextBufferSnapshot implements TextBuffer {
 
   String get text => _cachedText ??= _materialize();
 
-  _LineMap get _lineMap => _cachedLineMap ??= _LineMap.fromText(text);
+  _LineMap get _lineMap => _cachedLineMap ??= _length >= 10000
+      ? _LineMap.fromPieces(
+          pieces: _pieces,
+          original: _original,
+          add: _add,
+          length: _length,
+        )
+      : _LineMap.fromText(text);
 
   @override
   int get length => _length;
@@ -223,7 +250,38 @@ class TextBufferSnapshot implements TextBuffer {
       return text;
     }
     final normalizedRange = range.clamp(length);
+    if (_length >= 10000) {
+      return _readTextRange(normalizedRange.start, normalizedRange.end);
+    }
     return text.substring(normalizedRange.start, normalizedRange.end);
+  }
+
+  String _readTextRange(int start, int end) {
+    if (start >= end) {
+      return '';
+    }
+    final buffer = StringBuffer();
+    var cursor = 0;
+    for (final piece in _pieces) {
+      final pieceStart = cursor;
+      final pieceEnd = cursor + piece.length;
+      if (pieceEnd <= start) {
+        cursor = pieceEnd;
+        continue;
+      }
+      if (pieceStart >= end) {
+        break;
+      }
+      final sourceText = piece.source == _PieceSource.original
+          ? _original
+          : _add;
+      final localStart =
+          piece.start + (start - pieceStart).clamp(0, piece.length);
+      final localEnd = piece.start + (end - pieceStart).clamp(0, piece.length);
+      buffer.write(sourceText.substring(localStart, localEnd));
+      cursor = pieceEnd;
+    }
+    return buffer.toString();
   }
 
   @override
@@ -232,10 +290,12 @@ class TextBufferSnapshot implements TextBuffer {
       return '';
     }
     final safeLine = line.clamp(0, lineCount - 1).toInt();
-    return text.substring(
-      _lineMap.lineStarts[safeLine],
-      _lineMap.lineContentEnds[safeLine],
-    );
+    final start = _lineMap.lineStarts[safeLine];
+    final end = _lineMap.lineContentEnds[safeLine];
+    if (_length >= 10000) {
+      return _readTextRange(start, end);
+    }
+    return text.substring(start, end);
   }
 
   @override
@@ -244,8 +304,8 @@ class TextBufferSnapshot implements TextBuffer {
     final line = _lineMap.lineForOffset(safeOffset);
     final lineStart = _lineMap.lineStarts[line];
     final lineContentEnd = _lineMap.lineContentEnds[line];
-    final column = safeOffset.clamp(lineStart, lineContentEnd).toInt() -
-        lineStart;
+    final column =
+        safeOffset.clamp(lineStart, lineContentEnd).toInt() - lineStart;
     return TextPosition(line: line, column: column);
   }
 
@@ -293,12 +353,28 @@ class TextBufferSnapshot implements TextBuffer {
     }
     return buffer.toString();
   }
+
+  _LineMap? _lineMapAfterSingleLineEdit({
+    required TextRange range,
+    required String replacement,
+  }) {
+    final lineMap = _cachedLineMap;
+    if (lineMap == null ||
+        replacement.contains('\n') ||
+        replacement.contains('\r')) {
+      return null;
+    }
+    final line = lineMap.lineForOffset(range.start);
+    if (range.end > lineMap.lineContentEnds[line]) return null;
+    final removed = getText(range);
+    if (removed.contains('\n') || removed.contains('\r')) return null;
+    final delta = replacement.length - range.length;
+    if (delta == 0) return lineMap;
+    return lineMap.shiftAfterSingleLineEdit(line: line, delta: delta);
+  }
 }
 
-enum _PieceSource {
-  original,
-  add,
-}
+enum _PieceSource { original, add }
 
 class _Piece {
   const _Piece({
@@ -333,6 +409,11 @@ class _LineMap {
   }) : lineStarts = List<int>.unmodifiable(lineStarts),
        lineContentEnds = List<int>.unmodifiable(lineContentEnds);
 
+  const _LineMap.shared({
+    required this.lineStarts,
+    required this.lineContentEnds,
+  });
+
   factory _LineMap.fromText(String text) {
     final starts = <int>[0];
     final ends = <int>[];
@@ -363,10 +444,73 @@ class _LineMap {
     return _LineMap._(lineStarts: starts, lineContentEnds: ends);
   }
 
+  factory _LineMap.fromPieces({
+    required List<_Piece> pieces,
+    required String original,
+    required String add,
+    required int length,
+  }) {
+    final starts = <int>[0];
+    final ends = <int>[];
+    var offset = 0;
+    var previousWasCarriageReturn = false;
+
+    void consumeCodeUnit(int codeUnit) {
+      if (codeUnit == 0x0A) {
+        if (previousWasCarriageReturn) {
+          offset += 1;
+          starts[starts.length - 1] = offset;
+          previousWasCarriageReturn = false;
+          return;
+        }
+        ends.add(offset);
+        offset += 1;
+        starts.add(offset);
+        return;
+      }
+      if (codeUnit == 0x0D) {
+        ends.add(offset);
+        offset += 1;
+        starts.add(offset);
+        previousWasCarriageReturn = true;
+        return;
+      }
+      previousWasCarriageReturn = false;
+      offset += 1;
+    }
+
+    for (final piece in pieces) {
+      final sourceText = piece.source == _PieceSource.original ? original : add;
+      for (var index = piece.start; index < piece.end; index += 1) {
+        consumeCodeUnit(sourceText.codeUnitAt(index));
+      }
+    }
+
+    if (ends.length < starts.length) {
+      ends.add(length);
+    }
+    return _LineMap._(lineStarts: starts, lineContentEnds: ends);
+  }
+
   final List<int> lineStarts;
   final List<int> lineContentEnds;
 
   int get lineCount => lineStarts.length;
+
+  _LineMap shiftAfterSingleLineEdit({required int line, required int delta}) {
+    return _LineMap.shared(
+      lineStarts: _ShiftedIntList(
+        source: lineStarts,
+        shiftStart: line + 1,
+        delta: delta,
+      ),
+      lineContentEnds: _ShiftedIntList(
+        source: lineContentEnds,
+        shiftStart: line,
+        delta: delta,
+      ),
+    );
+  }
 
   int lineForOffset(int offset) {
     if (lineStarts.isEmpty || offset <= lineStarts.first) {
@@ -388,4 +532,59 @@ class _LineMap {
     }
     return low;
   }
+}
+
+/// Immutable O(1) suffix-offset view used by single-line piece-table edits.
+/// Repeated edits on the same line coalesce into one view; a changed pivot is
+/// flattened once to keep random access constant-time.
+final class _ShiftedIntList extends ListBase<int> {
+  factory _ShiftedIntList({
+    required List<int> source,
+    required int shiftStart,
+    required int delta,
+  }) {
+    if (source is _ShiftedIntList) {
+      if (source._shiftStart == shiftStart) {
+        return _ShiftedIntList._(
+          source: source._source,
+          shiftStart: shiftStart,
+          delta: source._delta + delta,
+        );
+      }
+      source = List<int>.generate(source.length, (index) => source[index]);
+    }
+    return _ShiftedIntList._(
+      source: source,
+      shiftStart: shiftStart,
+      delta: delta,
+    );
+  }
+
+  _ShiftedIntList._({
+    required List<int> source,
+    required int shiftStart,
+    required int delta,
+  }) : _source = source,
+       _shiftStart = shiftStart.clamp(0, source.length),
+       _delta = delta;
+
+  final List<int> _source;
+  final int _shiftStart;
+  final int _delta;
+
+  @override
+  int get length => _source.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('immutable line map');
+
+  @override
+  int operator [](int index) {
+    RangeError.checkValidIndex(index, this);
+    return _source[index] + (index >= _shiftStart ? _delta : 0);
+  }
+
+  @override
+  void operator []=(int index, int value) =>
+      throw UnsupportedError('immutable line map');
 }

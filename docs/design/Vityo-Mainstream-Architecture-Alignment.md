@@ -3,42 +3,41 @@
 **Purpose:** Map Vityo's architecture to mainstream IDE/agentic-IDE patterns without cloning any competitor. This document defines where Vityo aligns, where it intentionally diverges, and what governance rules maintain the alignment.
 
 **Owner:** Architecture owner (`CODEOWNERS` → architecture domain)
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
 ---
 
 ## 1. Architecture Reference Model
 
-Vityo's architecture is organized into seven horizontal layers with strict import-direction rules:
+Vityo's Flutter application has separate owners for composition, application state, service contracts, and rendering. This figure describes dependency direction; it does not claim every route has been composed or declare the Agent runtime/protocol as layers inside the IDE:
 
 ```
-┌──────────────────────────────────────────────┐
-│  view_render/   Flutter presentation surface │  ← Flutter Material/Widgets allowed
-├──────────────────────────────────────────────┤
-│  view_ide/      Domain / application /       │  ← NO Flutter presentation imports
-│                 adapter contract / state      │
-├──────────────┬───────────────────────────────┤
-│  agent_client/│ module_host/                  │  ← Protocol client + extension host
-│               │ contribution / activation     │
-├──────────────┴───────────────────────────────┤
-│  legacy roots        Compatibility facades    │  ← One-line export only, no new logic
-├──────────────────────────────────────────────┤
-│  app/        Composition root                │  ← Bootstrap, DI, feature flags
-├──────────────────────────────────────────────┤
-│  prototype/  Web Editor (manual maintenance)  │  ← Not a Flutter build output
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│ view_render/       Flutter presentation            │
+│                   ↑ registered owner surfaces       │
+├────────────────────────────────────────────────────┤
+│ ide/               Editor/workspace/Agent state     │
+│ view_ide/          Services, contracts, adapters    │
+├────────────────────────────────────────────────────┤
+│ app/               Shared service composition       │
+└────────────────────────────────────────────────────┘
+
+Separate product roots: `products/vityo_coding_agent/` owns Agent execution;
+`packages/vityo_agent_protocol/` owns the shared wire contract. `prototype/` is a
+permanent independent source asset, not a Flutter output or a migration target.
 ```
 
 ### 1.1 Boundary Rules
 
-| Layer | May Import | Must NOT Import |
+| Owner | May Import | Must NOT Import |
 |-------|-----------|-----------------|
-| `view_render/` | `view_ide/`, Flutter Material/Widgets/Cupertino | Agent runtime/provider core, `module_host/` activation |
-| `view_ide/` | Standard Dart, `backend_toolchain/` (shim only) | Flutter Material, Widgets, Cupertino, `dart:ui` |
-| `ide/agent_client/` | IDE fact/workspace contracts, shared Agent protocol | Flutter, presentation widgets, model/provider SDKs, Coding Agent implementation |
-| `view_ide/module_host/` | `view_ide/` contracts | `view_render/`, Flutter |
-| `app/` | All layers | Nothing restricted (composition root) |
-| `prototype/` | Self-contained | `products/vityo_app/` (build artifact boundary) |
+| `view_render/` | Flutter APIs and only narrow path-registered public model/adapter/projection surfaces from `ide/` or `view_ide/` | Unregistered implementation paths, Agent runtime/provider core, or product internals that bypass a declared contract |
+| `view_ide/` | Presentation-independent IDE services and adapter implementations, including `view_ide/backend_toolchain/` | `view_render/` or Flutter presentation APIs |
+| `ide/agent_client/` | IDE fact/workspace contracts and the shared Agent protocol | Coding Agent implementation or provider/model SDKs |
+| `app/` | Shared IDE service owners and presentation composition | A competing workspace, document, or Agent authority |
+| `prototype/` | Its own source assets and declared prototype dependencies | Assumptions that it is a Flutter build output or removable migration residue |
+
+A path registration exposes only that reviewed owner surface. It does not turn the containing directory into a public API or establish runtime composition.
 
 ## 2. Industry Alignment Map
 
@@ -106,10 +105,12 @@ Vityo's architecture is organized into seven horizontal layers with strict impor
 ### 3.1 Import Rules
 
 1. `view_ide/` files MUST NOT import from `package:flutter/material.dart`, `package:flutter/widgets.dart`, or `package:flutter/cupertino.dart`.
-2. `view_render/` files MUST NOT import from `ide/agent_client/`,
-   `ide/workbench/agent_collaboration/`, `view_ide/language/service/`, or
-   `view_ide/module_host/`; Agent UI imports the presentation-owned Workbench surface.
-3. Removed legacy `backend_toolchain/`, `editor/`, and `language/` import roots MUST NOT be
+2. `view_render/` files MAY import only individually registered public model/adapter/projection
+   surfaces from `ide/` or `view_ide/`; an allowlisted file does not expose its siblings. The actual
+   owner stays in its current root.
+3. The active `view_ide/backend_toolchain/` root owns backend/toolchain adapter implementations.
+   It is not a legacy shim. Removed top-level `backend_toolchain/`, `editor/`, `language/`, and
+   `integration/` import roots MUST NOT be
    restored.
 4. `ide/agent_client/` files MUST NOT import from presentation widgets, model/provider SDKs, or
    Coding Agent implementation packages.

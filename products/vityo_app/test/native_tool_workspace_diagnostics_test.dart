@@ -14,6 +14,9 @@ void main() {
       message: 'clang-tidy produced diagnostics.',
       metadata: const <String, Object?>{
         'documentId': 'src/main.styio',
+        'processHandleId': 'diagnostics-process-1',
+        'pid': 6101,
+        'processHandleSource': 'vityod',
         'staticAnalysisResult': <String, Object?>{
           'status': 'failed',
           'diagnosticCount': 1,
@@ -44,5 +47,19 @@ void main() {
       streamSnapshot.entries.single.sourceKind,
       WorkspaceDiagnosticStreamSourceKind.nativeTool,
     );
+    expect(record.processHandle?.processHandleId, 'diagnostics-process-1');
+    expect(snapshot.producerProcessHandle?.pid, 6101);
+    expect(
+      snapshot.toJson()['producerProcessHandle'],
+      containsPair('source', 'vityod'),
+    );
+    final output = WorkspaceDiagnosticsRuntimeOutputBinding(
+      snapshot: snapshot,
+    ).outputPanelSnapshot(timestamp: DateTime.utc(2026, 5, 20, 12));
+    expect(
+      output.events.first.metadata['processHandleId'],
+      'diagnostics-process-1',
+    );
+    expect(output.events.first.metadata['pid'], 6101);
   });
 }

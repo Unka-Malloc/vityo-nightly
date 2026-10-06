@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../view_ide/commands/commands.dart';
 import '../../view_ide/interaction/interaction.dart';
+import '../../view_ide/module_host/module_host.dart';
 import '../../view_ide/foundation/foundation.dart';
-import '../../view_ide/environment/configuration/vityo_theme_override.dart';
+import '../../view_ide/environment/environment.dart';
 import '../../view_ide/toolchain/toolchain_catalog.dart';
 import '../../view_ide/toolchain/toolchain_manager.dart';
+import '../../view_ide/toolchain/toolchain_project_validation.dart';
+import '../../ide/workspace/workspace.dart';
 import '../platform/viewport_profile.dart';
 import '../theme/theme.dart';
 
@@ -25,6 +30,21 @@ class SettingsSurface extends StatelessWidget {
     this.onSelectClangCppVersion,
     this.onClearToolchain,
     this.onExecuteToolchainInstallPlan,
+    this.platformManagerSettings,
+    this.credentialStorageSettings,
+    this.extensionMarketplacePreferences,
+    this.extensionMarketplaceMessage = '',
+    this.extensionMarketplaceBusy = false,
+    this.onSaveExtensionMarketplacePreferences,
+    this.onRefreshExtensionMarketplace,
+    this.hostedBackendConnector,
+    this.hostedBackendActionResult,
+    this.hostedBackendActionRunning = false,
+    this.onHostedBackendAction,
+    this.platformManagerProbeRunning = false,
+    this.onRefreshPlatformManagers,
+    this.onPlatformRecoveryRoute,
+    this.onSelectPlatformSettingsSection,
     this.ideCapabilities,
     this.commandPalettePreferences = const CommandPaletteDisplayPreferences(
       workspaceId: 'default',
@@ -50,6 +70,24 @@ class SettingsSurface extends StatelessWidget {
   onSelectClangCppVersion;
   final Future<void> Function(ToolchainKind kind)? onClearToolchain;
   final Future<void> Function()? onExecuteToolchainInstallPlan;
+  final PlatformManagerSettingsSurface? platformManagerSettings;
+  final CredentialStorageSettingsSurface? credentialStorageSettings;
+  final ExtensionMarketplacePreferences? extensionMarketplacePreferences;
+  final String extensionMarketplaceMessage;
+  final bool extensionMarketplaceBusy;
+  final Future<void> Function(ExtensionMarketplacePreferences preferences)?
+  onSaveExtensionMarketplacePreferences;
+  final Future<void> Function()? onRefreshExtensionMarketplace;
+  final HostedBackendConnectorParityReport? hostedBackendConnector;
+  final HostedBackendRetryActionExecutionResult? hostedBackendActionResult;
+  final bool hostedBackendActionRunning;
+  final Future<void> Function(HostedBackendRetryAction action)?
+  onHostedBackendAction;
+  final bool platformManagerProbeRunning;
+  final Future<void> Function()? onRefreshPlatformManagers;
+  final void Function(PlatformManagerRecoveryActionRoute route)?
+  onPlatformRecoveryRoute;
+  final void Function(String sectionId)? onSelectPlatformSettingsSection;
   final IdeCapabilityFrameworkSnapshot? ideCapabilities;
   final CommandPaletteDisplayPreferences commandPalettePreferences;
   final Future<void> Function(CommandPaletteDisplayPreferences preferences)?
@@ -82,6 +120,40 @@ class SettingsSurface extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 14),
+              if (platformManagerSettings case final platformSettings?) ...[
+                _PlatformManagerSettingsCard(
+                  settings: platformSettings,
+                  refreshing: platformManagerProbeRunning,
+                  onRefresh: onRefreshPlatformManagers,
+                  onRecoveryRoute: onPlatformRecoveryRoute,
+                  onSelectSection: onSelectPlatformSettingsSection,
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (credentialStorageSettings case final credentialSettings?) ...[
+                _CredentialStorageSettingsCard(settings: credentialSettings),
+                const SizedBox(height: 14),
+              ],
+              if (extensionMarketplacePreferences
+                  case final marketplacePreferences?) ...[
+                _ExtensionMarketplaceSettingsCard(
+                  preferences: marketplacePreferences,
+                  message: extensionMarketplaceMessage,
+                  busy: extensionMarketplaceBusy,
+                  onSave: onSaveExtensionMarketplacePreferences,
+                  onRefresh: onRefreshExtensionMarketplace,
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (hostedBackendConnector case final connector?) ...[
+                _HostedBackendSettingsCard(
+                  connector: connector,
+                  lastResult: hostedBackendActionResult,
+                  actionRunning: hostedBackendActionRunning,
+                  onAction: onHostedBackendAction,
+                ),
+                const SizedBox(height: 14),
+              ],
               _ToolchainSettingsCard(
                 settings: settings,
                 installPlan: toolchainInstallPlan,
@@ -109,6 +181,611 @@ class SettingsSurface extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExtensionMarketplaceSettingsCard extends StatefulWidget {
+  const _ExtensionMarketplaceSettingsCard({
+    required this.preferences,
+    required this.message,
+    required this.busy,
+    required this.onSave,
+    required this.onRefresh,
+  });
+
+  final ExtensionMarketplacePreferences preferences;
+  final String message;
+  final bool busy;
+  final Future<void> Function(ExtensionMarketplacePreferences preferences)?
+  onSave;
+  final Future<void> Function()? onRefresh;
+
+  @override
+  State<_ExtensionMarketplaceSettingsCard> createState() =>
+      _ExtensionMarketplaceSettingsCardState();
+}
+
+class _ExtensionMarketplaceSettingsCardState
+    extends State<_ExtensionMarketplaceSettingsCard> {
+  late final TextEditingController _indexUrlController;
+  late bool _enableAfterInstall;
+  late bool _trustVerifiedListings;
+  late bool _activateTrustedAfterInstall;
+
+  @override
+  void initState() {
+    super.initState();
+    _indexUrlController = TextEditingController(
+      text: widget.preferences.indexUrl,
+    );
+    _applyPreferences(widget.preferences, updateText: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExtensionMarketplaceSettingsCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.preferences.toJson().toString() !=
+        widget.preferences.toJson().toString()) {
+      _applyPreferences(widget.preferences, updateText: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _indexUrlController.dispose();
+    super.dispose();
+  }
+
+  void _applyPreferences(
+    ExtensionMarketplacePreferences preferences, {
+    required bool updateText,
+  }) {
+    if (updateText) {
+      _indexUrlController.text = preferences.indexUrl;
+    }
+    _enableAfterInstall = preferences.enableAfterInstall;
+    _trustVerifiedListings = preferences.trustVerifiedListings;
+    _activateTrustedAfterInstall = preferences.activateTrustedAfterInstall;
+  }
+
+  ExtensionMarketplacePreferences get _draft {
+    return widget.preferences.copyWith(
+      indexUrl: _indexUrlController.text.trim(),
+      enableAfterInstall: _enableAfterInstall,
+      trustVerifiedListings: _trustVerifiedListings,
+      activateTrustedAfterInstall: _activateTrustedAfterInstall,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      key: const ValueKey('settings-extension-marketplace'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: VityoWorkbenchTokens.of(context).elevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.extension_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Extension Marketplace',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (widget.busy)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Choose the trusted index endpoint and what Vityo should do after a verified package is installed.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('settings-extension-marketplace-index-url'),
+            controller: _indexUrlController,
+            enabled: !widget.busy,
+            decoration: const InputDecoration(
+              labelText: 'Marketplace index URL',
+              hintText: 'https://extensions.example/index.json',
+              prefixIcon: Icon(Icons.link_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-enable-after-install',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable after install'),
+              subtitle: const Text(
+                'Register the extension immediately after package verification.',
+              ),
+              value: _enableAfterInstall,
+              onChanged: widget.busy
+                  ? null
+                  : (value) => setState(() => _enableAfterInstall = value),
+            ),
+          ),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-trust-verified',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Trust verified publishers'),
+              subtitle: const Text(
+                'Grant trust only when marketplace verification and SHA-256 integrity both pass.',
+              ),
+              value: _trustVerifiedListings,
+              onChanged: widget.busy
+                  ? null
+                  : (value) => setState(() => _trustVerifiedListings = value),
+            ),
+          ),
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile.adaptive(
+              key: const ValueKey(
+                'settings-extension-marketplace-activate-trusted',
+              ),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Activate trusted installs'),
+              subtitle: const Text(
+                'Start a trusted extension host after install instead of waiting for restart.',
+              ),
+              value: _activateTrustedAfterInstall,
+              onChanged: widget.busy
+                  ? null
+                  : (value) =>
+                        setState(() => _activateTrustedAfterInstall = value),
+            ),
+          ),
+          if (widget.message.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.message,
+              key: const ValueKey('settings-extension-marketplace-message'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('settings-extension-marketplace-save'),
+                onPressed: widget.busy || widget.onSave == null
+                    ? null
+                    : () => widget.onSave!(_draft),
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save Marketplace Settings'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-extension-marketplace-refresh'),
+                onPressed: widget.busy ? null : widget.onRefresh,
+                icon: const Icon(Icons.sync_rounded),
+                label: const Text('Refresh Index'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HostedBackendSettingsCard extends StatelessWidget {
+  const _HostedBackendSettingsCard({
+    required this.connector,
+    required this.lastResult,
+    required this.actionRunning,
+    required this.onAction,
+  });
+
+  final HostedBackendConnectorParityReport connector;
+  final HostedBackendRetryActionExecutionResult? lastResult;
+  final bool actionRunning;
+  final Future<void> Function(HostedBackendRetryAction action)? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
+    final ready = connector.status == HostedBackendConnectorStatus.ready;
+    final stateColor = ready ? tokens.success : tokens.error;
+    return Container(
+      key: const ValueKey('settings-hosted-backend-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: VityoWorkbenchTokens.of(context).elevated,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.cloud_outlined, size: 20, color: stateColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Hosted Backend',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              if (actionRunning)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: SizedBox.square(
+                    dimension: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: stateColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  connector.status.label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: stateColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(connector.message, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final check in connector.checks)
+                Chip(
+                  key: ValueKey('settings-hosted-check-${check.id}'),
+                  avatar: Icon(
+                    check.available
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                    size: 16,
+                  ),
+                  label: Text(check.label),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final action in connector.actions)
+                OutlinedButton.icon(
+                  key: ValueKey('settings-hosted-action-${action.id}'),
+                  onPressed:
+                      !action.enabled || actionRunning || onAction == null
+                      ? null
+                      : () => unawaited(onAction!(action)),
+                  icon: Icon(_hostedActionIcon(action.kind), size: 17),
+                  label: Text(action.label),
+                ),
+            ],
+          ),
+          if (lastResult case final result?) ...[
+            const SizedBox(height: 10),
+            Text(
+              result.message,
+              key: const ValueKey('settings-hosted-last-result'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: result.successful ? tokens.success : stateColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+IconData _hostedActionIcon(HostedBackendRetryActionKind kind) {
+  return switch (kind) {
+    HostedBackendRetryActionKind.retryConnect => Icons.cloud_sync_outlined,
+    HostedBackendRetryActionKind.refreshWorkspace => Icons.refresh_rounded,
+    HostedBackendRetryActionKind.reopenWorkspace => Icons.restore_rounded,
+    HostedBackendRetryActionKind.exportCoreFiles => Icons.download_outlined,
+    HostedBackendRetryActionKind.openSettings => Icons.settings_outlined,
+  };
+}
+
+class _CredentialStorageSettingsCard extends StatelessWidget {
+  const _CredentialStorageSettingsCard({required this.settings});
+
+  final CredentialStorageSettingsSurface settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
+    final stateColor = settings.productionReady ? tokens.success : tokens.error;
+    return Container(
+      key: const ValueKey('settings-credential-storage-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: VityoWorkbenchTokens.of(context).elevated,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.key_rounded, size: 20, color: stateColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Credential Storage',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: stateColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  settings.productionReady ? 'Protected' : 'Session only',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: stateColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${settings.backendLabel} · ${settings.platformLabel}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(settings.message, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _CredentialStorageFact(
+                label: settings.persistent ? 'Persistent' : 'Volatile',
+                enabled: settings.persistent,
+              ),
+              _CredentialStorageFact(
+                label: settings.safeForLongLivedSecrets
+                    ? 'Long-lived secrets enabled'
+                    : 'Short-lived credentials only',
+                enabled: settings.safeForLongLivedSecrets,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CredentialStorageFact extends StatelessWidget {
+  const _CredentialStorageFact({required this.label, required this.enabled});
+
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
+    final color = enabled ? tokens.success : tokens.muted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: tokens.region,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(color: color),
+      ),
+    );
+  }
+}
+
+class _PlatformManagerSettingsCard extends StatelessWidget {
+  const _PlatformManagerSettingsCard({
+    required this.settings,
+    required this.refreshing,
+    required this.onRefresh,
+    required this.onRecoveryRoute,
+    required this.onSelectSection,
+  });
+
+  final PlatformManagerSettingsSurface settings;
+  final bool refreshing;
+  final Future<void> Function()? onRefresh;
+  final void Function(PlatformManagerRecoveryActionRoute route)?
+  onRecoveryRoute;
+  final void Function(String sectionId)? onSelectSection;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
+    return Container(
+      key: const ValueKey('settings-platform-managers-card'),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: VityoWorkbenchTokens.of(context).elevated,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Platform Services',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${settings.readyCount}/${settings.sections.length} live checks ready',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('settings-platform-refresh'),
+                  onPressed: refreshing ? null : onRefresh,
+                  icon: refreshing
+                      ? const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded, size: 18),
+                  label: Text(refreshing ? 'Checking' : 'Run checks'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...settings.sections.map((section) {
+              final selected = settings.activeSectionId == section.id;
+              final stateColor = section.ready ? tokens.success : tokens.error;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: InkWell(
+                  key: ValueKey('settings-platform-section-${section.id}'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onSelectSection == null
+                      ? null
+                      : () => onSelectSection!(section.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected ? tokens.hover : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Icon(
+                              section.ready
+                                  ? Icons.check_circle_rounded
+                                  : Icons.error_rounded,
+                              size: 17,
+                              color: stateColor,
+                            ),
+                            Text(
+                              section.title,
+                              style: theme.textTheme.labelLarge,
+                            ),
+                            Text(
+                              section.ready ? 'Ready' : 'Needs attention',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: stateColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(section.message, style: theme.textTheme.bodySmall),
+                        if (selected && section.description.isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            section.description,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: tokens.muted,
+                            ),
+                          ),
+                        ],
+                        if (section.recoveryRoutes.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: section.recoveryRoutes
+                                .map((route) {
+                                  return TextButton.icon(
+                                    key: ValueKey(
+                                      'settings-platform-recovery-${route.actionId}',
+                                    ),
+                                    onPressed: onRecoveryRoute == null
+                                        ? null
+                                        : () => onRecoveryRoute!(route),
+                                    icon: const Icon(
+                                      Icons.settings_rounded,
+                                      size: 16,
+                                    ),
+                                    label: Text(route.label),
+                                  );
+                                })
+                                .toList(growable: false),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
@@ -163,8 +840,9 @@ class _CommandPaletteSettingsCardState
       key: const ValueKey('settings-command-palette-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFEDE8F1),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Material(
@@ -311,8 +989,9 @@ class _IdeCapabilityFrameworkCard extends StatelessWidget {
       key: const ValueKey('settings-ide-capability-framework'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE6EEF1),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -428,12 +1107,28 @@ extension _ThemeColorFieldX on _ThemeColorField {
     _ThemeColorField.muted => 'Muted',
   };
 
-  String get hint => switch (this) {
-    _ThemeColorField.canvas => '#F7F4EB',
-    _ThemeColorField.panel => '#FFFDF5',
-    _ThemeColorField.ink => '#2D2416',
-    _ThemeColorField.accent => '#C7522A',
-    _ThemeColorField.muted => '#A09880',
+  String hintFor(VityoThemePreset preset) => switch (preset) {
+    VityoThemePreset.obsidian => switch (this) {
+      _ThemeColorField.canvas => '#060708',
+      _ThemeColorField.panel => '#0C0E10',
+      _ThemeColorField.ink => '#E9EBED',
+      _ThemeColorField.accent => '#E5B85C',
+      _ThemeColorField.muted => '#8A929A',
+    },
+    VityoThemePreset.parchment => switch (this) {
+      _ThemeColorField.canvas => '#F7F4EB',
+      _ThemeColorField.panel => '#FFFDF5',
+      _ThemeColorField.ink => '#2D2416',
+      _ThemeColorField.accent => '#C7522A',
+      _ThemeColorField.muted => '#A09880',
+    },
+    VityoThemePreset.graphite => switch (this) {
+      _ThemeColorField.canvas => '#EDEFF2',
+      _ThemeColorField.panel => '#FFFFFF',
+      _ThemeColorField.ink => '#1E252B',
+      _ThemeColorField.accent => '#2F6F73',
+      _ThemeColorField.muted => '#62717C',
+    },
   };
 
   String get keyName => switch (this) {
@@ -452,7 +1147,8 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   @override
   void initState() {
     super.initState();
-    _previewPreset = VityoThemePreset.parchment;
+    _previewPreset =
+        widget.themeOverride.presetValue ?? VityoThemePreset.obsidian;
     _controllers = {
       for (final field in _ThemeColorField.values)
         field: TextEditingController(
@@ -464,6 +1160,10 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   @override
   void didUpdateWidget(covariant _ThemeSettingsCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final persistedPreset = widget.themeOverride.presetValue;
+    if (persistedPreset != null && persistedPreset != _previewPreset) {
+      _previewPreset = persistedPreset;
+    }
     for (final field in _ThemeColorField.values) {
       final controller = _controllers[field]!;
       final nextText = _colorToHex(_overrideColor(field, widget.themeOverride));
@@ -485,7 +1185,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final draftOverride = _draftOverride();
-    final previewTheme = VityoTheme.light(
+    final previewTheme = VityoTheme.resolve(
       preset: _previewPreset,
       overrides: draftOverride,
     );
@@ -493,8 +1193,9 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
       key: const ValueKey('settings-theme-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE8EFE6),
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -548,7 +1249,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
                         },
                         decoration: InputDecoration(
                           labelText: field.label,
-                          hintText: field.hint,
+                          hintText: field.hintFor(_previewPreset),
                         ),
                       ),
                     ),
@@ -582,7 +1283,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
                     ? null
                     : () {
                         setState(() {
-                          _previewPreset = VityoThemePreset.parchment;
+                          _previewPreset = VityoThemePreset.obsidian;
                           for (final field in _ThemeColorField.values) {
                             _controllers[field]!.text = '';
                           }
@@ -607,6 +1308,7 @@ class _ThemeSettingsCardState extends State<_ThemeSettingsCard> {
 
   VityoThemeOverride _draftOverride() {
     return VityoThemeOverride(
+      preset: _previewPreset.name,
       canvas: _resolvedColor(_ThemeColorField.canvas)?.toARGB32(),
       panel: _resolvedColor(_ThemeColorField.panel)?.toARGB32(),
       ink: _resolvedColor(_ThemeColorField.ink)?.toARGB32(),
@@ -840,12 +1542,13 @@ class _ToolchainSettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = VityoWorkbenchTokens.of(context);
     final status = settings.status;
     final accent = switch (status.severity) {
-      ToolchainStatusSeverity.ready => const Color(0xFFDFF0DE),
-      ToolchainStatusSeverity.unavailable => const Color(0xFFF0E8D6),
-      ToolchainStatusSeverity.blocked => const Color(0xFFF4E8D8),
-      ToolchainStatusSeverity.failed => const Color(0xFFF3D8D6),
+      ToolchainStatusSeverity.ready => tokens.success,
+      ToolchainStatusSeverity.unavailable => tokens.warning,
+      ToolchainStatusSeverity.blocked => tokens.blocked,
+      ToolchainStatusSeverity.failed => tokens.error,
     };
     final selectClangCppVersion =
         onSelectClangCppVersion ??
@@ -859,8 +1562,9 @@ class _ToolchainSettingsCard extends StatelessWidget {
       key: const ValueKey('settings-toolchain-status-card'),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: accent,
+        color: VityoWorkbenchTokens.of(context).elevated,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.42)),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -972,9 +1676,9 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: VityoWorkbenchTokens.of(context).region,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        border: Border.all(color: VityoWorkbenchTokens.of(context).divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1004,9 +1708,11 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
+                color: VityoWorkbenchTokens.of(context).region,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
+                border: Border.all(
+                  color: VityoWorkbenchTokens.of(context).divider,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1022,11 +1728,49 @@ class _ToolchainBootstrapSummaryView extends StatelessWidget {
                       dispatchResult!.message,
                       style: theme.textTheme.bodySmall,
                     ),
-                  if (dispatchResult!.todo.isNotEmpty)
+                  if (dispatchResult!.recoveryHint.isNotEmpty)
                     Text(
-                      dispatchResult!.todo,
+                      dispatchResult!.recoveryHint,
                       style: theme.textTheme.bodySmall,
                     ),
+                ],
+              ),
+            ),
+          ],
+          if (summary.projectValidation case final validation?) ...[
+            const SizedBox(height: 10),
+            Container(
+              key: const ValueKey(
+                'settings-toolchain-project-validation-result',
+              ),
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: validation.ready
+                    ? VityoWorkbenchTokens.of(context).accentSoft
+                    : VityoWorkbenchTokens.of(
+                        context,
+                      ).error.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: validation.ready
+                      ? VityoWorkbenchTokens.of(
+                          context,
+                        ).accent.withValues(alpha: 0.42)
+                      : VityoWorkbenchTokens.of(
+                          context,
+                        ).error.withValues(alpha: 0.42),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Project validation · ${validation.status.wireValue}',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(validation.message, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
@@ -1281,12 +2025,78 @@ class _ToolchainInstallPlanView extends StatelessWidget {
           const SizedBox(height: 8),
           OutlinedButton(
             key: const ValueKey('settings-toolchain-execute-install-plan'),
-            onPressed: onExecuteToolchainInstallPlan,
-            child: const Text('Continue install plan'),
+            onPressed: () => _continueInstallPlan(context),
+            child: Text(
+              plan.requiresConfirmation
+                  ? 'Review installation'
+                  : 'Continue install plan',
+            ),
           ),
         ],
       ],
     );
+  }
+
+  Future<void> _continueInstallPlan(BuildContext context) async {
+    if (plan.requiresConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          final theme = Theme.of(context);
+          final download = plan.downloadUri == null
+              ? null
+              : Uri.tryParse(plan.downloadUri!);
+          return AlertDialog(
+            key: const ValueKey('settings-toolchain-install-confirmation'),
+            title: const Text('Review toolchain installation'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Vityo will run the reviewed ${plan.mode} plan for the ${plan.kind} toolchain.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  if (download != null)
+                    Text(
+                      'Download source: ${download.scheme}://${download.host}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  if (plan.externalCommand != null)
+                    Text(
+                      'Command: ${plan.externalCommand}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: const ValueKey(
+                  'settings-toolchain-install-confirmation-cancel',
+                ),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const ValueKey(
+                  'settings-toolchain-install-confirmation-confirm',
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Install'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true || !context.mounted) {
+        return;
+      }
+    }
+    await onExecuteToolchainInstallPlan!();
   }
 }
 

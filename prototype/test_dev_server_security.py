@@ -10,7 +10,6 @@ import time
 import unittest
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import quote
@@ -22,6 +21,14 @@ SPEC = importlib.util.spec_from_file_location("dev_server", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 dev_server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(dev_server)
+
+
+class DevServerStartupTest(unittest.TestCase):
+    def test_local_bind_does_not_depend_on_reverse_dns(self) -> None:
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("unexpected DNS")):
+            with dev_server.LocalDevServer(("127.0.0.1", 0), dev_server.PrototypeHandler) as server:
+                self.assertEqual(server.server_name, "127.0.0.1")
+                self.assertGreater(server.server_port, 0)
 
 
 class DevServerPathUtilityTest(unittest.TestCase):
@@ -202,7 +209,7 @@ class DevServerPathUtilityTest(unittest.TestCase):
             def server_close(self) -> None:
                 events.append("close")
 
-        with mock.patch.object(dev_server, "ThreadingHTTPServer", FakeServer):
+        with mock.patch.object(dev_server, "LocalDevServer", FakeServer):
             os.environ[dev_server.ENABLE_MUTATION_ENV] = "1"
             dev_server.main()
 
@@ -225,7 +232,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
         dev_server.WORKSPACE_ROOT = workspace.resolve()
         dev_server.WORKSPACE_CONFIG = Path(self.temp_dir.name) / ".workspace-root"
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), dev_server.PrototypeHandler)
+        self.server = dev_server.LocalDevServer(("127.0.0.1", 0), dev_server.PrototypeHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base_url = f"http://127.0.0.1:{self.server.server_port}"

@@ -1,21 +1,4 @@
-"""REQ-IDE-008 frozen independent desktop release acceptance.
-
-Observation target:
-  packaging/vityo/desktop_delivery.py and the three platform manifests.
-
-Precondition:
-  one repository delivery contract plus synthetic launch/capability evidence.
-
-Action:
-  validate repository wiring, evaluate missing-host and malformed-evidence
-  lanes, then evaluate each platform's complete evidence independently.
-
-Oracle:
-  all manifests and CI lanes are Vityo-owned; unavailable host tooling is
-  BLOCKED rather than passed; incomplete or dishonest launch evidence fails;
-  only evidence proving artifact, launch, workspace open, and truthful
-  capability reporting passes.
-"""
+"""REQ-IDE-008 package layout and installed-client startup contract."""
 
 from __future__ import annotations
 
@@ -28,10 +11,6 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 MODULE_PATH = ROOT / "packaging" / "vityo" / "desktop_delivery.py"
-SOURCE_BINDING = {
-    "commit": "a" * 40,
-    "source_fingerprint": "b" * 64,
-}
 
 
 def _load_module():
@@ -49,94 +28,95 @@ class QualityPackagingAcceptanceTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.delivery = _load_module()
 
-    def test_repository_declares_three_truthful_vityo_delivery_lanes(self) -> None:
+    def test_repository_declares_agent_and_daemon_package_components(self) -> None:
         errors = self.delivery.validate_repository(ROOT)
         self.assertEqual(errors, [], "\n".join(errors))
         contract = self.delivery.load_delivery_contract(ROOT)
-        self.assertEqual(
-            set(contract["platforms"]),
-            {"windows", "macos", "linux"},
-        )
+        self.assertEqual(set(contract["platforms"]), {"windows", "macos", "linux"})
         self.assertEqual(contract["product"], "vityo")
+        self.assertEqual(contract["coding_agent"]["name"], "vityo-coding-agent")
 
-        package_script = (ROOT / "scripts" / "package-nightly.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('stage = Path(raw_stage) / "Vityo-Nightly"', package_script)
-        self.assertIn('app_root = stage / "opt/vityo"', package_script)
+        for platform in self.delivery.PLATFORMS:
+            with self.subTest(platform=platform):
+                manifest = json.loads(
+                    (ROOT / "packaging" / platform / "nightly.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(
+                    manifest["coding_agent"]["package_relative_path"],
+                    self.delivery.CODING_AGENT_PACKAGE_PATHS[platform],
+                )
+                self.assertEqual(
+                    manifest["coding_agent"]["source_relative_path"],
+                    self.delivery.CODING_AGENT_SOURCE_PATHS[platform],
+                )
+                self.assertEqual(
+                    manifest["coding_agent"]["required_runtime_libraries"],
+                    self.delivery.CODING_AGENT_RUNTIME_LIBRARIES[platform],
+                )
 
-    def test_missing_host_is_blocked_and_incomplete_evidence_fails(self) -> None:
-        blocked = self.delivery.evaluate_lane(
-            platform="macos",
-            host_platform="windows",
-            available_tools=set(),
-            evidence=None,
-        )
-        self.assertEqual(blocked.status, "blocked")
-        self.assertIn("host", blocked.reason.lower())
-
-        incomplete = self.delivery.evaluate_lane(
-            platform="windows",
-            host_platform="windows",
-            available_tools={"flutter", "python", "powershell"},
-            evidence={
-                "schema_version": 1,
-                "platform": "windows",
-                **SOURCE_BINDING,
-                "artifact_verified": True,
-                "launched": True,
-                "workspace_opened": False,
-                "capabilities": {},
-            },
-        )
-        self.assertEqual(incomplete.status, "failed")
-        self.assertIn("workspace", incomplete.reason.lower())
-
-        dishonest = self.delivery.evaluate_lane(
+    def test_startup_report_binds_exact_installed_candidate_and_first_frame(self) -> None:
+        evidence = {
+            "schema_version": 1,
+            "candidate": "vityo-nightly-linux-0.1.0-nightly.1.deb",
+            "platform": "linux",
+            "launched": True,
+            "first_frame": True,
+        }
+        result = self.delivery.evaluate_lane(
             platform="linux",
             host_platform="linux",
-            available_tools={"flutter", "python", "dpkg-deb", "xvfb-run"},
-            evidence={
-                "schema_version": 1,
-                "platform": "linux",
-                **SOURCE_BINDING,
-                "artifact_verified": True,
-                "launched": True,
-                "workspace_opened": True,
-                "capabilities": {"agent": "available"},
-            },
+            expected_candidate=evidence["candidate"],
+            evidence=evidence,
         )
-        self.assertEqual(dishonest.status, "failed")
-        self.assertIn("capabilit", dishonest.reason.lower())
+        self.assertEqual(result.status, "passed")
 
-    def test_complete_evidence_is_required_for_every_platform(self) -> None:
-        required_tools = {
-            "windows": {"flutter", "python", "powershell"},
-            "macos": {"flutter", "python", "hdiutil"},
-            "linux": {"flutter", "python", "dpkg-deb", "xvfb-run"},
-        }
-        for platform in ("windows", "macos", "linux"):
-            with self.subTest(platform=platform):
+        for change in (
+            {"candidate": "different-package.deb"},
+            {"platform": "windows"},
+            {"first_frame": False},
+            {"launched": False},
+            {"workspace_opened": True},
+        ):
+            with self.subTest(change=change):
+                mismatched = {**evidence, **change}
                 result = self.delivery.evaluate_lane(
-                    platform=platform,
-                    host_platform=platform,
-                    available_tools=required_tools[platform],
-                    evidence={
-                        "schema_version": 1,
-                        "platform": platform,
-                        **SOURCE_BINDING,
-                        "artifact_verified": True,
-                        "launched": True,
-                        "workspace_opened": True,
-                        "capabilities": {
-                            "editor": "available",
-                            "workspace": "available",
-                            "agent": "unavailable",
-                            "agent_reason": "No Agent descriptor is configured.",
-                        },
-                    },
+                    platform="linux",
+                    host_platform="linux",
+                    expected_candidate=evidence["candidate"],
+                    evidence=mismatched,
                 )
-                self.assertEqual(result.status, "passed", json.dumps(result.to_json()))
+                self.assertEqual(result.status, "failed")
+
+    def test_startup_report_requires_matching_host_and_closed_fields(self) -> None:
+        evidence = {
+            "schema_version": 1,
+            "candidate": "vityo-nightly-windows-0.1.0-nightly.1.zip",
+            "platform": "windows",
+            "launched": True,
+            "first_frame": True,
+        }
+        blocked = self.delivery.evaluate_lane(
+            platform="windows",
+            host_platform="linux",
+            expected_candidate=evidence["candidate"],
+            evidence=evidence,
+        )
+        self.assertEqual(blocked.status, "blocked")
+
+        for extra in (
+            {"capabilities": {"editor": "available"}},
+            {"commit": "a" * 40},
+        ):
+            with self.subTest(extra=extra):
+                result = self.delivery.evaluate_lane(
+                    platform="windows",
+                    host_platform="windows",
+                    expected_candidate=evidence["candidate"],
+                    evidence={**evidence, **extra},
+                )
+                self.assertEqual(result.status, "failed")
 
 
 if __name__ == "__main__":

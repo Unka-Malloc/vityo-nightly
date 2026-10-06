@@ -1,56 +1,41 @@
-# Live Cloud Provider Validation
+# Live Provider Acceptance Boundary
 
-**Purpose:** Define an opt-in validation path for cloud providers owned by a compatible Agent runtime, without storing raw credentials or treating live-provider evidence as default CI evidence.
+**Purpose:** Keep external-provider acceptance separate from deterministic engineering coverage and
+protect credentials and conversation data.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-02
 
-## Scope
+## Engineering Verification
 
-Live cloud provider validation is optional evidence for the Agent-runtime delivery track. It verifies
-that a configured provider can be reached through the Coding Agent provider router and that Vityo
-receives only the resulting structured Agent protocol state. It is not evidence that the IDE
-connects to a provider.
+Provider configuration and the OpenAI-compatible adapter belong to the independent Coding Agent
+runtime. The selected non-secret JSON contract is documented in
+[`AGENT-PROVIDER-ADAPTER-SCHEMA.md`](../specs/AGENT-PROVIDER-ADAPTER-SCHEMA.md). Engineering
+coverage uses the production adapter against a deterministic local HTTP/SSE fixture, synthetic
+credential resolution, and protocol/tool fixtures. It does not require cloud credentials or make a
+real provider request.
 
-Live-provider validation belongs under `products/vityo_coding_agent`. The removed IDE provider
-route is not a fallback or compatibility lane.
+Provider configuration stores only endpoint/model/limits and an OS credential-service/account
+reference. A raw API key or bearer value must not be written to the config file, command arguments,
+IDE state, ACP messages, logs, test artifacts, or durable session journal.
 
-This lane is not part of default local CI, pull request CI, or checkpoint health. Default CI must continue to use deterministic loopback, mocked transport, and credential-store tests.
+## Live Acceptance
 
-## Opt-In Requirements
+This repository does not define a live-provider CI lane or initiate a real model conversation as an
+engineering test. Real provider conversations and real development tasks belong to the user's
+designated Agent on an explicit task. Installing or opening the client, an adapter fixture test, a
+provider-config parser, or the startup probe does not authorize or establish that acceptance.
 
-A live validation run must satisfy all of these conditions:
+If the user explicitly runs a live acceptance task, record only whether the user-authorized request
+reached the selected provider and whether the expected structured protocol outcome was observed.
+Do not store prompts, model responses, credentials, provider account identifiers, private endpoint
+details, backend payloads, or raw logs in repository evidence. Keep any required report redacted and
+limited to the stage outcome and recovery category.
 
-1. The runner sets an explicit opt-in flag such as `VITYO_LIVE_AGENT_PROVIDER=1`.
-2. The provider endpoint is configured through an Agent-runtime provider route, not through Vityo
-   settings or ad hoc IDE HTTP code.
-3. Credentials are injected through the Agent runtime's credential boundary, a runner secret, or a
-   short-lived environment secret; Vityo receives no raw credential.
-4. Raw credential values are never written to logs, release notes, screenshots, artifacts, or `docs/release/local-validation-evidence.md`.
-5. The evidence record captures only redacted credential readiness, provider route, protocol family, model id, request id, response status, failure category, and recovery action.
+## Recovery And Reporting
 
-## Evidence Rules
-
-When the opt-in lane runs, record evidence in `docs/release/local-validation-evidence.md` only if the run produces a structured result:
-
-- **Passed:** route resolution ready, credential readiness ready, request completed, provider message id present, and response content adapted into an agent response.
-- **Blocked:** route resolution blocked, credential missing, provider endpoint unreachable, policy disallowed client credential lookup, or hosted route requires server-side credential resolution.
-- **Failed:** request reached the provider but returned a protocol, authentication, quota, timeout, or response-shape error.
-
-Do not record a live provider as release evidence when the opt-in flag is absent. Do not convert loopback provider tests into live-provider evidence.
-
-## Recommended Local Command Shape
-
-No live-provider command is currently declared. A future live test or workflow must live under
-`products/vityo_coding_agent`, require the opt-in flag, and exit as skipped or blocked when the flag
-or credential is missing. It must not fail default CI because a developer lacks cloud credentials,
-and it must not restore an IDE-side provider route.
-
-## Release Checklist
-
-Before treating a live provider run as release evidence:
-
-1. Confirm the lane was explicitly opted in.
-2. Confirm raw credentials are absent from console logs and uploaded artifacts.
-3. Confirm the result includes a structured provider route resolution.
-4. Confirm failures include a user-visible recovery action, such as opening provider settings or selecting a fallback provider.
-5. Link the live result to a dated release evidence row.
+Treat missing configuration, unavailable native credential service, provider connection failure,
+authentication failure, quota response, malformed response, and cancellation as distinct outcomes.
+The provider runtime must expose a safe error category and recovery action without echoing secrets,
+request bodies, or private service data. Deterministic fixture failures are repaired as engineering
+defects; external-provider failure remains live-acceptance evidence for the explicitly assigned
+Agent.

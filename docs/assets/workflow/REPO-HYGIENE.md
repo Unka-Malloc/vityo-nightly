@@ -32,7 +32,7 @@ This gate rejects:
 2. forbidden binary/archive suffixes in tracked files or pushed history
 3. undocumented binary files outside the narrow allowlist
 4. `.gitignore` drift against the shared cross-repo baseline
-5. missing documentation references for the hygiene and delivery entrypoints, including `scripts/delivery-gate.sh`
+5. missing documentation references for the direct hygiene command `python3 scripts/repo-hygiene-gate.py --mode tracked` and the canonical delivery entrypoint `python3 scripts/vityo.py deliver`
 6. `view_ide` / `view_render` boundary drift, including `view_ide` importing `view_render` or Flutter presentation APIs
 7. legacy `src/backend_toolchain/*.dart` files carrying implementation instead of one-line facades to `src/view_ide/backend_toolchain/`
 8. legacy `src/language/*.dart` files carrying implementation instead of one-line facades to `src/view_ide/language/`

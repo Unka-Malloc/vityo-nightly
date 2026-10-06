@@ -2,6 +2,7 @@ import '../../backend_toolchain/backend_toolchain.dart';
 import '../../commands/commands.dart';
 import '../../../ide/editor/editor.dart';
 import '../../language/language_contract.dart';
+import '../../environment/system_compatibility/process/process_manager.dart';
 import '../../platform/platform.dart';
 import '../../toolchain/toolchain.dart';
 import '../../../ide/workspace/workspace.dart';
@@ -42,7 +43,11 @@ final class NativeToolRuntimeController {
   final void Function(String message) log;
   final void Function() notify;
 
-  Future<NativeToolCommandResult> run(NativeToolCommand command) async {
+  Future<NativeToolCommandResult> run(
+    NativeToolCommand command, {
+    ProcessCommandStartedCallback? onProcessStarted,
+    bool recordTestingResult = true,
+  }) async {
     final commandId = command.appCommandId;
     final backendRouteMetadata = executionController
         .nativeToolBackendRouteMetadata(
@@ -72,7 +77,13 @@ final class NativeToolRuntimeController {
       NativeToolCommand.build => _build(manager, layout, backendRouteMetadata),
       NativeToolCommand.formatDocument => _format(manager),
       NativeToolCommand.staticAnalysis => _analyze(manager, layout),
-      NativeToolCommand.tests => _tests(manager, layout, backendRouteMetadata),
+      NativeToolCommand.tests => _tests(
+        manager,
+        layout,
+        backendRouteMetadata,
+        onProcessStarted: onProcessStarted,
+        recordTestingResult: recordTestingResult,
+      ),
     };
   }
 
@@ -178,12 +189,15 @@ final class NativeToolRuntimeController {
   Future<NativeToolCommandResult> _tests(
     ToolchainManager manager,
     NativeBuildWorkspaceLayout layout,
-    Map<String, Object?> routeMetadata,
-  ) async {
+    Map<String, Object?> routeMetadata, {
+    ProcessCommandStartedCallback? onProcessStarted,
+    required bool recordTestingResult,
+  }) async {
     final execution = await executionController.runNativeTests(
       manager: manager,
       workspaceLayout: layout,
       workspaceRoot: workspaceController.activeProject.workspaceRoot,
+      onProcessStarted: onProcessStarted,
     );
     return _complete(
       NativeToolCommand.tests.appCommandId,
@@ -193,14 +207,16 @@ final class NativeToolRuntimeController {
         metadata: <String, Object?>{...execution.metadata, ...routeMetadata},
         diagnostics: execution.diagnostics,
       ),
+      recordTestingResult: recordTestingResult,
     );
   }
 
   NativeToolCommandResult _complete(
     AppCommandId commandId,
-    NativeToolCommandResult result,
-  ) {
-    _record(commandId, result);
+    NativeToolCommandResult result, {
+    bool recordTestingResult = true,
+  }) {
+    _record(commandId, result, recordTestingResult: recordTestingResult);
     log(result.message);
     notify();
     return result;
@@ -212,7 +228,11 @@ final class NativeToolRuntimeController {
     }
   }
 
-  void _record(AppCommandId commandId, NativeToolCommandResult result) {
+  void _record(
+    AppCommandId commandId,
+    NativeToolCommandResult result, {
+    bool recordTestingResult = true,
+  }) {
     final record = executionController.recordNativeToolResult(
       command: commandId,
       label: label(commandId),
@@ -221,7 +241,7 @@ final class NativeToolRuntimeController {
       metadata: result.metadata,
       diagnostics: result.diagnostics,
     );
-    if (record.command == AppCommandId.runTests) {
+    if (recordTestingResult && record.command == AppCommandId.runTests) {
       testingController.recordNativeToolResult(
         message: record.message,
         metadata: record.metadata['testResult'],

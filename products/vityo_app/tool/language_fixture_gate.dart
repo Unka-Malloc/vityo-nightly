@@ -2,9 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/file_system/file_system_manager.dart';
-import 'package:vityo_app/src/view_ide/environment/system_compatibility/file_system/file_system_manager_io.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
-import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager_io.dart';
+import 'language_fixture_io.dart';
 import 'package:vityo_app/src/view_ide/language/service/language_fixture_confidence_matrix.dart';
 import 'package:vityo_app/src/view_ide/language/service/styio_service_connector.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
@@ -32,8 +31,9 @@ Future<int> runLanguageFixtureGateCommand(
     stdoutSink.writeln(LanguageFixtureGateCommandConfig.usage);
     return 0;
   }
-  final fs = fileSystemManager ?? await createPlatformFileSystemManager();
-  final process = processManager ?? await createPlatformProcessManager();
+  final fs =
+      fileSystemManager ?? await createLanguageFixtureFileSystemManager();
+  final process = processManager ?? await createLanguageFixtureProcessManager();
   final protocol = StyioCliJsonlProtocol(parserEngine: config.parserEngine);
   final catalog = ToolchainCatalog()
     ..register(
@@ -54,7 +54,9 @@ Future<int> runLanguageFixtureGateCommand(
   );
   final matrix = await gate.run(roots: config.roots);
   stderrSink.writeln(formatLanguageFixtureGateSummary(matrix));
-  stdoutSink.writeln(const JsonEncoder.withIndent('  ').convert(matrix.toJson()));
+  stdoutSink.writeln(
+    const JsonEncoder.withIndent('  ').convert(matrix.toJson()),
+  );
   if (matrix.entries.isEmpty) {
     stderrSink.writeln('No .styio fixtures found.');
     return 1;

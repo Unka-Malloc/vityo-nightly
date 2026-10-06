@@ -23,8 +23,11 @@ abstract class ShellRuntimeFacadeHost extends ChangeNotifier {
   WorkspaceDocumentController get _workspaceDocumentController;
   dynamic get _workspacePersistenceController;
   dynamic get _workspaceFileCommandController;
+  dynamic get _workspaceFileExplorerController;
   dynamic get _workspaceFileConfirmationController;
   dynamic get _workspaceDiagnosticsRuntimeController;
+  dynamic get _diagnosticsPanelStateController;
+  dynamic get _runtimeOutputProducerBindings;
   dynamic get _workspaceReplaceController;
   dynamic get _workspaceNavigationController;
   dynamic get _projectLanguageContextController;
@@ -32,6 +35,7 @@ abstract class ShellRuntimeFacadeHost extends ChangeNotifier {
   dynamic get _workspaceQuickFixController;
   dynamic get _workspaceSearchController;
   dynamic get _settingsController;
+  HostedBackendController get _hostedBackendController;
   dynamic get _executionController;
   dynamic get _projectGraphController;
   dynamic get _deploymentController;
@@ -41,6 +45,7 @@ abstract class ShellRuntimeFacadeHost extends ChangeNotifier {
   dynamic get _shellInputCommandController;
   dynamic get _shellCommandFallbackController;
   dynamic get _moduleController;
+  ExtensionMarketplaceController get _extensionMarketplaceController;
   dynamic get _nativeToolRuntimeController;
   dynamic get _debugController;
   dynamic get _backendCommandPolicyController;

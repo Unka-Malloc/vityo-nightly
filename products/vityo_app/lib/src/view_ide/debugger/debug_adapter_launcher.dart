@@ -32,7 +32,6 @@ class DapDebugAdapterExecutionPlan {
     required this.outputBinding,
     required this.status,
     required this.message,
-    this.todo = '',
   });
 
   factory DapDebugAdapterExecutionPlan.fromConfiguration({
@@ -77,8 +76,6 @@ class DapDebugAdapterExecutionPlan {
       outputBinding: outputBinding,
       status: DapDebugAdapterExecutionPlanStatus.ready,
       message: 'DAP debug adapter execution plan is ready.',
-      todo:
-          'TODO: connect this launch plan to a live adapter process and lifecycle telemetry stream.',
     );
   }
 
@@ -88,7 +85,6 @@ class DapDebugAdapterExecutionPlan {
   final RuntimeExecutionHandoffBinding outputBinding;
   final DapDebugAdapterExecutionPlanStatus status;
   final String message;
-  final String todo;
 
   bool get ready => status == DapDebugAdapterExecutionPlanStatus.ready;
 
@@ -115,7 +111,6 @@ class DapDebugAdapterExecutionPlan {
       'routePlan': routePlan.toJson(),
       'outputBinding': outputBinding.toJson(),
       'outputSubscriptionPlan': outputSubscriptionPlan().toJson(),
-      if (todo.isNotEmpty) 'todo': todo,
     };
   }
 }
@@ -133,6 +128,21 @@ class DapDebugSessionHandle {
 
   DapSessionSnapshot get snapshot => bridge.snapshot;
   Stream<DapSessionSnapshot> get snapshotEvents => bridge.snapshotEvents;
+  RuntimeProcessHandleIdentity? get processHandle {
+    final transport = bridge.transport;
+    if (transport is! DapProcessIdentitySource) {
+      return null;
+    }
+    return (transport as DapProcessIdentitySource).processHandle;
+  }
+
+  Future<int>? get processExitCode {
+    final transport = bridge.transport;
+    if (transport is! DapProcessLifecycleSource) {
+      return null;
+    }
+    return (transport as DapProcessLifecycleSource).processExitCode;
+  }
 
   Future<void> sendRequest(DapRequest request) {
     return bridge.sendRequest(request);
@@ -144,13 +154,14 @@ class DapDebugSessionHandle {
 
   DebugSessionTerminationPlan terminationPlan({
     bool force = false,
-    bool processHandleAvailable = false,
+    bool? processHandleAvailable,
   }) {
     return DebugSessionTerminationPlan.fromSnapshot(
       debuggerId: launchConfiguration.debuggerId,
       snapshot: snapshot,
       force: force,
-      processHandleAvailable: processHandleAvailable,
+      processHandleAvailable:
+          processHandleAvailable ?? processHandle?.available == true,
     );
   }
 }
@@ -448,15 +459,27 @@ class DebugSessionTerminationExecutor {
     required String reason,
   }) async {
     final handler = processTerminationHandler;
-    if (handler == null) {
+    final transport = handle.bridge.transport;
+    if (handler == null && transport is! DapProcessTerminationSource) {
       return DebugSessionTerminationExecutionResult(
         plan: plan,
         status: DebugSessionTerminationExecutionStatus.blocked,
         message:
-            'Debug process termination is blocked: no process termination handler is registered.',
+            'Debug process termination is blocked: the adapter transport does not expose process termination.',
       );
     }
-    final result = await handler(handle: handle, plan: plan, reason: reason);
+    final result = handler != null
+        ? await handler(handle: handle, plan: plan, reason: reason)
+        : await (() async {
+            final outcome = await (transport as DapProcessTerminationSource)
+                .terminateProcess(force: true);
+            return DebugProcessTerminationResult(
+              accepted: outcome.accepted,
+              processTerminated: outcome.processTerminated,
+              message: outcome.message,
+              metadata: outcome.metadata,
+            );
+          })();
     if (!result.accepted) {
       return DebugSessionTerminationExecutionResult(
         plan: plan,

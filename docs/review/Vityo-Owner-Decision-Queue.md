@@ -2,7 +2,7 @@
 
 **Purpose:** 集中记录 `vityo-nightly` 中真正需要产品所有者裁决的高杠杆问题；一次回答应同时约束多个需求、实现节点和验收口径。
 
-**Last updated:** 2026-07-26
+**Last updated:** 2026-10-03
 
 **Status:** Resolved — 3/3 个所有者问题已裁决
 
@@ -148,11 +148,10 @@ Should the next milestone be the trustworthy desktop IDE loop instead of requiri
 
 - `docs/design/Vityo-Product-Spec.md`：产品不变量、桌面优先范围、平台策略。
 - `docs/design/Vityo-Implementation-Gaps.md`：未完成能力、上游阻塞和三个陈旧的低层“Decision needed”条目。
-- `docs/plan/vityo/Requirements.md` and `docs/plan/vityo-coding-agent/Requirements.md`:
-  current two-line delivery contracts.
-- `docs/plan/vityo/Evidence.md` and `docs/plan/vityo-coding-agent/Evidence.md`: current
-  repository findings and external architecture evidence.
-- `docs/plan/vityo/Checkpoints.json` and
-  `docs/plan/vityo-coding-agent/Checkpoints.json`: current implementation lifecycles and
-  dependencies.
+- `docs/design/Vityo-System-Architecture.md` and `docs/adr/`: current product
+  boundaries and accepted architecture decisions.
+- `docs/assets/workflow/TEST-CATALOG.md` and `docs/specs/POST-COMMIT-CI-CHECKS.md`:
+  maintained engineering validation and delivery commands.
+- `docs/plan/EXECUTION-RUNBOOK.md`: execution records remain outside the repository;
+  repository requirements and tests do not depend on transient planning files.
 - `docs/review/Logic-Conflicts.md` 与 `docs/adr/`：此前产品冲突均已裁决，不重复提问。

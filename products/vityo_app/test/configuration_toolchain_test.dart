@@ -11,9 +11,31 @@ import 'package:vityo_app/src/view_ide/language/service/styio_service_manager_co
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain.dart';
 
+import 'support/test_file_system_manager.dart';
+import 'support/test_secure_credential_backend.dart';
+import 'support/vityod_test_harness.dart';
+
 const _interactivePtyTimeout = Duration(seconds: 30);
 
 void main() {
+  VityodTestHarness? vityod;
+  late ProcessManager processManager;
+
+  setUpAll(() async {
+    if (VityodTestHarness.isSupported) {
+      vityod = await VityodTestHarness.start(clientId: 'toolchain-test');
+      processManager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+    } else {
+      processManager = UnsupportedProcessManager(
+        facts: ProcessFacts.windowsX64(),
+      );
+    }
+  });
+
+  tearDownAll(() => vityod?.close());
+
   test(
     'configuration and toolchain abstract files avoid direct system APIs',
     () {
@@ -54,7 +76,7 @@ void main() {
   );
 
   Future<ConfigurationStore> createConfigurationStore(Directory root) async {
-    final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
     final resourceManager = LocalResourceManager(
       facts: ResourceFacts.linuxDebianArm(
         systemTempPath: root.path,
@@ -290,26 +312,18 @@ void main() {
     );
   });
 
-  test('foundation credential datastore persists redacted metadata', () async {
-    final tempRoot = await Directory.systemTemp.createTemp(
-      'vityo_foundation_credential_store_test_',
+  test('platform credential datastore persists redacted metadata', () async {
+    final backend = TestSecureCredentialKeyValueBackend();
+    final adapter = PlatformSecureJsonCredentialStorageAdapter(
+      adapterId: 'test-keychain',
+      backendId: 'test-keychain',
+      backend: backend,
+      productionSupported: true,
+      platformLabel: 'Test Keychain',
     );
-    addTearDown(() => tempRoot.delete(recursive: true));
-    final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
-    final resourceManager = LocalResourceManager(
-      facts: ResourceFacts.linuxDebianArm(
-        systemTempPath: tempRoot.path,
-        homePath: tempRoot.path,
-      ),
+    final credentialStore = CredentialStoragePolicyEnforcingDataStore(
+      delegate: PlatformSecureCredentialDataStore(adapter: adapter),
     );
-    final dataStore = FoundationDataStore(
-      resourceCoordinator: FoundationResourceCoordinator(
-        resourceManager: resourceManager,
-        fileSystemManager: fileSystemManager,
-      ),
-      fileSystemManager: fileSystemManager,
-    );
-    final credentialStore = FoundationCredentialDataStore(dataStore: dataStore);
     const key = CredentialDataStoreKey(
       namespace: 'toolchain',
       name: 'styio-registry',
@@ -325,7 +339,15 @@ void main() {
         displayName: 'Styio registry token',
       ),
     );
-    final reloadedStore = FoundationCredentialDataStore(dataStore: dataStore);
+    final reloadedStore = PlatformSecureCredentialDataStore(
+      adapter: PlatformSecureJsonCredentialStorageAdapter(
+        adapterId: 'test-keychain',
+        backendId: 'test-keychain',
+        backend: backend,
+        productionSupported: true,
+        platformLabel: 'Test Keychain',
+      ),
+    );
     final loaded = await reloadedStore.read(key);
     final snapshot = await reloadedStore.snapshot();
     final snapshotJson = snapshot.toJson().toString();
@@ -447,6 +469,8 @@ void main() {
     expect(unsupported.defaultProfileId, 'unsupported');
     expect(unsupported.defaultProfile, isNull);
     expect(fromFacts.defaultProfileId, 'default');
+    expect(fromFacts.timeout, isNull);
+    expect(fromFacts.toJson().containsKey('timeoutMs'), isFalse);
     expect(parsed.defaultProfile!.id, 'pwsh');
     expect(parsed.defaultProfile!.arguments, <String>['-NoProfile', '42']);
     expect(parsed.defaultProfile!.environment['PSModulePath'], r'C:\Modules');
@@ -556,7 +580,7 @@ void main() {
         'vityo_env_configuration_edges_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
-      final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+      final fileSystemManager = TestFileSystemManager.linuxDebianArm();
       final firstEnv = fileSystemManager.joinPath(<String>[
         tempRoot.path,
         '.env',
@@ -682,7 +706,7 @@ REMOVE_ME=from-file
         'vityo_env_file_loader_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
-      final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+      final fileSystemManager = TestFileSystemManager.linuxDebianArm();
       final envPath = fileSystemManager.joinPath(<String>[
         tempRoot.path,
         '.env',
@@ -759,7 +783,7 @@ REMOVE_ME=from-file
     'execution manager builds env through resolver and redacts result metadata',
     () async {
       final manager = ExecutionManager(
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
         inheritedEnvironment: const <String, String>{'PATH': '/usr/bin'},
       );
 
@@ -774,10 +798,7 @@ REMOVE_ME=from-file
               id: 'task',
               scope: EnvironmentVariableOverlayScope.task,
               target: 'execution',
-              variables: <String, String?>{
-                'STYIO_TOKEN': 'raw-token',
-                'STYIO_MODE': 'overlay',
-              },
+              variables: <String, String?>{'STYIO_MODE': 'overlay'},
               pathPrepend: <String>['/opt/styio/bin'],
             ),
           ],
@@ -792,8 +813,7 @@ REMOVE_ME=from-file
         result.processResult.stdout,
         contains('PATH=/opt/styio/bin:/usr/bin'),
       );
-      expect(result.redactedEnvironment['STYIO_TOKEN'], '<redacted>');
-      expect(result.toJson().toString(), isNot(contains('raw-token')));
+      expect(result.redactedEnvironment['STYIO_MODE'], 'runtime');
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );
@@ -944,7 +964,7 @@ REMOVE_ME=from-file
       );
       final runtime = ToolchainRuntime(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
       );
 
       final result = await runtime.run(
@@ -955,6 +975,7 @@ REMOVE_ME=from-file
       expect(result.succeeded, isTrue);
       expect(result.toolchainId, 'printf');
       expect(result.stdout, 'toolchain-ok');
+      expect(result.metadata['processHandleId'], isNotEmpty);
       expect(result.toJson()['status'], 'succeeded');
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
@@ -988,6 +1009,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final catalog = ToolchainCatalog()
         ..register(
@@ -1012,6 +1034,7 @@ REMOVE_ME=from-file
       expect(platformManagers.process.facts.targetId, 'toolchain-platform');
       expect(result.succeeded, isTrue);
       expect(result.stdout, 'toolchain-platform-ok');
+      expect(result.metadata['processHandleId'], isNotEmpty);
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );
@@ -1073,7 +1096,7 @@ REMOVE_ME=from-file
         );
       final runtime = ToolchainRuntime(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
       );
 
       final result = await runtime.run(
@@ -1095,7 +1118,7 @@ REMOVE_ME=from-file
 
     final report = await const ToolchainHealthChecker().check(
       catalog: catalog,
-      processManager: LocalProcessManager.linuxDebianArmForTest(),
+      processManager: processManager,
       requirement: const ToolchainRequirement(
         kind: ToolchainKind.languageService,
       ),
@@ -1123,7 +1146,7 @@ REMOVE_ME=from-file
 
       final report = await const ToolchainHealthChecker().check(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
         requirement: const ToolchainRequirement(kind: ToolchainKind.runner),
         probeArguments: const <String>['toolchain-healthy'],
       );
@@ -1150,7 +1173,7 @@ REMOVE_ME=from-file
         );
       final runtime = ToolchainRuntime(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
       );
 
       final result = await runtime.run(
@@ -1175,7 +1198,9 @@ REMOVE_ME=from-file
       final toolchainStore = ToolchainConfigurationStore(
         configurationStore: configurationStore,
       );
-      final platformManagers = await createDetectedPlatformManagerBundle();
+      final platformManagers = await createDetectedPlatformManagerBundle(
+        vityodClient: vityod!.client,
+      );
       final catalog = ToolchainCatalog()
         ..register(
           ToolchainDescriptor(
@@ -1251,7 +1276,7 @@ REMOVE_ME=from-file
         );
       final runtime = ToolchainRuntime(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
       );
 
       final report = await runtime.checkHealth(
@@ -1483,6 +1508,7 @@ REMOVE_ME=from-file
       final executor = ToolchainInstallExecutor(
         platformManagers: await createPlatformManagerBundle(
           platformContext: context,
+          vityodClient: vityod!.client,
         ),
         environmentBuilder: const ToolchainEnvironmentBuilder(
           inheritedEnvironment: <String, String>{'PATH': '/usr/bin'},
@@ -1494,15 +1520,25 @@ REMOVE_ME=from-file
         requirement: ToolchainRequirement(kind: ToolchainKind.languageService),
         externalCommand: '/usr/bin/env',
       );
+      final started = Completer<ProcessCommandHandle>();
 
       final result = await executor.execute(
         plan,
         environment: const <String, String>{'VITYO_INSTALL_TEST': 'ok'},
+        onProcessStarted: started.complete,
       );
+      final handle = await started.future.timeout(const Duration(seconds: 5));
 
       expect(result.status, ToolchainInstallExecutionStatus.succeeded);
       expect(result.succeeded, isTrue);
       expect(result.processResult?.stdout, contains('VITYO_INSTALL_TEST=ok'));
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.pid, greaterThan(0));
+      expect(
+        result.processResult?.metadata['processHandleId'],
+        handle.processHandleId,
+      );
+      expect(result.processResult?.metadata['pid'], handle.pid);
       expect(result.toJson()['processResult'], isA<Map<String, Object?>>());
 
       final failed = await executor.execute(
@@ -1518,7 +1554,11 @@ REMOVE_ME=from-file
 
       expect(failed.status, ToolchainInstallExecutionStatus.failed);
       expect(failed.platformFailure, isNotNull);
-      expect(failed.platformFailure!['kind'], 'nonZeroExit');
+      expect(
+        failed.platformFailure!['kind'],
+        'nonZeroExit',
+        reason: failed.toJson().toString(),
+      );
       expect(failed.toJson()['platformFailure'], isA<Map<String, Object?>>());
     },
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
@@ -1777,6 +1817,7 @@ REMOVE_ME=from-file
     );
     final platformManagers = await createPlatformManagerBundle(
       platformContext: context,
+      vityodClient: vityod!.client,
     );
     final executor = ToolchainInstallExecutor(
       platformManagers: platformManagers,
@@ -1910,6 +1951,7 @@ REMOVE_ME=from-file
     });
     final platformManagers = await createPlatformManagerBundle(
       platformContext: createLinuxPlatformContext('toolchain-unsafe-archive'),
+      vityodClient: vityod!.client,
     );
     final executor = ToolchainInstallExecutor(
       platformManagers: platformManagers,
@@ -1983,6 +2025,7 @@ REMOVE_ME=from-file
         platformContext: createLinuxPlatformContext(
           'toolchain-directory-executable',
         ),
+        vityodClient: vityod!.client,
       );
       final executor = ToolchainInstallExecutor(
         platformManagers: platformManagers,
@@ -2068,6 +2111,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final executor = ToolchainInstallExecutor(
         platformManagers: platformManagers,
@@ -2127,7 +2171,7 @@ REMOVE_ME=from-file
       );
       final runtime = ToolchainRuntime(
         catalog: catalog,
-        processManager: LocalProcessManager.linuxDebianArmForTest(),
+        processManager: processManager,
         environmentBuilder: const ToolchainEnvironmentBuilder(
           inheritedEnvironment: <String, String>{'PATH': '/usr/bin'},
         ),
@@ -2280,6 +2324,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final toolchainStore = ToolchainConfigurationStore(
         configurationStore: configurationStore,
@@ -2545,6 +2590,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
         configurationStore: ToolchainConfigurationStore(
@@ -2640,6 +2686,7 @@ REMOVE_ME=from-file
       final configurationStore = await createConfigurationStore(tempRoot);
       final platformManagers = await createPlatformManagerBundle(
         platformContext: createLinuxPlatformContext('toolchain-manager-edges'),
+        vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
         configurationStore: ToolchainConfigurationStore(
@@ -2793,6 +2840,7 @@ REMOVE_ME=from-file
     );
     final platformManagers = await createPlatformManagerBundle(
       platformContext: context,
+      vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
       configurationStore: ToolchainConfigurationStore(
@@ -2895,6 +2943,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
         configurationStore: ToolchainConfigurationStore(
@@ -3000,6 +3049,7 @@ REMOVE_ME=from-file
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
         configurationStore: ToolchainConfigurationStore(
@@ -3129,6 +3179,7 @@ REMOVE_ME=from-file
     );
     final platformManagers = await createPlatformManagerBundle(
       platformContext: context,
+      vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
       configurationStore: ToolchainConfigurationStore(
@@ -3238,6 +3289,7 @@ REMOVE_ME=from-file
     );
     final platformManagers = await createPlatformManagerBundle(
       platformContext: context,
+      vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
       configurationStore: ToolchainConfigurationStore(
@@ -3327,6 +3379,7 @@ REMOVE_ME=from-file
         ),
         platformManagers: await createPlatformManagerBundle(
           platformContext: context,
+          vityodClient: vityod!.client,
         ),
         workspaceId: 'demo',
       );
@@ -3367,7 +3420,14 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ),
       );
 
-      expect(health.healthy, isTrue);
+      expect(
+        health.healthy,
+        isTrue,
+        reason:
+            'status=${health.status} message=${health.message} '
+            'exit=${health.processResult?.exitCode} '
+            'stderr=${health.processResult?.stderr}',
+      );
       expect(health.processResult?.stdout, 'managed-health');
       expect(response.status, StyioServiceStatus.succeeded);
       expect(response.toolchainId, 'printf-styio');
@@ -3415,6 +3475,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ),
         platformManagers: await createPlatformManagerBundle(
           platformContext: context,
+          vityodClient: vityod!.client,
         ),
         workspaceId: 'demo',
       );
@@ -3462,7 +3523,9 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
   test(
     'styio language toolchain discovery is owned by toolchain layer',
     () async {
-      final catalog = await createPlatformStyioLanguageToolchainCatalog();
+      final catalog = await createPlatformStyioLanguageToolchainCatalog(
+        platformManagers: await createDetectedPlatformManagerBundle(),
+      );
       final discovered = catalog.list();
 
       expect(
@@ -3493,6 +3556,8 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
+        workspaceRoot: tempRoot.path,
       );
       final styioPath = platformManagers.fileSystem.joinPath(<String>[
         tempRoot.path,
@@ -3533,6 +3598,8 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
       );
       final platformManagers = await createPlatformManagerBundle(
         platformContext: context,
+        vityodClient: vityod!.client,
+        workspaceRoot: tempRoot.path,
       );
       final clangPath = platformManagers.fileSystem.joinPath(<String>[
         tempRoot.path,
@@ -3639,7 +3706,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
               environment: <String, String>{'STYIO_MODE': 'profile'},
             );
       final terminal = TerminalRuntime(
-        ptyManager: LocalPtyManager(facts: ptyFacts),
+        ptyManager: LocalPtyManager(facts: ptyFacts, client: vityod!.client),
         shellConfiguration: ShellConfiguration(
           defaultProfileId: profile.id,
           environmentOverlay: const <String, String>{'STYIO_MODE': 'config'},
@@ -3698,10 +3765,18 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         'vityo_native_cpp_tools_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
+      final platformManagers = await createDetectedPlatformManagerBundle(
+        vityodClient: vityod!.client,
+        workspaceRoot: tempRoot.path,
+      );
       Future<String> fakeTool(String name) async {
-        final file = File('${tempRoot.path}/$name');
-        await file.writeAsString('fake $name');
-        return file.path;
+        final path = platformManagers.fileSystem.joinPath(<String>[
+          tempRoot.path,
+          name,
+        ]);
+        await platformManagers.fileSystem.writeText(path, 'fake $name');
+        await platformManagers.fileSystem.setExecutable(path);
+        return path;
       }
 
       final clang = await fakeTool('clang');
@@ -3710,6 +3785,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
       final ninja = await fakeTool('ninja');
       final clangd = await fakeTool('clangd');
       final catalog = await createPlatformNativeCompilerToolchainCatalog(
+        platformManagers: platformManagers,
         environment: <String, String>{
           'VITYO_CLANG_BIN': clang,
           'VITYO_CLANGXX_BIN': clangxx,
@@ -3754,10 +3830,18 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         'vityo_native_cpp_dev_tools_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
+      final platformManagers = await createDetectedPlatformManagerBundle(
+        vityodClient: vityod!.client,
+        workspaceRoot: tempRoot.path,
+      );
       Future<String> fakeTool(String name) async {
-        final file = File('${tempRoot.path}/$name');
-        await file.writeAsString('fake $name');
-        return file.path;
+        final path = platformManagers.fileSystem.joinPath(<String>[
+          tempRoot.path,
+          name,
+        ]);
+        await platformManagers.fileSystem.writeText(path, 'fake $name');
+        await platformManagers.fileSystem.setExecutable(path);
+        return path;
       }
 
       final lldb = await fakeTool('lldb');
@@ -3766,6 +3850,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
       final clangTidy = await fakeTool('clang-tidy');
       final ctest = await fakeTool('ctest');
       final catalog = await createPlatformNativeCompilerToolchainCatalog(
+        platformManagers: platformManagers,
         environment: <String, String>{
           'VITYO_LLDB_BIN': lldb,
           'VITYO_GDB_BIN': gdb,

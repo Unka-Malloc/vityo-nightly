@@ -1,8 +1,8 @@
 # Docs / Delivery Runbook
 
-**Purpose:** 提供 `Vityo` 文档树、里程碑、history、repo hygiene 与交付文档的日常维护入口。
+**Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-10-06
 
 ## Mission
 
@@ -21,7 +21,7 @@ Primary paths:
 7. `scripts/docs-audit.py`
 8. `scripts/team-docs-gate.py`
 9. `scripts/docs-gate.sh`
-10. `scripts/delivery-gate.sh`
+10. `scripts/vityo.py` — canonical privacy, architecture, test, coverage, build, install, and launch pipeline
 11. `.github/workflows/project-coverage-gate.yml`
 12. `scripts/project-coverage-gate.py`
 13. `scripts/python-coverage-gate.py`
@@ -79,6 +79,12 @@ claims.
 
 ## Daily Workflow
 
+The shared test stage runs actual pinned language fixtures between the portable IDE
+suites and prototype checks, and stops on failure. Python coverage dependencies belong
+in the isolated environment documented in `docs/BUILD-AND-DEV-ENV.md`. Local macOS
+launch opens a new instance of the installed candidate and checks LaunchServices' exit
+status; it does not inspect the running interface or claim live acceptance.
+
 1. 先判断当前变化属于 owner 文档变化，还是目录/索引/交付接线变化。
 2. 任何结构性文档变更，都要同步更新对应目录的 `README.md` 和 `INDEX.md`。
 3. 若一次变更改变了团队边界、review 路由或 handoff 路径，同批更新 `docs/teams/`。
@@ -92,27 +98,26 @@ claims.
 11. 真实设备验证入口也属于交付表面：Android bash/PowerShell 验证脚本和 Apple 设备验证脚本必须与 profile CSV、bootstrap、仓库级 build/dev-env 文档同步更新，不能单独漂移。
 12. 根 `README.md` 只保留仓库级一跳入口；多平台 bootstrap、profile 切换和真实设备验证的细节统一收在 `docs/BUILD-AND-DEV-ENV.md`，不要在 README、runbook 和子系统文档里各自维护平行说明。
 13. 新增 external audit、agent findings、contract package 或 toolchain handoff 时，同批刷新 collection `README.md` / `INDEX.md`，并确保缺口被路由到 owner runbook，而不是停留在审计摘要里。
-14. 本轮最小闭环只要求 `repo-hygiene --mode tracked`、`docs-audit`、Flutter analyze/test 和三仓合同测试；product gate 项保持 `VITYO_PRODUCT_GATE=1` 的显式扩展验证，不写成默认必过项。
+14. Select verification for the current change from [Post-Commit CI Checks](../specs/POST-COMMIT-CI-CHECKS.md); a documentation-only closure does not require unrelated Flutter or cross-repository product suites. Preserve explicitly required product and release checks and reuse unchanged passing evidence.
 15. Keep [../specs/POST-COMMIT-CI-CHECKS.md](../specs/POST-COMMIT-CI-CHECKS.md) aligned with actual GitHub Actions monitoring practice whenever commit, push, or CI handoff rules change.
+    Keep [the execution runbook](../plan/EXECUTION-RUNBOOK.md) limited to Vityo's authority and verification boundaries. Lifecycle commands, state formats, and recovery operations belong to the active installed planning skill; do not restore retired command recipes here.
 16. 外部上游 handoff 统一收在 `docs/external/for-*`，不要在 docs 根目录重新创建 `for-*` collection。
 17. Keep [../specs/TECHNOLOGY-COMPONENT-INVENTORY.md](../specs/TECHNOLOGY-COMPONENT-INVENTORY.md) aligned with `styio-audit` whenever the technology stack, internal components, open-source components, dependency manifests, Apache-2.0 evidence, commercial-risk boundaries, or UI asset-source evidence changes.
 18. Maintain GitHub merge gates through Rulesets rather than legacy classic branch protection; audit effective branch rules when required status-check governance changes.
 19. External audit shard updates must name the remediated finding, the changed security boundary, and the exact validation command; if code and audit evidence move together, update the owning team runbook in the same change.
-20. The ecosystem CLI doc gate (`scripts/ecosystem-cli-doc-gate.py`) is marked non-blocking for cross-repo contract issues; sibling-repo doc failures do not block vityo-nightly PRs. Normal CI must run it for evidence, while `--skip-ecosystem` on `delivery-gate.sh` and `docs-gate.sh` is reserved for targeted recovery.
-20. Checkpoint health documentation must list every command run by `scripts/checkpoint-health.sh`; when project coverage, language fixture gate roots, shell-wrapper line-ending policy, prototype governance, or selftest routing changes, update `docs/assets/workflow/CHECKPOINT-HEALTH.md` and the affected owner runbook in the same change.
+20. The ecosystem CLI doc gate (`scripts/ecosystem-cli-doc-gate.py`) remains part of the documented architecture stage; its cross-repository severity is defined by the docs gate, not by an alternate delivery mode.
+21. Keep [the delivery pipeline](../assets/workflow/DELIVERY-GATE.md), [test and coverage map](../assets/workflow/CHECKPOINT-HEALTH.md), and [test catalog](../assets/workflow/TEST-CATALOG.md) aligned with the actual `scripts/vityo.py` stage registry. `test` collects Python and Flutter reports and instrumented Rust reports for both workspaces once; `coverage` evaluates them without rerunning suites. Rust reports require executed source coverage, with mapped requirement-module coverage for the Agent report, and have no default percentage floor. Styio fixtures are required; the resolver provisions the pinned tool when needed, while invalid explicit overrides or failed provisioning fail the stage.
 21. Language-service ADR or contract updates must refresh both the owning contract runbook and generated docs indexes in the same worktree pass; do not rely on passing Flutter tests as evidence that docs ownership is closed.
 22. Docs tree structure, milestone files, prototype manifest entries, and fixture paths must be organized by content or functional effect. Version strings, dates, and stage numbers may appear as state metadata or external wire values, but must not define repository directories, entry files, task identities, or implementation routing.
 23. Governance docs are part of docs delivery. API compatibility, security, release checklist, CODEOWNERS policy, root contribution/security entries, and PR template changes must keep generated docs indexes current.
 24. When a new docs collection is added, update `scripts/docs-index.py` collection metadata and run `python3 scripts/docs-index.py --write` in the same change.
+    Update generator titles and descriptions when collection ownership changes; generated planning
+    indexes must describe repository guidance without restoring retired planning-tool authority.
 25. Platform-native CI changes must keep `README.md`, `docs/BUILD-AND-DEV-ENV.md`, `.github/workflows/local-ci-gate.yml`, and bootstrap script comments aligned. The PowerShell workspace bootstrap may create Flutter plugin junctions on Windows to avoid Developer Mode or admin symlink requirements, but it must restore tracked `.metadata` and `pubspec.lock` after runner generation and dependency restore.
-26. Better Plan workflow state lives under `docs/plan/` as exactly two delivery tracks for one
-    Vityo product: the `vityo` IDE track and the `vityo-coding-agent` first-party companion-runtime
-    track. Keep `Capabilities.json` separate from lifecycle state, bind task groups to stable
-    capability keys, and use one `group_design`, one or more `implementation`, and one trailing
-    `final_validation` Node per executable group. Validate the capability catalog, root manifest,
-    and both state files with the current Better Plan manifest tool. `docs/plan/` is the only
-    authoritative Better Plan root; never create a nested or parallel workspace. Keep shared
-    protocol work inside both tracks instead of creating a third product track.
+26. `docs/plan/` stores repository-owned planning documents and execution guidance when present.
+    Active state for an installed planning tool belongs to its configured workspace; the repository
+    does not require an in-tree Plan, mirror external state, or infer authority from planning data.
+    Keep product facts in their owner documents and do not restore retired local validators.
 27. Implemented architectural decisions belong in `docs/adr/IMPLEMENTED-DECISIONS.md` only when they match current code, tests, gates, or owner SSOTs; stale plan residue must be deleted or routed back to active gap/review docs.
 28. Repository documentation is English by default. Chinese prose is allowed only when a document's `Purpose` explicitly scopes it as Chinese localization, Chinese translation, or Chinese user-facing product/marketing copy; when touching legacy Chinese prose in non-localized owner docs, convert the touched passage to English.
 29. Workspace bootstrap scripts must not leave Flutter template files that are not tracked product tests. When runner generation, Windows LLVM discovery, or platform bootstrap behavior changes, keep bash, PowerShell, and GitHub Actions entry points aligned in the same change.
@@ -130,17 +135,20 @@ claims.
 
 ## Required Gates
 
-Minimum:
+For a documentation-only focused pass, run the two stages that include privacy/repository hygiene and documentation/architecture validation:
 
 ```bash
-./scripts/docs-gate.sh
-python3 scripts/docs-index.py --write
-python3 -m pytest tests/test_docs_tooling_coverage.py
-python3 scripts/repo-hygiene-gate.py --mode tracked
-./scripts/delivery-gate.sh --mode checkpoint --skip-health
+python3 scripts/vityo.py privacy
+python3 scripts/vityo.py architecture
 ```
 
-`scripts/delivery-gate.sh` 会在交付时统一组合 repo hygiene、docs gate、external styio-audit 和 checkpoint health。
+After all source review and focused repairs are complete, the integrated local delivery is:
+
+```bash
+python3 scripts/vityo.py deliver
+```
+
+This command stops at the first failing stage. A targeted repair reruns the affected public stage; it does not mark prior failed or unrun stages as passed. The full command ends after launching the installed candidate and does not include live UI inspection or a real Agent task.
 
 ## Cross-Team Dependencies
 
@@ -221,6 +229,16 @@ into the single `docs/plan/` Better Plan root. Removed the final stale nested-pa
 declared nested and parallel workspaces invalid, and retained only the two capability-bound delivery
 tracks plus their shared protocol fact.
 
+2026-08-03: Added the capability-bound `interactive-editor-input` follow-on delivery group beneath
+the existing transactional editor capability. The group freezes multi-cursor and rectangular
+selection commands, composition-safe Unicode input, Flutter text-input and accessibility
+integration, rendered 10k/100k performance evidence, and one trailing full IDE regression without
+creating another product track or Better Plan workspace.
+
+2026-08-09: Explicitly cleared all Better Plan capability, Manifest, task-group, and checkpoint
+state. Retained only the empty `docs/plan/` documentation container and reusable execution runbook;
+product implementation, tests, performance evidence, and visual evidence remain intact.
+
 2026-09-04: Added one single-purpose external handoff plan for future Styio observable-language
 consumption and regenerated its collection indexes. The document is explicitly unapproved and
 fixture-gated, does not alter the existing Better Plan workspace, and starts no adapter, UI,
@@ -242,4 +260,49 @@ collection indexes. No `prototype/` change.
 `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`, including the execution-adapter
 envelope mismatch. Report only; no adapter implementation in this change.
 
+2026-10-03: Recorded the Windows lane state after the cross-platform gate repairs: the lane
+now passes `architecture`, builds the pinned Styio CLI with MSVC, and runs the full Python
+suite, and its remaining 16 failures and 2 errors are test fixtures encoding POSIX
+expectations (permission bits, Unix-domain sockets, path and CRLF formatting) rather than
+product defects. No `prototype/` change.
+
+2026-10-03: Moved the docs/process gate composition into `scripts/docs_gate.py` and had
+delivery invoke that implementation directly. `scripts/docs-gate.sh` remains the documented
+convenience entrypoint and forwards to it, so the two cannot drift. The reason is platform
+reach: on Windows `bash` in PATH can resolve to a WSL launcher, which fails the architecture
+stage with "Windows Subsystem for Linux has no installed distributions". No `prototype/` change.
+
+2026-10-03: Sealed the staged bundle with a real Developer ID certificate and recorded the
+observed result: the application carries the hardened runtime, a Developer ID authority, and a
+team identifier, and Gatekeeper reports `rejected` with `source=Unnotarized Developer ID`, which
+is the expected pre-notarization state. Clarified that the frameworks' `--strict` ambiguity is a
+property of the Flutter build output and is reproducible on the unmodified build, so verification
+uses Gatekeeper assessment. Missing input is the notarization credential. No `prototype/` change.
+
+2026-10-03: Resolved the first macOS sealing blocker. The package definition now declares
+where the `vityod-component.json` identity record is staged, and macOS moves it to
+`Contents/Resources` so `codesign` no longer sees unsigned JSON inside the nested-code
+directory `Contents/Helpers`. The Flutter framework layout blocker remains open. Updated
+the packaging contract and the signing evidence. No `prototype/` change.
+
+2026-10-03: Exercised macOS sealing against a real Developer ID certificate on the
+installed nightly bundle. Sealing stops on two bundle defects rather than on credentials:
+`Contents/Helpers/vityod-component.json` is unsigned data inside a directory `codesign`
+scans as nested code, and the Flutter frameworks are not a layout `codesign` will seal.
+Recorded both in the signing contract with owners, and replaced the seal step's `--deep`
+sign with explicit deepest-first enumeration of helpers, frameworks, extensions, and
+dylibs. No `prototype/` change.
+
+2026-10-03: Added `docs/release/macos-release-signing.md` as the macOS Developer ID
+and notarization credential contract, and pointed the release checklist at it so the
+nightly signing gap is discoverable from the release path. Documented the sealing
+order, the environment-only credential interface, and the published evidence shape;
+credentials remain unprovisioned, so nightly packages keep their explicit gap.
+No `prototype/` change.
+
 <!-- codex merge: docs/build/scripts assets imported -->
+
+2026-10-06: Updated architecture source anchors for the production Flow Hero runtime
+composition and the injectable packaged Agent launch resolver. Registered the existing
+BSD-3-Clause workspace chooser in the dependency license gate. Keep unfinished repairs
+on the same Draft PR and validate architecture and governance before pushing.

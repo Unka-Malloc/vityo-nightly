@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -390,7 +390,11 @@ def _validate_privacy(value: object, parent: str = "report") -> None:
     elif isinstance(value, str):
         if len(value.encode("utf-8")) > PROJECTED_STRING_LIMIT:
             raise ValueError(f"{parent} exceeds the projected string limit")
-        if Path(value).is_absolute() or PureWindowsPath(value).is_absolute():
+        if (
+            Path(value).is_absolute()
+            or PurePosixPath(value).is_absolute()
+            or PureWindowsPath(value).is_absolute()
+        ):
             raise ValueError(f"{parent} exposes an absolute path")
 
 

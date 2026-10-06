@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
-
 import '../../agent_client/agent_client.dart';
 import '../../workspace/workspace_change_set.dart';
 import '../../workspace/workspace_transaction_service.dart';
@@ -52,7 +50,7 @@ abstract interface class AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   });
 }
 
@@ -78,17 +76,17 @@ final class CollaborationPermissionProjection {
   CollaborationPermissionProjection._({
     required this.id,
     required this.sessionId,
-    required Set<String> options,
-    required Future<void> Function(AgentPermissionDecision decision) resolve,
-  }) : options = Set<String>.unmodifiable(options),
+    required List<AgentPermissionOption> options,
+    required Future<void> Function(String optionId) resolve,
+  }) : options = List<AgentPermissionOption>.unmodifiable(options),
        _resolve = resolve;
 
   final String id;
   final String sessionId;
-  final Set<String> options;
-  final Future<void> Function(AgentPermissionDecision decision) _resolve;
+  final List<AgentPermissionOption> options;
+  final Future<void> Function(String optionId) _resolve;
 
-  Future<void> resolve(AgentPermissionDecision decision) => _resolve(decision);
+  Future<void> resolve(String optionId) => _resolve(optionId);
 }
 
 final class AgentChangeReviewProjection {
@@ -298,9 +296,6 @@ final class AgentCollaborationStore {
             status = _decodeStatus(update.payload['status']);
             continue;
           }
-          if (update.kind == VityoCapability.workspaceChangeProposal) {
-            continue;
-          }
           final sourceId = update.payload['id']?.toString() ?? '$index';
           final id = '${snapshot.sessionId}:${update.kind}:$sourceId';
           if (!timelineById.containsKey(id)) {
@@ -372,7 +367,7 @@ final class AgentCollaborationStore {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) => _serialize<void>(sessionId, () async {
     final state = _requireSession(sessionId);
     final request = state.permissions[permissionId];
@@ -397,7 +392,7 @@ final class AgentCollaborationStore {
         'Permission request is not available',
       );
     }
-    if (!_decisionOffered(request, decision)) {
+    if (!request.options.any((option) => option.optionId == optionId)) {
       throw const CollaborationFailure(
         'permission_option_unavailable',
         'Permission decision was not offered',
@@ -406,7 +401,7 @@ final class AgentCollaborationStore {
     await _commands.resolvePermission(
       sessionId: sessionId,
       permissionId: permissionId,
-      decision: decision,
+      optionId: optionId,
     );
     state.permissions.remove(permissionId);
     state.resolvedPermissionIds.add(permissionId);
@@ -611,14 +606,12 @@ final class AgentCollaborationStore {
       for (final entry in _sessions.entries)
         entry.key: entry.value.project(
           resolvePermission:
-              ({
-                required String permissionId,
-                required AgentPermissionDecision decision,
-              }) => resolvePermission(
-                sessionId: entry.key,
-                permissionId: permissionId,
-                decision: decision,
-              ),
+              ({required String permissionId, required String optionId}) =>
+                  resolvePermission(
+                    sessionId: entry.key,
+                    permissionId: permissionId,
+                    optionId: optionId,
+                  ),
         ),
     },
     orderedSessionIds: _orderedSessionIds,
@@ -644,7 +637,7 @@ final class _SessionState {
   CollaborationSessionProjection project({
     required Future<void> Function({
       required String permissionId,
-      required AgentPermissionDecision decision,
+      required String optionId,
     })
     resolvePermission,
   }) => CollaborationSessionProjection(
@@ -660,8 +653,8 @@ final class _SessionState {
           id: request.id,
           sessionId: sessionId,
           options: request.options,
-          resolve: (decision) =>
-              resolvePermission(permissionId: request.id, decision: decision),
+          resolve: (optionId) =>
+              resolvePermission(permissionId: request.id, optionId: optionId),
         ),
     },
     changeReviews: changeReviews,
@@ -692,14 +685,6 @@ CollaborationTimelineKind _decodeTimelineKind(String value) => switch (value) {
   'receipt' || 'validation' => CollaborationTimelineKind.receipt,
   'terminal' || 'terminal_output' => CollaborationTimelineKind.terminal,
   _ => CollaborationTimelineKind.other,
-};
-
-bool _decisionOffered(
-  AgentPermissionRequest request,
-  AgentPermissionDecision decision,
-) => switch (decision) {
-  AgentPermissionDecision.allowOnce => request.options.contains('allow_once'),
-  AgentPermissionDecision.rejectOnce => request.options.contains('reject_once'),
 };
 
 bool _sameChangeSet(WorkspaceChangeSet left, WorkspaceChangeSet right) {

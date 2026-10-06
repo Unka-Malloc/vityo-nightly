@@ -244,6 +244,75 @@ class DebugLaunchConfiguration {
 
   bool get ready => readiness == DebugLaunchReadiness.ready;
 
+  DebugLaunchConfiguration reconfigure({
+    String? debuggerId,
+    String? debuggerLabel,
+    String? debuggerExecutablePath,
+    List<String>? debuggerArguments,
+    String? adapterProtocol,
+    String? programPath,
+    bool clearProgramPath = false,
+    String? cwd,
+    List<String>? arguments,
+    Map<String, String>? environment,
+    bool? stopOnEntry,
+    List<DebugLaunchBreakpoint>? breakpoints,
+  }) {
+    final nextProtocol = (adapterProtocol ?? this.adapterProtocol).trim();
+    final nextProgram = clearProgramPath
+        ? null
+        : (programPath ?? this.programPath)?.trim();
+    final nextDebuggerId = (debuggerId ?? this.debuggerId).trim();
+    final nextReadiness = nextProtocol.toLowerCase() != 'dap'
+        ? DebugLaunchReadiness.unsupportedProtocol
+        : nextProgram == null || nextProgram.isEmpty
+        ? DebugLaunchReadiness.missingProgram
+        : DebugLaunchReadiness.ready;
+    final nextReason = switch (nextReadiness) {
+      DebugLaunchReadiness.ready => 'Debug launch configuration is ready.',
+      DebugLaunchReadiness.missingProgram =>
+        'Debug launch blocked: debugger $nextDebuggerId does not declare a program path.',
+      DebugLaunchReadiness.unsupportedProtocol =>
+        'Debug launch blocked: debugger $nextDebuggerId uses unsupported protocol $nextProtocol.',
+    };
+    return DebugLaunchConfiguration(
+      readiness: nextReadiness,
+      reason: nextReason,
+      debuggerId: nextDebuggerId,
+      debuggerLabel: (debuggerLabel ?? this.debuggerLabel).trim(),
+      debuggerExecutablePath:
+          (debuggerExecutablePath ?? this.debuggerExecutablePath).trim(),
+      debuggerArguments: List<String>.unmodifiable(
+        debuggerArguments ?? this.debuggerArguments,
+      ),
+      adapterProtocol: nextProtocol,
+      programPath: nextProgram == null || nextProgram.isEmpty
+          ? null
+          : nextProgram,
+      cwd: (cwd ?? this.cwd).trim(),
+      arguments: List<String>.unmodifiable(arguments ?? this.arguments),
+      environment: Map<String, String>.unmodifiable(
+        environment ?? this.environment,
+      ),
+      stopOnEntry: stopOnEntry ?? this.stopOnEntry,
+      breakpoints: List<DebugLaunchBreakpoint>.unmodifiable(
+        breakpoints ?? this.breakpoints,
+      ),
+      schemaVersion: schemaVersion,
+      extensions: extensions,
+    );
+  }
+
+  DebugLaunchConfiguration resolveForWorkspace(String workspaceRoot) {
+    final resolvedProgram = _resolveLaunchPath(programPath, workspaceRoot);
+    final resolvedCwd = _resolveLaunchPath(cwd, workspaceRoot) ?? workspaceRoot;
+    return reconfigure(
+      programPath: resolvedProgram,
+      clearProgramPath: resolvedProgram == null,
+      cwd: resolvedCwd,
+    );
+  }
+
   static const Set<String> _knownKeys = {
     'schemaVersion',
     'readiness',

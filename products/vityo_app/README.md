@@ -20,14 +20,21 @@
 
 ## Release readiness gate
 
-正式发布前需要从仓库根目录执行：
+仓库级统一交付流程从仓库根目录执行：
 
 ```bash
-./scripts/delivery-gate.sh --mode checkpoint
+python3 scripts/vityo.py deliver
+```
+
+该流程依次运行隐私、架构与文档、测试、coverage、release build/package、per-user install 和 launch 阶段。阶段可单独运行以定位并修复故障；coverage 只评估 test 阶段生成的报告，不重复收集测试。
+
+`scripts/release-readiness-gate.py` 仍提供发布元数据和证据规则的静态检查，由 `architecture` 阶段调用：
+
+```bash
 python3 scripts/release-readiness-gate.py
 ```
 
-`delivery-gate` 负责仓库卫生、文档、完整 Flutter 测试、语言 fixture、prototype governance 和 editor selftest。`release-readiness-gate.py` 负责发布级证据：
+静态检查负责发布级元数据和测试入口证据：
 
 1. 检查 `products/vityo_app/pubspec.yaml` 的 Vityo editor 元数据。
 2. 检查关键 IDE 能力是否都有测试入口，包括 editor binding、language service、runtime/toolchain、environment/data persistence。
@@ -57,8 +64,8 @@ python3 scripts/release-readiness-gate.py --skip-build
 后端拥有：
 
 1. `lib/src/view_ide/language/` 作为 IDE 语言智能、语法、高亮、symbol/refactor 预检的第一核心功能边界
-2. `lib/src/view_ide/editor/` 作为文档状态、选择状态和 editor controller 的功能边界
-3. `lib/src/view_ide/workspace/` 作为 workspace/project selection 与 document store 的功能边界
+2. `lib/src/ide/editor/` 作为文档状态、选择状态和 editor controller 的功能边界
+3. `lib/src/ide/workspace/` 作为 workspace/project selection 与 document store 的功能边界
 4. `lib/src/view_ide/module_host/` 作为 module manifest、capability matrix 和 lifecycle policy 的功能边界
 5. `lib/src/view_ide/shell_runtime/` 作为 shell runtime、命令执行、阻塞原因、日志、运行会话和 workflow state 的功能边界
 6. `lib/src/view_ide/backend_toolchain/` 作为工具链后端与 adapter 实现的显式入口边界
@@ -109,7 +116,7 @@ python3 scripts/release-readiness-gate.py --skip-build
 20. `Runtime Surface` 已复用同一份 execution route summary，并能显示最近一次执行的 `unit range / stdout / stderr / diagnostics` 统计
 21. 工作区侧栏新增 `Required Handoffs` 卡，只表达 `Vityo` 还需要 `styio` / `pafio` 提供哪些 machine contract，不替上游做内部实现规划
 22. 项目视图细化到 `workspace members / packages / dependencies / targets` 四层展示，缺少 metadata 时稳定阻塞，不再从 canonical files 推断 package facts
-23. `lib/src/view_ide/` 已承载 language、editor core、workspace、module host、runtime model、shell runtime、Agent Client、commands、platform target 与 backend toolchain
+23. `lib/src/view_ide/` 承载 language、module host、runtime model、shell runtime、commands、platform target 与 backend toolchain；`lib/src/ide/` 承载 editor core、workspace、Agent Client 与协作投影
 24. `lib/src/view_render/` 已承载 shell、editor surface、runtime/debug surface、Agent Workbench、theme 和 viewport profile
 
 ## 生成六端 runner

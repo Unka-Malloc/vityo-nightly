@@ -31,6 +31,25 @@ enum FileSystemFailureKind {
 
 enum FileSystemNewline { lf, crlf, cr }
 
+/// A watch provider dropped one or more changes and can no longer provide an
+/// incremental view of the file system.
+///
+/// Consumers must rebuild derived state from the authoritative file system
+/// before attaching a new watch. Keeping this failure typed avoids coupling
+/// workspace services to a particular native provider or daemon error code.
+class FileSystemWatchOverflowException implements Exception {
+  const FileSystemWatchOverflowException({
+    required this.operation,
+    this.droppedEventCount,
+  });
+
+  final String operation;
+  final int? droppedEventCount;
+
+  @override
+  String toString() => 'FileSystemWatchOverflowException($operation)';
+}
+
 extension FileSystemNewlineX on FileSystemNewline {
   String get sequence {
     return switch (this) {
@@ -160,6 +179,9 @@ class FileSystemFailureClassifier {
   }
 
   FileSystemFailureKind _kindFor(Object error) {
+    if (error is FileSystemWatchOverflowException) {
+      return FileSystemFailureKind.resourceLimitReached;
+    }
     if (error is UnsupportedError) {
       return FileSystemFailureKind.unsupportedProvider;
     }

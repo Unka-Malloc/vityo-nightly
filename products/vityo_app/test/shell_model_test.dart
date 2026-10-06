@@ -33,9 +33,11 @@ import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'backend_provider_test_support.dart';
 import 'observable_fixture_support.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   Future<ConfigurationStore> createConfigurationStore(Directory root) async {
-    final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
     final resourceManager = LocalResourceManager(
       facts: ResourceFacts.linuxDebianArm(
         systemTempPath: root.path,
@@ -92,7 +94,7 @@ void main() {
       'vityo_shell_editor_session_test_',
     );
     addTearDown(() => tempRoot.delete(recursive: true));
-    final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
     final resourceManager = LocalResourceManager(
       facts: ResourceFacts.linuxDebianArm(
         systemTempPath: tempRoot.path,
@@ -186,7 +188,7 @@ void main() {
           await tempDir.delete(recursive: true);
         }
       });
-      final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+      final fileSystemManager = TestFileSystemManager.linuxDebianArm();
       final resourceManager = LocalResourceManager(
         facts: ResourceFacts.linuxDebianArm(
           systemTempPath: tempDir.path,
@@ -284,7 +286,6 @@ void main() {
     },
   );
 
-
   test('successful publish preflight is stored as deployment state', () async {
     final initialGraph = _projectGraph(
       compilerVersion: '0.0.5',
@@ -338,7 +339,6 @@ void main() {
     );
   });
 
-
   test(
     'command palette, quick open, locations, links, highlights, declarations, '
     'definitions, implementation, type hierarchy, outline, rename, symbols, '
@@ -385,17 +385,17 @@ void main() {
 
       await shell.executeCommand(AppCommandId.quickOpen);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.navigate);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.quickOpen);
       expect(
         shell.debugLog.any(
-          (entry) => entry.contains('Quick Open route requested'),
+          (entry) => entry.contains('Quick open surface opened'),
         ),
         isTrue,
       );
 
       await shell.executeCommand(AppCommandId.commandPalette);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.commandPalette);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.commandPalette);
       expect(
         shell.debugLog.any(
           (entry) => entry.contains('Command Palette route requested'),
@@ -403,149 +403,59 @@ void main() {
         isTrue,
       );
 
-      await shell.executeCommand(AppCommandId.showRecentLocations);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.locations);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Recent Locations route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceDocumentLinks);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.documentLinks);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Document Links route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceDocumentHighlights);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.documentHighlights);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Document Highlights route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceCodeLenses);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.codeLenses);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Code Lens route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceDeclaration);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.declarations);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Declaration route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceDefinition);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.definitions);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Definition route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceTypeDefinition);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.typeDefinitions);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Type Definition route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.goToWorkspaceImplementation);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.implementations);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Go to Implementation route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceTypeHierarchy);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.typeHierarchy);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Type Hierarchy route requested'),
-        ),
-        isTrue,
-      );
+      // Position-scoped language navigation commands have no backing
+      // StyioService capability yet, so they stay disabled with a reason
+      // instead of switching the workbench to an empty panel.
+      const unavailableLanguageCommands = <AppCommandId>[
+        AppCommandId.showRecentLocations,
+        AppCommandId.showWorkspaceDocumentLinks,
+        AppCommandId.showWorkspaceDocumentHighlights,
+        AppCommandId.showWorkspaceCodeLenses,
+        AppCommandId.goToWorkspaceDeclaration,
+        AppCommandId.goToWorkspaceDefinition,
+        AppCommandId.goToWorkspaceTypeDefinition,
+        AppCommandId.goToWorkspaceImplementation,
+        AppCommandId.showWorkspaceTypeHierarchy,
+        AppCommandId.renameWorkspaceSymbol,
+        AppCommandId.searchWorkspaceSymbols,
+        AppCommandId.findWorkspaceReferences,
+        AppCommandId.showWorkspaceCallHierarchy,
+      ];
+      for (final commandId in unavailableLanguageCommands) {
+        expect(
+          shell.blockedReasonForCommand(commandId),
+          isNotNull,
+          reason: '$commandId must report an unavailable capability',
+        );
+        await shell.executeCommand(commandId);
+        expect(
+          shell.activeWorkbenchRoute,
+          BottomSurfaceTab.commandPalette,
+          reason: '$commandId must not switch the workbench route',
+        );
+        expect(
+          shell.debugLog.any(
+            (entry) =>
+                entry.contains('does not expose this language capability yet'),
+          ),
+          isTrue,
+          reason: '$commandId must log the capability reason',
+        );
+      }
 
       await shell.executeCommand(AppCommandId.showWorkspaceOutline);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.outline);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.outline);
       expect(
         shell.debugLog.any(
-          (entry) => entry.contains('Outline route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.renameWorkspaceSymbol);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.rename);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Rename Symbol route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.searchWorkspaceSymbols);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.symbols);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Symbols route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.findWorkspaceReferences);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.usages);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Find Usages route requested'),
-        ),
-        isTrue,
-      );
-
-      await shell.executeCommand(AppCommandId.showWorkspaceCallHierarchy);
-
-      expect(shell.activeBottomTab, BottomSurfaceTab.calls);
-      expect(
-        shell.debugLog.any(
-          (entry) => entry.contains('Call Hierarchy route requested'),
+          (entry) => entry.contains('Document outline opened'),
         ),
         isTrue,
       );
 
       await shell.executeCommand(AppCommandId.searchWorkspace);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.search);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.search);
       expect(
         shell.debugLog.any(
           (entry) => entry.contains('Workspace search surface opened'),
@@ -555,7 +465,7 @@ void main() {
 
       await shell.executeCommand(AppCommandId.showWorkspaceProblems);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.problems);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.problems);
       expect(
         shell.debugLog.any(
           (entry) => entry.contains('Problems route requested'),
@@ -565,7 +475,7 @@ void main() {
 
       await shell.executeCommand(AppCommandId.showWorkspaceCodeActions);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.actions);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.problems);
       expect(
         shell.debugLog.any(
           (entry) => entry.contains('Code Actions route requested'),
@@ -575,7 +485,7 @@ void main() {
 
       await shell.executeCommand(AppCommandId.openSettings);
 
-      expect(shell.activeBottomTab, BottomSurfaceTab.settings);
+      expect(shell.activeWorkbenchRoute, BottomSurfaceTab.settings);
       expect(
         shell.debugLog.any(
           (entry) => entry.contains('Settings surface opened'),
@@ -954,7 +864,6 @@ void main() {
     },
   );
 
-
   test(
     'runObservedProgram sequences begin, observed run, complete and release',
     () async {
@@ -1078,14 +987,8 @@ void main() {
       await artifact.writeAsString(
         readObservableRuntimeFixture('canonical.jsonl')
             .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
-            .replaceAll(
-              'n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-              nodes.first.id,
-            )
-            .replaceAll(
-              'n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-              nodes[1].id,
-            ),
+            .replaceAll('n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', nodes.first.id)
+            .replaceAll('n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', nodes[1].id),
       );
       observedAdapter.runtimeEventsPath = artifact.path;
       recordRuntimeEventsForSession(
@@ -1127,10 +1030,7 @@ void main() {
             .instancesCreated,
         1,
       );
-      expect(
-        shell.lastExecutionSession?.sessionId,
-        'observed-facade-session',
-      );
+      expect(shell.lastExecutionSession?.sessionId, 'observed-facade-session');
       expect(
         shell.lastRuntimeEvents.map((event) => event.eventKind),
         contains('compile.started'),
@@ -1217,86 +1117,83 @@ void main() {
     );
   });
 
-  test(
-    'deployment command blockers report platform and package state',
-    () {
-      final initialGraph = _projectGraph(
-        compilerVersion: '0.0.5',
-        compilePlanReady: true,
-      );
-      final iosShell = _createShell(
-        platformTarget: PlatformTarget.ios,
-        initialGraph: initialGraph,
-      );
-      addTearDown(iosShell.dispose);
+  test('deployment command blockers report platform and package state', () {
+    final initialGraph = _projectGraph(
+      compilerVersion: '0.0.5',
+      compilePlanReady: true,
+    );
+    final iosShell = _createShell(
+      platformTarget: PlatformTarget.ios,
+      initialGraph: initialGraph,
+    );
+    addTearDown(iosShell.dispose);
 
-      expect(
-        iosShell.blockedReasonForCommand(AppCommandId.preparePublish),
-        contains('does not expose local pafio deployment commands'),
-      );
+    expect(
+      iosShell.blockedReasonForCommand(AppCommandId.preparePublish),
+      contains('does not expose local pafio deployment commands'),
+    );
 
-      final blockedDistributionShell = _createShell(
-        initialGraph: initialGraph.copyWith(
-          packageDistribution: const PackageDistributionSnapshot(
-            schemaVersion: 1,
-            packages: <PackageDistributionPackageSnapshot>[
-              PackageDistributionPackageSnapshot(
-                packageName: 'demo/core',
-                manifestPath: '/workspace/demo/pafio.toml',
-                publishEnabled: false,
-                publishReady: false,
-                blockingReasons: <String>['publish disabled'],
-              ),
-              PackageDistributionPackageSnapshot(
-                packageName: 'demo/cli',
-                manifestPath: '/workspace/demo/cli/pafio.toml',
-                publishEnabled: true,
-                publishReady: false,
-              ),
-            ],
-          ),
+    final blockedDistributionShell = _createShell(
+      initialGraph: initialGraph.copyWith(
+        packageDistribution: const PackageDistributionSnapshot(
+          schemaVersion: 1,
+          packages: <PackageDistributionPackageSnapshot>[
+            PackageDistributionPackageSnapshot(
+              packageName: 'demo/core',
+              manifestPath: '/workspace/demo/pafio.toml',
+              publishEnabled: false,
+              publishReady: false,
+              blockingReasons: <String>['publish disabled'],
+            ),
+            PackageDistributionPackageSnapshot(
+              packageName: 'demo/cli',
+              manifestPath: '/workspace/demo/cli/pafio.toml',
+              publishEnabled: true,
+              publishReady: false,
+            ),
+          ],
         ),
-      );
-      addTearDown(blockedDistributionShell.dispose);
+      ),
+    );
+    addTearDown(blockedDistributionShell.dispose);
 
-      expect(
-        blockedDistributionShell.blockedReasonForCommand(
-          AppCommandId.preparePublish,
-        ),
-        allOf(contains('No publish-ready package'), contains('demo/core')),
-      );
+    expect(
+      blockedDistributionShell.blockedReasonForCommand(
+        AppCommandId.preparePublish,
+      ),
+      allOf(contains('No publish-ready package'), contains('demo/core')),
+    );
 
-      final ambiguousDistributionShell = _createShell(
-        initialGraph: initialGraph.copyWith(
-          packageDistribution: const PackageDistributionSnapshot(
-            schemaVersion: 1,
-            packages: <PackageDistributionPackageSnapshot>[
-              PackageDistributionPackageSnapshot(
-                packageName: 'demo/core',
-                manifestPath: '/workspace/demo/pafio.toml',
-                publishEnabled: true,
-                publishReady: true,
-              ),
-              PackageDistributionPackageSnapshot(
-                packageName: 'demo/cli',
-                manifestPath: '/workspace/demo/cli/pafio.toml',
-                publishEnabled: true,
-                publishReady: true,
-              ),
-            ],
-          ),
+    final ambiguousDistributionShell = _createShell(
+      initialGraph: initialGraph.copyWith(
+        packageDistribution: const PackageDistributionSnapshot(
+          schemaVersion: 1,
+          packages: <PackageDistributionPackageSnapshot>[
+            PackageDistributionPackageSnapshot(
+              packageName: 'demo/core',
+              manifestPath: '/workspace/demo/pafio.toml',
+              publishEnabled: true,
+              publishReady: true,
+            ),
+            PackageDistributionPackageSnapshot(
+              packageName: 'demo/cli',
+              manifestPath: '/workspace/demo/cli/pafio.toml',
+              publishEnabled: true,
+              publishReady: true,
+            ),
+          ],
         ),
-      );
-      addTearDown(ambiguousDistributionShell.dispose);
+      ),
+    );
+    addTearDown(ambiguousDistributionShell.dispose);
 
-      expect(
-        ambiguousDistributionShell.blockedReasonForCommand(
-          AppCommandId.preparePublish,
-        ),
-        contains('Multiple publish-ready packages'),
-      );
-    },
-  );
+    expect(
+      ambiguousDistributionShell.blockedReasonForCommand(
+        AppCommandId.preparePublish,
+      ),
+      contains('Multiple publish-ready packages'),
+    );
+  });
 
   test(
     'editor session restore handles empty, missing, and cursor-only snapshots',
@@ -1305,7 +1202,7 @@ void main() {
         'vityo_shell_editor_session_edges_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
-      final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+      final fileSystemManager = TestFileSystemManager.linuxDebianArm();
       final store = EditorSessionDataStore.fromDataStore(
         dataStore: FoundationDataStore(
           resourceCoordinator: FoundationResourceCoordinator(
@@ -1381,51 +1278,56 @@ void main() {
     },
   );
 
-  test('workspace navigation commands route without mutating active file', () async {
-    const firstDocumentPath = '/workspace/demo/src/main.styio';
-    const secondDocumentPath = '/workspace/demo/src/feature.styio';
-    const firstDocumentText =
-        '01234567890123456789012345678901234567890123456789'
-        '01234567890123456789012345678901234567890123456789\n';
-    final initialGraph = _projectGraph(
-      compilerVersion: '0.0.5',
-      compilePlanReady: true,
-      editorFiles: const <String>[firstDocumentPath, secondDocumentPath],
-    );
-    final shell = _createShell(
-      initialGraph: initialGraph,
-      workspaceDocumentStore: InMemoryWorkspaceDocumentStore(
-        seededDocuments: const <String, DocumentState>{
-          firstDocumentPath: DocumentState(
-            documentId: firstDocumentPath,
-            text: firstDocumentText,
-            revision: 0,
-          ),
-          secondDocumentPath: DocumentState(
-            documentId: secondDocumentPath,
-            text: 'feature document\n',
-            revision: 0,
-          ),
-        },
-      ),
-    );
-    addTearDown(shell.dispose);
+  test(
+    'workspace navigation commands route without mutating active file',
+    () async {
+      const firstDocumentPath = '/workspace/demo/src/main.styio';
+      const secondDocumentPath = '/workspace/demo/src/feature.styio';
+      const firstDocumentText =
+          '01234567890123456789012345678901234567890123456789'
+          '01234567890123456789012345678901234567890123456789\n';
+      final initialGraph = _projectGraph(
+        compilerVersion: '0.0.5',
+        compilePlanReady: true,
+        editorFiles: const <String>[firstDocumentPath, secondDocumentPath],
+      );
+      final shell = _createShell(
+        initialGraph: initialGraph,
+        workspaceDocumentStore: InMemoryWorkspaceDocumentStore(
+          seededDocuments: const <String, DocumentState>{
+            firstDocumentPath: DocumentState(
+              documentId: firstDocumentPath,
+              text: firstDocumentText,
+              revision: 0,
+            ),
+            secondDocumentPath: DocumentState(
+              documentId: secondDocumentPath,
+              text: 'feature document\n',
+              revision: 0,
+            ),
+          },
+        ),
+      );
+      addTearDown(shell.dispose);
 
-    await shell.executeCommand(AppCommandId.navigateBack);
-    await shell.executeCommand(AppCommandId.navigateForward);
+      await shell.executeCommand(AppCommandId.navigateBack);
+      await shell.executeCommand(AppCommandId.navigateForward);
 
-    expect(shell.workspaceController.activeFilePath, firstDocumentPath);
-    expect(
-      shell.debugLog.any((entry) => entry.contains('Go Back route requested')),
-      isTrue,
-    );
-    expect(
-      shell.debugLog.any(
-        (entry) => entry.contains('Go Forward route requested'),
-      ),
-      isTrue,
-    );
-  });
+      expect(shell.workspaceController.activeFilePath, firstDocumentPath);
+      expect(
+        shell.debugLog.any(
+          (entry) => entry.contains('Go Back route requested'),
+        ),
+        isTrue,
+      );
+      expect(
+        shell.debugLog.any(
+          (entry) => entry.contains('Go Forward route requested'),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('shell relays language service status changes', () {
     final status = ValueNotifier<LanguageServiceStatusSurface>(
@@ -1450,6 +1352,80 @@ void main() {
 
     expect(notifications, greaterThan(0));
   });
+
+  test('shell restores, resizes, and serializes workbench layout', () async {
+    final tempRoot = await Directory.systemTemp.createTemp(
+      'vityo_shell_model_layout_',
+    );
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
+    final dataStore = FoundationDataStore(
+      resourceCoordinator: FoundationResourceCoordinator(
+        resourceManager: LocalResourceManager(
+          facts: ResourceFacts.linuxDebianArm(
+            systemTempPath: tempRoot.path,
+            homePath: tempRoot.path,
+          ),
+        ),
+        fileSystemManager: fileSystemManager,
+      ),
+      fileSystemManager: fileSystemManager,
+    );
+    final store = ShellLayoutPreferencesStore.fromDataStore(
+      dataStore: dataStore,
+    );
+    const workspaceId = '/workspace/demo/pafio.toml';
+    await store.savePreferences(
+      const ShellLayoutPreferences(
+        workspaceId: workspaceId,
+        activeWorkbenchRoute: BottomSurfaceTab.problems,
+        primarySidebarVisible: false,
+        primarySidebarWidth: 308,
+        bottomPanelExpanded: true,
+        bottomPanelHeight: 276,
+      ),
+    );
+    final shell = _createShell(
+      initialGraph: _projectGraph(
+        compilerVersion: '0.0.5',
+        compilePlanReady: true,
+      ),
+      shellLayoutPreferencesStore: store,
+    );
+    addTearDown(shell.dispose);
+
+    await shell.loadShellLayoutPreferences();
+
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.problems);
+    expect(
+      shell.shellLayoutPreferenceController.preferences.primarySidebarVisible,
+      isFalse,
+    );
+    expect(
+      shell.shellLayoutPreferenceController.preferences.primarySidebarWidth,
+      308,
+    );
+    expect(
+      shell.shellLayoutPreferenceController.preferences.bottomPanelHeight,
+      276,
+    );
+
+    shell.setPrimarySidebarVisible(true);
+    shell.resizePrimarySidebar(336);
+    shell.resizeBottomPanel(304);
+    shell.selectWorkbenchRoute(BottomSurfaceTab.debug);
+    await shell.commitShellLayoutResize();
+    final restored = await store.readPreferences(workspaceId: workspaceId);
+
+    expect(restored.activeWorkbenchRoute, BottomSurfaceTab.debug);
+    expect(restored.primarySidebarVisible, isTrue);
+    expect(restored.primarySidebarWidth, 336);
+    expect(restored.bottomPanelHeight, 304);
+  });
 }
 
 ShellModel _createShell({
@@ -1468,6 +1444,7 @@ ShellModel _createShell({
   ValueListenable<ToolchainManagerStatusReport>? toolchainStatusReport,
   EditorSessionDataStore? editorSessionDataStore,
   String editorSessionWorkspaceId = 'demo',
+  ShellLayoutPreferencesStore? shellLayoutPreferencesStore,
 }) {
   final resolvedWorkspaceController =
       workspaceController ?? WorkspaceController(projectSnapshot: initialGraph);
@@ -1511,6 +1488,7 @@ ShellModel _createShell({
     toolchainStatusReport: toolchainStatusReport,
     editorSessionDataStore: editorSessionDataStore,
     editorSessionWorkspaceId: editorSessionWorkspaceId,
+    shellLayoutPreferencesStore: shellLayoutPreferencesStore,
   );
 }
 
@@ -1668,6 +1646,7 @@ class _RefreshAwareExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'shell-model-test',
@@ -1715,6 +1694,7 @@ class _SuccessfulExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return ExecutionSession(
       sessionId: sessionId,
@@ -1728,7 +1708,6 @@ class _SuccessfulExecutionAdapter implements ExecutionAdapter {
     );
   }
 }
-
 
 class _FakeObservablePublisher implements ObservableSnapshotPublisher {
   _FakeObservablePublisher(this._bytes);
@@ -1761,27 +1740,27 @@ class _FakeObservedExecutionAdapter
   RuntimeObservationRequest? lastObservation;
 
   @override
-  AdapterCapabilitySnapshot get capabilitySnapshot =>
-      const AdapterCapabilitySnapshot(
-        adapterKind: AdapterKind.cli,
-        languageService: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Execution adapter does not provide language services.',
-        ),
-        projectGraph: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.unavailable,
-          detail: 'Execution adapter does not own project graph data.',
-        ),
-        execution: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.available,
-          detail:
-              'Project execution is live through published compile-plan support.',
-        ),
-        runtimeEvents: AdapterEndpointCapability(
-          level: AdapterCapabilityLevel.partial,
-          detail: 'Runtime events are replayed from published artifacts.',
-        ),
-      );
+  AdapterCapabilitySnapshot
+  get capabilitySnapshot => const AdapterCapabilitySnapshot(
+    adapterKind: AdapterKind.cli,
+    languageService: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Execution adapter does not provide language services.',
+    ),
+    projectGraph: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.unavailable,
+      detail: 'Execution adapter does not own project graph data.',
+    ),
+    execution: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.available,
+      detail:
+          'Project execution is live through published compile-plan support.',
+    ),
+    runtimeEvents: AdapterEndpointCapability(
+      level: AdapterCapabilityLevel.partial,
+      detail: 'Runtime events are replayed from published artifacts.',
+    ),
+  );
 
   @override
   Future<ExecutionSession> runActiveDocument({
@@ -1789,6 +1768,7 @@ class _FakeObservedExecutionAdapter
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return _session();
   }

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -58,18 +60,11 @@ class DependencyPolicyGateTest(unittest.TestCase):
         )
 
     def _run_gate_in(self, root: Path):
-        original_pubspec = self.gate.PUBSPEC_PATH
-        original_package_json = self.gate.PACKAGE_JSON_PATH
-        original_policy = self.gate.POLICY_PATH
-        self.gate.PUBSPEC_PATH = root / "products/vityo_app/pubspec.yaml"
-        self.gate.PACKAGE_JSON_PATH = root / "prototype/package.json"
-        self.gate.POLICY_PATH = root / "DEPENDENCY-USAGE.md"
-        try:
-            return self.gate.run_gate(json_output=False)
-        finally:
-            self.gate.PUBSPEC_PATH = original_pubspec
-            self.gate.PACKAGE_JSON_PATH = original_package_json
-            self.gate.POLICY_PATH = original_policy
+        return self.gate.run_gate(
+            json_output=False,
+            root=root,
+            rust_manifest_paths=(),
+        )
 
     def test_registered_pub_and_npm_dependencies_pass(self) -> None:
         with tempfile.TemporaryDirectory(prefix="dependency-policy-", dir=REPO_ROOT) as tmp_name:
@@ -101,6 +96,17 @@ class DependencyPolicyGateTest(unittest.TestCase):
 
         self.assertFalse(passed)
         self.assertEqual(unregistered, ["playwright-core"])
+
+    def test_package_json_shape_errors_do_not_expose_checkout_paths(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="dependency-policy-private-") as tmp_name:
+            root = Path(tmp_name)
+            package_json = root / "package.json"
+            for content in ("[]", '{"dependencies": []}'):
+                package_json.write_text(content, encoding="utf-8")
+                diagnostic = io.StringIO()
+                with contextlib.redirect_stderr(diagnostic), self.assertRaises(SystemExit):
+                    self.gate.parse_package_json_dependencies(package_json)
+                self.assertNotIn(tmp_name, diagnostic.getvalue())
 
 
 if __name__ == "__main__":

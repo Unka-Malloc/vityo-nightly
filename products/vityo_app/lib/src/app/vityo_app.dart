@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'layout/vityo_shell_scaffold.dart';
 import '../view_render/theme/theme.dart';
+import '../view_ide/environment/configuration/platform_secure_credential_storage.dart';
+import '../view_ide/environment/configuration/vityo_theme_override.dart';
+import '../view_render/shell/shell_model.dart';
+import '../view_render/shell/shell_scope.dart';
+import '../view_render/shell/vityo_shell_scaffold.dart';
 import 'app_bootstrap.dart';
-import 'state/shell_model.dart';
-import 'state/shell_scope.dart';
 
 class VityoApp extends StatefulWidget {
   const VityoApp({super.key, required this.bootstrap, this.initialPath});
@@ -33,14 +35,40 @@ class _VityoAppState extends State<VityoApp> {
       workspaceDocumentStore: widget.bootstrap.workspaceDocumentStore,
       moduleRegistry: widget.bootstrap.moduleRegistry,
       nativeModuleLoader: widget.bootstrap.nativeModuleLoader,
+      extensionActivationSession:
+          widget.bootstrap.extensionStartupPlan?.activationSession,
+      extensionHostSupervisorSnapshot:
+          widget.bootstrap.extensionStartupPlan?.supervisorSnapshot,
+      extensionHostLaunchResults:
+          widget.bootstrap.extensionStartupPlan?.launchResults ?? const [],
+      extensionHostTelemetryEvents:
+          widget.bootstrap.extensionStartupPlan?.telemetryEvents ?? const [],
+      extensionMarketplaceRuntime: widget.bootstrap.extensionMarketplaceRuntime,
+      installedExtensionRegistry:
+          widget.bootstrap.extensionStartupPlan?.manifestRegistry,
       editorController: widget.bootstrap.editorController,
       executionAdapter: widget.bootstrap.executionAdapter,
       executionAdapterFactory: widget.bootstrap.executionAdapterFactory,
       runtimeEventAdapter: widget.bootstrap.runtimeEventAdapter,
       dependencySourceAdapter: widget.bootstrap.dependencySourceAdapter,
       deploymentAdapter: widget.bootstrap.deploymentAdapter,
+      terminalRuntimeRegistry: widget.bootstrap.terminalRuntimeRegistry,
       agentClientRegistry: widget.bootstrap.agentClientRegistry,
       agentCollaboration: widget.bootstrap.agentCollaboration,
+      vityodClient: widget.bootstrap.vityodClient,
+      debugAdapterLauncher: widget.bootstrap.debugAdapterLauncher,
+      debugBreakpointStore: widget.bootstrap.debugBreakpointStore,
+      debugLaunchConfigurationStore:
+          widget.bootstrap.debugLaunchConfigurationStore,
+      initialDebugLaunchProfiles: widget.bootstrap.debugLaunchProfiles,
+      workspaceTextSearchProvider: widget.bootstrap.workspaceTextSearchProvider,
+      platformManagers: widget.bootstrap.platformManagers,
+      credentialStorageSettings: widget.bootstrap.credentialStorage == null
+          ? null
+          : CredentialStorageSettingsSurface.fromBootstrap(
+              widget.bootstrap.credentialStorage!,
+            ),
+      hostedControlPlaneClient: widget.bootstrap.hostedControlPlaneClient,
       runtimeOutputBuffer: widget.bootstrap.runtimeOutputBuffer,
       refreshActiveLanguageService:
           widget.bootstrap.refreshActiveLanguageService,
@@ -53,6 +81,9 @@ class _VityoAppState extends State<VityoApp> {
       themeOverrideStore: widget.bootstrap.themeOverrideStore,
       commandPalettePreferencesStore:
           widget.bootstrap.commandPalettePreferencesStore,
+      workspaceFileExplorerStateStore:
+          widget.bootstrap.workspaceFileExplorerStateStore,
+      shellLayoutPreferencesStore: widget.bootstrap.shellLayoutPreferencesStore,
       workspaceDiagnosticsController:
           widget.bootstrap.workspaceDiagnosticsController,
       testingSessionController: widget.bootstrap.testingSessionController,
@@ -60,6 +91,7 @@ class _VityoAppState extends State<VityoApp> {
       sourceControlStatusController:
           widget.bootstrap.sourceControlStatusController,
       projectLanguageService: widget.bootstrap.projectLanguageService,
+      diagnosticsPanelStateStore: widget.bootstrap.diagnosticsPanelStateStore,
     );
     unawaited(_shellModel.loadThemeOverride());
     unawaited(
@@ -67,6 +99,9 @@ class _VityoAppState extends State<VityoApp> {
         workspaceId: widget.bootstrap.workspaceController.activeProject.id,
       ),
     );
+    unawaited(_shellModel.loadExtensionMarketplace());
+    unawaited(_shellModel.loadShellLayoutPreferences());
+    unawaited(_shellModel.loadDiagnosticsPanelState());
   }
 
   @override
@@ -86,7 +121,12 @@ class _VityoAppState extends State<VityoApp> {
           child: MaterialApp(
             title: 'Vityo',
             debugShowCheckedModeBanner: false,
-            theme: VityoTheme.light(overrides: _shellModel.themeOverride),
+            theme: VityoTheme.resolve(
+              preset:
+                  _shellModel.themeOverride.presetValue ??
+                  VityoThemePreset.obsidian,
+              overrides: _shellModel.themeOverride,
+            ),
             initialRoute: _editorInitialRoute(widget.initialPath),
             onGenerateInitialRoutes: (initialRoute) => <Route<dynamic>>[
               _editorRoute(initialRoute),

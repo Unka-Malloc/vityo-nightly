@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/backend_toolchain.dart';
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
 import 'package:vityo_app/src/ide/editor/editor.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/configuration.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
 import 'package:vityo_app/src/view_ide/language/language.dart';
 import 'package:vityo_app/src/view_ide/platform/platform.dart';
 import 'package:vityo_app/src/view_ide/shell_runtime/shell_runtime.dart';
@@ -179,6 +182,11 @@ void main() {
         stdout: 'test output',
         stderr: 'failure output',
         exitCode: 8,
+        metadata: <String, Object?>{
+          'processHandleId': 'native-process-8',
+          'pid': 8008,
+          'processHandleSource': 'process-manager',
+        },
       ),
     );
 
@@ -192,6 +200,53 @@ void main() {
     expect(processMetadata['exitCode'], 8);
     expect(processMetadata['stdoutPreview'], 'test output');
     expect(processMetadata['stderrPreview'], 'failure output');
+    expect(processMetadata['processHandleId'], 'native-process-8');
+    expect(processMetadata['pid'], 8008);
+    expect(processMetadata['processHandleSource'], 'process-manager');
+  });
+
+  test('native diagnostics preserve production process identity', () async {
+    final controller = _createExecutionController();
+    addTearDown(controller.dispose);
+    final manager = _RecordingToolchainManager(<ToolchainRuntimeResult>[
+      const ToolchainRuntimeResult(
+        status: ToolchainRuntimeStatus.failed,
+        toolchainId: 'clang-tidy',
+        stdout: '',
+        stderr:
+            'src/main.cpp:1:1: warning: prefer trailing return type [modernize-use-trailing-return-type]',
+        exitCode: 1,
+        metadata: <String, Object?>{
+          'processHandleId': 'diagnostics-process-1',
+          'pid': 6101,
+          'processHandleSource': 'vityod',
+        },
+      ),
+    ]);
+
+    final result = await controller.runNativeStaticAnalysis(
+      manager: manager,
+      workspaceLayout: NativeBuildWorkspaceLayout.fromFiles(const <String>[
+        'build/compile_commands.json',
+        'src/main.cpp',
+      ]),
+      workspaceRoot: '/workspace',
+      activeDocumentPath: 'src/main.cpp',
+      document: const DocumentState(
+        documentId: 'src/main.cpp',
+        text: 'int main() {}\n',
+        revision: 0,
+      ),
+    );
+
+    expect(result.processHandle?.processHandleId, 'diagnostics-process-1');
+    expect(result.processHandle?.pid, 6101);
+    expect(result.processHandle?.source, 'vityod');
+    expect(result.metadata['processHandleId'], 'diagnostics-process-1');
+    expect(
+      result.metadata['staticAnalysisResult'],
+      containsPair('processHandleId', 'diagnostics-process-1'),
+    );
   });
 
   test('native build layout normalizes workspace evidence once', () {
@@ -344,6 +399,83 @@ void main() {
     },
   );
 
+  test(
+    'execution controller binds and cancels a live process session',
+    () async {
+      final adapter = _CancellableExecutionAdapter();
+      final controller = ExecutionController(
+        executionAdapter: adapter,
+        executionAdapterFactory: (_) async => adapter,
+        runtimeEventAdapter: const _UnusedRuntimeEventAdapter(),
+        log: (_) {},
+        applyDiagnostics: (_) {},
+      );
+      addTearDown(controller.dispose);
+      final projectGraph = ProjectGraphSnapshot.scratch(
+        workspaceRoot: '/workspace/demo',
+        activeFilePath: 'main.styio',
+        title: 'Demo',
+        activeCompiler: const CompilerHandshakeSnapshot(
+          binaryPath: '/toolchains/styio',
+          tool: 'styio',
+          compilerVersion: '1.0.0',
+          channel: 'stable',
+          variant: 'desktop',
+          capabilities: <String>['single_file_entry'],
+          supportedContractVersions: <String, List<int>>{
+            'machine_info': <int>[1],
+          },
+          integrationPhase: 'single-file-live',
+        ),
+        notes: const <String>[],
+      );
+      const document = DocumentState(
+        documentId: 'main.styio',
+        text: 'print("hello")\n',
+        revision: 0,
+      );
+
+      final running = controller.run(
+        platformTarget: PlatformTarget.macos,
+        projectGraph: projectGraph,
+        adapterCapabilities: const <AdapterCapabilitySnapshot>[
+          _runnableCapabilitySnapshot,
+        ],
+        document: document,
+        selection: const SelectionState.collapsed(0),
+        activeFilePath: 'main.styio',
+      );
+      final handle = await adapter.started.future;
+
+      expect(controller.runActive, isTrue);
+      expect(controller.canCancelActiveExecution, isTrue);
+      expect(controller.activeProcessHandle, same(handle));
+      expect(
+        controller.lastExecutionSession?.status,
+        ExecutionSessionStatus.running,
+      );
+      expect(controller.lastExecutionSession?.metadata['pid'], 4242);
+
+      final cancellation = await controller.cancelActiveExecution();
+      await running;
+
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(controller.runActive, isFalse);
+      expect(controller.canCancelActiveExecution, isFalse);
+      expect(
+        controller.lastExecutionSession?.status,
+        ExecutionSessionStatus.cancelled,
+      );
+      expect(controller.lastExecutionSession?.sessionId, 'run-process-1');
+      expect(controller.lastExecutionSession?.metadata['pid'], 4242);
+      expect(
+        controller.lastExecutionSession?.toResultContract().cancelled,
+        isTrue,
+      );
+    },
+  );
+
   test('runtime event envelope serializes event contract', () {
     final event = RuntimeEventEnvelope(
       schemaVersion: 1,
@@ -394,6 +526,26 @@ const _unusedCapabilitySnapshot = AdapterCapabilitySnapshot(
   ),
 );
 
+const _runnableCapabilitySnapshot = AdapterCapabilitySnapshot(
+  adapterKind: AdapterKind.cli,
+  languageService: AdapterEndpointCapability(
+    level: AdapterCapabilityLevel.unavailable,
+    detail: 'Not used by execution lifecycle tests.',
+  ),
+  projectGraph: AdapterEndpointCapability(
+    level: AdapterCapabilityLevel.available,
+    detail: 'Scratch graph ready.',
+  ),
+  execution: AdapterEndpointCapability(
+    level: AdapterCapabilityLevel.available,
+    detail: 'Local execution ready.',
+  ),
+  runtimeEvents: AdapterEndpointCapability(
+    level: AdapterCapabilityLevel.available,
+    detail: 'Runtime events ready.',
+  ),
+);
+
 class _UnusedExecutionAdapter implements ExecutionAdapter {
   const _UnusedExecutionAdapter();
 
@@ -406,6 +558,7 @@ class _UnusedExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) {
     throw UnsupportedError('Execution is not used by result contract tests.');
   }
@@ -420,6 +573,69 @@ class _UnusedRuntimeEventAdapter implements RuntimeEventAdapter {
   @override
   Stream<RuntimeEventEnvelope> sessionEvents(String sessionId) {
     return const Stream<RuntimeEventEnvelope>.empty();
+  }
+}
+
+class _CancellableExecutionAdapter
+    implements ExecutionAdapter, CancellableExecutionAdapter {
+  final Completer<ProcessCommandHandle> started =
+      Completer<ProcessCommandHandle>();
+  final Completer<void> _cancelled = Completer<void>();
+
+  @override
+  AdapterCapabilitySnapshot get capabilitySnapshot =>
+      _runnableCapabilitySnapshot;
+
+  @override
+  Future<ExecutionSession> runActiveDocument({
+    required PlatformTarget platformTarget,
+    required ProjectGraphSnapshot projectGraph,
+    required DocumentState document,
+    required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
+  }) async {
+    const handle = ProcessCommandHandle(
+      processHandleId: 'run-process-1',
+      sourceManager: 'test-process-manager',
+      pid: 4242,
+    );
+    started.complete(handle);
+    onProcessStarted?.call(handle);
+    await _cancelled.future;
+    return const ExecutionSession(
+      sessionId: 'run-process-1',
+      kind: 'run',
+      status: ExecutionSessionStatus.failed,
+      statusMessage: 'Process terminated.',
+      diagnostics: <Diagnostic>[],
+      stdoutEvents: <ExecutionLogEvent>[],
+      stderrEvents: <ExecutionLogEvent>[],
+      metadata: <String, Object?>{
+        'processHandleId': 'run-process-1',
+        'processHandleSource': 'test-process-manager',
+        'pid': 4242,
+      },
+    );
+  }
+
+  @override
+  Future<ExecutionCancellationResult> cancelExecution(
+    String processHandleId,
+  ) async {
+    if (processHandleId != 'run-process-1') {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'Unknown process handle.',
+      );
+    }
+    if (!_cancelled.isCompleted) {
+      _cancelled.complete();
+    }
+    return const ProcessCommandCancellationResult(
+      accepted: true,
+      processTerminated: true,
+      message: 'Run stopped by user.',
+      metadata: <String, Object?>{'processHandleId': 'run-process-1'},
+    );
   }
 }
 
@@ -449,6 +665,7 @@ class _RecordingToolchainManager implements ToolchainManager {
     String? workingDirectory,
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     this.arguments.add(List<String>.of(arguments));
     return _results.removeAt(0);

@@ -2,29 +2,28 @@
 
 **Purpose:** Define Windows desktop release packaging requirements for Vityo, including native build evidence, installer behavior, PATH and file associations, update and repair behavior, and rollback evidence.
 
-**Last updated:** 2026-06-29
-**Status:** Draft - connected to release gates
+**Last updated:** 2026-10-02
+**Status:** Formal distribution requirements; nightly candidate package is implemented
 
 ## 1. Scope
 
-This document covers the Windows desktop release artifact for Vityo as a native Flutter desktop app. It applies when a formal Windows release is claimed in the release record.
+This document covers Windows package requirements for Vityo as a native Flutter desktop app. It distinguishes the unsigned nightly candidate from a formal Windows release with distribution, signing, update, and rollback evidence.
 
 The Windows release artifact is:
 
 - A native `flutter build windows --release` bundle.
-- Distributed through a production installer or package format selected by the release owner.
-- Verified by the hosted `windows-native` workflow and by a release record that attaches install/update/uninstall and rollback evidence.
+- The nightly pipeline packages a ZIP with PowerShell installer scripts, `vityod`, and the `vityo-coding-agent` executable. Its Authenticode signing status is an explicit gap and automatic updates are disabled.
+- A formal product release additionally requires signed distribution and the install/update/uninstall and rollback evidence in the release record.
 
 ## 2. CI Evidence Floor
 
-The hosted workflow at `.github/workflows/windows-native.yml` must:
+The hosted Windows job reuses `python3 scripts/vityo.py` in CI mode and must:
 
 1. Run on `windows-latest`.
-2. Provide `STYIO`, `VITYO_CHROME_PATH`, `CHROME_EXECUTABLE`, and `PYTHON_BIN` to the delivery gate.
-3. Run `scripts/delivery-gate.sh --mode push` without `--skip-health` or `--skip-ecosystem`.
-4. Run `flutter analyze`.
-5. Run `flutter build windows --release`.
-6. Upload Windows coverage and release build artifacts.
+2. Resolve the pinned Styio/Pafio executables from the configured product matrix.
+3. Run the canonical privacy, architecture, test, coverage, build, isolated install, and startup stages without a separate wrapper path.
+4. Use the pinned Rust/Cargo toolchain for the daemon and Coding Agent release binaries.
+5. Upload the configured Windows coverage and candidate artifacts.
 
 This proves the default CI floor. It does not prove formal distribution, signing, installer behavior, update behavior, or rollback.
 
@@ -51,20 +50,47 @@ The installer must not delete user project data during normal uninstall or updat
 3. Logs and diagnostics.
 4. Workspace-local metadata.
 
-## 5. Current Local Blockers
+## 5. Nightly Candidate Boundary
 
-Local Windows Flutter plugin tests are blocked on this machine because native plugin builds require Windows symlink support. Enable Windows Developer Mode or equivalent symlink privileges before claiming local Windows native test evidence.
-
-Hosted `windows-latest` CI remains the default Windows release-build evidence path until local Developer Mode is available.
+`python3 scripts/vityo.py build` creates the host Windows release bundle and
+nightly ZIP. `install` uses the included per-user PowerShell installer and
+verifies the installed client and Agent executable; `launch` runs the installed
+candidate. The CI startup probe establishes candidate identity, process launch,
+and first-frame evidence only. The app integration test root has no
+Windows-target native UI integration selector, so package and startup results do
+not establish Windows native UI behavior.
 
 ## 6. Current Gaps
 
 | Gap | Priority | Owner |
 |-----|----------|-------|
-| Production installer/package format is not selected in this repository | High | Release |
+| Formal signed distribution channel and installer lifecycle are not selected; the existing ZIP is a nightly candidate package | High | Release |
 | Code signing evidence is not attached | High | Release |
 | Install/update/uninstall/repair/rollback proof is not attached | High | Release |
-| Local Windows native Flutter tests are blocked by symlink privilege | Medium | Developer environment |
+| Formal code-signing evidence is absent and automatic updates are disabled | High | Release |
+
+## 6a. Windows Lane State After The Cross-Platform Gate Repairs
+
+The Windows lane previously stopped in the `architecture` stage because the docs
+gate was invoked as `bash scripts/docs-gate.sh`, and `bash` in PATH resolves to the
+WSL launcher, which has no distribution installed. Delivery now runs the gate
+through its Python implementation, and the lane reaches the `test` stage, builds
+the pinned Styio CLI with MSVC, and runs the full Python suite.
+
+That suite currently reports 16 failures and 2 errors, all of which are test
+fixtures encoding POSIX expectations rather than product defects. They fall into
+recognisable groups:
+
+- POSIX permission bits, for example a staged binary asserts `st_mode & 0o111`.
+- Unix-domain socket transport, including the daemon handshake and reconnect
+  probes, which assert an `AF_UNIX` path.
+- Path and line-ending formatting, such as asserting `/`-separated paths or CRLF
+  detection details.
+- Platform-conditional production branches whose tests assert the Unix branch on
+  every host.
+
+Making those fixtures platform-aware is a bounded task for the Windows lane and is
+not a packaging requirement change.
 
 ## 7. Related Documents
 

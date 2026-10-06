@@ -1,0 +1,20 @@
+{
+  "sessionId": "session-1",
+  "proposal": {
+    "id": "change-1",
+    "baseWorkspaceRevision": 7,
+    "resources": [
+      {
+        "resourceId": "src/app.sty",
+        "baseDocumentRevision": 3,
+        "edits": [
+          {
+            "start": 2,
+            "end": 4,
+            "replacement": "after"
+          }
+        ]
+      }
+    ]
+  }
+}

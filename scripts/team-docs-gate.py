@@ -95,7 +95,7 @@ TEAM_RULES: tuple[TeamRule, ...] = (
             "scripts/docs-audit.py",
             "scripts/team-docs-gate.py",
             "scripts/docs-gate.sh",
-            "scripts/delivery-gate.sh",
+            "scripts/vityo.py",
             "scripts/bootstrap-dev-env.sh",
             "scripts/bootstrap-dev-container.sh",
             "scripts/bootstrap-dev-env-macos.sh",

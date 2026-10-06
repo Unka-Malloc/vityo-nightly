@@ -1,9 +1,30 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'Rust and Dart consume the same revision-bound proposal fixture',
+    () async {
+      final fixture = File(
+        '../../products/vityo_coding_agent/fixtures/agent-wire/'
+        'workspace_change_proposal.json',
+      );
+      final params =
+          jsonDecode(await fixture.readAsString()) as Map<String, Object?>;
+      final request = VityoWorkspaceChangeProposalRequest.fromJson(params);
+      final proposal = request.proposal;
+      expect(params['sessionId'], 'session-1');
+      expect(proposal.baseWorkspaceRevision, 7);
+      expect(proposal.resources.single.resourceId, 'src/app.sty');
+      expect(proposal.resources.single.baseDocumentRevision, 3);
+      expect(proposal.editCount, 1);
+      expect(request.toJson(), params);
+    },
+  );
+
   group('JSON-RPC 2.0 codec', () {
     test('round-trips ACP request and response IDs', () {
       final messages = <JsonRpcMessage>[
@@ -144,10 +165,16 @@ void main() {
       ],
     );
 
-    final params = proposal.toNotificationParamsJson('session-1');
-    final decoded = VityoWorkspaceChangeProposal.fromNotificationParams(params);
+    final request = VityoWorkspaceChangeProposalRequest(
+      sessionId: 'session-1',
+      proposal: proposal,
+    );
+    final decodedRequest = VityoWorkspaceChangeProposalRequest.fromJson(
+      request.toJson(),
+    );
+    final decoded = decodedRequest.proposal;
     expect(jsonEncode(decoded.toJson()), jsonEncode(proposal.toJson()));
-    expect(params['sessionId'], 'session-1');
+    expect(decodedRequest.sessionId, 'session-1');
     expect(decoded.editCount, 1);
 
     expect(
@@ -171,6 +198,57 @@ void main() {
           'malformed_message',
         ),
       ),
+    );
+  });
+
+  test('proposal result carries actual commit receipt only for committed', () {
+    final proposal = VityoWorkspaceChangeProposal(
+      id: 'change-1',
+      baseWorkspaceRevision: 7,
+      resources: <VityoResourceChange>[
+        VityoResourceChange(
+          resourceId: 'src/main.styio',
+          baseDocumentRevision: 3,
+          edits: <VityoTextChange>[
+            VityoTextChange(start: 0, end: 1, replacement: 'M'),
+          ],
+        ),
+      ],
+    );
+    final committed = VityoWorkspaceChangeProposalResponse.fromJson(
+      <String, Object?>{
+        'proposalId': 'change-1',
+        'outcome': 'committed',
+        'workspaceRevision': 8,
+        'documentRevisions': <String, int>{'src/main.styio': 4},
+      },
+    );
+    final conflict = VityoWorkspaceChangeProposalResponse.fromJson(
+      <String, Object?>{
+        'proposalId': 'change-1',
+        'outcome': 'conflict',
+        'code': 'revision_conflict',
+      },
+    );
+
+    expect(committed.validatesFor(proposal), isTrue);
+    expect(conflict.validatesFor(proposal), isTrue);
+    expect(
+      VityoWorkspaceChangeProposalResponse.fromJson(<String, Object?>{
+        'proposalId': 'change-1',
+        'outcome': 'committed',
+        'workspaceRevision': 8,
+        'documentRevisions': <String, int>{},
+      }).validatesFor(proposal),
+      isFalse,
+    );
+    expect(
+      VityoWorkspaceChangeProposalResponse.fromJson(<String, Object?>{
+        'proposalId': 'change-1',
+        'outcome': 'rejected',
+        'workspaceRevision': 8,
+      }).validatesFor(proposal),
+      isFalse,
     );
   });
 }

@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-09-08
 
 ## Mission
 
@@ -78,6 +78,11 @@ Key SSOTs:
     child traversal. Preview-host security tests execute the non-zero loopback rejection on POSIX
     hosts and verify the same shell contract statically on Windows, where Python-to-Git-Bash
     subprocess startup is not a product security boundary.
+25. Shell layout preferences are constructed from the foundation data store during app bootstrap,
+    exposed as an optional `presentation.shell-layout-store` service, injected into `ShellModel`,
+    and loaded during app startup. Theme construction resolves the persisted override when one is
+    present and otherwise starts from the Obsidian preset. The `frontend_shell` barrel exports the
+    layout preference contract used by this bootstrap path.
 
 ## Change Classes
 
@@ -111,6 +116,7 @@ Record:
 3. 当前是否仍满足 source buffer fidelity。
 4. 下一步要改的 surface、回滚点和对应 history 记录。
 5. prototype/dev_server.py rejects removed legacy entrypoint assets (`/app.js`, `/styles.css`); the test `test_removed_legacy_entrypoint_assets_are_not_served` validates 404 responses.
+6. Interactive editor input now routes printable, composition, and structural text commits through the editor-owned text-input boundary; navigation, Escape, and non-mutating shortcuts remain on the command path. Multi-selection, grapheme-safe offsets, accessibility semantics, and viewport-bounded rendering are covered by the capability's focused acceptance and rendered evidence.
 
 2026-09-05: Wired the Observable bottom-panel tab (`BottomSurfaceTab.observable`, surface id `observable.graph`) through app bootstrap, shell runtime facade, and scaffold. The controller is optional on non-IO or hosted workspaces; existing editing, build, run, and test surfaces stay unchanged. No `prototype/` change.
 

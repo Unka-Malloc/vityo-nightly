@@ -21,6 +21,7 @@ class ToolchainShellRuntime {
     Duration? timeout,
     ShellProfileConfiguration? profile,
     bool? loginShell,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) {
     return shellManager.run(
       ShellCommandRequest(
@@ -31,6 +32,7 @@ class ToolchainShellRuntime {
         timeout: timeout,
         profile: profile,
         loginShell: loginShell,
+        onStarted: onProcessStarted,
       ),
       configuration: configuration,
     );
@@ -40,11 +42,13 @@ class ToolchainShellRuntime {
 Future<ToolchainShellRuntime> createPlatformToolchainShellRuntime({
   ShellProber? prober,
   PlatformContextSnapshot? platformContext,
+  ProcessManager? processManager,
   ShellConfiguration? configuration,
 }) async {
   final manager = await createPlatformShellManager(
     prober: prober,
     platformContext: platformContext,
+    processManager: processManager,
   );
   return ToolchainShellRuntime(
     shellManager: manager,

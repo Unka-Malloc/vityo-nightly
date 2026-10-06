@@ -7,10 +7,13 @@ import 'package:flutter/foundation.dart';
 import '../backend_toolchain/backend_toolchain.dart';
 import '../commands/commands.dart';
 import '../debugger/debug_adapter_launcher.dart';
+import '../debugger/debug_breakpoint_store.dart';
+import '../debugger/debug_launch_contract.dart';
 import '../debugger/debug_launch_telemetry_store.dart';
 import '../debugger/debug_runtime_task_history.dart';
 import '../../ide/editor/editor.dart' hide WorkspaceEditSource;
 import '../environment/configuration/configuration.dart';
+import '../environment/system_compatibility/system_compatibility.dart';
 import '../interaction/interaction.dart';
 import '../language/language_contract.dart';
 import '../language/service/semantic_snapshot_event_bridge.dart';
@@ -31,14 +34,17 @@ import '../../ide/workspace/workspace.dart';
 import '../../ide/agent_client/agent_client.dart';
 import '../../ide/workbench/agent_collaboration/agent_collaboration_service.dart';
 import 'controllers/backend_command_policy_controller.dart';
+import 'controllers/hosted_backend_controller.dart';
 import 'controllers/deployment_controller.dart';
 import 'controllers/dependency_source_controller.dart';
 import 'controllers/execution_controller.dart';
+import 'controllers/extension_marketplace_controller.dart';
 import 'controllers/editor_workspace_state_controller.dart';
 import 'controllers/editor_navigation_command_controller.dart';
 import 'controllers/editor_quick_fix_command_controller.dart';
 import 'controllers/editor_refactor_command_controller.dart';
 import 'controllers/debug_controller.dart';
+import 'controllers/diagnostics_panel_state_controller.dart';
 import 'controllers/language_controller.dart';
 import 'controllers/language_refresh_command_controller.dart';
 import 'controllers/module_controller.dart';
@@ -75,6 +81,7 @@ part 'facades/project_runtime_facade.dart';
 part 'facades/shell_lifecycle_facade.dart';
 part 'facades/toolchain_facade.dart';
 part 'facades/settings_facade.dart';
+part 'facades/hosted_backend_facade.dart';
 part 'facades/semantic_telemetry_facade.dart';
 part 'facades/workspace_document_facade.dart';
 part 'facades/workspace_intelligence_facade.dart';
@@ -89,6 +96,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
         ShellRuntimeProjectRuntimeFacade,
         ShellRuntimeToolchainFacade,
         ShellRuntimeSettingsFacade,
+        ShellRuntimeHostedBackendFacade,
         ShellRuntimeSemanticTelemetryFacade,
         ShellRuntimeWorkspaceDocumentFacade,
         ShellRuntimeWorkspaceIntelligenceFacade,
@@ -102,20 +110,34 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     required this.workspaceDocumentStore,
     required ModuleRegistry moduleRegistry,
     required NativeModuleLoader nativeModuleLoader,
+    this.extensionActivationSession,
+    this.extensionHostSupervisorSnapshot,
+    this.extensionHostLaunchResults =
+        const <ExtensionHostSandboxLaunchResult>[],
+    this.extensionHostTelemetryEvents =
+        const <ExtensionHostSupervisorTelemetryEvent>[],
+    ExtensionMarketplaceRuntimeServices? extensionMarketplaceRuntime,
+    ExtensionManifestRegistry? installedExtensionRegistry,
     required this.editorController,
     required ExecutionAdapter executionAdapter,
     required ExecutionAdapterFactory executionAdapterFactory,
     required RuntimeEventAdapter runtimeEventAdapter,
     required DependencySourceAdapter dependencySourceAdapter,
     required DeploymentAdapter deploymentAdapter,
+    this.terminalRuntimeRegistry,
     this.toolchainManager,
     EditorSessionDataStore? editorSessionDataStore,
     String editorSessionWorkspaceId = 'default',
+    WorkspaceFileExplorerStateStore? workspaceFileExplorerStateStore,
     int documentCacheLimit = 32,
     VityoThemeOverrideStore? themeOverrideStore,
     CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore,
     CommandPaletteDisplayPreferences? commandPalettePreferences,
     CommandPaletteLivePreferenceController? commandPalettePreferenceController,
+    PlatformManagerBundle? platformManagers,
+    PlatformManagerLiveOperationProbeRegistry? platformProbeRegistry,
+    CredentialStorageSettingsSurface? credentialStorageSettings,
+    HostedControlPlaneClient? hostedControlPlaneClient,
     ClangCppVersionPreference? clangCppVersionPreference,
     this.agentClientRegistry,
     this.agentCollaboration,
@@ -131,6 +153,10 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     ProjectStyioLanguageService? projectLanguageService,
     EditorDocumentResourceBinding? editorFileBinding,
     DapDebugAdapterLauncher? debugAdapterLauncher,
+    DebugBreakpointStore? debugBreakpointStore,
+    DebugLaunchConfigurationStore? debugLaunchConfigurationStore,
+    Iterable<DebugLaunchProfile> initialDebugLaunchProfiles =
+        const <DebugLaunchProfile>[],
     DebugRuntimeTaskHistoryBinder debugRuntimeTaskHistoryBinder =
         const DebugRuntimeTaskHistoryBinder(),
     RuntimeTaskHistoryStore? debugRuntimeTaskHistoryStore,
@@ -143,7 +169,11 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     String? semanticPanelEventWorkspaceId,
     WorkspaceQuickFixTelemetryStore? workspaceQuickFixTelemetryStore,
     String? workspaceQuickFixTelemetryWorkspaceId,
-  }) : projectLanguageService =
+    WorkspaceTextSearchProvider? workspaceTextSearchProvider,
+    DiagnosticsPanelStateStore? diagnosticsPanelStateStore,
+  }) : _styioServiceSubscriptionController = styioServiceSubscriptionController,
+       _debugAdapterLauncher = debugAdapterLauncher,
+       projectLanguageService =
            projectLanguageService ?? const ProjectStyioLanguageService(),
        runtimeOutputBuffer = runtimeOutputBuffer ?? RuntimeOutputLiveBuffer(),
        _ownsRuntimeOutputBuffer = runtimeOutputBuffer == null,
@@ -172,12 +202,32 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       log: appendLog,
       notify: notifyListeners,
     );
-    _workspaceFileCommandController = WorkspaceFileCommandController(
+    _workspaceFileExplorerController = WorkspaceFileExplorerController(
       workspaceController: workspaceController,
-      documentStore: workspaceDocumentStore,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspaceController,
+        documentStore: workspaceDocumentStore,
+      ),
+      stateStore: workspaceFileExplorerStateStore,
+      fileSystemManager: platformManagers?.fileSystem,
+      stateWorkspaceId: workspaceController.activeProject.id,
+    )..addListener(_handleWorkspaceFileExplorerChanged);
+    _workspaceFileCommandController = WorkspaceFileCommandController(
+      explorerController: _workspaceFileExplorerController,
       openWorkspaceFile: openWorkspaceFile,
       reloadActiveDocument: _workspaceDocumentController.loadActiveDocument,
+      runWithoutWorkspaceReload:
+          _workspaceDocumentController.runWithoutWorkspaceLoad,
+      isWorkspaceFileDirty: _editorWorkspaceStateController.isDirty,
     );
+    if (workspaceFileExplorerStateStore != null ||
+        platformManagers?.fileSystem != null) {
+      unawaited(
+        _workspaceFileExplorerController.startFileSystemSync(
+          rootPath: workspaceController.activeProject.workspaceRoot,
+        ),
+      );
+    }
     _workspaceDiagnosticsRuntimeController =
         WorkspaceDiagnosticsRuntimeController(
           controller: workspaceDiagnosticsController,
@@ -186,12 +236,18 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
           openFilePaths: () => workspaceController.openFilePaths,
           log: appendLog,
         )..addListener(_handleWorkspaceDiagnosticsChanged);
+    _diagnosticsPanelStateController = DiagnosticsPanelStateController(
+      workspaceId: () => workspaceController.activeProject.id,
+      store: diagnosticsPanelStateStore,
+      log: appendLog,
+    )..addListener(_notifyShellListeners);
     _workspaceReplaceController = WorkspaceReplaceController(
       workspaceController: workspaceController,
       documentStore: workspaceDocumentStore,
       editorController: editorController,
       editorWorkspaceState: _editorWorkspaceStateController,
       log: appendLog,
+      textSearchProvider: workspaceTextSearchProvider,
     )..addListener(_handleWorkspaceReplaceChanged);
     _workspaceNavigationController = WorkspaceNavigationController(
       workspaceController: workspaceController,
@@ -266,7 +322,25 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       commandPalettePreferences: commandPalettePreferences,
       commandPalettePreferenceController: commandPalettePreferenceController,
+      platformManagers: platformManagers,
+      platformProbeRegistry: platformProbeRegistry,
+      credentialStorageSettings: credentialStorageSettings,
     )..addListener(_handleSettingsChanged);
+    if (platformManagers != null) {
+      unawaited(_settingsController.refreshPlatformManagerHealth());
+    }
+    _hostedBackendController = HostedBackendController(
+      workspaceController: workspaceController,
+      platformTarget: platformTarget,
+      runtimeOutputBuffer: this.runtimeOutputBuffer,
+      documentStoreAvailable:
+          workspaceDocumentStore is HostedWorkspaceDocumentStore,
+      hostedClient: hostedControlPlaneClient,
+    )..addListener(_handleHostedBackendChanged);
+    if (_hostedBackendController.hasHostedWorkspace &&
+        hostedControlPlaneClient != null) {
+      unawaited(_hostedBackendController.verifyConnection());
+    }
     _executionController = ExecutionController(
       executionAdapter: executionAdapter,
       executionAdapterFactory: executionAdapterFactory,
@@ -343,6 +417,24 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       refreshLanguageService: _languageController.refresh,
       log: appendLog,
     );
+    final marketplaceRegistry =
+        installedExtensionRegistry ??
+        ExtensionManifestRegistry(
+          moduleRegistry.visibleModules
+              .map(
+                (module) => ExtensionManifest.fromModuleManifest(
+                  module: module.manifest,
+                  publisher: 'vityo',
+                ),
+              )
+              .where((manifest) => manifest.valid),
+        );
+    _extensionMarketplaceController = ExtensionMarketplaceController(
+      workspaceId: () => workspaceController.activeProject.id,
+      installedRegistry: marketplaceRegistry,
+      runtime: extensionMarketplaceRuntime,
+      log: appendLog,
+    )..addListener(_handleExtensionMarketplaceChanged);
     _moduleController = ModuleController(
       registry: moduleRegistry,
       nativeModuleLoader: nativeModuleLoader,
@@ -353,15 +445,26 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     _debugController = DebugController.configured(
       toolchainManager: toolchainManager,
       workspaceRoot: () => workspaceController.activeProject.workspaceRoot,
+      workspaceId: () => workspaceController.activeProject.id,
       launcher: debugAdapterLauncher,
       runtimeOutputBuffer: this.runtimeOutputBuffer,
       runtimeTaskHistoryBinder: debugRuntimeTaskHistoryBinder,
       runtimeTaskHistoryStore: debugRuntimeTaskHistoryStore,
       runtimeTaskHistoryWorkspaceId: debugRuntimeTaskHistoryWorkspaceId,
       runtimeTaskHistoryMaxEntries: debugRuntimeTaskHistoryMaxEntries,
+      breakpointStore: debugBreakpointStore,
+      launchConfigurationStore: debugLaunchConfigurationStore,
+      initialLaunchProfiles: initialDebugLaunchProfiles,
       log: appendLog,
     );
     _debugController.addListener(_handleDebugChanged);
+    unawaited(_debugController.loadConfiguredState());
+    _runtimeOutputProducerBindings =
+        RuntimeOutputProducerBindings(buffer: this.runtimeOutputBuffer)
+          ..wireAvailable(
+            emissions: _availableRuntimeOutputProducerEmissions(),
+            unavailableReasons: _unavailableRuntimeOutputProducerReasons(),
+          );
     _shellCommandFallbackController = ShellCommandFallbackController(
       log: appendLog,
       notify: notifyListeners,
@@ -404,6 +507,8 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       workspaceFileCommands: _workspaceFileCommandController,
       blockedReasonForCommand: blockedReasonForCommand,
       executeCommand: executeCommand,
+      requestEditorSelectionCommand:
+          editorController.selectionController.requestInteractionCommand,
       searchWorkspace: searchWorkspace,
       openWorkspaceFile: openWorkspaceFile,
       previewWorkspaceReplace:
@@ -486,7 +591,11 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       languageService: this.projectLanguageService,
       documentSamples: () => _workspaceDocumentSamples,
       log: appendLog,
-    );
+      textSearchProvider: workspaceTextSearchProvider,
+      fileSystemManager: platformManagers?.fileSystem,
+      runtimeOutputBuffer: this.runtimeOutputBuffer,
+    )..addListener(_handleWorkspaceSearchChanged);
+    unawaited(_workspaceSearchController.start());
     _backendCommandPolicyController = BackendCommandPolicyController(
       platformTarget: platformTarget,
     );
@@ -495,13 +604,22 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       workspaceId: () => workspaceController.activeProject.workspaceRoot,
       dirtyDocumentPaths: () => dirtyDocumentPaths,
       log: appendLog,
+      refreshResolvedDocument:
+          _workspaceDocumentController.refreshAfterSourceControlResolution,
     )..addListener(_handleSourceControlChanged);
     _testingController = ShellTestingController(
       sessionController: testingSessionController,
       workspaceRoot: () => workspaceController.activeProject.workspaceRoot,
-      runTestsFallback: () => executeCommand(AppCommandId.runTests),
+      runNativeTests: ({onProcessStarted, required recordTestingResult}) =>
+          _nativeToolRuntimeController.run(
+            NativeToolCommand.tests,
+            onProcessStarted: onProcessStarted,
+            recordTestingResult: recordTestingResult,
+          ),
+      processManager: platformManagers?.process,
       runtimeOutputBuffer: this.runtimeOutputBuffer,
       log: appendLog,
+      debugAdapterLauncher: debugAdapterLauncher,
     )..addListener(_handleTestingChanged);
     observableGraphController?.addListener(_handleObservableGraphChanged);
     _nativeToolRuntimeController = NativeToolRuntimeController(
@@ -542,6 +660,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   final WorkspaceDocumentStore workspaceDocumentStore;
   final EditorSessionController editorController;
   final ToolchainManager? toolchainManager;
+  final TerminalRuntimeRegistry? terminalRuntimeRegistry;
   late final EditorWorkspaceStateController _editorWorkspaceStateController;
   late final EditorNavigationCommandController
   _editorNavigationCommandController;
@@ -550,10 +669,13 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final WorkspaceDocumentController _workspaceDocumentController;
   late final WorkspacePersistenceController _workspacePersistenceController;
   late final WorkspaceFileCommandController _workspaceFileCommandController;
+  late final WorkspaceFileExplorerController _workspaceFileExplorerController;
   late final WorkspaceFileConfirmationController
   _workspaceFileConfirmationController;
   late final WorkspaceDiagnosticsRuntimeController
   _workspaceDiagnosticsRuntimeController;
+  late final DiagnosticsPanelStateController _diagnosticsPanelStateController;
+  late final RuntimeOutputProducerBindings _runtimeOutputProducerBindings;
   late final WorkspaceReplaceController _workspaceReplaceController;
   late final WorkspaceNavigationController _workspaceNavigationController;
   late final ProjectLanguageContextController _projectLanguageContextController;
@@ -561,6 +683,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final WorkspaceQuickFixController _workspaceQuickFixController;
   late final WorkspaceSearchController _workspaceSearchController;
   late final SettingsController _settingsController;
+  late final HostedBackendController _hostedBackendController;
   late final ExecutionController _executionController;
   late final ProjectGraphController _projectGraphController;
   late final DeploymentController _deploymentController;
@@ -570,6 +693,7 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   late final ShellInputCommandController _shellInputCommandController;
   late final ShellCommandFallbackController _shellCommandFallbackController;
   late final ModuleController _moduleController;
+  late final ExtensionMarketplaceController _extensionMarketplaceController;
   late final NativeToolRuntimeController _nativeToolRuntimeController;
   late final DebugController _debugController;
   late final BackendCommandPolicyController _backendCommandPolicyController;
@@ -583,8 +707,15 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
   final ValueListenable<ToolchainManagerStatusReport>? toolchainStatusReport;
   final ProjectStyioLanguageService projectLanguageService;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
+  final ExtensionActivationSession? extensionActivationSession;
+  final ExtensionHostSupervisorSnapshot? extensionHostSupervisorSnapshot;
+  final List<ExtensionHostSandboxLaunchResult> extensionHostLaunchResults;
+  final List<ExtensionHostSupervisorTelemetryEvent>
+  extensionHostTelemetryEvents;
   final AgentClientRegistry? agentClientRegistry;
   final AgentCollaborationService? agentCollaboration;
+  final StyioServiceSubscriptionController? _styioServiceSubscriptionController;
+  final DapDebugAdapterLauncher? _debugAdapterLauncher;
   final bool _ownsLanguageServiceStatus;
   final bool _ownsRuntimeOutputBuffer;
   StreamSubscription<DocumentResourceBindingSnapshot>?
@@ -609,9 +740,155 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
       _workspaceSearchController.lastTextSearch;
   WorkspaceSymbolSearchResult? get lastWorkspaceSymbolSearch =>
       _workspaceSearchController.lastSymbolSearch;
+  WorkspaceSearchIndex? get workspaceSearchIndex =>
+      _workspaceSearchController.searchIndex;
+  WorkspaceSearchIndexWatcherSnapshot? get workspaceSearchWatcherSnapshot =>
+      _workspaceSearchController.watcherSnapshot;
   String? get lastWorkspaceSearchQuery => _workspaceSearchController.lastQuery;
   int get lastWorkspaceSearchScannedCount =>
       _workspaceSearchController.lastScannedDocumentCount;
+
+  DiagnosticsPanelState? get diagnosticsPanelState =>
+      _diagnosticsPanelStateController.state;
+
+  bool get diagnosticsPanelStateRestored =>
+      _diagnosticsPanelStateController.restored;
+
+  Future<void> loadDiagnosticsPanelState() =>
+      _diagnosticsPanelStateController.load();
+
+  void recordDiagnosticsPanelState(DiagnosticsPanelState state) =>
+      _diagnosticsPanelStateController.record(state);
+
+  RuntimeOutputProducerBindings get runtimeOutputProducerBindings =>
+      _runtimeOutputProducerBindings;
+
+  /// Streams the shell really publishes today. Producers without an entry stay
+  /// blocked with the matching reason in
+  /// [_unavailableRuntimeOutputProducerReasons].
+  Map<String, Stream<RuntimeOutputProducerEmission>>
+  _availableRuntimeOutputProducerEmissions() {
+    final emissions = <String, Stream<RuntimeOutputProducerEmission>>{};
+    final collaboration = agentCollaboration;
+    if (collaboration != null) {
+      emissions['agent'] = _mergeProducerEmissions(
+        <Stream<RuntimeOutputProducerEmission>>[
+          collaboration.changes.map(
+            (projection) => RuntimeOutputProducerEmission(
+              message:
+                  'Agent collaboration revision ${projection.revision}: '
+                  '${projection.sessions.length} session(s), '
+                  '${projection.attentionCount} awaiting attention.',
+              timestamp: DateTime.now().toUtc(),
+              channelId: 'runtime.agent',
+              label: 'Agent Runtime',
+              metadata: <String, Object?>{
+                'collaborationRevision': projection.revision,
+                'sessionCount': projection.sessions.length,
+                'attentionCount': projection.attentionCount,
+              },
+            ),
+          ),
+          collaboration.failures.map(
+            (failure) => RuntimeOutputProducerEmission.stderr(
+              message:
+                  'Agent collaboration ${failure.code}: ${failure.message}',
+              timestamp: DateTime.now().toUtc(),
+              channelId: 'runtime.agent',
+              label: 'Agent Runtime',
+              metadata: <String, Object?>{'failureCode': failure.code},
+            ),
+          ),
+        ],
+      );
+    }
+    final subscriptionController = _styioServiceSubscriptionController;
+    if (subscriptionController != null) {
+      emissions['language-service'] = subscriptionController.events.map(
+        (event) => RuntimeOutputProducerEmission(
+          message:
+              '[${event.kind.name}] ${event.documentId}@${event.revision} '
+              '${event.message}',
+          timestamp: event.emittedAt,
+          channelId: 'runtime.language-service',
+          label: 'Language Service',
+          metadata: <String, Object?>{
+            'kind': event.kind.name,
+            'documentId': event.documentId,
+            'revision': event.revision,
+            'generation': event.generation,
+            'source': event.source,
+            if (event.providerId.isNotEmpty) 'providerId': event.providerId,
+          },
+        ),
+      );
+    }
+    if (_debugAdapterLauncher != null) {
+      emissions['debug-adapter'] = _debugAdapterOutputEmissions();
+    }
+    return emissions;
+  }
+
+  /// DAP adapters publish a snapshot for every event and response. Only status
+  /// transitions and failures are forwarded so the debug channel carries real
+  /// lifecycle facts without flooding the output buffer.
+  Stream<RuntimeOutputProducerEmission> _debugAdapterOutputEmissions() async* {
+    var lastStatus = '';
+    var lastFailure = '';
+    await for (final snapshot in _debugController.dapSnapshotEvents) {
+      final status = snapshot.status.name;
+      final failure = snapshot.failureMessage ?? '';
+      if (status == lastStatus && failure == lastFailure) {
+        continue;
+      }
+      lastStatus = status;
+      lastFailure = failure;
+      yield RuntimeOutputProducerEmission(
+        message: failure.isEmpty
+            ? 'Debug session $status: ${snapshot.events.length} event(s), '
+                  '${snapshot.threads.length} thread(s).'
+            : 'Debug session $status failed: $failure',
+        timestamp: DateTime.now().toUtc(),
+        channelId: 'runtime.debug',
+        label: 'Debug Adapter',
+        metadata: <String, Object?>{
+          'status': status,
+          'eventCount': snapshot.events.length,
+          'threadCount': snapshot.threads.length,
+          if (failure.isNotEmpty) 'failure': failure,
+        },
+      );
+    }
+  }
+
+  Map<String, String> _unavailableRuntimeOutputProducerReasons() {
+    return <String, String>{
+      if (agentCollaboration == null)
+        'agent':
+            'No Agent collaboration service is configured; the agent channel '
+            'stays empty.',
+      if (_styioServiceSubscriptionController == null)
+        'language-service':
+            'No StyioService subscription controller is configured; the '
+            'language-service channel stays empty.',
+      if (_debugAdapterLauncher == null)
+        'debug-adapter':
+            'No DAP debug adapter launcher is configured; the debug channel '
+            'stays empty.',
+      'shell-manager':
+          'ShellManager execution is request-driven, so no standing shell '
+          'output stream exists in the shell runtime yet.',
+      'terminal-runtime':
+          'The production shell does not create a TerminalRuntime session '
+          'yet, so there is no standing PTY output stream to bind.',
+      'toolchain-manager':
+          'ToolchainRuntime publishes per-command results into the live '
+          'buffer and exposes no standing stdout/stderr stream.',
+      'hosted-executor':
+          'Hosted control-plane events are delivered through the hosted '
+          'backend controller, not a standing runtime output stream.',
+    };
+  }
 
   void appendLog(String message) {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
@@ -629,4 +906,24 @@ class ShellRuntimeModel extends ShellRuntimeFacadeHost
     _disposeOwnedResources();
     super.dispose();
   }
+}
+
+Stream<RuntimeOutputProducerEmission> _mergeProducerEmissions(
+  List<Stream<RuntimeOutputProducerEmission>> streams,
+) {
+  final controller = StreamController<RuntimeOutputProducerEmission>.broadcast(
+    sync: true,
+  );
+  final subscriptions = <StreamSubscription<RuntimeOutputProducerEmission>>[];
+  for (final stream in streams) {
+    subscriptions.add(
+      stream.listen(controller.add, onError: controller.addError),
+    );
+  }
+  controller.onCancel = () async {
+    for (final subscription in subscriptions) {
+      await subscription.cancel();
+    }
+  };
+  return controller.stream;
 }

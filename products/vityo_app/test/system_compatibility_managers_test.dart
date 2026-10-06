@@ -1,9 +1,23 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
 
+import 'support/vityod_test_harness.dart';
+
+import 'support/test_file_system_manager.dart';
+
 void main() {
+  VityodTestHarness? vityod;
+
+  setUpAll(() async {
+    if (!VityodTestHarness.isSupported) return;
+    vityod = await VityodTestHarness.start(clientId: 'process-manager-test');
+  });
+
+  tearDownAll(() => vityod?.close());
+
   test('system compatibility abstract files do not import dart io', () {
     final root = Directory('lib/src/view_ide/environment/system_compatibility');
     final offenders =
@@ -40,7 +54,10 @@ void main() {
         clock: () => DateTime.utc(2026, 5, 16),
       ).probe();
       final compatibility = ProcessAdapter(facts).adapt();
-      final manager = LocalProcessManager(facts: facts);
+      final plan = ProcessAdapter(
+        facts,
+      ).plan(const ProcessCommandRequest(executablePath: '/usr/bin/printf'));
+      final manager = LocalProcessManager(facts: facts, client: vityod!.client);
 
       final result = await manager.run(
         const ProcessCommandRequest(
@@ -51,6 +68,7 @@ void main() {
 
       expect(facts.supportsLinuxDebianArmTarget, isTrue);
       expect(compatibility.isLinuxDebianArm, isTrue);
+      expect(plan.timeout, isNull);
       expect(result.succeeded, isTrue);
       expect(result.stdout, 'process-ok');
     },
@@ -157,7 +175,9 @@ void main() {
   test(
     'process manager writes standard input to commands',
     () async {
-      final manager = LocalProcessManager.linuxDebianArmForTest();
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
 
       final result = await manager.run(
         ProcessCommandRequest(
@@ -172,8 +192,113 @@ void main() {
     skip: Platform.isWindows ? 'POSIX process fixture.' : false,
   );
 
+  test(
+    'process manager forwards the host environment the daemon clears',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final hostHome = Platform.environment['HOME'];
+
+      final result = await manager.run(
+        const ProcessCommandRequest(executablePath: '/usr/bin/env'),
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(hostHome, isNotNull);
+      expect(result.stdout, contains('HOME=$hostHome'));
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'process manager keeps an explicitly supplied environment',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+
+      final result = await manager.run(
+        const ProcessCommandRequest(
+          executablePath: '/usr/bin/env',
+          environment: <String, String>{'VITYO_EXPLICIT_ENV': 'kept'},
+        ),
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(result.stdout, contains('VITYO_EXPLICIT_ENV=kept'));
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'process manager exposes and cancels a live vityod process handle',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final started = Completer<ProcessCommandHandle>();
+      final running = manager.run(
+        ProcessCommandRequest(
+          executablePath: '/bin/sleep',
+          arguments: const <String>['30'],
+          timeout: const Duration(seconds: 60),
+          onStarted: started.complete,
+        ),
+      );
+
+      final handle = await started.future.timeout(const Duration(seconds: 5));
+      final cancellation = await manager.cancelProcess(handle.processHandleId);
+      final result = await running.timeout(const Duration(seconds: 5));
+
+      expect(handle.processHandleId, startsWith('task-'));
+      expect(handle.sourceManager, 'vityod');
+      expect(handle.pid, greaterThan(0));
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(result.succeeded, isFalse);
+      expect(result.metadata['processHandleId'], handle.processHandleId);
+      expect(result.metadata['pid'], handle.pid);
+      expect(result.metadata['processHandleSource'], handle.sourceManager);
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
+  test(
+    'typed Pafio process cancellation uses its namespaced task route',
+    () async {
+      final manager = LocalProcessManager.linuxDebianArmForTest(
+        client: vityod!.client,
+      );
+      final started = Completer<ProcessCommandHandle>();
+      final running = manager.run(
+        ProcessCommandRequest(
+          executablePath: '/bin/sleep',
+          arguments: const <String>['30'],
+          serviceKind: ProcessServiceKind.pafio,
+          onStarted: started.complete,
+        ),
+      );
+
+      final handle = await started.future.timeout(const Duration(seconds: 5));
+      final cancellation = await manager.cancelProcess(handle.processHandleId);
+      final result = await running.timeout(const Duration(seconds: 5));
+
+      expect(handle.processHandleId, startsWith('pafio-'));
+      expect(handle.metadata['serviceKind'], 'pafio');
+      expect(cancellation.accepted, isTrue);
+      expect(cancellation.processTerminated, isTrue);
+      expect(cancellation.metadata['serviceKind'], 'pafio');
+      expect(result.succeeded, isFalse);
+      expect(result.metadata['processHandleId'], handle.processHandleId);
+    },
+    skip: Platform.isWindows ? 'POSIX process fixture.' : false,
+  );
+
   test('process manager classifies command failures structurally', () async {
-    final manager = LocalProcessManager.linuxDebianArmForTest();
+    final manager = LocalProcessManager.linuxDebianArmForTest(
+      client: vityod!.client,
+    );
     const failed = ProcessCommandResult(
       status: ProcessCommandStatus.failed,
       executablePath: '/usr/bin/styio',
@@ -197,7 +322,7 @@ void main() {
 
     expect(nonZeroFailure, isNotNull);
     expect(nonZeroFailure!.kind, ProcessFailureKind.nonZeroExit);
-    expect(nonZeroFailure.sourceManager, 'LocalProcessManager');
+    expect(nonZeroFailure.sourceManager, 'VityodProcessManager');
     expect(nonZeroFailure.toJson()['operation'], 'toolchain.health');
     expect(blockedFailure!.kind, ProcessFailureKind.unsupported);
     expect(blockedFailure.sourceManager, 'UnsupportedProcessManager');
@@ -211,7 +336,10 @@ void main() {
       clock: () => DateTime.utc(2026, 5, 16),
     ).probe();
     final compatibility = ResourceAdapter(facts).adapt();
-    final manager = LocalResourceManager(facts: facts);
+    final manager = LocalResourceManager(
+      facts: facts,
+      fileSystemManager: TestFileSystemManager.linuxDebianArm(),
+    );
 
     final tempPath = await manager.createTempDirectory('vityo_resource_test_');
     addTearDown(() => Directory(tempPath).delete(recursive: true));
@@ -242,8 +370,8 @@ void main() {
           target: '/tmp',
         );
 
-    expect(limitFailure.kind, ResourceFailureKind.resourceLimit);
-    expect(limitFailure.sourceManager, 'LocalResourceManager');
+    expect(limitFailure.kind, ResourceFailureKind.unknownFailure);
+    expect(limitFailure.sourceManager, 'VityodResourceManager');
     expect(limitFailure.toJson()['operation'], 'resource.temp.create');
     expect(unsupportedFailure.kind, ResourceFailureKind.unsupported);
     expect(
@@ -257,7 +385,7 @@ void main() {
       'vityo_file_system_manager_test_',
     );
     addTearDown(() => tempRoot.delete(recursive: true));
-    final manager = LocalFileSystemManager.linuxDebianArmForTest();
+    final manager = TestFileSystemManager.linuxDebianArm();
     final path = manager.joinPath(<String>[tempRoot.path, 'tool']);
 
     await manager.writeBytes(path, const <int>[0, 1, 2, 255]);
@@ -344,6 +472,40 @@ void main() {
       expect(routes.single.toJson()['managerKey'], 'shell');
       expect(routes.single.toJson()['settingsSectionId'], 'shell');
     },
+  );
+
+  test(
+    'default live probes pass through every real desktop manager',
+    () async {
+      final workspace = await Directory.systemTemp.createTemp(
+        'vityo_platform_live_probe_',
+      );
+      addTearDown(() => workspace.delete(recursive: true));
+      final bundle = await createDetectedPlatformManagerBundle(
+        targetId: 'desktop-live-probe',
+        vityodClient: vityod!.client,
+        workspaceRoot: workspace.path,
+      );
+
+      final health = await bundle.probeLiveOperationHealthSnapshot();
+
+      expect(health.components, hasLength(9));
+      expect(health.ready, isTrue);
+      expect(health.readyCount, 9);
+      expect(health.blockedCount, 0);
+      expect(health.recoveryActions, isEmpty);
+      expect(
+        health.components.every(
+          (component) =>
+              component.probeKind ==
+              PlatformManagerHealthProbeKind.managerLiveOperation,
+        ),
+        isTrue,
+      );
+    },
+    skip: VityodTestHarness.isSupported
+        ? false
+        : 'Native desktop manager probes require vityod.',
   );
 
   test(

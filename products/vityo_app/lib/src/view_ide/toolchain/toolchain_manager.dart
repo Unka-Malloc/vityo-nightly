@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../environment/configuration/environment_variable_configuration.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
+import '../environment/system_compatibility/process/process_manager.dart';
 import '../runtime/runtime.dart';
 import 'clang_cpp_version_configuration.dart';
 import 'toolchain_catalog.dart';
@@ -10,6 +11,8 @@ import 'toolchain_environment.dart';
 import 'toolchain_health_check.dart';
 import 'toolchain_install_executor.dart';
 import 'toolchain_install_policy.dart';
+import 'toolchain_managed_download_config.dart';
+import 'toolchain_project_validation.dart';
 import 'toolchain_resolver.dart';
 import 'toolchain_runtime.dart';
 
@@ -212,28 +215,37 @@ class ToolchainManagerBootstrapSummary {
     required this.settingsActionIds,
     required this.installerActionIds,
     required this.projectBootstrapActionIds,
+    this.projectValidation,
   });
 
   factory ToolchainManagerBootstrapSummary.fromReport({
     required ToolchainManagerStatusReport managerReport,
+    ToolchainProjectValidationResult? projectValidation,
   }) {
-    final settingsActions = <String>{
-      ...managerReport.recoveryState.actionIds,
-    };
+    final settingsActions = <String>{...managerReport.recoveryState.actionIds};
+    final ready =
+        managerReport.ready &&
+        (projectValidation == null || projectValidation.ready);
+    if (!ready && managerReport.recoveryState.actionIds.isEmpty) {
+      settingsActions
+        ..add('select-existing-toolchain')
+        ..add('install-managed-toolchain');
+    }
     final installerActions = <String>{
       if (managerReport.recoveryState.kind ==
-          ToolchainRecoveryStateKind.needsInstall)
+              ToolchainRecoveryStateKind.needsInstall ||
+          (!ready &&
+              projectValidation?.status ==
+                  ToolchainProjectValidationStatus.executableMissing))
         'plan-managed-toolchain-installation',
       if (managerReport.recoveryState.kind ==
           ToolchainRecoveryStateKind.retryAvailable)
         'retry-toolchain-action',
-      if (managerReport.ready) 'verify-toolchain',
+      if (ready) 'verify-toolchain',
     };
     final projectBootstrapActions = <String>{
-      if (managerReport.ready)
-        'validate-project-toolchain'
-      else
-        'open-toolchain-settings',
+      'validate-project-toolchain',
+      if (!ready) 'open-toolchain-settings',
     };
     return ToolchainManagerBootstrapSummary(
       managerReport: managerReport,
@@ -242,6 +254,7 @@ class ToolchainManagerBootstrapSummary {
       projectBootstrapActionIds: List<String>.unmodifiable(
         projectBootstrapActions,
       ),
+      projectValidation: projectValidation,
     );
   }
 
@@ -249,8 +262,11 @@ class ToolchainManagerBootstrapSummary {
   final List<String> settingsActionIds;
   final List<String> installerActionIds;
   final List<String> projectBootstrapActionIds;
+  final ToolchainProjectValidationResult? projectValidation;
 
-  bool get ready => managerReport.ready;
+  bool get ready =>
+      managerReport.ready &&
+      (projectValidation == null || projectValidation!.ready);
 
   Map<String, Object?> get agentContext {
     final activeEntries = managerReport.snapshot.entries
@@ -259,6 +275,8 @@ class ToolchainManagerBootstrapSummary {
     return <String, Object?>{
       'toolchainReady': ready,
       'managerStatus': managerReport.status.name,
+      if (projectValidation != null)
+        'projectValidation': projectValidation!.toJson(),
       'activeToolchains': activeEntries
           .map((entry) => entry.toJson())
           .toList(growable: false),
@@ -272,6 +290,8 @@ class ToolchainManagerBootstrapSummary {
       'settingsActionIds': settingsActionIds,
       'installerActionIds': installerActionIds,
       'projectBootstrapActionIds': projectBootstrapActionIds,
+      if (projectValidation != null)
+        'projectValidation': projectValidation!.toJson(),
       'executionPlan': executionPlan().toJson(),
       'agentContext': agentContext,
     };
@@ -300,14 +320,12 @@ class ToolchainBootstrapActionStep {
     required this.actionId,
     required this.surface,
     required this.required,
-    this.completed = false,
   });
 
   final String stepId;
   final String actionId;
   final ToolchainBootstrapActionSurface surface;
   final bool required;
-  final bool completed;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -315,7 +333,6 @@ class ToolchainBootstrapActionStep {
       'actionId': actionId,
       'surface': surface.wireValue,
       'required': required,
-      'completed': completed,
     };
   }
 }
@@ -324,7 +341,6 @@ class ToolchainBootstrapExecutionPlan {
   const ToolchainBootstrapExecutionPlan({
     required this.ready,
     required this.steps,
-    this.todo = '',
   });
 
   factory ToolchainBootstrapExecutionPlan.fromSummary(
@@ -342,7 +358,6 @@ class ToolchainBootstrapExecutionPlan {
         actionId: actionId,
         surface: surface,
         required: required,
-        completed: summary.ready,
       );
     }
 
@@ -354,7 +369,7 @@ class ToolchainBootstrapExecutionPlan {
             step(
               actionId,
               ToolchainBootstrapActionSurface.settings,
-              required: true,
+              required: false,
             ),
           for (final actionId in summary.installerActionIds)
             step(
@@ -366,20 +381,17 @@ class ToolchainBootstrapExecutionPlan {
             step(
               actionId,
               ToolchainBootstrapActionSurface.project,
-              required: true,
+              required: summary.ready,
             ),
         ],
       ),
-      todo:
-          'TODO: bind concrete installer UX and project bootstrap runners to ToolchainBootstrapExecutionBridge handlers.',
     );
   }
 
   final bool ready;
   final List<ToolchainBootstrapActionStep> steps;
-  final String todo;
 
-  bool get canExecute => !ready && steps.isNotEmpty;
+  bool get canExecute => steps.isNotEmpty;
   int get requiredStepCount => steps.where((step) => step.required).length;
 
   Map<String, int> get surfaceCounts {
@@ -399,7 +411,6 @@ class ToolchainBootstrapExecutionPlan {
       'requiredStepCount': requiredStepCount,
       'surfaceCounts': surfaceCounts,
       'steps': steps.map((step) => step.toJson()).toList(growable: false),
-      if (todo.isNotEmpty) 'todo': todo,
     };
   }
 }
@@ -409,7 +420,6 @@ enum ToolchainBootstrapActionDispatchStatus {
   blocked,
   missingHandler,
   unknownAction,
-  alreadyReady,
 }
 
 extension ToolchainBootstrapActionDispatchStatusX
@@ -421,7 +431,6 @@ extension ToolchainBootstrapActionDispatchStatusX
       ToolchainBootstrapActionDispatchStatus.missingHandler =>
         'missing-handler',
       ToolchainBootstrapActionDispatchStatus.unknownAction => 'unknown-action',
-      ToolchainBootstrapActionDispatchStatus.alreadyReady => 'already-ready',
     };
   }
 }
@@ -432,7 +441,7 @@ class ToolchainBootstrapActionDispatchResult {
     required this.actionId,
     this.surface,
     this.message = '',
-    this.todo = '',
+    this.recoveryHint = '',
   });
 
   factory ToolchainBootstrapActionDispatchResult.dispatched(
@@ -450,14 +459,14 @@ class ToolchainBootstrapActionDispatchResult {
   factory ToolchainBootstrapActionDispatchResult.blocked(
     ToolchainBootstrapActionStep step, {
     required String message,
-    String todo = '',
+    String recoveryHint = '',
   }) {
     return ToolchainBootstrapActionDispatchResult(
       status: ToolchainBootstrapActionDispatchStatus.blocked,
       actionId: step.actionId,
       surface: step.surface,
       message: message,
-      todo: todo,
+      recoveryHint: recoveryHint,
     );
   }
 
@@ -470,8 +479,8 @@ class ToolchainBootstrapActionDispatchResult {
       surface: step.surface,
       message:
           'No ${step.surface.wireValue} handler is registered for ${step.actionId}.',
-      todo:
-          'TODO: bind ${step.surface.wireValue} bootstrap action handler to concrete UI or project runner.',
+      recoveryHint:
+          'Register a ${step.surface.wireValue} handler before dispatching this action.',
     );
   }
 
@@ -485,19 +494,11 @@ class ToolchainBootstrapActionDispatchResult {
     );
   }
 
-  factory ToolchainBootstrapActionDispatchResult.alreadyReady(String actionId) {
-    return ToolchainBootstrapActionDispatchResult(
-      status: ToolchainBootstrapActionDispatchStatus.alreadyReady,
-      actionId: actionId,
-      message: 'Toolchain bootstrap is already ready.',
-    );
-  }
-
   final ToolchainBootstrapActionDispatchStatus status;
   final String actionId;
   final ToolchainBootstrapActionSurface? surface;
   final String message;
-  final String todo;
+  final String recoveryHint;
 
   bool get dispatched =>
       status == ToolchainBootstrapActionDispatchStatus.dispatched;
@@ -508,7 +509,7 @@ class ToolchainBootstrapActionDispatchResult {
       'actionId': actionId,
       if (surface != null) 'surface': surface!.wireValue,
       if (message.isNotEmpty) 'message': message,
-      if (todo.isNotEmpty) 'todo': todo,
+      if (recoveryHint.isNotEmpty) 'recoveryHint': recoveryHint,
     };
   }
 }
@@ -533,10 +534,6 @@ class ToolchainBootstrapActionRouter {
     ToolchainBootstrapExecutionPlan plan,
     String actionId,
   ) async {
-    if (plan.ready) {
-      return ToolchainBootstrapActionDispatchResult.alreadyReady(actionId);
-    }
-
     ToolchainBootstrapActionStep? matchedStep;
     for (final step in plan.steps) {
       if (step.actionId == actionId) {
@@ -573,15 +570,10 @@ class ToolchainBootstrapExecutionResult {
   final List<ToolchainBootstrapActionDispatchResult> dispatches;
 
   bool get completed {
-    return plan.ready ||
-        (dispatches.isNotEmpty &&
-            dispatches.every(
-              (dispatch) =>
-                  dispatch.status ==
-                      ToolchainBootstrapActionDispatchStatus.dispatched ||
-                  dispatch.status ==
-                      ToolchainBootstrapActionDispatchStatus.alreadyReady,
-            ));
+    if (dispatches.isEmpty) {
+      return plan.ready && plan.steps.isEmpty;
+    }
+    return dispatches.every((dispatch) => dispatch.dispatched);
   }
 
   bool get blocked {
@@ -653,14 +645,13 @@ class ToolchainBootstrapExecutionBridge {
         .where((actionId) => actionId.isNotEmpty)
         .toSet();
     final dispatches = <ToolchainBootstrapActionDispatchResult>[];
-    for (final step in plan.steps) {
-      if (requiredOnly && !step.required) {
-        continue;
-      }
-      if (filter.isNotEmpty && !filter.contains(step.actionId)) {
-        continue;
-      }
-      final dispatch = await router.dispatch(plan, step.actionId);
+    final orderedActionIds = filter.isNotEmpty
+        ? filter
+        : plan.steps
+              .where((step) => !requiredOnly || step.required)
+              .map((step) => step.actionId);
+    for (final actionId in orderedActionIds) {
+      final dispatch = await router.dispatch(plan, actionId);
       dispatches.add(dispatch);
       if (stopOnBlocked && !dispatch.dispatched) {
         break;
@@ -744,6 +735,7 @@ class ToolchainManagerRuntimeExecutionAdapter {
         const <EnvironmentVariableOverlay>[],
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     if (binding.managerId != 'toolchain-manager') {
       return _controlResult(
@@ -772,6 +764,7 @@ class ToolchainManagerRuntimeExecutionAdapter {
       workingDirectory: binding.handoff.workingDirectory,
       timeout: timeout,
       standardInput: standardInput,
+      onProcessStarted: onProcessStarted,
     );
     final outputEvents = _eventsForResult(
       binding: binding,
@@ -1078,6 +1071,29 @@ class ToolchainManager {
     return policy.plan(request);
   }
 
+  Future<ToolchainInstallPlan> planBootstrapInstallation(
+    ToolchainRequirement requirement,
+  ) async {
+    final catalog = await loadCatalog();
+    for (final descriptor in catalog.list(kind: requirement.kind)) {
+      if (!_matchesInstallRequirement(descriptor, requirement)) {
+        continue;
+      }
+      final config = descriptor.managedDownloadConfig;
+      if (config == null) {
+        continue;
+      }
+      return planInstallation(
+        config.toInstallRequest(requirement),
+        policy: config.toInstallPolicy(
+          requireManagedDownloadSha256: true,
+          requireManagedDownloadSignature: config.hasProvenanceInputs,
+        ),
+      );
+    }
+    return planInstallation(ToolchainInstallRequest(requirement: requirement));
+  }
+
   Future<ToolchainInstallExecutionResult> executeInstallPlan(
     ToolchainInstallPlan plan, {
     Map<String, String> environment = const <String, String>{},
@@ -1085,6 +1101,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final result =
         await ToolchainInstallExecutor(
@@ -1096,6 +1113,7 @@ class ToolchainManager {
           environmentOverlays: environmentOverlays,
           workingDirectory: workingDirectory,
           timeout: timeout,
+          onProcessStarted: onProcessStarted,
         );
     final recordedAt = DateTime.now().toUtc();
     await _configurationStore.appendInstallHistory(
@@ -1127,6 +1145,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final execution = await executeInstallPlan(
       plan,
@@ -1134,6 +1153,7 @@ class ToolchainManager {
       environmentOverlays: environmentOverlays,
       workingDirectory: workingDirectory,
       timeout: timeout,
+      onProcessStarted: onProcessStarted,
     );
     if (execution.status == ToolchainInstallExecutionStatus.failed ||
         execution.status == ToolchainInstallExecutionStatus.blocked ||
@@ -1256,6 +1276,7 @@ class ToolchainManager {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final execution = await executeInstallPlan(
       plan,
@@ -1263,6 +1284,7 @@ class ToolchainManager {
       environmentOverlays: environmentOverlays,
       workingDirectory: workingDirectory,
       timeout: timeout,
+      onProcessStarted: onProcessStarted,
     );
     if (execution.status == ToolchainInstallExecutionStatus.failed ||
         execution.status == ToolchainInstallExecutionStatus.blocked ||
@@ -1649,9 +1671,63 @@ class ToolchainManager {
   Future<ToolchainManagerBootstrapSummary> bootstrapSummary({
     ToolchainKind kind = ToolchainKind.languageService,
     ToolchainRequirement? requirement,
+    String? projectId,
+    String? workspaceRoot,
+    List<String>? probeArguments,
   }) async {
-    final report = await statusReport(kind: kind, requirement: requirement);
-    return ToolchainManagerBootstrapSummary.fromReport(managerReport: report);
+    final effectiveRequirement =
+        requirement ?? ToolchainRequirement(kind: kind);
+    final report = await statusReport(
+      kind: kind,
+      requirement: effectiveRequirement,
+    );
+    ToolchainProjectValidationResult? projectValidation;
+    if (projectId != null && workspaceRoot != null) {
+      projectValidation = await validateProjectToolchain(
+        projectId: projectId,
+        workspaceRoot: workspaceRoot,
+        requirement: effectiveRequirement,
+        probeArguments: probeArguments,
+      );
+    }
+    return ToolchainManagerBootstrapSummary.fromReport(
+      managerReport: report,
+      projectValidation: projectValidation,
+    );
+  }
+
+  Future<ToolchainProjectValidationResult> validateProjectToolchain({
+    required String projectId,
+    required String workspaceRoot,
+    ToolchainKind kind = ToolchainKind.languageService,
+    ToolchainRequirement? requirement,
+    List<String>? probeArguments,
+  }) async {
+    final effectiveRequirement =
+        requirement ?? ToolchainRequirement(kind: kind);
+    final catalog = await loadCatalog();
+    final runtime = runtimeFor(catalog);
+    return ToolchainProjectValidationRunner(
+      pathExists: _platformManagers.fileSystem.exists,
+      pathIsExecutable: _platformManagers.fileSystem.isExecutable,
+      resolver: _resolver,
+      healthProbe: (requirement, arguments, workingDirectory) {
+        return runtime.checkHealth(
+          kind: requirement.kind,
+          requirement: requirement,
+          probeArguments: arguments,
+          workingDirectory: workingDirectory,
+        );
+      },
+    ).validate(
+      catalog: catalog,
+      request: ToolchainProjectValidationRequest(
+        projectId: projectId,
+        workspaceRoot: workspaceRoot,
+        requirement: effectiveRequirement,
+        probeArguments: probeArguments,
+      ),
+    );
   }
 
   List<ToolchainCapabilityStatus> _capabilitiesFor({
@@ -1774,6 +1850,7 @@ class ToolchainManager {
     String? workingDirectory,
     Duration? timeout,
     String? standardInput,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final catalog = await loadCatalog();
     return runtimeFor(catalog).run(
@@ -1785,6 +1862,7 @@ class ToolchainManager {
       workingDirectory: workingDirectory,
       timeout: timeout,
       standardInput: standardInput,
+      onProcessStarted: onProcessStarted,
     );
   }
 
@@ -1848,4 +1926,27 @@ class _ToolchainInstallRollbackResult {
 
   final bool rolledBack;
   final String? message;
+}
+
+bool _matchesInstallRequirement(
+  ToolchainDescriptor descriptor,
+  ToolchainRequirement requirement,
+) {
+  if (requirement.id case final id? when id.isNotEmpty && descriptor.id != id) {
+    return false;
+  }
+  if (requirement.version case final version?
+      when descriptor.version != version) {
+    return false;
+  }
+  if (requirement.channel case final channel?
+      when descriptor.channel != channel) {
+    return false;
+  }
+  for (final entry in requirement.metadata.entries) {
+    if (descriptor.metadata[entry.key] != entry.value) {
+      return false;
+    }
+  }
+  return true;
 }

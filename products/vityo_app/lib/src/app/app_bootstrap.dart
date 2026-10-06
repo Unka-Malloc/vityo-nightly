@@ -5,6 +5,10 @@ import 'package:flutter/foundation.dart';
 import '../ide/agent_client/agent_client.dart';
 import '../ide/workbench/agent_collaboration/agent_collaboration_service.dart';
 import '../ide/workspace/workspace_transaction_service.dart';
+import '../ide/local_service/vityod_client.dart';
+import '../ide/local_service/vityod_workspace_search_provider.dart';
+import '../ide/local_service/vityod_source_control_command_runner.dart';
+import '../ide/local_service/vityod_lsp_gateway.dart';
 import '../ide/editor/editor_controller.dart';
 import '../view_ide/backend_toolchain/adapter_contracts.dart';
 import '../view_ide/backend_toolchain/backend_provider.dart';
@@ -16,6 +20,11 @@ import '../view_ide/backend_toolchain/hosted_control_plane.dart';
 import '../view_ide/backend_toolchain/project_graph_adapter.dart';
 import '../view_ide/backend_toolchain/project_graph_contract.dart';
 import '../view_ide/backend_toolchain/runtime_event_adapter.dart';
+import '../view_ide/debugger/debug_adapter_launcher.dart';
+import '../view_ide/debugger/debug_adapter_process_transport_io.dart';
+import '../view_ide/debugger/debug_breakpoint_store.dart';
+import '../view_ide/debugger/debug_launch_contract.dart';
+import '../view_ide/debugger/extension_debug_contributions.dart';
 import '../view_ide/interaction/interaction.dart';
 import '../ide/editor/document_state.dart';
 import '../view_ide/environment/environment.dart';
@@ -44,11 +53,15 @@ import '../view_ide/backend_toolchain/observable_runtime_intake.dart';
 import '../ide/workspace/workspace_diagnostics.dart';
 import '../ide/workspace/workspace_diagnostics_controller.dart';
 import '../ide/workspace/source_control_status.dart';
+import '../ide/workspace/source_control_merge_editor.dart';
 import '../ide/workspace/source_control_status_controller.dart';
 import '../view_ide/platform/native_module_loader.dart';
 import '../view_ide/platform/platform_target.dart';
 import '../ide/workspace/workspace_document_store.dart';
+import '../ide/workspace/workspace_file_explorer_state_store.dart';
+import '../ide/workspace/workspace_search_service.dart';
 import '../ide/workspace/workspace_controller.dart';
+import '../view_render/shell/shell_layout_plan.dart';
 
 typedef AppHostedControlPlaneClientProvider =
     Future<HostedControlPlaneClient?> Function({
@@ -71,18 +84,59 @@ class AppExtensionStartupPlan {
     required this.activationSession,
     required this.supervisorSnapshot,
     required this.contributionRoutes,
+    this.launchResults = const <ExtensionHostSandboxLaunchResult>[],
+    this.telemetryEvents = const <ExtensionHostSupervisorTelemetryEvent>[],
+    this.launcherRegistrations =
+        const <ExtensionHostSandboxLauncherRegistration>[],
+    this.executedAt,
   });
 
   final ExtensionManifestRegistry manifestRegistry;
   final ExtensionActivationSession activationSession;
   final ExtensionHostSupervisorSnapshot supervisorSnapshot;
   final ExtensionContributionRouteManifest contributionRoutes;
+  final List<ExtensionHostSandboxLaunchResult> launchResults;
+  final List<ExtensionHostSupervisorTelemetryEvent> telemetryEvents;
+  final List<ExtensionHostSandboxLauncherRegistration> launcherRegistrations;
+  final DateTime? executedAt;
+
+  bool get executed => executedAt != null;
+
+  AppExtensionStartupPlan applyExecution({
+    required ExtensionHostStartupExecutionReceipt receipt,
+    required List<ExtensionHostSandboxLauncherRegistration> launchers,
+  }) {
+    return AppExtensionStartupPlan(
+      manifestRegistry: manifestRegistry,
+      activationSession: activationSession,
+      supervisorSnapshot: receipt.supervisorSnapshot,
+      contributionRoutes: contributionRoutes,
+      launchResults: receipt.launchResults,
+      telemetryEvents: receipt.telemetryEvents,
+      launcherRegistrations:
+          List<ExtensionHostSandboxLauncherRegistration>.unmodifiable(
+            launchers,
+          ),
+      executedAt: receipt.executedAt,
+    );
+  }
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'manifestCount': manifestRegistry.list().length,
+      'executed': executed,
+      if (executedAt != null) 'executedAt': executedAt!.toIso8601String(),
       'activationSession': activationSession.toJson(),
       'supervisorSnapshot': supervisorSnapshot.toJson(),
+      'launchResults': launchResults
+          .map((result) => result.toJson())
+          .toList(growable: false),
+      'telemetryEvents': telemetryEvents
+          .map((event) => event.toJson())
+          .toList(growable: false),
+      'launcherRegistrations': launcherRegistrations
+          .map((launcher) => launcher.toJson())
+          .toList(growable: false),
       'contributionRoutes': contributionRoutes.toJson(),
     };
   }
@@ -205,12 +259,26 @@ class AppBootstrap {
     required this.runtimeEventAdapter,
     required this.dependencySourceAdapter,
     required this.deploymentAdapter,
+    this.terminalRuntimeRegistry,
     this.agentClientRegistry,
     this.agentCollaboration,
+    this.vityodClient,
+    this.debugAdapterLauncher,
+    this.debugBreakpointStore,
+    this.debugLaunchConfigurationStore,
+    this.debugLaunchProfiles = const <DebugLaunchProfile>[],
+    this.workspaceTextSearchProvider,
+    this.lspGateway,
     this.extensionStartupPlan,
+    this.extensionMarketplaceRuntime,
+    this.platformManagers,
+    this.credentialStorage,
+    this.hostedControlPlaneClient,
     RuntimeOutputLiveBuffer? runtimeOutputBuffer,
     this.commandPalettePreferencesStore,
     this.themeOverrideStore,
+    this.workspaceFileExplorerStateStore,
+    this.shellLayoutPreferencesStore,
     this.refreshActiveLanguageService,
     this.styioServiceSubscriptionController,
     this.languageServiceStatusController,
@@ -225,6 +293,7 @@ class AppBootstrap {
     this.observableGraphController,
     this.sourceControlStatusController,
     this.projectLanguageService,
+    this.diagnosticsPanelStateStore,
   }) : runtimeOutputBuffer = runtimeOutputBuffer ?? RuntimeOutputLiveBuffer(),
        languageServiceStatus =
            languageServiceStatus ??
@@ -246,12 +315,26 @@ class AppBootstrap {
   final RuntimeEventAdapter runtimeEventAdapter;
   final DependencySourceAdapter dependencySourceAdapter;
   final DeploymentAdapter deploymentAdapter;
+  final TerminalRuntimeRegistry? terminalRuntimeRegistry;
   final AgentClientRegistry? agentClientRegistry;
   final AgentCollaborationService? agentCollaboration;
+  final VityodClient? vityodClient;
+  final DapDebugAdapterLauncher? debugAdapterLauncher;
+  final DebugBreakpointStore? debugBreakpointStore;
+  final DebugLaunchConfigurationStore? debugLaunchConfigurationStore;
+  final List<DebugLaunchProfile> debugLaunchProfiles;
+  final WorkspaceTextSearchProvider? workspaceTextSearchProvider;
+  final VityodLspGateway? lspGateway;
   final AppExtensionStartupPlan? extensionStartupPlan;
+  final ExtensionMarketplaceRuntimeServices? extensionMarketplaceRuntime;
+  final PlatformManagerBundle? platformManagers;
+  final PlatformCredentialDataStoreBootstrap? credentialStorage;
+  final HostedControlPlaneClient? hostedControlPlaneClient;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final CommandPaletteDisplayPreferencesStore? commandPalettePreferencesStore;
   final VityoThemeOverrideStore? themeOverrideStore;
+  final WorkspaceFileExplorerStateStore? workspaceFileExplorerStateStore;
+  final ShellLayoutPreferencesStore? shellLayoutPreferencesStore;
   final ToolchainManager? toolchainManager;
   final ClangCppVersionPreference? clangCppVersionPreference;
   final Future<void> Function()? refreshActiveLanguageService;
@@ -267,6 +350,7 @@ class AppBootstrap {
   final ObservableGraphController? observableGraphController;
   final SourceControlStatusController? sourceControlStatusController;
   final ProjectStyioLanguageService? projectLanguageService;
+  final DiagnosticsPanelStateStore? diagnosticsPanelStateStore;
 
   void dispose() {
     unawaited(toolchainCatalogSubscription?.cancel());
@@ -277,6 +361,7 @@ class AppBootstrap {
     testingSessionController?.dispose();
     observableGraphController?.dispose();
     sourceControlStatusController?.dispose();
+    unawaited(vityodClient?.dispose());
     final collaboration = agentCollaboration;
     if (collaboration != null) {
       unawaited(collaboration.close());
@@ -302,6 +387,27 @@ class AppBootstrap {
           serviceId: 'platform.target',
           ownerLayer: 'app',
           requiredInjection: true,
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'platform.manager-bundle',
+          ownerLayer: 'environment',
+          requiredInjection: false,
+          capabilityGapCode: 'platform.manager-bundle.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'environment.credential-store',
+          ownerLayer: 'environment',
+          requiredInjection: false,
+          capabilityGapCode: 'environment.credential-store.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'service.hosted-control-plane',
+          ownerLayer: 'service',
+          requiredInjection: false,
+          capabilityGapCode: 'service.hosted-control-plane.unavailable',
+          recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
           serviceId: 'module.registry',
@@ -379,6 +485,20 @@ class AppBootstrap {
           requiredInjection: true,
         ),
         AppBootstrapServiceDescriptor(
+          serviceId: 'local-service.vityod-client',
+          ownerLayer: 'local-service',
+          requiredInjection: false,
+          capabilityGapCode: 'local-service.vityod.unavailable',
+          recoveryAction: 'reconnectLocalService',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'language.lsp-gateway',
+          ownerLayer: 'local-service',
+          requiredInjection: false,
+          capabilityGapCode: 'language.lsp.unavailable',
+          recoveryAction: 'reconnectLocalService',
+        ),
+        AppBootstrapServiceDescriptor(
           serviceId: 'agent.client-registry',
           ownerLayer: 'agent-client',
           requiredInjection: false,
@@ -418,6 +538,13 @@ class AppBootstrap {
           ownerLayer: 'appearance',
           requiredInjection: false,
           capabilityGapCode: 'theme.override-store.unavailable',
+          recoveryAction: 'openSettings',
+        ),
+        AppBootstrapServiceDescriptor(
+          serviceId: 'presentation.shell-layout-store',
+          ownerLayer: 'presentation',
+          requiredInjection: false,
+          capabilityGapCode: 'presentation.shell-layout.unavailable',
           recoveryAction: 'openSettings',
         ),
         AppBootstrapServiceDescriptor(
@@ -516,6 +643,9 @@ class AppBootstrap {
   AppBootstrapServiceWiringManifest serviceWiringManifest() {
     final injectedByServiceId = <String, bool>{
       'platform.target': true,
+      'platform.manager-bundle': platformManagers != null,
+      'environment.credential-store': credentialStorage != null,
+      'service.hosted-control-plane': hostedControlPlaneClient != null,
       'module.registry': true,
       'module.native-loader': true,
       'project-graph.adapter': true,
@@ -531,6 +661,8 @@ class AppBootstrap {
       'toolchain.management-adapter': true,
       'runtime.output-buffer': true,
       'language.status': true,
+      'local-service.vityod-client': vityodClient != null,
+      'language.lsp-gateway': lspGateway != null,
       'agent.client-registry': agentClientRegistry != null,
       'agent.workspace-transactions': agentCollaboration != null,
       'agent.collaboration': agentCollaboration != null,
@@ -538,6 +670,7 @@ class AppBootstrap {
       'command-palette.preferences-store':
           commandPalettePreferencesStore != null,
       'theme.override-store': themeOverrideStore != null,
+      'presentation.shell-layout-store': shellLayoutPreferencesStore != null,
       'language.refresh-active-service': refreshActiveLanguageService != null,
       'language.subscription-controller':
           styioServiceSubscriptionController != null,
@@ -574,6 +707,7 @@ class AppBootstrap {
         const <String, AgentLaunchDescriptor>{},
     AgentClientPolicy agentClientPolicy = const AgentClientPolicy(),
     WorkspaceTransactionService? agentWorkspaceTransactions,
+    VityodClient? vityodClient,
   }) async {
     if (agentLaunchDescriptors.isNotEmpty &&
         agentWorkspaceTransactions == null) {
@@ -585,38 +719,83 @@ class AppBootstrap {
       );
     }
     final platformTarget = detectPlatformTarget();
+    final discoveryPlatformManagers = await createDetectedPlatformManagerBundle(
+      vityodClient: vityodClient,
+    );
     final backendProvider =
         (backendProviders ?? createDefaultBackendProviderRegistry()).resolve(
           platformTarget,
         );
-    var workspaceDocumentStore = await createWorkspaceDocumentStore();
     final moduleRegistry = await ModuleRegistry.loadFromAssets(
       indexAssetPath: 'assets/module_manifests/index.json',
       platformTarget: platformTarget,
     );
     final runtimeOutputBuffer = RuntimeOutputLiveBuffer();
-    final extensionStartupPlan = createExtensionStartupPlan(
+    var extensionStartupPlan = createExtensionStartupPlan(
       moduleRegistry: moduleRegistry,
     );
     final nativeModuleLoader = NoopNativeModuleLoader(
       platformTarget: platformTarget,
     );
-    final projectGraphAdapter = await backendProvider
-        .createProjectGraphAdapter();
+    final projectGraphAdapter = await backendProvider.createProjectGraphAdapter(
+      platformManagers: discoveryPlatformManagers,
+    );
     final projectSnapshot = await projectGraphAdapter.loadProjectGraph();
-    workspaceDocumentStore = await createEditorWorkspaceDocumentStore(
+    final daemonWorkspaceId = normalizeDaemonWorkspaceId(projectSnapshot.id);
+    final workspaceDocumentStore = await createEditorWorkspaceDocumentStore(
       platformTarget: platformTarget,
-      localStore: workspaceDocumentStore,
+      localStore: await createWorkspaceDocumentStore(
+        vityodClient: vityodClient,
+        workspaceId: daemonWorkspaceId,
+        workspaceRoot: projectSnapshot.workspaceRoot,
+      ),
       projectSnapshot: projectSnapshot,
     );
-    final platformManagers = await createDetectedPlatformManagerBundle();
+    final hostedControlPlaneClient =
+        workspaceDocumentStore is HostedWorkspaceDocumentStore
+        ? workspaceDocumentStore.hostedClient
+        : null;
+    final platformManagers = await createDetectedPlatformManagerBundle(
+      vityodClient: vityodClient,
+      workspaceRoot: projectSnapshot.workspaceRoot,
+    );
     final foundationDataStore = _createFoundationDataStore(platformManagers);
-    final credentialDataStore = FoundationCredentialDataStore(
-      dataStore: foundationDataStore,
+    final extensionMarketplaceRuntime =
+        ExtensionMarketplaceRuntimeServices.fromFoundation(
+          dataStore: foundationDataStore,
+          platformManagers: platformManagers,
+        );
+    final extensionHostLaunchers =
+        createPlatformExtensionHostSandboxLauncherRegistry(
+          platformTarget: platformTarget,
+          processManager: platformManagers.process,
+          compiledInExtensionIds: extensionStartupPlan.manifestRegistry
+              .list()
+              .where(
+                (manifest) => manifest.metadata['source'] == 'module-registry',
+              )
+              .map((manifest) => manifest.extensionId),
+        );
+    final extensionHostExecution =
+        await ExtensionHostStartupExecutor(
+          bridge: ExtensionHostSupervisorExecutionBridge(
+            sandboxLaunchers: extensionHostLaunchers,
+          ),
+        ).execute(
+          snapshot: extensionStartupPlan.supervisorSnapshot,
+          manifestRegistry: extensionStartupPlan.manifestRegistry,
+          buffer: runtimeOutputBuffer,
+        );
+    extensionStartupPlan = extensionStartupPlan.applyExecution(
+      receipt: extensionHostExecution,
+      launchers: extensionHostLaunchers.launchers,
+    );
+    final credentialStorage = await createPlatformCredentialDataStoreBootstrap(
+      platformTarget: platformTarget,
     );
     final configurationStore = _createConfigurationStore(
       dataStore: foundationDataStore,
-      credentialDataStore: credentialDataStore,
+      credentialDataStore: credentialStorage.dataStore,
     );
     final themeOverrideStore = VityoThemeOverrideStore.fromDataStore(
       dataStore: foundationDataStore,
@@ -625,6 +804,27 @@ class AppBootstrap {
         CommandPaletteDisplayPreferencesStore.fromDataStore(
           dataStore: foundationDataStore,
         );
+    final workspaceFileExplorerStateStore =
+        WorkspaceFileExplorerStateStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
+    final shellLayoutPreferencesStore =
+        ShellLayoutPreferencesStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
+    final diagnosticsPanelStateStore = DiagnosticsPanelStateStore.fromDataStore(
+      dataStore: foundationDataStore,
+    );
+    final debugBreakpointStore = DebugBreakpointStore.fromDataStore(
+      dataStore: foundationDataStore,
+    );
+    final debugLaunchConfigurationStore =
+        DebugLaunchConfigurationStore.fromDataStore(
+          dataStore: foundationDataStore,
+        );
+    final debugLaunchProfiles = ExtensionDebugContributionCatalog.fromRoutes(
+      extensionStartupPlan.contributionRoutes,
+    ).profiles;
     final toolchainStore = ToolchainConfigurationStore(
       configurationStore: configurationStore,
     );
@@ -632,6 +832,10 @@ class AppBootstrap {
       toolchainStore: toolchainStore,
       workspaceId: projectSnapshot.id,
       targetId: platformManagers.context.targetId,
+      defaultCatalogProvider: () => createPlatformStyioLanguageToolchainCatalog(
+        platformManagers: platformManagers,
+        environment: readHostEnvironment(),
+      ),
     );
     await ensureDefaultNativeCompilerToolchainCatalog(
       toolchainStore: toolchainStore,
@@ -667,14 +871,19 @@ class AppBootstrap {
     Future<ExecutionAdapter> executionAdapterFactory(
       ProjectGraphSnapshot refreshedProjectGraph,
     ) {
-      return backendProvider.createExecutionAdapter(refreshedProjectGraph);
+      return backendProvider.createExecutionAdapter(
+        refreshedProjectGraph,
+        platformManagers: platformManagers,
+      );
     }
 
     final executionAdapter = await executionAdapterFactory(projectSnapshot);
     final runtimeEventAdapter = backendProvider.createRuntimeEventAdapter();
     final dependencySourceAdapter = await backendProvider
-        .createDependencySourceAdapter();
-    final deploymentAdapter = await backendProvider.createDeploymentAdapter();
+        .createDependencySourceAdapter(platformManagers: platformManagers);
+    final deploymentAdapter = await backendProvider.createDeploymentAdapter(
+      platformManagers: platformManagers,
+    );
     final ffiBridge = await nativeModuleLoader.describe(
       'local.runtime.desktop',
     );
@@ -740,18 +949,33 @@ class AppBootstrap {
         projectService: projectLanguageService,
       ),
     );
-    final testingSessionController = TestingSessionController();
+    final testingSessionController = TestingSessionController(
+      providerCatalog: TestingProviderCatalog(),
+      failedTestDebugCancellationHandleRegistry:
+          FailedTestDebugCancellationHandleRegistry(),
+      runtimeTaskLifecycleController: RuntimeTaskLifecycleController(),
+      runtimeTaskHistoryStore: RuntimeTaskHistoryStore.fromDataStore(
+        dataStore: foundationDataStore,
+      ),
+      testRunHistoryStore: TestRunHistoryStore.fromDataStore(
+        dataStore: foundationDataStore,
+      ),
+      runtimeOutputBuffer: runtimeOutputBuffer,
+      runtimeTaskHistoryWorkspaceId: projectSnapshot.id,
+      testRunHistoryWorkspaceId: projectSnapshot.id,
+    );
+    await testingSessionController.loadRunHistory();
     final ioDesktop =
         platformTarget == PlatformTarget.windows ||
         platformTarget == PlatformTarget.linux ||
         platformTarget == PlatformTarget.macos;
-    final observableGraphController =
-        ioDesktop && !projectSnapshot.isHosted
+    final observableGraphController = ioDesktop && !projectSnapshot.isHosted
         ? ObservableGraphController(
             publisher: createObservableSnapshotPublisher(),
             projectGraph: () => workspaceController.activeProject,
             ioPlatform: true,
             fileSystemManager: platformManagers.fileSystem,
+            platformManagers: platformManagers,
             runtimeIntake: createObservableRuntimeIntake(),
           )
         : null;
@@ -760,8 +984,10 @@ class AppBootstrap {
     }
     final sourceControlStatusController =
         AppBootstrap.createSourceControlStatusController(
-          platformManagers: platformManagers,
           workspaceRoot: projectSnapshot.workspaceRoot,
+          workspaceId: daemonWorkspaceId,
+          vityodClient: vityodClient,
+          workspaceDocumentStore: workspaceDocumentStore,
         );
     unawaited(sourceControlStatusController.refresh());
     Future<void> refreshActiveLanguageService() async {
@@ -803,6 +1029,7 @@ class AppBootstrap {
     final agentClientRegistry = createAgentClientRegistry(
       descriptors: agentLaunchDescriptors,
       policy: agentClientPolicy,
+      vityodClient: vityodClient,
     );
     final agentCollaboration = createAgentCollaboration(
       registry: agentClientRegistry,
@@ -827,12 +1054,34 @@ class AppBootstrap {
       runtimeEventAdapter: runtimeEventAdapter,
       dependencySourceAdapter: dependencySourceAdapter,
       deploymentAdapter: deploymentAdapter,
+      terminalRuntimeRegistry: TerminalRuntimeRegistry(
+        ptyManager: platformManagers.pty,
+      ),
       agentClientRegistry: agentClientRegistry,
       agentCollaboration: agentCollaboration,
+      vityodClient: vityodClient,
+      debugAdapterLauncher: vityodClient == null
+          ? null
+          : createIoDapDebugAdapterLauncher(vityodClient),
+      debugBreakpointStore: debugBreakpointStore,
+      debugLaunchConfigurationStore: debugLaunchConfigurationStore,
+      debugLaunchProfiles: debugLaunchProfiles,
+      workspaceTextSearchProvider: vityodClient == null
+          ? null
+          : VityodWorkspaceTextSearchProvider(client: vityodClient),
+      lspGateway: vityodClient == null
+          ? null
+          : VityodLspGateway(client: vityodClient),
       extensionStartupPlan: extensionStartupPlan,
+      extensionMarketplaceRuntime: extensionMarketplaceRuntime,
+      platformManagers: platformManagers,
+      credentialStorage: credentialStorage,
+      hostedControlPlaneClient: hostedControlPlaneClient,
       runtimeOutputBuffer: runtimeOutputBuffer,
       commandPalettePreferencesStore: commandPalettePreferencesStore,
       themeOverrideStore: themeOverrideStore,
+      workspaceFileExplorerStateStore: workspaceFileExplorerStateStore,
+      shellLayoutPreferencesStore: shellLayoutPreferencesStore,
       refreshActiveLanguageService: refreshActiveLanguageService,
       styioServiceSubscriptionController: styioServiceSubscriptionController,
       languageServiceStatusController: languageServiceStatusController,
@@ -847,6 +1096,7 @@ class AppBootstrap {
       observableGraphController: observableGraphController,
       sourceControlStatusController: sourceControlStatusController,
       projectLanguageService: projectLanguageService,
+      diagnosticsPanelStateStore: diagnosticsPanelStateStore,
     );
   }
 
@@ -880,11 +1130,23 @@ class AppBootstrap {
   static AgentClientRegistry? createAgentClientRegistry({
     required Map<String, AgentLaunchDescriptor> descriptors,
     AgentClientPolicy policy = const AgentClientPolicy(),
+    VityodClient? vityodClient,
   }) {
     if (descriptors.isEmpty) {
       return null;
     }
-    return AgentClientRegistry(descriptors: descriptors, policy: policy);
+    if (vityodClient == null) {
+      throw ArgumentError.value(
+        vityodClient,
+        'vityodClient',
+        'Configured desktop Agents require the local service gateway.',
+      );
+    }
+    return AgentClientRegistry(
+      descriptors: descriptors,
+      policy: policy,
+      client: vityodClient,
+    );
   }
 
   @visibleForTesting
@@ -913,18 +1175,48 @@ class AppBootstrap {
 
   @visibleForTesting
   static SourceControlStatusController createSourceControlStatusController({
-    required PlatformManagerBundle platformManagers,
     required String workspaceRoot,
+    required String workspaceId,
+    required VityodClient? vityodClient,
+    required WorkspaceDocumentStore workspaceDocumentStore,
   }) {
-    final runner = ProcessSourceControlCommandRunner(
-      processManager: platformManagers.process,
-    ).call;
+    final SourceControlCommandRunner runner = vityodClient == null
+        ? const BlockedSourceControlCommandRunner().call
+        : VityodSourceControlCommandRunner(
+            client: vityodClient,
+            workspaceId: workspaceId,
+          ).call;
+    final mergeProvider = GitSourceControlMergeProvider(
+      runner: runner,
+      documentStore: workspaceDocumentStore,
+      workspaceRoot: workspaceRoot,
+    );
     return SourceControlStatusController(
       provider: GitPorcelainStatusProvider(runner: runner),
       diffProvider: GitSourceControlDiffProvider(runner: runner),
       actionProvider: GitSourceControlActionProvider(runner: runner),
+      partialPatchProvider: GitSourceControlPartialPatchProvider(
+        commandRunner: runner,
+      ),
+      branchProvider: GitSourceControlBranchProvider(runner: runner),
+      branchActionProvider: GitSourceControlBranchActionProvider(
+        runner: runner,
+      ),
+      historyProvider: GitSourceControlHistoryProvider(runner: runner),
+      mergeEditorProvider: mergeProvider,
+      conflictResolutionProviderRegistry:
+          SourceControlConflictResolutionProviderRegistry(
+            providers: <SourceControlConflictResolutionProvider>[mergeProvider],
+          ),
       workspaceRoot: workspaceRoot,
     );
+  }
+
+  @visibleForTesting
+  static String normalizeDaemonWorkspaceId(String projectId) {
+    final normalized = projectId.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+    if (normalized.isEmpty) return 'workspace';
+    return normalized.length <= 256 ? normalized : normalized.substring(0, 256);
   }
 
   @visibleForTesting
@@ -971,6 +1263,7 @@ class AppBootstrap {
           publisher: publisher,
           activationEvents: extensionActivationEvents,
           contributions: extensionContributions,
+          trustedByDefault: true,
           metadata: <String, Object?>{
             'source': 'module-registry',
             'moduleSlot': definition.manifest.slot.wireValue,
@@ -1063,7 +1356,14 @@ class AppBootstrap {
 
     final defaultCatalog =
         await (defaultCatalogProvider ??
-            createPlatformStyioLanguageToolchainCatalog)();
+            () async {
+              final platformManagers =
+                  await createDetectedPlatformManagerBundle();
+              return createPlatformStyioLanguageToolchainCatalog(
+                platformManagers: platformManagers,
+                environment: readHostEnvironment(),
+              );
+            })();
     final defaultLanguageServices = defaultCatalog.list(
       kind: ToolchainKind.languageService,
     );

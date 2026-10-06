@@ -31,7 +31,7 @@ final class WorkspaceDocumentController {
   final void Function() notify;
 
   String _activeDocumentPath;
-  bool _suppressWorkspaceChangedLoad = false;
+  int _workspaceLoadSuppressionDepth = 0;
   bool _suppressSelectionTracking = false;
   int _loadGeneration = 0;
   WorkspaceFileCloseRequestResult? _lastCloseRequest;
@@ -40,7 +40,7 @@ final class WorkspaceDocumentController {
   WorkspaceFileCloseRequestResult? get lastCloseRequest => _lastCloseRequest;
 
   void handleWorkspaceChanged() {
-    if (_suppressWorkspaceChangedLoad) {
+    if (_workspaceLoadSuppressionDepth > 0) {
       return;
     }
     unawaited(loadActiveDocument());
@@ -122,6 +122,15 @@ final class WorkspaceDocumentController {
         editorController.document.documentId == filePath;
   }
 
+  Future<T> runWithoutWorkspaceLoad<T>(Future<T> Function() action) async {
+    _workspaceLoadSuppressionDepth += 1;
+    try {
+      return await action();
+    } finally {
+      _workspaceLoadSuppressionDepth -= 1;
+    }
+  }
+
   bool get activeFileHasUnsavedChanges {
     switch (fileBinding.snapshot.state) {
       case DocumentResourceBindingState.boundDirty:
@@ -174,6 +183,28 @@ final class WorkspaceDocumentController {
       '(rev ${document.revision}).',
     );
     return fileBinding.snapshot;
+  }
+
+  Future<void> refreshAfterSourceControlResolution(String path) async {
+    state.removeDocument(path);
+    state.clearDirty(path);
+    if (!await documentStore.documentExists(path)) {
+      if (path == _activeDocumentPath) {
+        fileBinding.markDeletedOnDisk();
+      }
+      log('Source control resolved $path as a deletion.');
+      notify();
+      return;
+    }
+    final document = await documentStore.loadDocument(path);
+    cacheDocument(path, document);
+    if (path == _activeDocumentPath) {
+      fileBinding.bindLoadedDocument(document);
+      editorController.loadDocument(document);
+      restoreSelection(path);
+    }
+    log('Source control loaded the resolved document for $path.');
+    notify();
   }
 
   WorkspaceFileCloseRequestResult requestClose(String filePath) {
@@ -473,12 +504,11 @@ final class WorkspaceDocumentController {
   }
 
   void _runWithoutWorkspaceLoad(void Function() action) {
-    final previous = _suppressWorkspaceChangedLoad;
-    _suppressWorkspaceChangedLoad = true;
+    _workspaceLoadSuppressionDepth += 1;
     try {
       action();
     } finally {
-      _suppressWorkspaceChangedLoad = previous;
+      _workspaceLoadSuppressionDepth -= 1;
     }
   }
 }

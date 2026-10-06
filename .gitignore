@@ -34,6 +34,7 @@ node_modules/
 
 # Local upstream source checkouts
 /sources/
+/prototype/.workspace-root
 
 # Generated artifacts and build outputs
 **/.artifacts/
@@ -45,8 +46,11 @@ node_modules/
 **/.ruff_cache/
 **/.turbo/
 **/build/
+/products/vityo_app/native/vityod/target/
+/products/vityo_app/output/playwright/
 /build-*/
 **/coverage/
+/.coverage
 **/dist/
 /*.tmp
 /*.log

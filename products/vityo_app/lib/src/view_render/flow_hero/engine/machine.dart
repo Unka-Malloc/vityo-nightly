@@ -1,0 +1,1730 @@
+/// The machine: one charcoal panel holding a rail, the PROGRAM well, the
+/// instrument body, the sixteen-step transport band and the status strip. This
+/// file also owns the operator's state — buffers, tempo, the run, the interlock.
+///
+/// Demo-script isolation: FlowHeroApp drives this engine as a *library* — it
+/// opens real workspace buffers, projects their real graph and runs the real
+/// `pafio` route (controller.dart / execution_service.dart). It never renders
+/// the `Machine` shell below, so the scripted demo cluster is unreachable from
+/// the app: `authorize()` (which plants a fake receipt), the sixteen-step
+/// `run()`/`replayFault()`, and the synthetic labels in `StatusStrip`
+/// (`Rev 0142`, `Workspace demo/app`, `Demonstration data — synthetic`). Those
+/// surfaces exist only for the standalone demo entry, which has its own copy
+/// in `lib/src/view_render/workbench_demo/`. Keep them demo-only: nothing on
+/// the FlowHeroApp path may call them or render them.
+library;
+
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../../ide/editor/document/document_state.dart';
+import '../../../ide/workspace/workspace_document_store_types.dart';
+import '../../../view_ide/flow_hero/flow_hero.dart';
+import '../../../view_ide/language/contract/language_contract.dart' as lang;
+import '../../../view_ide/language/service/styio_language_service.dart'
+    show StyioLanguageService;
+import 'editor.dart';
+import 'flow_board.dart';
+import '../flow_model.dart';
+import 'instruments.dart';
+import '../tokens.dart';
+import 'transport.dart';
+
+/// ------------------------------------------------------------------ buffers ---
+class BufferFile {
+  BufferFile(
+    this.name,
+    this.text, {
+    required this.lang,
+    this.path,
+    this.documentRevision,
+    this.workspaceRevision,
+    this.persistedText,
+  });
+  final String name;
+  final String lang; // styio | toml | plain
+  String text;
+
+  /// Set for buffers backed by a real file on disk (workspace drawer opens);
+  /// null for the built-in demo buffers, which have nowhere to save.
+  final String? path;
+
+  /// Workspace transaction revision for the persisted source, when loaded.
+  int? documentRevision;
+
+  /// Workspace-wide revision captured with [documentRevision].
+  int? workspaceRevision;
+
+  /// Last source content known to be persisted, used to detect external edits.
+  String? persistedText;
+
+  /// Monotonic editor revision used to preserve edits across async commits.
+  int sourceRevision = 0;
+
+  /// Edits since the last save. Demo buffers stay clean: they cannot persist.
+  bool dirty = false;
+
+  bool get drawable => lang == 'styio';
+  bool get savable => path != null;
+
+  /// Measured from the text, so the number changes when you type.
+  int get byteSize => _utf8Length(text);
+  int get lineCount => text.split('\n').length;
+}
+
+String langForPath(String path) {
+  final String ext = path.contains('.')
+      ? path.split('.').last.toLowerCase()
+      : '';
+  return switch (ext) {
+    'sty' || 'styio' => 'styio',
+    'toml' => 'toml',
+    _ => 'plain',
+  };
+}
+
+int _utf8Length(String s) {
+  int n = 0;
+  for (final int r in s.runes) {
+    if (r < 0x80) {
+      n += 1;
+    } else if (r < 0x800) {
+      n += 2;
+    } else if (r < 0x10000) {
+      n += 3;
+    } else {
+      n += 4;
+    }
+  }
+  return n;
+}
+
+String _canonicalDocumentPath(String path) {
+  final absolute = File(path).absolute.path.replaceAll(r'\', '/');
+  return Platform.isWindows ? absolute.toLowerCase() : absolute;
+}
+
+const String kMainStyio =
+    'pipeline mainFlow\n'
+    'let staged := source |> normalize\n'
+    'let routeOut = staged -> render\n'
+    'let routeIn = source <- bridge\n'
+    'let promote = state => running\n'
+    'let fallback = state <= idle\n'
+    'fn main(input) {\n'
+    '  state idle\n'
+    '  when input.ready -> state running\n'
+    '  emit staged\n'
+    '}';
+
+const String kUtilStyio =
+    'fn clamp01(x) {\n'
+    '  when x < 0 -> 0\n'
+    '  when x > 1 -> 1\n'
+    '  emit x\n'
+    '}\n'
+    'let gain := 0.8\n'
+    'let bias := 0.02';
+
+const String kStyioToml =
+    '[workspace]\n'
+    'name = "demo/app"\n'
+    'rev = 142\n'
+    '\n'
+    '[loop]\n'
+    'tempo = 128.0\n'
+    'steps = 16';
+
+/// The sixteen stations, in four quarters of four.
+const List<String> kStepNames = <String>[
+  'buffer',
+  'tokens',
+  'blocks',
+  'save',
+  'parse',
+  'sema',
+  'diag',
+  'facts',
+  'build',
+  'unit',
+  'golden',
+  'bench',
+  'launch',
+  'trace',
+  'observe',
+  'receipt',
+];
+const List<String> kPhaseNames = <String>['Edit', 'Analyze', 'Test', 'Run'];
+
+/// step 11 · golden
+const int kFaultStep = 10;
+
+/// ------------------------------------------------------------- run plumbing ---
+enum RunPhase { idle, running, held }
+
+enum LedMode { off, red, white, amber, dimRed }
+
+enum Instrument { files, agent, run }
+
+class Pulse {
+  int seg = 0;
+  double d = 0;
+}
+
+class Receipt {
+  const Receipt(this.id, this.hunks);
+  final String id;
+  final int hunks;
+}
+
+class WorkbenchController extends ChangeNotifier {
+  WorkbenchController({StyioLanguageService? languageService}) {
+    files.addAll(<BufferFile>[
+      BufferFile('main.styio', kMainStyio, lang: 'styio'),
+      BufferFile('util.styio', kUtilStyio, lang: 'styio'),
+      BufferFile('styio.toml', kStyioToml, lang: 'toml'),
+    ]);
+    activeFile = files.first;
+    _graph = _buildGraphFor(activeFile);
+    _analyzeMain();
+    _analyzeActive();
+    readTempoFromToml();
+    cursorLine = 1;
+    cursorColumn = 1;
+    if (languageService != null) attachLanguageService(languageService);
+  }
+
+  final List<BufferFile> files = <BufferFile>[];
+  final Map<String, BufferFile> _pathBuffers = <String, BufferFile>{};
+  WorkspaceDocumentOperationStore? _documentStore;
+  int _documentStoreGeneration = 0;
+  bool _disposed = false;
+  late BufferFile activeFile;
+  bool showFlow = true;
+
+  /// Bumped whenever the buffer is replaced wholesale, so the editor can take
+  /// the new text without treating it as a keystroke.
+  int bufferEpoch = 0;
+
+  List<Diagnostic> activeDiags = <Diagnostic>[];
+  List<Diagnostic> mainDiags = <Diagnostic>[];
+
+  // ---- language service ------------------------------------------------------
+  /// The routed Styio language service when Flow Hero booted one. Null means the
+  /// engine answers with its own heuristic, and says so.
+  StyioLanguageService? _languageService;
+
+  /// Async half of the routed service; set only when the service supplies it.
+  FlowHeroAsyncLanguageSource? _languageSource;
+
+  final Map<BufferFile, _ServiceFacts> _serviceFacts =
+      <BufferFile, _ServiceFacts>{};
+  final Map<BufferFile, int> _analysisTokens = <BufferFile, int>{};
+  Timer? _analysisDebounce;
+  int _analysisSeq = 0;
+
+  /// True once a language service has been handed to the engine at all.
+  bool get languageServiceConfigured => _languageService != null;
+
+  /// True when the configured route is a live `styio_lspd` session.
+  bool get languageServiceLive =>
+      _languageSource?.live ?? _languageService != null;
+
+  /// Where [activeDiags] came from — the editor's honest source marker.
+  FlowHeroAnalysisOrigin analysisOrigin = FlowHeroAnalysisOrigin.none;
+
+  /// Real semantic tokens for the active buffer (empty in heuristic mode).
+  List<lang.SemanticSpan> get activeSemanticSpans =>
+      _serviceFacts[activeFile]?.semanticSpans ?? const <lang.SemanticSpan>[];
+
+  /// Real service diagnostics for the active buffer (empty in heuristic mode).
+  List<lang.Diagnostic> get activeServiceDiagnostics =>
+      _serviceFacts[activeFile]?.serviceDiagnostics ??
+      const <lang.Diagnostic>[];
+
+  /// True once a real workspace document store is bound to the engine. The
+  /// built-in pathless buffers never set it, so a bound store is the honest
+  /// signal that this session owns real workspace files.
+  bool get hasWorkspaceDocumentStore => _documentStore != null;
+
+  /// Changes when the active workspace document owner is replaced or retired.
+  int get documentStoreGeneration => _documentStoreGeneration;
+
+  /// Whether [store] still owns the engine attachment captured by
+  /// [generation].
+  bool ownsWorkspaceDocumentStore(
+    WorkspaceDocumentOperationStore store, {
+    required int generation,
+  }) => _ownsDocumentStore(store, generation);
+
+  /// Real document symbols the live service reports for the active buffer.
+  ///
+  /// Empty unless a live route and a path-bound Styio buffer are both present;
+  /// the synchronous read only touches the routed cache the async driver fills.
+  List<lang.DocumentSymbol> get activeDocumentSymbols {
+    final String? path = activeFile.path;
+    final StyioLanguageService? service = _languageService;
+    if (!languageServiceLive ||
+        !activeFile.drawable ||
+        path == null ||
+        service == null) {
+      return const <lang.DocumentSymbol>[];
+    }
+    try {
+      return service
+          .analyzeDocument(
+            DocumentState(
+              documentId: path,
+              text: activeFile.text,
+              revision: activeFile.sourceRevision,
+            ),
+          )
+          .documentSymbols;
+    } on Object {
+      return const <lang.DocumentSymbol>[];
+    }
+  }
+
+  /// Attach (or replace) the language service; null reverts to the heuristic.
+  ///
+  /// FlowHeroApp calls this after its async boot, so a late-arriving service
+  /// takes effect without rebuilding the engine.
+  void attachLanguageService(StyioLanguageService? service) {
+    _analysisDebounce?.cancel();
+    _languageService = service;
+    _languageSource = service is FlowHeroAsyncLanguageSource
+        ? service as FlowHeroAsyncLanguageSource
+        : null;
+    _serviceFacts.clear();
+    _analysisTokens.clear();
+    _refreshActiveDocument();
+    notifyListeners();
+  }
+
+  /// Synchronous services (the routed interface without an async half) are
+  /// re-asked on every change; async routes debounce instead.
+  void _applySyncServiceFactsIfConfigured() {
+    if (_languageService == null || _languageSource != null) return;
+    _applySyncServiceFacts();
+  }
+
+  Iterable<BufferFile> _serviceCandidates() sync* {
+    yield activeFile;
+    if (!identical(files.first, activeFile)) yield files.first;
+  }
+
+  void _applySyncServiceFacts() {
+    final StyioLanguageService? service = _languageService;
+    if (service == null) return;
+    for (final BufferFile f in _serviceCandidates()) {
+      if (!f.drawable) continue;
+      try {
+        final lang.StyioDocumentAnalysis analysis = service.analyzeDocument(
+          DocumentState(
+            documentId: f.path ?? f.name,
+            text: f.text,
+            revision: f.sourceRevision,
+          ),
+        );
+        _serviceFacts[f] = _factsFrom(analysis, f.text);
+      } on Object {
+        _serviceFacts.remove(f);
+      }
+    }
+  }
+
+  static const Duration _analysisDebounceDelay = Duration(milliseconds: 220);
+
+  bool _canAnalyzeWithSource(BufferFile f) =>
+      _languageSource?.live == true && f.drawable && f.path != null;
+
+  /// Debounced daemon analysis. Edits wait out the debounce; file switches and
+  /// attach run at once.
+  void _scheduleServiceAnalysis(BufferFile f, {bool immediate = false}) {
+    if (!_canAnalyzeWithSource(f)) return;
+    _analysisDebounce?.cancel();
+    if (immediate) {
+      unawaited(_runServiceAnalysis(f));
+      return;
+    }
+    _analysisDebounce = Timer(_analysisDebounceDelay, () {
+      unawaited(_runServiceAnalysis(f));
+    });
+  }
+
+  Future<void> _runServiceAnalysis(BufferFile f) async {
+    final FlowHeroAsyncLanguageSource? source = _languageSource;
+    final String? path = f.path;
+    if (source == null || !source.live || path == null) return;
+    final int token = ++_analysisSeq;
+    _analysisTokens[f] = token;
+    final String text = f.text;
+    FlowHeroLanguageResult? result;
+    try {
+      result = await source.analyzeFresh(
+        DocumentState(documentId: path, text: text, revision: f.sourceRevision),
+        filePath: path,
+      );
+    } on Object {
+      result = null;
+    }
+    if (!identical(_languageSource, source) || _analysisTokens[f] != token) {
+      return; // superseded by a newer pass or a replaced service
+    }
+    if (f.text != text) {
+      // The buffer moved on while the daemon answered; the newer pass owns it.
+      // The previous result stays on screen as last-known state.
+      return;
+    }
+    if (result != null && result.authoritative) {
+      _serviceFacts[f] = _factsFrom(result.analysis, text);
+    } else {
+      _serviceFacts.remove(f);
+    }
+    if (identical(f, activeFile)) {
+      _analyzeActive();
+      if (f.drawable) _graph = _buildGraphFor(f);
+    } else if (identical(f, files.first)) {
+      _analyzeMain();
+    } else {
+      return;
+    }
+    notifyListeners();
+  }
+
+  _ServiceFacts _factsFrom(lang.StyioDocumentAnalysis analysis, String text) {
+    return _ServiceFacts(
+      serviceDiagnostics: analysis.diagnostics,
+      diagnostics: <Diagnostic>[
+        for (final lang.Diagnostic d in analysis.diagnostics)
+          Diagnostic(
+            _lineOfOffset(text, d.range.start),
+            _identAt(text, d.range, d.message),
+          ),
+      ],
+      semanticSpans: analysis.semanticSpans,
+    );
+  }
+
+  int _lineOfOffset(String text, int offset) {
+    final int limit = offset.clamp(0, text.length);
+    int line = 0;
+    for (int i = 0; i < limit; i++) {
+      if (text.codeUnitAt(i) == 10) line++;
+    }
+    return line;
+  }
+
+  String _identAt(String text, lang.SourceRange range, String message) {
+    final int start = range.start.clamp(0, text.length);
+    final int end = range.end.clamp(start, text.length);
+    final String slice = text.substring(start, end).trim();
+    if (slice.isNotEmpty) return slice;
+    final RegExpMatch? m = RegExp(
+      r'[A-Za-z_][A-Za-z0-9_]*',
+    ).firstMatch(message);
+    return m?.group(0) ?? '?';
+  }
+
+  double bpm = 128;
+  final List<bool> armed = List<bool>.filled(16, true);
+
+  RunPhase phase = RunPhase.idle;
+  int chaseStep = -1;
+  bool faultStepLit = false;
+  LedMode runLed = LedMode.off;
+  bool verifyWhite = false;
+  bool verifyRed = false;
+  String status = 'LOOP IDLE';
+  bool statusRed = false;
+  double? lastRunSeconds;
+  String lastRunKind = ''; // '' | 'held' | 'replay'
+  int faults = 0;
+  bool runInvite = true;
+  bool runHeld = false;
+  bool faulted = false;
+  bool running = false;
+  int _runToken = 0;
+
+  bool authorized = false;
+  bool authorizeArmed = false;
+  final List<Receipt> receipts = <Receipt>[];
+
+  Instrument instrument = Instrument.agent;
+
+  int cursorLine = 1;
+  int cursorColumn = 1;
+
+  // ---- flow engine state ----
+  GraphBoard _graph = GraphBoard();
+  GraphBoard get graph => _graph;
+  bool flowOn = false;
+  bool flowHold = false;
+  bool restLit = false;
+  bool frozenVisible = false;
+  bool sinkFlash = false;
+  Timer? _sinkTimer;
+  final List<Pulse> pulses = <Pulse>[];
+
+  bool get flowTabEnabled => activeFile.drawable;
+
+  String get instrumentTitle {
+    switch (instrument) {
+      case Instrument.files:
+        return 'Explorer';
+      case Instrument.agent:
+        return 'Agent — Task 07';
+      case Instrument.run:
+        return 'Runtime';
+    }
+  }
+
+  String get instrumentState {
+    switch (instrument) {
+      case Instrument.files:
+        return 'demo/app';
+      case Instrument.agent:
+        return 'Review';
+      case Instrument.run:
+        return 'Loop Facts';
+    }
+  }
+
+  String get tail {
+    if (!showFlow) {
+      return '${activeFile.name} · ${activeFile.lineCount} lines · LF';
+    }
+    return 'Styio · Graph · main.styio';
+  }
+
+  int get armedCount => armed.where((bool a) => a).length;
+
+  double get stepMs => 60000 / bpm / 4;
+
+  Diagnostic? get firstDiag => activeDiags.isEmpty ? null : activeDiags.first;
+
+  // ------------------------------------------------------------------ graph ---
+  GraphBoard _buildGraphFor(BufferFile f) => buildGraph(
+    parseStyio(f.text),
+    fileName: f.name,
+    hanging: _hangingFor(f),
+    glyphs: const FlutterGlyphs(),
+  );
+
+  /// Input routes the engine treats as hanging: the real service's findings
+  /// when it produced facts for this buffer, the local rule otherwise.
+  Set<String> _hangingFor(BufferFile f) {
+    final _ServiceFacts? facts = _serviceFacts[f];
+    if (facts != null) {
+      return facts.diagnostics.map((Diagnostic d) => d.ident).toSet();
+    }
+    return lintText(f.text).map((Diagnostic d) => d.ident).toSet();
+  }
+
+  void _analyzeMain() {
+    final BufferFile f = files.first;
+    if (!f.drawable) {
+      mainDiags = const <Diagnostic>[];
+      return;
+    }
+    mainDiags = _serviceFacts[f]?.diagnostics ?? lintText(f.text);
+  }
+
+  void _analyzeActive() {
+    if (!activeFile.drawable) {
+      activeDiags = const <Diagnostic>[];
+      analysisOrigin = FlowHeroAnalysisOrigin.none;
+      return;
+    }
+    final _ServiceFacts? facts = _serviceFacts[activeFile];
+    if (facts != null) {
+      activeDiags = facts.diagnostics;
+      analysisOrigin = FlowHeroAnalysisOrigin.service;
+      return;
+    }
+    activeDiags = lintText(activeFile.text);
+    analysisOrigin = FlowHeroAnalysisOrigin.heuristic;
+  }
+
+  /// Editing: the buffer is the instrument; the board answers every keystroke.
+  void onBufferChanged(String text, {required int line, required int column}) {
+    activeFile.text = text;
+    activeFile.sourceRevision++;
+    if (activeFile.savable) activeFile.dirty = true;
+    cursorLine = line;
+    cursorColumn = column;
+    _applySyncServiceFactsIfConfigured();
+    _analyzeActive();
+    _analyzeMain();
+    if (activeFile.drawable) {
+      _graph = _buildGraphFor(activeFile);
+    }
+    if (activeFile.lang == 'toml') readTempoFromToml();
+    _scheduleServiceAnalysis(activeFile);
+    notifyListeners();
+  }
+
+  void updateCursor(int line, int column) {
+    if (line == cursorLine && column == cursorColumn) return;
+    cursorLine = line;
+    cursorColumn = column;
+    notifyListeners();
+  }
+
+  void openFile(String name) {
+    if (name != activeFile.name) loadFile(name);
+    setNotation(false);
+  }
+
+  void loadFile(String name) {
+    activeFile = files.firstWhere((BufferFile f) => f.name == name);
+    bufferEpoch++;
+    if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+    _applySyncServiceFactsIfConfigured();
+    _analyzeActive();
+    _analyzeMain();
+    cursorLine = 1;
+    cursorColumn = 1;
+    _scheduleServiceAnalysis(activeFile, immediate: true);
+    notifyListeners();
+  }
+
+  /// Open a real file from disk (workspace drawer). Re-activates the buffer if
+  /// the path is already open; returns false when the file is not readable
+  /// text (binary, permissions).
+  Future<bool> openPath(String path) async {
+    if (_disposed) return false;
+    final BufferFile? opened = _pathBuffers[_canonicalDocumentPath(path)];
+    if (opened != null) {
+      activeFile = opened;
+      bufferEpoch++;
+      if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+      _applySyncServiceFactsIfConfigured();
+      _analyzeActive();
+      _scheduleServiceAnalysis(activeFile, immediate: true);
+      notifyListeners();
+      return true;
+    }
+    final String text;
+    int? documentRevision;
+    int? workspaceRevision;
+    final store = _documentStore;
+    final documentStoreGeneration = _documentStoreGeneration;
+    if (store != null) {
+      try {
+        final snapshot = await store.readWorkspaceSnapshot(path);
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
+        final document = snapshot.document;
+        if (document == null) return false;
+        text = document.text;
+        documentRevision = document.revision;
+        workspaceRevision = snapshot.workspaceRevision;
+      } on Object {
+        return false;
+      }
+    } else {
+      try {
+        text = await File(path).readAsString();
+        if (!_hasDocumentStoreGeneration(documentStoreGeneration)) {
+          return false;
+        }
+      } on FileSystemException {
+        return false;
+      } on FormatException {
+        return false; // not UTF-8 text
+      }
+    }
+    // Another request may have opened this path while the workspace read was
+    // in flight. Keep the first live buffer as the sole editor authority.
+    final BufferFile? raced = _pathBuffers[_canonicalDocumentPath(path)];
+    if (raced != null) {
+      activeFile = raced;
+      bufferEpoch++;
+      _refreshActiveDocument();
+      notifyListeners();
+      return true;
+    }
+    final BufferFile f = BufferFile(
+      path.split(RegExp(r'[/\\]')).last,
+      text,
+      lang: langForPath(path),
+      path: path,
+      documentRevision: documentRevision,
+      workspaceRevision: workspaceRevision,
+      persistedText: text,
+    );
+    files.add(f);
+    _pathBuffers[_canonicalDocumentPath(path)] = f;
+    activeFile = f;
+    bufferEpoch++;
+    if (f.drawable) _graph = _buildGraphFor(f);
+    _applySyncServiceFactsIfConfigured();
+    _analyzeActive();
+    cursorLine = 1;
+    cursorColumn = 1;
+    _scheduleServiceAnalysis(f, immediate: true);
+    notifyListeners();
+    return true;
+  }
+
+  /// Drops every buffer opened from disk and returns to the seeded in-memory
+  /// buffers. Returns false when nothing was open.
+  ///
+  /// Used when the workspace root switches: a buffer read through the previous
+  /// root's document store must not stay authoritative against the new root,
+  /// whose Agent workspace binding rejects documents outside its canonical
+  /// roots.
+  bool resetWorkspaceBuffers() {
+    if (_disposed) return false;
+    detachWorkspaceDocumentStore();
+    if (_pathBuffers.isEmpty) return false;
+    final Set<BufferFile> dropped = _pathBuffers.values.toSet();
+    files.removeWhere(dropped.contains);
+    _pathBuffers.clear();
+    for (final BufferFile f in dropped) {
+      _serviceFacts.remove(f);
+      _analysisTokens.remove(f);
+    }
+    activeFile = files.first;
+    bufferEpoch++;
+    _graph = _buildGraphFor(activeFile);
+    _analyzeMain();
+    _analyzeActive();
+    readTempoFromToml();
+    cursorLine = 1;
+    cursorColumn = 1;
+    _scheduleServiceAnalysis(activeFile, immediate: true);
+    notifyListeners();
+    return true;
+  }
+
+  /// ⌘S: write the active buffer back to its file. Returns false when there
+  /// is nothing to save to (demo buffers) or the write failed.
+  Future<bool> saveActive() async {
+    if (_disposed) return false;
+    final BufferFile f = activeFile;
+    if (!f.savable || !f.dirty) return f.savable && !f.dirty;
+    final store = _documentStore;
+    final documentStoreGeneration = _documentStoreGeneration;
+    if (store != null) {
+      final sourceRevision = f.sourceRevision;
+      final contents = f.text;
+      try {
+        final relativePath = store.relativeDocumentPath(f.path!);
+        final snapshot = await store.readWorkspaceSnapshot(f.path!);
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
+        final currentDocument = snapshot.document;
+        final expectedWorkspaceRevision = f.workspaceRevision;
+        if (currentDocument == null ||
+            expectedWorkspaceRevision == null ||
+            currentDocument.revision != f.documentRevision ||
+            currentDocument.text != f.persistedText) {
+          return false;
+        }
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
+        final receipt = await store.saveDocumentsAtomically(
+          <DocumentState>[
+            DocumentState(
+              documentId: f.path!,
+              text: contents,
+              revision: f.documentRevision ?? 0,
+            ),
+          ],
+          expectedWorkspaceRevision: expectedWorkspaceRevision,
+          expectedDocumentRevisions: <String, int>{
+            f.path!: f.documentRevision ?? 0,
+          },
+        );
+        if (!_ownsDocumentStore(store, documentStoreGeneration)) return false;
+        final revision = receipt.documentRevisions[relativePath];
+        if (revision == null) return false;
+        f.documentRevision = revision;
+        f.workspaceRevision = receipt.workspaceRevision;
+        f.persistedText = contents;
+        f.dirty = f.sourceRevision != sourceRevision;
+      } on Object {
+        return false;
+      }
+      notifyListeners();
+      return !f.dirty;
+    }
+    try {
+      await File(f.path!).writeAsString(f.text);
+      if (!_hasDocumentStoreGeneration(documentStoreGeneration)) return false;
+    } on FileSystemException {
+      return false;
+    }
+    f.dirty = false;
+    f.persistedText = f.text;
+    notifyListeners();
+    return true;
+  }
+
+  /// Binds live file buffers to the existing revisioned workspace owner.
+  /// Buffers opened before the Agent connection remain authoritative and are
+  /// imported atomically before file callbacks are advertised.
+  Future<void> attachWorkspaceDocumentStore(
+    WorkspaceDocumentOperationStore store,
+  ) async {
+    if (_disposed) return;
+    final documentStoreGeneration = ++_documentStoreGeneration;
+    _documentStore = store;
+    final snapshots = <(BufferFile, int, String, int)>[];
+    var activeBufferChanged = false;
+    for (final file in files.where((file) => file.savable)) {
+      final sourceRevision = file.sourceRevision;
+      final baseline = file.persistedText;
+      final wasDirty = file.dirty;
+      final workspaceSnapshot = await store.readWorkspaceSnapshot(file.path!);
+      if (!_ownsDocumentStore(store, documentStoreGeneration)) return;
+      final document = workspaceSnapshot.document;
+      file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+      if (document == null) {
+        file.documentRevision = null;
+        continue;
+      }
+      final changedDuringRead = file.sourceRevision != sourceRevision;
+      if (baseline == null || document.text != baseline) {
+        if (!wasDirty && !changedDuringRead) {
+          file.text = document.text;
+          file.persistedText = document.text;
+          file.documentRevision = document.revision;
+          file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+          file.sourceRevision++;
+          activeBufferChanged =
+              activeBufferChanged || identical(file, activeFile);
+        } else {
+          // Preserve local edits when the opened source no longer matches its
+          // disk baseline. A later save must first resolve that conflict.
+          file.documentRevision = null;
+          file.workspaceRevision = null;
+        }
+        continue;
+      }
+      file.documentRevision = document.revision;
+      file.workspaceRevision = workspaceSnapshot.workspaceRevision;
+      file.persistedText = document.text;
+      final currentRevision = file.sourceRevision;
+      final currentText = file.text;
+      if (document.text != currentText) {
+        snapshots.add((
+          file,
+          currentRevision,
+          currentText,
+          workspaceSnapshot.workspaceRevision,
+        ));
+      }
+    }
+    if (snapshots.isEmpty) {
+      if (activeBufferChanged) {
+        _refreshActiveDocument();
+        bufferEpoch++;
+      }
+      if (activeBufferChanged || files.any((file) => file.savable)) {
+        notifyListeners();
+      }
+      return;
+    }
+    final observedWorkspaceRevisions = snapshots
+        .map((snapshot) => snapshot.$4)
+        .toSet();
+    if (observedWorkspaceRevisions.length != 1) {
+      throw StateError('Workspace changed while open buffers were attached.');
+    }
+    final expectedWorkspaceRevision = observedWorkspaceRevisions.single;
+    final receipt = await store.saveDocumentsAtomically(
+      snapshots.map(
+        (snapshot) => DocumentState(
+          documentId: snapshot.$1.path!,
+          text: snapshot.$3,
+          revision: snapshot.$1.documentRevision ?? 0,
+        ),
+      ),
+      expectedWorkspaceRevision: expectedWorkspaceRevision,
+      expectedDocumentRevisions: <String, int>{
+        for (final snapshot in snapshots)
+          snapshot.$1.path!: snapshot.$1.documentRevision ?? 0,
+      },
+    );
+    if (!_ownsDocumentStore(store, documentStoreGeneration)) return;
+    for (final (file, sourceRevision, committedText, _) in snapshots) {
+      final relativePath = store.relativeDocumentPath(file.path!);
+      final revision = receipt.documentRevisions[relativePath];
+      if (revision == null) {
+        throw StateError(
+          'The workspace omitted a committed document revision.',
+        );
+      }
+      file.documentRevision = revision;
+      file.workspaceRevision = receipt.workspaceRevision;
+      file.persistedText = committedText;
+      file.dirty = file.sourceRevision != sourceRevision;
+    }
+    if (activeBufferChanged ||
+        snapshots.any((snapshot) => identical(snapshot.$1, activeFile))) {
+      _refreshActiveDocument();
+      bufferEpoch++;
+    }
+    notifyListeners();
+  }
+
+  /// Retires the current workspace document owner and any reads/imports that
+  /// were started through it. Workspace switches call this before awaiting a
+  /// replacement session so late results cannot publish into the new route.
+  void detachWorkspaceDocumentStore() {
+    _documentStoreGeneration++;
+    _documentStore = null;
+  }
+
+  bool _ownsDocumentStore(
+    WorkspaceDocumentOperationStore store,
+    int generation,
+  ) =>
+      _hasDocumentStoreGeneration(generation) &&
+      identical(_documentStore, store);
+
+  bool _hasDocumentStoreGeneration(int generation) =>
+      !_disposed && _documentStoreGeneration == generation;
+
+  BufferFile? openedBuffer(String absolutePath) =>
+      _disposed ? null : _pathBuffers[_canonicalDocumentPath(absolutePath)];
+
+  /// Reflects a committed Agent write only if no user edit arrived while the
+  /// workspace transaction was pending.
+  bool acceptAgentDocumentWrite({
+    required WorkspaceDocumentOperationStore expectedStore,
+    required int expectedStoreGeneration,
+    required BufferFile expectedBuffer,
+    required String absolutePath,
+    required String text,
+    required int expectedSourceRevision,
+    required int documentRevision,
+    required int workspaceRevision,
+  }) {
+    if (!_ownsDocumentStore(expectedStore, expectedStoreGeneration)) {
+      return false;
+    }
+    final file = openedBuffer(absolutePath);
+    if (file == null || !identical(file, expectedBuffer)) return false;
+    file.documentRevision = documentRevision;
+    file.workspaceRevision = workspaceRevision;
+    file.persistedText = text;
+    if (file.sourceRevision != expectedSourceRevision) {
+      file.dirty = true;
+      notifyListeners();
+      return true;
+    }
+    file.text = text;
+    file.sourceRevision++;
+    file.dirty = false;
+    if (identical(file, activeFile)) {
+      _refreshActiveDocument();
+      bufferEpoch++;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  void _refreshActiveDocument() {
+    _applySyncServiceFactsIfConfigured();
+    _analyzeActive();
+    _analyzeMain();
+    if (activeFile.drawable) _graph = _buildGraphFor(activeFile);
+    if (activeFile.lang == 'toml') readTempoFromToml();
+    _scheduleServiceAnalysis(activeFile, immediate: true);
+  }
+
+  void setInstrument(Instrument i) {
+    instrument = i;
+    notifyListeners();
+  }
+
+  void setNotation(bool flow) {
+    if (flow && !flowTabEnabled) {
+      return; // this buffer has no program to project
+    }
+    if (showFlow == flow) {
+      if (flow) _graph = _buildGraphFor(activeFile);
+      notifyListeners();
+      return;
+    }
+    showFlow = flow;
+    if (flow) _graph = _buildGraphFor(activeFile); // repaint graph truth
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------------ tempo ---
+  void setBpm(double v) {
+    // floor 10: slow enough to watch a single signal think; ceiling 240
+    bpm = math.min(240, math.max(10, v.roundToDouble()));
+    notifyListeners();
+  }
+
+  void readTempoFromToml() {
+    final double? t = parseTomlTempo(files.last.text);
+    if (t != null) bpm = math.min(240, math.max(10, t.roundToDouble()));
+  }
+
+  // -------------------------------------------------------------- step row ---
+  void toggleStep(int i) {
+    if (running) return;
+    if (faulted && i == kFaultStep) {
+      _status('STEP 11 GOLDEN · 2 SUBPIXEL DIFFS · PRESS CLEAR', red: true);
+      return;
+    }
+    armed[i] = !armed[i];
+    notifyListeners();
+  }
+
+  void _restLeds() {
+    chaseStep = -1;
+    faultStepLit = false;
+    notifyListeners();
+  }
+
+  void _status(String text, {bool red = false}) {
+    status = text;
+    statusRed = red;
+    notifyListeners();
+  }
+
+  // -------------------------------------------------------------- the loop ---
+  /// DEMO ONLY. FlowHeroApp never calls this: a real run goes through
+  /// FlowHeroExecutionRuntime (`pafio --json run`) and the run strip reads its
+  /// real phase. The sixteen-step chase is the standalone demo's theatre.
+  Future<void> run() async {
+    if (running) return;
+    if (faulted) {
+      await replayFault();
+      return;
+    }
+    running = true;
+    phase = RunPhase.running;
+    final int runGeneration = ++_runToken;
+    final bool willHold = mainDiags.isNotEmpty;
+    runHeld = true;
+    runInvite = false; // the invitation is spent
+    _restLeds();
+    flowStart();
+    notifyListeners();
+    final Stopwatch clock = Stopwatch()..start();
+
+    for (int i = 0; i < 16; i++) {
+      if (runGeneration != _runToken) return;
+      if (i > 0) {
+        // the chase is one light: extinguish where it has been
+        if (chaseStep == i - 1) chaseStep = -1;
+      }
+      if (armed[i]) chaseStep = i;
+      _status(
+        'RUNNING · ${(i + 1).toString().padLeft(2, '0')} ${kStepNames[i].toUpperCase()}',
+        red: true,
+      );
+      if (i.isEven) flowEmit();
+      if (i == kFaultStep && willHold) {
+        await Future<void>.delayed(
+          Duration(microseconds: (stepMs * 1000).round()),
+        );
+        if (runGeneration != _runToken) return;
+        chaseStep = -1;
+        faultStepLit = true;
+        verifyRed = true;
+        flowFreeze();
+        final double secs = clock.elapsedMilliseconds / 1000;
+        status = 'HELD · STEP 11 GOLDEN · REPLAY OR CLEAR';
+        statusRed = true;
+        lastRunSeconds = secs;
+        lastRunKind = 'held';
+        faults = 1;
+        runHeld = false;
+        running = false;
+        faulted = true;
+        phase = RunPhase.held;
+        notifyListeners();
+        return; // the loop stops here; steps 12–16 never ran
+      }
+      await Future<void>.delayed(
+        Duration(microseconds: (stepMs * 1000).round()),
+      );
+    }
+    if (runGeneration != _runToken) return;
+    // full pass: every station clean
+    chaseStep = -1;
+    final double secs = clock.elapsedMilliseconds / 1000;
+    lastRunSeconds = secs;
+    lastRunKind = '';
+    faults = 0;
+    status = 'PASS · 16/16 · GOLDEN CLEAN';
+    statusRed = false;
+    verifyWhite = true;
+    verifyRed = false;
+    flowStop();
+    runHeld = false;
+    running = false;
+    phase = RunPhase.idle;
+    notifyListeners();
+  }
+
+  /// HELD is not a dead end: the same eleven steps, as slow as the tempo is set.
+  Future<void> replayFault() async {
+    running = true;
+    phase = RunPhase.running;
+    final int runGeneration = ++_runToken;
+    runHeld = true;
+    notifyListeners();
+    faultStepLit = false;
+    chaseStep = -1;
+    verifyRed = false;
+    frozenVisible = false;
+    flowStart();
+    notifyListeners();
+    final Stopwatch clock = Stopwatch()..start();
+    for (int i = 0; i <= kFaultStep; i++) {
+      if (runGeneration != _runToken) return;
+      if (i > 0 && chaseStep == i - 1) chaseStep = -1;
+      if (armed[i]) chaseStep = i;
+      _status(
+        'REPLAY · STEP ${(i + 1).toString().padLeft(2, '0')} ${kStepNames[i].toUpperCase()}'
+        ' · FAULT IN ${kFaultStep - i}',
+        red: true,
+      );
+      if (i.isEven) flowEmit();
+      // stepMs reads bpm live: the operator can slow the microscope as the
+      // fault approaches
+      await Future<void>.delayed(
+        Duration(microseconds: (stepMs * 1000).round()),
+      );
+      if (runGeneration != _runToken) return;
+    }
+    chaseStep = -1;
+    faultStepLit = true;
+    verifyRed = true;
+    flowFreeze();
+    final double secs = clock.elapsedMilliseconds / 1000;
+    status = 'HELD · STEP 11 GOLDEN · REPLAY OR CLEAR';
+    statusRed = true;
+    lastRunSeconds = secs;
+    lastRunKind = 'replay';
+    runHeld = false;
+    running = false;
+    notifyListeners();
+  }
+
+  void clearLoop() {
+    _runToken++;
+    running = false;
+    faulted = false;
+    phase = RunPhase.idle;
+    runHeld = false;
+    chaseStep = -1;
+    faultStepLit = false;
+    verifyWhite = false;
+    verifyRed = false;
+    flowReset();
+    status = 'LOOP IDLE';
+    statusRed = false;
+    lastRunSeconds = null;
+    lastRunKind = '';
+    faults = 0;
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------- permission gate ---
+  /// DEMO ONLY. Plants a synthetic `Receipt('0142', 3)` for the demo shell.
+  /// FlowHeroApp never calls this; a real receipt comes from pafio and is
+  /// echoed by `FlowHeroController.runExecution`.
+  void authorize() {
+    if (authorized || authorizeArmed) return;
+    authorizeArmed = true;
+    notifyListeners();
+    Timer(const Duration(milliseconds: 700), () {
+      authorizeArmed = false;
+      authorized = true;
+      receipts.insert(0, const Receipt('0142', 3));
+      notifyListeners();
+    });
+  }
+
+  // ------------------------------------------------------------ flow engine ---
+  void flowStart() {
+    flowOn = true;
+    flowHold = false;
+    frozenVisible = false;
+    restLit = false;
+  }
+
+  void flowFreeze() {
+    flowOn = false;
+    flowHold = true;
+    pulses.clear();
+    frozenVisible = _graph.frozenPulse != null;
+  }
+
+  void flowStop() {
+    flowOn = false;
+    restLit = true;
+  }
+
+  void flowReset() {
+    flowOn = false;
+    flowHold = false;
+    pulses.clear();
+    frozenVisible = false;
+    restLit = false;
+    sinkFlash = false;
+  }
+
+  /// Called by the step loop: one signal every two steps, at most five in
+  /// flight — a full line drops the beat rather than queuing.
+  void flowEmit() {
+    if (!flowOn || flowHold || _graph.pulsePath.isEmpty || pulses.length >= 5) {
+      return;
+    }
+    pulses.add(Pulse());
+  }
+
+  void tickPulses(double dtMs, {required bool visible}) {
+    final int n = _graph.pulsePath.length;
+    if (flowHold) return;
+    bool changed = false;
+    for (final Pulse p in pulses) {
+      p.d += 0.55 * (bpm / 128) * dtMs;
+      while (p.seg < n && p.d >= _graph.pulsePath[p.seg].curve.length) {
+        p.d -= _graph.pulsePath[p.seg].curve.length;
+        p.seg++;
+        if (p.seg == n && visible) {
+          sinkFlash = true;
+          _sinkTimer?.cancel();
+          _sinkTimer = Timer(const Duration(milliseconds: 140), () {
+            sinkFlash = false;
+            notifyListeners();
+          });
+        }
+      }
+      changed = true;
+    }
+    pulses.removeWhere((Pulse p) => p.seg >= n);
+    if (changed || pulses.isNotEmpty) notifyListeners();
+  }
+
+  bool moduleLampLit(GraphModule m) {
+    final List<GraphModule> path = _graph.pulseModules;
+    for (final Pulse p in pulses) {
+      if (p.seg < path.length && identical(path[p.seg], m)) return true;
+    }
+    return false;
+  }
+
+  bool stateLampLit(Lamp l) {
+    if (identical(l, _graph.runLamp)) return flowOn;
+    if (identical(l, _graph.heldLamp)) return flowHold;
+    if (identical(l, _graph.restLamp)) return restLit;
+    return false;
+  }
+
+  bool stateLampAmber(Lamp l) => identical(l, _graph.restLamp);
+
+  /// The entry function stays lit while a run is live or held.
+  bool get mainModuleLit => flowOn || flowHold;
+
+  bool get sinkLampLit => sinkFlash;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    detachWorkspaceDocumentStore();
+    _sinkTimer?.cancel();
+    _analysisDebounce?.cancel();
+    super.dispose();
+  }
+}
+
+/// Facts the real language service produced for one buffer. Kept until a newer
+/// pass replaces them, so edits never blank the board while the daemon thinks.
+class _ServiceFacts {
+  const _ServiceFacts({
+    required this.diagnostics,
+    required this.serviceDiagnostics,
+    required this.semanticSpans,
+  });
+
+  /// The same findings in the board's (line, ident) shape.
+  final List<Diagnostic> diagnostics;
+
+  /// The untouched service diagnostics, for the editor's strip.
+  final List<lang.Diagnostic> serviceDiagnostics;
+
+  final List<lang.SemanticSpan> semanticSpans;
+}
+
+/// --------------------------------------------------------------- the shell ---
+/// DEMO ONLY. Nothing in FlowHeroApp renders `Machine` (or its rail, transport
+/// and status strip), so the synthetic labels it prints never reach the app.
+/// The standalone demo entry uses its own copy under `workbench_demo/`.
+class Machine extends StatefulWidget {
+  const Machine({super.key, required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  State<Machine> createState() => _MachineState();
+}
+
+class _MachineState extends State<Machine> {
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// Space runs, C clears, arrows set the tempo; a focused text field keeps its
+  /// native keys.
+  bool _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return false;
+    final WorkbenchController c = widget.controller;
+    final FocusNode? f = FocusManager.instance.primaryFocus;
+    final bool typing =
+        f?.context?.widget is EditableText ||
+        (f?.context?.findAncestorWidgetOfExactType<EditableText>() != null);
+    if (typing) return false;
+    if (e.logicalKey == LogicalKeyboardKey.keyC) {
+      c.clearLoop();
+      return true;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.space) {
+      if (c.faulted) {
+        c.clearLoop();
+      } else {
+        unawaited(c.run());
+      }
+      return true;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+      c.setBpm(c.bpm + 1);
+      return true;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+      c.setBpm(c.bpm - 1);
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final WorkbenchController c = widget.controller;
+    return ListenableBuilder(
+      listenable: c,
+      builder: (BuildContext context, Widget? _) => Stack(
+        children: <Widget>[
+          Column(
+            children: <Widget>[
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    InstrumentRail(controller: c),
+                    Expanded(child: _ProgramPanel(controller: c)),
+                    InstrumentBody(controller: c),
+                  ],
+                ),
+              ),
+              LoopBar(controller: c),
+              StatusStrip(controller: c),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// --------------------------------------------------------------- the rail ---
+class InstrumentRail extends StatelessWidget {
+  const InstrumentRail({super.key, required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget key(Instrument inst, void Function(Path p) glyph, String label) {
+      final bool on = controller.instrument == inst;
+      return Semantics(
+        label: label,
+        button: true,
+        selected: on,
+        child: SizedBox(
+          width: 56,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CapKey(
+                width: 44,
+                height: 44,
+                pressed: on,
+                tooltip: label,
+                onTap: () => controller.setInstrument(inst),
+                child: HandIcon(
+                  painter: glyph,
+                  size: 20,
+                  color: on ? C.bone : C.silk,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Led(on: on, size: 6, color: C.orange),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 68,
+      decoration: const BoxDecoration(
+        color: C.panelHi,
+        border: Border(right: BorderSide(color: C.seamLo)),
+      ),
+      child: Stack(
+        children: <Widget>[
+          const Positioned(
+            top: 0,
+            bottom: 0,
+            right: 1,
+            width: 1,
+            child: ColoredBox(color: C.seamHi),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Column(
+              children: <Widget>[
+                key(Instrument.files, Pen.folder, 'Files'),
+                const SizedBox(height: 14),
+                key(Instrument.agent, Pen.spark, 'Agent'),
+                const SizedBox(height: 14),
+                key(Instrument.run, Pen.pulse, 'Run'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ---------------------------------------------------------- the PROGRAM well ---
+class _ProgramPanel extends StatelessWidget {
+  const _ProgramPanel({required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final WorkbenchController c = controller;
+    const Widget gap = SizedBox(width: 14);
+    return Container(
+      decoration: const BoxDecoration(
+        color: C.recess,
+        border: Border(right: BorderSide(color: C.seamLo)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SeamBottom(
+            child: Container(
+              height: 38,
+              color: C.panel,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                children: <Widget>[
+                  const Text('PROGRAM', style: T.silkHi),
+                  gap,
+                  NotationTabs(controller: c),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        c.tail,
+                        style: T.silkDim,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: c.showFlow && c.flowTabEnabled ? 0 : 1,
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  child: Well(radius: 6, child: FlowBoard(controller: c)),
+                ),
+                SourceEditor(controller: c),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NotationTabs extends StatelessWidget {
+  const NotationTabs({super.key, required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = controller.flowTabEnabled;
+    Widget tab(
+      String label,
+      void Function(Path p) glyph,
+      bool on, {
+      VoidCallback? onTap,
+      String? tooltip,
+      bool disabled = false,
+    }) {
+      return CapKey(
+        height: 26,
+        radius: 3,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        disabled: disabled,
+        tooltip: tooltip,
+        gradient: on
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[Colors.white, C.paperLow],
+              )
+            : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[C.keyCap, C.keyCapLow],
+              ),
+        onTap: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            HandIcon(painter: glyph, size: 13, color: on ? C.well : C.silk),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: T.tab.copyWith(color: on ? C.well : C.silk),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.clip,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Focus(
+        // a real tablist: ←/→ switches notation and the roving tabindex keeps
+        // only the active tab in the tab order
+        onKeyEvent: (FocusNode node, KeyEvent event) {
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+              event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            controller.setNotation(!controller.showFlow);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            tab(
+              'FLOW',
+              Pen.patchCable,
+              controller.showFlow && enabled,
+              disabled: !enabled,
+              tooltip: enabled ? null : 'FLOW 只投影 styio 程序',
+              onTap: () => controller.setNotation(true),
+            ),
+            const SizedBox(width: 4),
+            tab(
+              'SOURCE',
+              Pen.brackets,
+              !controller.showFlow || !enabled,
+              onTap: () => controller.setNotation(false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ------------------------------------------------------------- status strip ---
+class StatusStrip extends StatelessWidget {
+  const StatusStrip({super.key, required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final WorkbenchController c = controller;
+    final String last = c.lastRunSeconds == null
+        ? 'Last Run —'
+        : 'Last Run ${c.lastRunSeconds!.toStringAsFixed(1)}s'
+              '${c.lastRunKind.isEmpty ? '' : ' · ${c.lastRunKind}'}';
+    return SeamTop(
+      color: C.panelHi,
+      child: SizedBox(
+        height: 32,
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 250),
+                    child: StatusLeftLive(controller: c),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const _Silk('Rev 0142'),
+                          const SizedBox(width: 18),
+                          const _Silk('Workspace demo/app'),
+                          const SizedBox(width: 18),
+                          _Silk(last),
+                          const SizedBox(width: 18),
+                          const _Silk('Space Run · C Clear · ↑↓ Tempo'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  _Silk('Ln ${c.cursorLine}, Col ${c.cursorColumn}'),
+                  const SizedBox(width: 14),
+                  const _Silk('Demonstration data — synthetic'),
+                ],
+              ),
+            ),
+            ..._screws(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _screws() => const <Widget>[
+    Positioned(left: 6, bottom: 6, child: Screw(angle: 41)),
+    Positioned(right: 6, bottom: 6, child: Screw(angle: 78)),
+  ];
+}
+
+class StatusLeftLive extends StatelessWidget {
+  const StatusLeftLive({super.key, required this.controller});
+  final WorkbenchController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final WorkbenchController c = controller;
+    return Row(
+      children: <Widget>[
+        const Text('VITYO', style: T.maker),
+        const SizedBox(width: 7),
+        const Led(on: true, size: 6),
+        const SizedBox(width: 10),
+        Led(on: true, size: 6, color: c.statusRed ? C.red : C.orange),
+        const SizedBox(width: 10),
+        Text(
+          c.status,
+          style: T.monoBold.copyWith(letterSpacing: 1.1, color: C.silkHi),
+        ),
+      ],
+    );
+  }
+}
+
+class _Silk extends StatelessWidget {
+  const _Silk(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: T.silk,
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.clip,
+  );
+}
+
+/// A 10px fastener head with a rotated slot — the machine's only exposed
+/// hardware.
+class Screw extends StatelessWidget {
+  const Screw({super.key, this.angle = 24});
+  final double angle;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 10,
+    height: 10,
+    child: CustomPaint(painter: _ScrewPainter(angle)),
+  );
+}
+
+class _ScrewPainter extends CustomPainter {
+  _ScrewPainter(this.angle);
+  final double angle;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset c = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(
+      c,
+      5,
+      Paint()
+        ..shader = const RadialGradient(
+          center: Alignment(-0.3, -0.4),
+          colors: <Color>[Color(0xFF3C3C3C), Color(0xFF151515)],
+          stops: <double>[0, 0.7],
+        ).createShader(Rect.fromCircle(center: c, radius: 5)),
+    );
+    canvas.drawCircle(
+      c,
+      5,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = const Color(0x66000000),
+    );
+    canvas.save();
+    canvas.translate(c.dx, c.dy);
+    canvas.rotate(angle * math.pi / 180);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-3.5, -0.7, 7, 1.4),
+        const Radius.circular(1),
+      ),
+      Paint()..color = const Color(0xFF050505),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_ScrewPainter old) => old.angle != angle;
+}

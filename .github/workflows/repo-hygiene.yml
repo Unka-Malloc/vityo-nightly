@@ -11,7 +11,7 @@ permissions:
 jobs:
   hygiene:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 30
     env:
       VITYO_PYTHON_VERSION: "3.13.5"
 
@@ -61,6 +61,11 @@ jobs:
         with:
           python-version: ${{ env.VITYO_PYTHON_VERSION }}
 
+      - name: Set up Rust 1.88 toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0, community-maintained
+        with:
+          toolchain: "1.88.0"
+
       - name: Check tracked tree
         working-directory: vityo-nightly
         run: python3 scripts/repo-hygiene-gate.py --mode tracked
@@ -105,15 +110,12 @@ jobs:
         working-directory: vityo-nightly
         run: python3 scripts/ecosystem-cli-doc-gate.py --require-workspace --json --non-blocking
 
-      - name: Check incoming history range
+      - name: Resolve CI refs
+        id: ci_refs
         shell: bash
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            RANGE="HEAD"
-          else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-          python3 scripts/repo-hygiene-gate.py --mode push --range "$RANGE"
+        run: python3 scripts/resolve-ci-refs.py >> "$GITHUB_OUTPUT"
+
+      - name: Check incoming history range
+        working-directory: vityo-nightly
+        run: python3 scripts/repo-hygiene-gate.py --mode push --range "${{ steps.ci_refs.outputs.range }}"

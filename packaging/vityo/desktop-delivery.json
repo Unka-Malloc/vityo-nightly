@@ -1,5 +1,30 @@
 {
   "schema_version": 1,
   "product": "vityo",
-  "platforms": ["linux", "windows", "macos"]
+  "platforms": ["linux", "windows", "macos"],
+  "component": {
+    "name": "vityod",
+    "protocol_min": 1,
+    "protocol_max": 1,
+    "instance_scope": "per-user",
+    "launch": "on-demand",
+    "privileged_service": false,
+    "discovery": "application-relative-manifest-only"
+  },
+  "coding_agent": {
+    "name": "vityo-coding-agent",
+    "lifecycle": "independent-on-demand-process",
+    "discovery": "application-relative-executable-only"
+  },
+  "pafio": {
+    "name": "pafio",
+    "lifecycle": "independent-on-demand-process",
+    "discovery": "application-relative-manifest-only"
+  },
+  "state_policy": {
+    "compatible_schema_step": 1,
+    "upgrade": "candidate-health-rollback",
+    "uninstall": "retain-user-state",
+    "reclamation": "separate-explicit-confirmation"
+  }
 }

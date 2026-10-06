@@ -145,7 +145,7 @@ Coverage gaps:
 
 ## Gate Strictness
 
-Before this audit, `styio-audit` validated the framework and project module, but the full gate was blocked by an ignored open defect queue record in `docs/audit/defects/STYIO-VIEW-2026-04-22.md`. That scratch record has been migrated into this tracked audit report and [NEXT-STAGE-GAP-LEDGER.md](../rollups/NEXT-STAGE-GAP-LEDGER.md), and the ignored scratch file is removed before submission.
+Before this audit, `styio-audit` validated the framework and project module, but the full gate was blocked by an ignored open defect queue record in `docs/audit/defects/STYIO-VIEW-2026-04-22.md`. That scratch record was migrated into this tracked audit report and the next-stage gap ledger, which has since been retired into the maintained rollups, and the ignored scratch file is removed before submission.
 
 The downstream delivery workflow now exposes `local-ci-gate`, `windows-native`, and `macos-native` as required repository-local CI statuses for `nightly`, instead of the older `styio-ci` / `build-and-test` naming. They run the composed delivery gate with external `styio-audit` skipped because the released policy gate runs separately in `.github/workflows/styio-audit.yml`.
 

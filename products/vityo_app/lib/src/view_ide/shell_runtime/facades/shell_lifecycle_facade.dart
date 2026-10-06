@@ -3,6 +3,7 @@ part of '../shell_runtime_model.dart';
 /// Listener callbacks and deterministic owned-resource teardown.
 mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleSettingsChanged() => _notifyShellListeners();
+  void _handleHostedBackendChanged() => _notifyShellListeners();
   void _handleExecutionChanged() => _notifyShellListeners();
   void _handleDebugChanged() => _notifyShellListeners();
   void _handleDeploymentChanged() => _notifyShellListeners();
@@ -13,9 +14,12 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
   void _handleWorkspaceReplaceChanged() => _notifyShellListeners();
   void _handleWorkspaceQuickFixChanged() => _notifyShellListeners();
   void _handleWorkspaceNavigationChanged() => _notifyShellListeners();
+  void _handleWorkspaceSearchChanged() => _notifyShellListeners();
+  void _handleWorkspaceFileExplorerChanged() => _notifyShellListeners();
   void _handleProjectLanguageContextChanged() => _notifyShellListeners();
   void _handleWorkspaceRenameChanged() => _notifyShellListeners();
   void _handleModuleChanged() => _notifyShellListeners();
+  void _handleExtensionMarketplaceChanged() => _notifyShellListeners();
   void _handleSourceControlChanged() => _notifyShellListeners();
   void _handleTestingChanged() => _notifyShellListeners();
   void _handleObservableGraphChanged() => _notifyShellListeners();
@@ -71,6 +75,8 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _editorFileBindingSubscription = null;
     _settingsController.removeListener(_handleSettingsChanged);
     _settingsController.dispose();
+    _hostedBackendController.removeListener(_handleHostedBackendChanged);
+    _hostedBackendController.dispose();
     _executionController.removeListener(_handleExecutionChanged);
     _executionController.dispose();
     _deploymentController.removeListener(_handleDeploymentChanged);
@@ -85,6 +91,9 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
       _handleWorkspaceDiagnosticsChanged,
     );
     _workspaceDiagnosticsRuntimeController.dispose();
+    _diagnosticsPanelStateController.removeListener(_notifyShellListeners);
+    _diagnosticsPanelStateController.dispose();
+    unawaited(_runtimeOutputProducerBindings.dispose());
     _workspaceReplaceController.removeListener(_handleWorkspaceReplaceChanged);
     _workspaceReplaceController.dispose();
     _workspaceQuickFixController.removeListener(
@@ -95,6 +104,12 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
       _handleWorkspaceNavigationChanged,
     );
     _workspaceNavigationController.dispose();
+    _workspaceSearchController.removeListener(_handleWorkspaceSearchChanged);
+    _workspaceSearchController.dispose();
+    _workspaceFileExplorerController.removeListener(
+      _handleWorkspaceFileExplorerChanged,
+    );
+    _workspaceFileExplorerController.dispose();
     _projectLanguageContextController.removeListener(
       _handleProjectLanguageContextChanged,
     );
@@ -103,6 +118,10 @@ mixin ShellRuntimeLifecycleFacade on ShellRuntimeFacadeHost {
     _workspaceRenameController.dispose();
     _moduleController.removeListener(_handleModuleChanged);
     _moduleController.dispose();
+    _extensionMarketplaceController.removeListener(
+      _handleExtensionMarketplaceChanged,
+    );
+    _extensionMarketplaceController.dispose();
     _debugController.removeListener(_handleDebugChanged);
     _debugController.dispose();
     _sourceControlController.removeListener(_handleSourceControlChanged);

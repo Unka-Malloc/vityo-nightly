@@ -3,6 +3,8 @@ import 'process_facts.dart';
 
 enum ProcessCommandStatus { succeeded, failed, timedOut, blocked }
 
+enum ProcessServiceKind { generic, styio, pafio }
+
 enum ProcessFailureKind {
   unsupported,
   executableNotFound,
@@ -13,6 +15,72 @@ enum ProcessFailureKind {
   unknownFailure,
 }
 
+class ProcessCommandHandle {
+  const ProcessCommandHandle({
+    required this.processHandleId,
+    required this.sourceManager,
+    this.pid,
+    this.metadata = const <String, Object?>{},
+  });
+
+  final String processHandleId;
+  final String sourceManager;
+  final int? pid;
+  final Map<String, Object?> metadata;
+
+  bool get available => processHandleId.trim().isNotEmpty || pid != null;
+
+  Map<String, Object?> toMetadata() {
+    return <String, Object?>{
+      ...metadata,
+      if (processHandleId.trim().isNotEmpty)
+        'processHandleId': processHandleId.trim(),
+      if (pid != null) 'pid': pid,
+      if (sourceManager.trim().isNotEmpty)
+        'processHandleSource': sourceManager.trim(),
+    };
+  }
+}
+
+typedef ProcessCommandStartedCallback =
+    void Function(ProcessCommandHandle handle);
+
+class ProcessCommandCancellationResult {
+  const ProcessCommandCancellationResult({
+    required this.accepted,
+    required this.processTerminated,
+    required this.message,
+    this.exitCode,
+    this.metadata = const <String, Object?>{},
+  });
+
+  const ProcessCommandCancellationResult.unsupported({
+    String message = 'Process cancellation is not available.',
+  }) : this(accepted: false, processTerminated: false, message: message);
+
+  final bool accepted;
+  final bool processTerminated;
+  final String message;
+  final int? exitCode;
+  final Map<String, Object?> metadata;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'accepted': accepted,
+      'processTerminated': processTerminated,
+      'message': message,
+      if (exitCode != null) 'exitCode': exitCode,
+      if (metadata.isNotEmpty) 'metadata': metadata,
+    };
+  }
+}
+
+abstract interface class CancellableProcessManager {
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  );
+}
+
 class ProcessCommandRequest {
   const ProcessCommandRequest({
     required this.executablePath,
@@ -21,6 +89,8 @@ class ProcessCommandRequest {
     this.workingDirectory,
     this.timeout,
     this.standardInput,
+    this.serviceKind = ProcessServiceKind.generic,
+    this.onStarted,
   });
 
   final String executablePath;
@@ -29,6 +99,8 @@ class ProcessCommandRequest {
   final String? workingDirectory;
   final Duration? timeout;
   final String? standardInput;
+  final ProcessServiceKind serviceKind;
+  final ProcessCommandStartedCallback? onStarted;
 }
 
 class ProcessOperationFailure {
@@ -147,7 +219,8 @@ abstract class ProcessManager {
   });
 }
 
-class UnsupportedProcessManager implements ProcessManager {
+class UnsupportedProcessManager
+    implements ProcessManager, CancellableProcessManager {
   UnsupportedProcessManager({required this.facts})
     : compatibility = ProcessAdapter(facts).adapt();
   @override
@@ -166,6 +239,10 @@ class UnsupportedProcessManager implements ProcessManager {
         duration: Duration.zero,
         message: 'Process execution is not available.',
       );
+  @override
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  ) async => const ProcessCommandCancellationResult.unsupported();
   @override
   ProcessOperationFailure? failureFor(
     ProcessCommandResult result, {
