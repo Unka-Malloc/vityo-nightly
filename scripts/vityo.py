@@ -74,6 +74,29 @@ PAFIO_PACKAGE_PATHS = {
     "macos": Path("Contents/Helpers/pafio"),
 }
 RUST_COVERAGE_CLI_VERSION = "0.9.0"
+# Flutter rewrites these tracked files whenever it resolves packages. The
+# bootstrap guard restores them around `flutter create`/`pub get`; the delivery
+# runs further Dart and Flutter commands, so it must preserve them too before it
+# records product matrix evidence against the input checkout.
+FLUTTER_STATE_FILES = (".metadata", "pubspec.lock")
+
+
+def capture_flutter_state(app_root: Path) -> dict[Path, bytes | None]:
+    snapshot: dict[Path, bytes | None] = {}
+    for name in FLUTTER_STATE_FILES:
+        path = app_root / name
+        snapshot[path] = path.read_bytes() if path.is_file() else None
+    return snapshot
+
+
+def restore_flutter_state(snapshot: dict[Path, bytes | None] | None) -> None:
+    if snapshot is None:
+        return
+    for path, content in snapshot.items():
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(content)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -492,7 +515,13 @@ def _run_quality_suite(product: str, suite: str, *, receipt: str | None = None) 
     return run_command(_python(*args))
 
 
-def _run_product_acceptance(options: DeliveryOptions, styio: Path, pafio: Path) -> int:
+def _run_product_acceptance(
+    options: DeliveryOptions,
+    styio: Path,
+    pafio: Path,
+    *,
+    flutter_state: dict[Path, bytes | None] | None = None,
+) -> int:
     platform = options.platform
     evidence = options.evidence_dir / f"product-gate-{platform}.json"
     command = _python(
@@ -547,6 +576,7 @@ def _run_product_acceptance(options: DeliveryOptions, styio: Path, pafio: Path) 
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"[vityo] product matrix evidence: {error}", file=sys.stderr)
         return 2
+    restore_flutter_state(flutter_state)
     return run_command(
         _python(
             "scripts/record-product-matrix-evidence.py",
@@ -590,6 +620,7 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"[vityo] test stage: {error}", file=sys.stderr)
         return 2
+    flutter_state = capture_flutter_state(ROOT / options.flutter_dir)
 
     if not require_rust_toolchain():
         return 2
@@ -687,7 +718,12 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
         except (OSError, ValueError, json.JSONDecodeError) as error:
             print(f"[vityo] test stage: {error}", file=sys.stderr)
             return 2
-        return _run_product_acceptance(dataclasses.replace(options, platform=platform), styio, pafio)
+        return _run_product_acceptance(
+            dataclasses.replace(options, platform=platform),
+            styio,
+            pafio,
+            flutter_state=flutter_state,
+        )
     return 0
 
 

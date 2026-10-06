@@ -367,6 +367,40 @@ class VityoDeliveryTest(unittest.TestCase):
                 )
         provision.assert_not_called()
 
+    def test_flutter_state_snapshot_restores_rewritten_and_removed_files(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            app_root = Path(name)
+            lock = app_root / "pubspec.lock"
+            metadata = app_root / ".metadata"
+            lock.write_text("committed lock\n", encoding="utf-8")
+            metadata.write_text("committed metadata\n", encoding="utf-8")
+
+            snapshot = self.delivery.capture_flutter_state(app_root)
+
+            lock.write_text("resolved by a different sdk\n", encoding="utf-8")
+            metadata.unlink()
+
+            self.delivery.restore_flutter_state(snapshot)
+
+            self.assertEqual(lock.read_text(encoding="utf-8"), "committed lock\n")
+            self.assertEqual(metadata.read_text(encoding="utf-8"), "committed metadata\n")
+
+    def test_flutter_state_snapshot_removes_files_flutter_creates(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            app_root = Path(name)
+            snapshot = self.delivery.capture_flutter_state(app_root)
+
+            (app_root / "pubspec.lock").write_text("created\n", encoding="utf-8")
+            (app_root / ".metadata").write_text("created\n", encoding="utf-8")
+
+            self.delivery.restore_flutter_state(snapshot)
+
+            self.assertFalse((app_root / "pubspec.lock").exists())
+            self.assertFalse((app_root / ".metadata").exists())
+
+    def test_flutter_state_restore_without_snapshot_is_a_noop(self) -> None:
+        self.delivery.restore_flutter_state(None)
+
 
 if __name__ == "__main__":
     unittest.main()
