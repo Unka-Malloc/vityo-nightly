@@ -77,3 +77,6 @@ docs/audit/defects/
 !products/vityo_app/test/**/tmp/**
 !products/vityo_app/test/**/*.tmp
 !products/vityo_app/test/**/*.log
+
+# Private General-Auditor source evidence and local reports.
+/.general-auditor/local/

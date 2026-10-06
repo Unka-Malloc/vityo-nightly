@@ -4,7 +4,7 @@
 
 **Last updated:** 2026-07-31
 
-This document is the repository-local maintenance rule for the manifest inventory audited by `styio-audit`. The canonical audit module must list the same surfaces in `for-vityo/module.json`; if this document and the audit manifest diverge, the change is not closed.
+This document is the repository-local maintenance rule for the manifest inventory audited by General-Auditor. The inventory must list the same surfaces as the maintained audit policy for this repository; if this document and that policy diverge, the change is not closed.
 
 ## Required Inventory Fields
 
