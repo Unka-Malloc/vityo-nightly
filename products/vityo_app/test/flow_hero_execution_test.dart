@@ -273,6 +273,35 @@ void main() {
       },
     );
 
+    test('compatible does not imply verified release provenance', () async {
+      final check = compilerCheck('ok');
+      check['detail'] = <String, Object?>{
+        ...(check['detail'] as Map<String, Object?>),
+        'product_support': 'published',
+        'selection_source': 'cli',
+        'release_provenance': 'unverified',
+      };
+      final result = await probe({
+        'command': 'doctor',
+        'checks': [check],
+      });
+      expect(result.compatible, isTrue);
+      expect(result.productSupport, 'published');
+      expect(result.selectionSource, 'cli');
+      expect(result.releaseProvenance, 'unverified');
+    });
+
+    test('older doctor does not invent provenance fields', () async {
+      final result = await probe({
+        'command': 'doctor',
+        'checks': [compilerCheck('ok')],
+      });
+      expect(result.compatible, isTrue);
+      expect(result.releaseProvenance, isEmpty);
+      expect(result.productSupport, isEmpty);
+      expect(result.selectionSource, isEmpty);
+    });
+
     test('unrelated doctor errors do not hide a compatible pair', () async {
       final result = await probe({
         'command': 'doctor',

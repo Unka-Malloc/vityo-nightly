@@ -15,6 +15,8 @@ export 'execution_service.dart'
         FlowHeroExecutionUnavailableCause,
         FlowHeroToolchainCheck,
         FlowHeroToolchainDiagnosis,
+        FlowHeroToolchainPairCheck,
+        FlowHeroToolchainProvenanceDiagnosis,
         kFlowHeroPafioManifestName,
         kFlowHeroStyioSystemCandidatePaths;
 export 'language_service.dart'

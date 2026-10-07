@@ -832,6 +832,27 @@ class FlowHeroController extends ChangeNotifier {
     return const <FlowHeroToolchainKind, List<FlowHeroToolchainCheck>>{};
   }
 
+  /// Facts from the current boot, never from an unsaved input field.
+  FlowHeroToolchainPairCheck? get toolchainPairCheck =>
+      _execution is FlowHeroToolchainProvenanceDiagnosis
+      ? (_execution as FlowHeroToolchainProvenanceDiagnosis).pairCheck
+      : null;
+
+  String resolvedToolchainPath(FlowHeroToolchainKind kind) {
+    final Object? source = _execution;
+    if (source is! FlowHeroToolchainProvenanceDiagnosis) return '';
+    return kind == FlowHeroToolchainKind.pafio
+        ? source.pafioBinaryPath
+        : source.styioBinaryPath;
+  }
+
+  String resolvedToolchainOrigin(FlowHeroToolchainKind kind) {
+    final Object? source = _execution;
+    return source is FlowHeroToolchainProvenanceDiagnosis
+        ? source.selectionOrigins[kind] ?? ''
+        : '';
+  }
+
   /// The route's own classification of why it is unavailable; null while live
   /// or when the attached route carries no diagnosis.
   FlowHeroExecutionUnavailableCause? get executionUnavailableCause {

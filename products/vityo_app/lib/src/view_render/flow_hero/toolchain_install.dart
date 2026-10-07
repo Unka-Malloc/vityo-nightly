@@ -154,6 +154,19 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
                                 _stateBanner(c),
+                                const SizedBox(height: 6),
+                                Text(
+                                  c.toolchainPairCheck == null
+                                      ? 'Runtime compatibility: Not checked'
+                                      : 'Runtime compatibility: ${c.toolchainPairCheck!.compatible ? 'Compatible' : 'Incompatible'}',
+                                  key: const ValueKey(
+                                    'toolchain-install-compatibility',
+                                  ),
+                                  style: P.monoStyle(
+                                    color: P.paperLow,
+                                    size: 10.5,
+                                  ),
+                                ),
                                 for (final FlowHeroToolchainKind kind
                                     in _kinds) ...<Widget>[
                                   const SizedBox(height: 14),
@@ -263,6 +276,38 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Text(kind.displayName, style: P.silkStyle(hi: true)),
+          if (widget.controller
+              .resolvedToolchainPath(kind)
+              .isNotEmpty) ...<Widget>[
+            const SizedBox(height: 5),
+            Text(
+              'Selected: ${widget.controller.resolvedToolchainOrigin(kind)}\n${widget.controller.resolvedToolchainPath(kind)}',
+              key: ValueKey<String>('toolchain-install-selected-${kind.id}'),
+              style: P.monoStyle(color: P.paperLow, size: 10.5),
+            ),
+          ],
+          const SizedBox(height: 5),
+          Text(
+            kind == FlowHeroToolchainKind.pafio
+                ? 'Release provenance: Not verified by Vityo'
+                : widget.controller.toolchainPairCheck?.releaseProvenance ==
+                      'unverified'
+                ? 'Release provenance: Unverified (Pafio report)'
+                : 'Release provenance: Not verified by Vityo; no supported report',
+            key: ValueKey<String>('toolchain-install-provenance-${kind.id}'),
+            style: P.monoStyle(color: P.silkDim, size: 10.5),
+          ),
+          if (kind == FlowHeroToolchainKind.styio &&
+              widget.controller.toolchainPairCheck != null)
+            Text(
+              'Published support: ${switch (widget.controller.toolchainPairCheck!.productSupport) {
+                'published' => 'Listed in Pafio matrix',
+                'unlisted' => 'Not listed in Pafio matrix',
+                _ => 'Not reported',
+              }}',
+              key: const ValueKey('toolchain-install-product-support'),
+              style: P.monoStyle(color: P.silkDim, size: 10.5),
+            ),
           const SizedBox(height: 8),
           Text('已检查的位置', style: P.silkStyle(dim: true)),
           const SizedBox(height: 5),
