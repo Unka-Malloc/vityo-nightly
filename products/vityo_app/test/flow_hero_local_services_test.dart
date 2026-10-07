@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -35,6 +36,7 @@ final class _ScriptedDaemonTransport implements VityodTransport {
       StreamController<VityodBinaryFrame>.broadcast(sync: true);
   final List<String> methods = <String>[];
   final List<String> spawnedExecutables = <String>[];
+  final Map<Object?, String> _taskStdout = <Object?, String>{};
   final Map<String, String> _scopeRoots = <String, String>{};
   int disposeCalls = 0;
   int sessionsCreated = 0;
@@ -149,13 +151,30 @@ final class _ScriptedDaemonTransport implements VityodTransport {
     if (action == 'start') {
       final Object? executable = request.params['executable'];
       if (executable is String) spawnedExecutables.add(executable);
+      final arguments = request.params['arguments'];
+      _taskStdout[request.params['taskId']] =
+          arguments is List && arguments.contains('doctor')
+          ? jsonEncode({
+              'command': 'doctor',
+              'ok': true,
+              'checks': [
+                {
+                  'name': 'styio',
+                  'status': 'ok',
+                  'detail': {
+                    'supported_compile_plan_versions': [1],
+                  },
+                },
+              ],
+            })
+          : _versionStdout;
       return const <String, Object?>{'pid': 4242};
     }
     if (action == 'output') {
       return <String, Object?>{
         'running': false,
         'exitCode': 0,
-        'stdout': _versionStdout,
+        'stdout': _taskStdout[request.params['taskId']] ?? _versionStdout,
         'stderr': '',
         'durationMillis': 7,
       };

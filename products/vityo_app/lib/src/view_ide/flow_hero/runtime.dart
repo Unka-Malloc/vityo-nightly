@@ -22,23 +22,58 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
   factory ProductionFlowHeroRuntime({FlowHeroLocalServices? localServices}) =>
       ProductionFlowHeroRuntime._(localServices ?? FlowHeroLocalServices());
 
-  ProductionFlowHeroRuntime._(this.localServices)
-    : themeStore = FlowHeroThemeStoreBoot.deferred(
-        localServices: localServices,
-      ),
-      workspaceStore = FlowHeroWorkspaceStoreBoot.deferred(
-        localServices: localServices,
-      ),
-      modelConfigStore = FlowHeroModelConfigStoreBoot.deferred(
-        localServices: localServices,
-      ),
-      providerConfigWriter = FlowHeroProviderConfigWriterBoot.deferred(
-        localServices: localServices,
-      ),
-      agentSecretStore = const FlowHeroKeychainAgentSecretStore(),
-      toolchainStore = FlowHeroToolchainStoreBoot.deferred(
-        localServices: localServices,
-      );
+  /// Compile-only acceptance uses an explicit private store root and never
+  /// constructs provider or keychain adapters.
+  factory ProductionFlowHeroRuntime.compileAcceptance({
+    required FlowHeroLocalServices localServices,
+    required String homePath,
+    required Map<String, String> environment,
+  }) {
+    if (homePath.trim().isEmpty) {
+      throw ArgumentError.value(homePath, 'homePath', 'must not be empty');
+    }
+    return ProductionFlowHeroRuntime._(
+      localServices,
+      homePath: homePath,
+      agentEnabled: false,
+      environment: Map<String, String>.unmodifiable(environment),
+    );
+  }
+
+  ProductionFlowHeroRuntime._(
+    this.localServices, {
+    String? homePath,
+    this.agentEnabled = true,
+    Map<String, String>? environment,
+  }) : _environment = environment,
+       themeStore = FlowHeroThemeStoreBoot.deferred(
+         localServices: localServices,
+         homePath: homePath,
+       ),
+       workspaceStore = FlowHeroWorkspaceStoreBoot.deferred(
+         localServices: localServices,
+         homePath: homePath,
+       ),
+       modelConfigStore = agentEnabled
+           ? FlowHeroModelConfigStoreBoot.deferred(localServices: localServices)
+           : FlowHeroMemoryModelConfigStore(),
+       providerConfigWriter = agentEnabled
+           ? FlowHeroProviderConfigWriterBoot.deferred(
+               localServices: localServices,
+             )
+           : const FlowHeroUnavailableProviderConfigWriter(),
+       agentSecretStore = agentEnabled
+           ? const FlowHeroKeychainAgentSecretStore()
+           : const FlowHeroDisabledAgentSecretStore(),
+       toolchainStore = FlowHeroToolchainStoreBoot.deferred(
+         localServices: localServices,
+         homePath: homePath,
+       );
+
+  final Map<String, String>? _environment;
+
+  @override
+  final bool agentEnabled;
 
   @override
   final FlowHeroLocalServices localServices;
@@ -66,6 +101,7 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
   ) async => FlowHeroExecutionRuntime.boot(
     workspaceRoot: workspaceRoot,
     toolchainSelection: selection,
+    environment: _environment,
     vityodClient: await _clientFor(workspaceRoot),
   );
 
@@ -76,6 +112,8 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
   ) async => FlowHeroLanguageRuntime.boot(
     workspaceRoot: workspaceRoot,
     toolchainSelection: selection,
+    environment: _environment,
+    requireVityod: !agentEnabled,
     vityodClient: await _clientFor(workspaceRoot),
   );
 
@@ -86,6 +124,7 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
   ) async => probeFlowHeroToolchainBinary(
     kind: kind,
     path: path,
+    environment: _environment,
     vityodClient: await localServices.client(),
   );
 

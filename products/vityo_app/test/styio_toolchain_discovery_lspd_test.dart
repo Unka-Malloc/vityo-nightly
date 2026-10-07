@@ -250,6 +250,109 @@ void main() {
     },
     skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
   );
+
+  for (final exists in <bool>[false, true]) {
+    test('a ${exists ? 'non-executable' : 'missing'} explicit Styio selection '
+        'blocks bundled and system fallback', () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_styio_invalid_selection_test_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
+      final managers = await _managers(tempRoot);
+      final appExecutable = _fakeAppExecutablePath(tempRoot);
+      final selectedPath = '${tempRoot.path}/selected/styio';
+      final systemPath = '${tempRoot.path}/system/styio';
+      await _makeExecutable(
+        managers,
+        _bundledComponentPath(appExecutable, 'styio'),
+      );
+      await _makeExecutable(managers, systemPath);
+      if (exists) {
+        await managers.fileSystem.writeText(selectedPath, '#!/bin/sh\n');
+      }
+
+      final catalog = await createPlatformStyioLanguageToolchainCatalog(
+        platformManagers: managers,
+        environment: <String, String>{'VITYO_STYIO_BIN': selectedPath},
+        candidatePaths: <String>[systemPath],
+        bundledExecutablePath: appExecutable,
+      );
+
+      expect(catalog.active(ToolchainKind.languageService), isNull);
+      expect(catalog.lookup('local-styio-language-service'), isNull);
+    }, skip: Platform.isWindows ? 'POSIX discovery fixture.' : false);
+  }
+
+  test(
+    'a missing explicit LSPD selection blocks bundled and adjacent fallback',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_lspd_invalid_selection_test_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
+      final managers = await _managers(tempRoot);
+      final appExecutable = _fakeAppExecutablePath(tempRoot);
+      final styioPath = '${tempRoot.path}/system/styio';
+      await _makeExecutable(managers, styioPath);
+      await _makeExecutable(managers, '${tempRoot.path}/system/styio_lspd');
+      await _makeExecutable(
+        managers,
+        _bundledComponentPath(appExecutable, 'styio_lspd'),
+      );
+
+      final catalog = await createPlatformStyioLanguageToolchainCatalog(
+        platformManagers: managers,
+        environment: <String, String>{
+          'VITYO_STYIO_LSPD_BIN': '${tempRoot.path}/missing/styio_lspd',
+        },
+        candidatePaths: <String>[styioPath],
+        bundledExecutablePath: appExecutable,
+      );
+
+      expect(
+        catalog.active(ToolchainKind.languageService)?.executablePath,
+        styioPath,
+      );
+      expect(catalog.lookup(styioLspDaemonToolchainId), isNull);
+    },
+    skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
+  );
+
+  test(
+    'empty Styio and LSPD overrides permit bundled discovery',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_styio_empty_selection_test_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
+      final managers = await _managers(tempRoot);
+      final appExecutable = _fakeAppExecutablePath(tempRoot);
+      final styioPath = _bundledComponentPath(appExecutable, 'styio');
+      final lspdPath = _bundledComponentPath(appExecutable, 'styio_lspd');
+      await _makeExecutable(managers, styioPath);
+      await _makeExecutable(managers, lspdPath);
+
+      final catalog = await createPlatformStyioLanguageToolchainCatalog(
+        platformManagers: managers,
+        environment: const <String, String>{
+          'VITYO_STYIO_BIN': '',
+          'VITYO_STYIO_LSPD_BIN': '',
+        },
+        candidatePaths: const <String>[],
+        bundledExecutablePath: appExecutable,
+      );
+
+      expect(
+        catalog.active(ToolchainKind.languageService)?.executablePath,
+        styioPath,
+      );
+      expect(
+        catalog.lookup(styioLspDaemonToolchainId)?.executablePath,
+        lspdPath,
+      );
+    },
+    skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
+  );
 }
 
 VityodTestHarness? _harnessInstance;

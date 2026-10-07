@@ -586,6 +586,25 @@ abstract class FlowHeroAgentSecretStore {
   Future<void> deleteKey();
 }
 
+/// Compile acceptance has no credential backend, including read/existence
+/// access. Mutations fail explicitly rather than claiming that a key was saved.
+class FlowHeroDisabledAgentSecretStore implements FlowHeroAgentSecretStore {
+  const FlowHeroDisabledAgentSecretStore();
+
+  @override
+  Future<bool> hasKey() async => false;
+
+  @override
+  Future<void> saveKey(String key) => Future<void>.error(
+    StateError('Agent is disabled for compile acceptance'),
+  );
+
+  @override
+  Future<void> deleteKey() => Future<void>.error(
+    StateError('Agent is disabled for compile acceptance'),
+  );
+}
+
 /// The production keychain backend.
 ///
 /// The `accountName` maps to `kSecAttrService` and the storage key to

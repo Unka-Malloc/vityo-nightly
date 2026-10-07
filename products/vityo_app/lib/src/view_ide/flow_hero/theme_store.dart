@@ -46,11 +46,15 @@ abstract class FlowHeroThemeStore {
 class FlowHeroThemeStoreBoot {
   const FlowHeroThemeStoreBoot._();
 
-  static Future<FlowHeroThemeStore> boot({VityodClient? vityodClient}) async {
+  static Future<FlowHeroThemeStore> boot({
+    VityodClient? vityodClient,
+    String? homePath,
+  }) async {
     try {
       final PlatformManagerBundle managers =
           await createDetectedPlatformManagerBundle(vityodClient: vityodClient);
-      final String home = managers.context.resource.homePath?.trim() ?? '';
+      final String home = (homePath ?? managers.context.resource.homePath ?? '')
+          .trim();
       if (home.isEmpty) {
         return FlowHeroMemoryThemeStore();
       }
@@ -76,15 +80,18 @@ class FlowHeroThemeStoreBoot {
   ///
   /// [localServices] supplies the shared vityod client the platform
   /// file-system manager needs; without one the "file" store persists nothing.
-  static FlowHeroThemeStore deferred({FlowHeroLocalServices? localServices}) =>
-      _DeferredFlowHeroThemeStore(localServices);
+  static FlowHeroThemeStore deferred({
+    FlowHeroLocalServices? localServices,
+    String? homePath,
+  }) => _DeferredFlowHeroThemeStore(localServices, homePath);
 }
 
 /// Lazily boots the real store; see [FlowHeroThemeStoreBoot.deferred].
 class _DeferredFlowHeroThemeStore implements FlowHeroThemeStore {
-  _DeferredFlowHeroThemeStore(this._localServices);
+  _DeferredFlowHeroThemeStore(this._localServices, this._homePath);
 
   final FlowHeroLocalServices? _localServices;
+  final String? _homePath;
   Future<FlowHeroThemeStore>? _resolved;
   FlowHeroThemeStore? _store;
 
@@ -93,8 +100,10 @@ class _DeferredFlowHeroThemeStore implements FlowHeroThemeStore {
     return _store ??= await resolved;
   }
 
-  Future<FlowHeroThemeStore> _boot() async =>
-      FlowHeroThemeStoreBoot.boot(vityodClient: await _localServices?.client());
+  Future<FlowHeroThemeStore> _boot() async => FlowHeroThemeStoreBoot.boot(
+    vityodClient: await _localServices?.client(),
+    homePath: _homePath,
+  );
 
   @override
   bool get persistent => _store?.persistent ?? false;

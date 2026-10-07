@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 adapter 合同、integration 层以及上游 `styio` / `pafio` handoff 文档的日常维护入口。
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-07
 
 ## Mission
 
@@ -35,6 +35,12 @@ Key SSOTs:
 4. `仓库边界 -> ../specs/REPOSITORY-MAP.md`
 
 ## Daily Workflow
+
+Local Flow Hero admission consumes the selected Pafio doctor compiler check.
+An unrelated missing lock/cache finding does not negate that check. Unknown product
+versions may be advisory after mandatory contracts pass; no Vityo version allowlist
+replaces Pafio admission. Run/Test success consumes the existing workflow envelope
+and matching executed Styio receipt, with no new runtime protocol.
 
 Maintained contracts trace to the product specification, architecture decisions, and
 test catalog. Transient external execution plans are not repository contract sources

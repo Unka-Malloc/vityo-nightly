@@ -94,6 +94,11 @@ Future<String?> _discoverManagedStyioExecutablePath(
       return candidate;
     }
   }
+  // Environment and persisted user selections share this explicit slot.
+  // Never replace a broken selection with a different bundled/system CLI.
+  if (override != null && override.isNotEmpty) {
+    return null;
+  }
 
   for (final candidate in bundledToolchainCandidatePaths(
     'styio',
@@ -132,6 +137,9 @@ Future<String?> _discoverManagedStyioLspDaemonPath(
     if (await _isExecutablePath(platformManagers, candidate)) {
       return candidate;
     }
+  }
+  if (override != null && override.isNotEmpty) {
+    return null;
   }
 
   // A daemon bundled beside the app executable, including the copy shipped

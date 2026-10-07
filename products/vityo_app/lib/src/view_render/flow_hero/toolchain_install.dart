@@ -53,16 +53,9 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
     super.dispose();
   }
 
-  /// The tools this dialog offers. The route's own missing set when it has one;
-  /// otherwise both, because the user asked to set a toolchain up.
-  List<FlowHeroToolchainKind> get _kinds {
-    final Set<FlowHeroToolchainKind> missing =
-        widget.controller.missingToolchains;
-    final List<FlowHeroToolchainKind> ordered = FlowHeroToolchainKind.values
-        .where((FlowHeroToolchainKind kind) => missing.contains(kind))
-        .toList(growable: false);
-    return ordered.isEmpty ? FlowHeroToolchainKind.values : ordered;
-  }
+  /// Both selections remain editable, even when only one tool is missing or
+  /// incompatible, so the user can choose a matching pair.
+  List<FlowHeroToolchainKind> get _kinds => FlowHeroToolchainKind.values;
 
   Future<void> _verify(FlowHeroToolchainKind kind) async {
     final String path = _paths[kind]!.text.trim();
@@ -94,7 +87,7 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
       _noteIsFailure = !result.saved;
       _note = result.saved
           ? <String>[
-              '已保存并启用 · ${result.stateLine}',
+              '已保存 · ${result.stateLine}',
               if (result.languageNote.isNotEmpty) result.languageNote,
             ].join('\n')
           : result.failureMessage;
@@ -378,7 +371,7 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
           Expanded(
             child: Text(
               c.toolchainStorePersistent
-                  ? '选择将写入 ~/.vityo/flow-hero/toolchain.json'
+                  ? '选择将写入当前配置目录的 toolchain.json'
                   : '本次会话有效 · 未持久化',
               style: P.monoStyle(color: P.silkDim, size: 10),
               overflow: TextOverflow.ellipsis,

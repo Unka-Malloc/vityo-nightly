@@ -125,11 +125,16 @@ final class _AgentBridgeAttachment {
 
 class AgentBridge extends ChangeNotifier {
   AgentBridge({
+    this.enabled = true,
     this.clientProvider,
     @visibleForTesting this.clientFactory,
     @visibleForTesting this.launchResolver,
     @visibleForTesting this.workspaceDirectory,
   });
+
+  /// Immutable launch guard. Checked before provider probes, path resolution,
+  /// daemon acquisition, or session creation, including every reconnect.
+  final bool enabled;
 
   static const String agentId = firstPartyCodingAgentId;
 
@@ -290,10 +295,12 @@ class AgentBridge extends ChangeNotifier {
         _activeAttachment = null;
         _pendingPermissions.clear();
         _pendingWorkspaceReviews.clear();
-        mode = workspaceRoot.isEmpty
+        mode = !enabled || workspaceRoot.isEmpty
             ? AgentLinkMode.demo
             : AgentLinkMode.connecting;
-        statusLine = workspaceRoot.isEmpty ? '未配置 Agent 工作区 · 演示会话' : '连接本地服务…';
+        statusLine = !enabled
+            ? '编译验收模式 · Agent 已禁用'
+            : (workspaceRoot.isEmpty ? '未配置 Agent 工作区 · 演示会话' : '连接本地服务…');
         _notifyIfAlive();
         if (previous != null) await previous.release();
         if (!_isDesired(generation, workspaceRoot)) continue;
@@ -342,6 +349,10 @@ class AgentBridge extends ChangeNotifier {
       workspaceRoot: workspaceRoot,
     );
     try {
+      if (!enabled) {
+        _showDemo(attachment, '编译验收模式 · Agent 已禁用');
+        return;
+      }
       if (workspaceRoot.isEmpty) {
         _showDemo(attachment, '未配置 Agent 工作区 · 演示会话');
         return;

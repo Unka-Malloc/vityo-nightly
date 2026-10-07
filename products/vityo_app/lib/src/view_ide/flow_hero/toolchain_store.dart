@@ -123,11 +123,13 @@ class FlowHeroToolchainStoreBoot {
 
   static Future<FlowHeroToolchainStore> boot({
     VityodClient? vityodClient,
+    String? homePath,
   }) async {
     try {
       final PlatformManagerBundle managers =
           await createDetectedPlatformManagerBundle(vityodClient: vityodClient);
-      final String home = managers.context.resource.homePath?.trim() ?? '';
+      final String home = (homePath ?? managers.context.resource.homePath ?? '')
+          .trim();
       if (home.isEmpty) {
         return FlowHeroMemoryToolchainStore();
       }
@@ -156,14 +158,16 @@ class FlowHeroToolchainStoreBoot {
   /// claim persistence while silently storing nothing.
   static FlowHeroToolchainStore deferred({
     FlowHeroLocalServices? localServices,
-  }) => _DeferredFlowHeroToolchainStore(localServices);
+    String? homePath,
+  }) => _DeferredFlowHeroToolchainStore(localServices, homePath);
 }
 
 /// Lazily boots the real store; see [FlowHeroToolchainStoreBoot.deferred].
 class _DeferredFlowHeroToolchainStore implements FlowHeroToolchainStore {
-  _DeferredFlowHeroToolchainStore(this._localServices);
+  _DeferredFlowHeroToolchainStore(this._localServices, this._homePath);
 
   final FlowHeroLocalServices? _localServices;
+  final String? _homePath;
   Future<FlowHeroToolchainStore>? _resolved;
   FlowHeroToolchainStore? _store;
 
@@ -175,6 +179,7 @@ class _DeferredFlowHeroToolchainStore implements FlowHeroToolchainStore {
   Future<FlowHeroToolchainStore> _boot() async =>
       FlowHeroToolchainStoreBoot.boot(
         vityodClient: await _localServices?.client(),
+        homePath: _homePath,
       );
 
   @override

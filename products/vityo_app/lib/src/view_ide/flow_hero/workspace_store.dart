@@ -51,11 +51,13 @@ class FlowHeroWorkspaceStoreBoot {
 
   static Future<FlowHeroWorkspaceStore> boot({
     VityodClient? vityodClient,
+    String? homePath,
   }) async {
     try {
       final PlatformManagerBundle managers =
           await createDetectedPlatformManagerBundle(vityodClient: vityodClient);
-      final String home = managers.context.resource.homePath?.trim() ?? '';
+      final String home = (homePath ?? managers.context.resource.homePath ?? '')
+          .trim();
       if (home.isEmpty) {
         return FlowHeroMemoryWorkspaceStore();
       }
@@ -83,14 +85,16 @@ class FlowHeroWorkspaceStoreBoot {
   /// manager needs; without one the "file" store persists nothing.
   static FlowHeroWorkspaceStore deferred({
     FlowHeroLocalServices? localServices,
-  }) => _DeferredFlowHeroWorkspaceStore(localServices);
+    String? homePath,
+  }) => _DeferredFlowHeroWorkspaceStore(localServices, homePath);
 }
 
 /// Lazily boots the real store; see [FlowHeroWorkspaceStoreBoot.deferred].
 class _DeferredFlowHeroWorkspaceStore implements FlowHeroWorkspaceStore {
-  _DeferredFlowHeroWorkspaceStore(this._localServices);
+  _DeferredFlowHeroWorkspaceStore(this._localServices, this._homePath);
 
   final FlowHeroLocalServices? _localServices;
+  final String? _homePath;
   Future<FlowHeroWorkspaceStore>? _resolved;
   FlowHeroWorkspaceStore? _store;
 
@@ -102,6 +106,7 @@ class _DeferredFlowHeroWorkspaceStore implements FlowHeroWorkspaceStore {
   Future<FlowHeroWorkspaceStore> _boot() async =>
       FlowHeroWorkspaceStoreBoot.boot(
         vityodClient: await _localServices?.client(),
+        homePath: _homePath,
       );
 
   @override

@@ -200,7 +200,152 @@ ProcessCommandResult _failed({
 }
 
 void main() {
+  group('real Pafio pair-check contract', () {
+    Future<FlowHeroToolchainPairCheck> probe(
+      Object payload, {
+      int exitCode = 0,
+      void Function(ProcessCommandRequest)? inspect,
+    }) => checkFlowHeroToolchainPair(
+      process: _ScriptedProcessManager((request) async {
+        inspect?.call(request);
+        return ProcessCommandResult(
+          status: exitCode == 0
+              ? ProcessCommandStatus.succeeded
+              : ProcessCommandStatus.failed,
+          executablePath: request.executablePath,
+          arguments: request.arguments,
+          exitCode: exitCode,
+          stdout: jsonEncode(payload),
+          stderr: '',
+          duration: Duration.zero,
+        );
+      }),
+      pafioBinaryPath: '/selected/pafio',
+      styioBinaryPath: '/selected/styio',
+      workspaceRoot: '/project',
+      manifestPath: '/project/pafio.toml',
+      environment: const {'PAIR_TEST': 'yes'},
+    );
+
+    Map<String, Object?> compilerCheck(String status) => {
+      'name': 'styio',
+      'status': status,
+      'message': 'compiler contract status',
+      'detail': {
+        'supported_compile_plan_versions': [1],
+      },
+    };
+
+    test('checks exact selected pair without executing or syncing', () async {
+      final result = await probe(
+        {
+          'command': 'doctor',
+          'ok': true,
+          'checks': [compilerCheck('ok')],
+        },
+        inspect: (request) {
+          expect(request.executablePath, '/selected/pafio');
+          expect(request.arguments, [
+            '--json',
+            'doctor',
+            '--manifest-path',
+            '/project/pafio.toml',
+            '--styio-bin',
+            '/selected/styio',
+          ]);
+          expect(request.workingDirectory, '/project');
+          expect(request.environment['PAIR_TEST'], 'yes');
+        },
+      );
+      expect(result.compatible, isTrue);
+      expect(result.advisory, isFalse);
+    });
+
+    test(
+      'unlisted local product version is advisory after contract checks',
+      () async {
+        final result = await probe({
+          'command': 'doctor',
+          'checks': [compilerCheck('warning')],
+        });
+        expect(result.compatible, isTrue);
+        expect(result.advisory, isTrue);
+      },
+    );
+
+    test('unrelated doctor errors do not hide a compatible pair', () async {
+      final result = await probe({
+        'command': 'doctor',
+        'ok': false,
+        'checks': [
+          compilerCheck('ok'),
+          {'name': 'lockfile', 'status': 'error'},
+        ],
+      }, exitCode: 1);
+      expect(result.compatible, isTrue);
+    });
+
+    for (final payload in <Object>[
+      {
+        'command': 'doctor',
+        'checks': [compilerCheck('error')],
+      },
+      {
+        'command': 'doctor',
+        'checks': [
+          {'name': 'styio', 'status': 'ok'},
+        ],
+      },
+      {
+        'command': 'doctor',
+        'checks': [compilerCheck('ok'), compilerCheck('ok')],
+      },
+      {'command': 'doctor', 'checks': []},
+      {
+        'command': 'run',
+        'checks': [compilerCheck('ok')],
+      },
+      'invalid JSON shape',
+    ]) {
+      test('rejects missing or contradictory pair evidence $payload', () async {
+        expect((await probe(payload)).compatible, isFalse);
+      });
+    }
+  });
+
   group('controller RUN/TEST states', () {
+    test('a failed rerun replaces the prior successful result', () async {
+      final source = _FakeExecutionSource(live: true);
+      final controller = FlowHeroController(executionSource: source);
+      addTearDown(controller.dispose);
+      final first = controller.runExecution(FlowHeroExecutionKind.run);
+      source.complete(
+        _outcome(
+          FlowHeroExecutionKind.run,
+          FlowHeroExecutionPhase.succeeded,
+          receiptText: 'first success',
+        ),
+      );
+      await first;
+      expect(controller.lastExecutionOutcome?.succeeded, isTrue);
+      final second = controller.runExecution(FlowHeroExecutionKind.run);
+      expect(controller.lastExecutionOutcome, isNull);
+      source.complete(
+        _outcome(
+          FlowHeroExecutionKind.run,
+          FlowHeroExecutionPhase.failed,
+          statusLine: 'compile failed',
+          receiptText: 'second failed',
+        ),
+      );
+      await second;
+      expect(controller.executionPhase, FlowHeroExecutionPhase.failed);
+      expect(controller.lastExecutionOutcome?.receipt, isNull);
+      expect(controller.executionStatusLabel, 'compile failed');
+      expect(controller.messages.last.text, contains('second failed'));
+      expect(controller.messages.last.text, isNot(contains('first success')));
+    });
+
     test('an unavailable route disables RUN and names the reason', () async {
       final source = _FakeExecutionSource(
         live: false,
@@ -319,6 +464,7 @@ void main() {
     FlowHeroExecutionRuntime runtimeWith(
       _ScriptedProcessManager process, {
       required String pafioPath,
+      Map<String, String> environment = const <String, String>{},
     }) {
       return FlowHeroExecutionRuntime.forTesting(
         process: process,
@@ -327,6 +473,7 @@ void main() {
         pafioBinaryPath: pafioPath,
         styioBinaryPath: '/usr/bin/styio',
         manifestPath: '${workspace.path}/pafio.toml',
+        environment: environment,
       );
     }
 
@@ -337,6 +484,7 @@ void main() {
       File('$buildRoot/receipt.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
           'schema_version': 1,
+          'tool': 'styio',
           'intent': 'run',
           'session_id': 's-1',
           'executed': true,
@@ -346,6 +494,8 @@ void main() {
       );
 
       final process = _ScriptedProcessManager((request) async {
+        expect(request.environment['HOME'], '/isolated/home');
+        expect(request.environment['PAFIO_HOME'], '/isolated/pafio');
         request.onStarted?.call(
           const ProcessCommandHandle(
             processHandleId: 'h-1',
@@ -356,12 +506,26 @@ void main() {
           request: request,
           stdout: jsonEncode(<String, Object?>{
             'status': 'succeeded',
+            'command': 'run',
+            'intent': 'run',
+            'mode': 'execute',
+            'styio': <String, Object?>{
+              'status': 'succeeded',
+              'process': <String, Object?>{'exit_code': 0},
+            },
             'message': 'Project binary run completed through pafio.',
             'plan': <String, Object?>{'build_root': '.pafio/build/s-1'},
           }),
         );
       });
-      final runtime = runtimeWith(process, pafioPath: '/usr/local/bin/pafio');
+      final runtime = runtimeWith(
+        process,
+        pafioPath: '/usr/local/bin/pafio',
+        environment: const {
+          'HOME': '/isolated/home',
+          'PAFIO_HOME': '/isolated/pafio',
+        },
+      );
       addTearDown(runtime.dispose);
 
       bool started = false;
@@ -388,6 +552,18 @@ void main() {
     });
 
     test('a non-zero exit becomes an honest failure', () async {
+      final oldBuild = Directory('${workspace.path}/.pafio/build/previous')
+        ..createSync(recursive: true);
+      File('${oldBuild.path}/receipt.json').writeAsStringSync(
+        jsonEncode({
+          'schema_version': 1,
+          'intent': 'test',
+          'session_id': 'old-success',
+          'executed': true,
+          'tool': 'styio',
+          'artifacts': <String>[],
+        }),
+      );
       final process = _ScriptedProcessManager(
         (request) async => _failed(
           request: request,
@@ -404,7 +580,72 @@ void main() {
       expect(outcome.exitCode, 2);
       expect(outcome.statusLine, contains('exit 2'));
       expect(outcome.receiptText, contains('compile failed'));
+      expect(outcome.receipt, isNull);
+      expect(outcome.receiptText, isNot(contains('old-success')));
     });
+
+    for (final scenario in <String>[
+      'invalid envelope',
+      'missing receipt',
+      'wrong intent',
+      'not executed',
+      'unsupported receipt',
+      'outside workspace',
+      'missing session',
+      'empty session',
+      'wrong tool',
+      'malformed artifacts',
+      'malformed phases',
+    ]) {
+      test('zero exit cannot prove success with $scenario', () async {
+        final buildRoot = Directory('${workspace.path}/.pafio/build/current')
+          ..createSync(recursive: true);
+        if (scenario != 'missing receipt') {
+          File('${buildRoot.path}/receipt.json').writeAsStringSync(
+            jsonEncode({
+              'schema_version': scenario == 'unsupported receipt' ? 99 : 1,
+              'tool': scenario == 'wrong tool' ? 'other' : 'styio',
+              'intent': scenario == 'wrong intent' ? 'test' : 'run',
+              if (scenario != 'missing session')
+                'session_id': scenario == 'empty session' ? '  ' : 'fixture',
+              'executed': scenario != 'not executed',
+              'artifacts': scenario == 'malformed artifacts'
+                  ? [42]
+                  : <String>[],
+              if (scenario == 'malformed phases') 'phases': [42],
+            }),
+          );
+        }
+        final process = _ScriptedProcessManager(
+          (request) async => _succeeded(
+            request: request,
+            stdout: scenario == 'invalid envelope'
+                ? 'not a result'
+                : jsonEncode({
+                    'status': 'succeeded',
+                    'command': 'run',
+                    'intent': 'run',
+                    'mode': 'execute',
+                    'styio': {
+                      'status': 'succeeded',
+                      'process': {'exit_code': 0},
+                    },
+                    'plan': {
+                      'build_root': scenario == 'outside workspace'
+                          ? '../outside'
+                          : '.pafio/build/current',
+                    },
+                  }),
+          ),
+        );
+        final runtime = runtimeWith(process, pafioPath: '/chosen/pafio');
+        addTearDown(runtime.dispose);
+        final outcome = await runtime.execute(FlowHeroExecutionKind.run);
+        expect(outcome.phase, FlowHeroExecutionPhase.failed);
+        expect(outcome.statusLine, '结果未验证');
+        expect(outcome.receipt, isNull);
+      });
+    }
 
     test('a workspace-less boot is unavailable and never runs', () async {
       final runtime = await FlowHeroExecutionRuntime.boot(workspaceRoot: '');

@@ -182,6 +182,7 @@ class FlowHeroController extends ChangeNotifier {
     FlowHeroLanguageBoot? languageBoot,
     FlowHeroToolchainProbe? toolchainProbe,
     this.localServices,
+    this.agentEnabled = true,
   }) : _workspaceFileIndexFactory =
            workspaceFileIndexFactory ?? _defaultWorkspaceFileIndexFactory,
        workspaceFileIndex =
@@ -235,10 +236,14 @@ class FlowHeroController extends ChangeNotifier {
   /// the creator owns disposal.
   final FlowHeroLocalServiceOwner? localServices;
 
+  /// Compile acceptance disables every Agent state and launch path.
+  final bool agentEnabled;
+
   /// The real agent link (vityod gateway → registry → session). Demo mode
   /// until attach() proves otherwise. It borrows [localServices]' client — the
   /// bridge never disposes the shared connection.
   late final AgentBridge bridge = AgentBridge(
+    enabled: agentEnabled,
     clientProvider: () async => localServices?.client(),
   );
   bool _liveTranscript = false;
@@ -1176,6 +1181,7 @@ class FlowHeroController extends ChangeNotifier {
   bool get hasModelApiKey => _hasModelApiKey;
 
   Future<bool> _modelRouteReady() async {
+    if (!agentEnabled) return false;
     await _modelConfigBooted.future;
     final FlowHeroProviderConfigWriter? writer = _providerConfigWriter;
     // No writer only happens for tests and bare embeddings, where the caller
@@ -1190,6 +1196,7 @@ class FlowHeroController extends ChangeNotifier {
 
   Future<void> _bootModelConfig() async {
     try {
+      if (!agentEnabled) return;
       final FlowHeroModelConfigStore? store = _modelConfigStore;
       if (store != null) {
         final FlowHeroModelConfig? loaded = await store.load();
@@ -1214,6 +1221,9 @@ class FlowHeroController extends ChangeNotifier {
     FlowHeroModelConfig config, {
     String? apiKey,
   }) async {
+    if (!agentEnabled) {
+      return FlowHeroModelConfigSaveResult.failed('编译验收模式已禁用 Agent');
+    }
     final String key = apiKey?.trim() ?? '';
     final Map<String, String> errors = config.validateForSave(
       hasStoredApiKey: _hasModelApiKey || key.isNotEmpty,

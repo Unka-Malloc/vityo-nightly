@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-06
+**Last updated:** 2026-10-07
 
 ## Mission
 
@@ -78,6 +78,11 @@ claims.
 16. `已实现决策摘要 -> ../adr/IMPLEMENTED-DECISIONS.md`
 
 ## Daily Workflow
+
+For local toolchain delivery, distinguish explicit-path selection, Pafio compiler-contract
+evidence, and release certification. Keep the Run/Test receipt rejection cases in the
+auto-discovered Flutter test root; report native Pafio tests and isolated client
+launch separately from real macOS UI acceptance.
 
 The shared test stage runs actual pinned language fixtures between the portable IDE
 suites and prototype checks, and stops on failure. Python coverage dependencies belong

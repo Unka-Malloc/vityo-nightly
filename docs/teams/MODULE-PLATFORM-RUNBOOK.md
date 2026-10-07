@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 module host、platform capability、六端 runner 与分发路径的日常维护入口。
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-07
 
 ## Mission
 
@@ -39,6 +39,11 @@ Key SSOTs:
 4. `卸载与 hosted 保留策略 -> ../adr/ADR-0015-uninstall-reclamation-and-hosted-workspace-retention.md`
 
 ## Daily Workflow
+
+Explicit local toolchain paths are fail-closed: environment overrides outrank saved
+choices, and an invalid explicit choice must not fall back to bundled/system tools.
+The isolated compile acceptance bootstrap must use a fresh workspace and daemon
+state/endpoint before connecting, and must never borrow installed Agent credentials.
 
 1. 变更前先确认属于 module lifecycle、platform gating 还是 runner/config 层。
 2. 任何 iOS 执行路径变更都必须先回看平台约束，不得暗示任意本地 JIT。
