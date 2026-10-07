@@ -155,6 +155,37 @@ void main() {
     skip: Platform.isWindows ? 'UNIX socket fixture.' : false,
   );
 
+  for (final root in <String>['/tmp/private-run', r'C:\Temp\private-run']) {
+    test('store path isolation comparisons preserve boundaries for $root', () {
+      final storeRoot = _storePath('$root/fixture-home/.vityo/flow-hero');
+      for (final separator in <String>['/', r'\']) {
+        final nativeRoot = root.replaceAll(r'\', separator);
+        final relative = <String>[
+          'fixture-home',
+          '.vityo',
+          'flow-hero',
+          'theme.json',
+        ].join(separator);
+        // Match the fake daemon's scope + '/' + native relative-path framing.
+        final path = _storePath('$nativeRoot/$relative');
+        expect(path.startsWith('$storeRoot/'), isTrue);
+        expect(path, '$storeRoot/theme.json');
+      }
+      expect(
+        _storePath(
+          '$root/fixture-home/.vityo/flow-hero-other/theme.json',
+        ).startsWith('$storeRoot/'),
+        isFalse,
+      );
+      expect(
+        _storePath(
+          '$root/normal-home/.vityo/flow-hero/theme.json',
+        ).startsWith('$storeRoot/'),
+        isFalse,
+      );
+    });
+  }
+
   test(
     'production store adapters read and write only the isolated store paths',
     () async {
@@ -188,17 +219,22 @@ void main() {
       expect(await runtime.themeStore.loadDark(), isFalse);
       expect(await runtime.workspaceStore.load(), '${root.path}/workspace');
       expect((await runtime.toolchainStore.load())?.styioPath, '/tools/styio');
+      // Daemon scopes and relative paths use native separators. Compare the
+      // same canonical spelling on both sides, including Windows temp roots.
+      final storeRoot = _storePath(
+        '${root.path}/fixture-home/.vityo/flow-hero',
+      );
       expect(transport.paths, isNotEmpty);
       expect(
         transport.paths.every(
-          (path) => path.startsWith('${root.path}/fixture-home/.vityo/flow-hero/'),
+          (path) => _storePath(path).startsWith('$storeRoot/'),
         ),
         isTrue,
       );
-      expect(transport.files.keys.toSet(), <String>{
-        '${root.path}/fixture-home/.vityo/flow-hero/theme.json',
-        '${root.path}/fixture-home/.vityo/flow-hero/workspace.json',
-        '${root.path}/fixture-home/.vityo/flow-hero/toolchain.json',
+      expect(transport.files.keys.map(_storePath).toSet(), <String>{
+        '$storeRoot/theme.json',
+        '$storeRoot/workspace.json',
+        '$storeRoot/toolchain.json',
       });
       expect(
         transport.methods.any((method) => method.startsWith('agent.')),
@@ -299,6 +335,9 @@ class _PoisonAgentState
   @override
   Future<void> deleteKey() async => _touch();
 }
+
+// Normalize separators only: retain the full root and exact file names.
+String _storePath(String path) => path.replaceAll(r'\', '/');
 
 /// Fake only the daemon boundary, keeping real store boot, path selection,
 /// serialization, protocol framing and file-system manager behavior in test.
