@@ -284,7 +284,10 @@ abstract interface class FlowHeroToolchainProvenanceDiagnosis {
 
 /// Boots the real pafio route and, while live, executes through it.
 class FlowHeroExecutionRuntime
-    implements FlowHeroExecutionSource, FlowHeroToolchainDiagnosis, FlowHeroToolchainProvenanceDiagnosis {
+    implements
+        FlowHeroExecutionSource,
+        FlowHeroToolchainDiagnosis,
+        FlowHeroToolchainProvenanceDiagnosis {
   FlowHeroExecutionRuntime._({
     required this.mode,
     required this.statusLine,
@@ -599,7 +602,9 @@ class FlowHeroExecutionRuntime
   final String unavailableReason;
 
   /// Last doctor result. Null means compatibility has not been checked.
+  @override
   final FlowHeroToolchainPairCheck? pairCheck;
+  @override
   final Map<FlowHeroToolchainKind, String> selectionOrigins;
 
   final String _workspaceRoot;
@@ -621,9 +626,11 @@ class FlowHeroExecutionRuntime
 
   /// The pafio executable this route resolved; empty while unavailable. Exposed
   /// so a caller can verify *which* binary a boot actually picked.
+  @override
   String get pafioBinaryPath => _pafioBinaryPath;
 
   /// The Styio compiler this route resolved; empty while unavailable.
+  @override
   String get styioBinaryPath => _styioBinaryPath;
 
   @override

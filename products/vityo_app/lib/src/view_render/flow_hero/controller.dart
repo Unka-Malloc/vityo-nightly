@@ -15,6 +15,7 @@ import 'engine/machine.dart';
 import 'flow_model.dart';
 import 'palette.dart';
 import 'workspace_picker.dart';
+import 'toolchain_picker.dart';
 
 /// Boots the execution route for the exact workspace and toolchain selection
 /// that will own it.
@@ -181,6 +182,8 @@ class FlowHeroController extends ChangeNotifier {
     FlowHeroExecutionBoot? executionBoot,
     FlowHeroLanguageBoot? languageBoot,
     FlowHeroToolchainProbe? toolchainProbe,
+    FlowHeroToolchainCandidateDiscovery? toolchainCandidateDiscovery,
+    FlowHeroToolchainFilePicker? toolchainFilePicker,
     this.localServices,
     this.agentEnabled = true,
   }) : _workspaceFileIndexFactory =
@@ -199,6 +202,8 @@ class FlowHeroController extends ChangeNotifier {
     _executionBoot = executionBoot;
     _languageBoot = languageBoot;
     _toolchainProbe = toolchainProbe;
+    _toolchainCandidateDiscovery = toolchainCandidateDiscovery;
+    _toolchainFilePicker = toolchainFilePicker ?? pickFlowHeroToolchainFile;
     _workspaceStore = workspaceStore;
     _workspacePicker = workspacePicker ?? pickFlowHeroWorkspaceDirectory;
     _startupRestorePending = _workspaceStore != null || _toolchainStore != null;
@@ -804,6 +809,23 @@ class FlowHeroController extends ChangeNotifier {
   FlowHeroExecutionBoot? _executionBoot;
   FlowHeroLanguageBoot? _languageBoot;
   FlowHeroToolchainProbe? _toolchainProbe;
+  FlowHeroToolchainCandidateDiscovery? _toolchainCandidateDiscovery;
+  late final FlowHeroToolchainFilePicker _toolchainFilePicker;
+
+  Future<List<FlowHeroToolchainCandidate>> discoverToolchainCandidates(
+    FlowHeroToolchainKind kind,
+  ) async {
+    final discover = _toolchainCandidateDiscovery;
+    if (discover == null) return const <FlowHeroToolchainCandidate>[];
+    final selected = kind == FlowHeroToolchainKind.pafio
+        ? _toolchainSelection.pafioPath
+        : _toolchainSelection.styioPath;
+    return discover(kind, selected);
+  }
+
+  Future<String?> chooseToolchainFile(FlowHeroToolchainKind kind) =>
+      _toolchainFilePicker(kind);
+
   FlowHeroToolchainSelection _toolchainSelection =
       const FlowHeroToolchainSelection();
 
@@ -834,11 +856,13 @@ class FlowHeroController extends ChangeNotifier {
 
   /// Facts from the current boot, never from an unsaved input field.
   FlowHeroToolchainPairCheck? get toolchainPairCheck =>
-      _execution is FlowHeroToolchainProvenanceDiagnosis
+      _executionRoute == _desiredRoute &&
+          _execution is FlowHeroToolchainProvenanceDiagnosis
       ? (_execution as FlowHeroToolchainProvenanceDiagnosis).pairCheck
       : null;
 
   String resolvedToolchainPath(FlowHeroToolchainKind kind) {
+    if (_executionRoute != _desiredRoute) return '';
     final Object? source = _execution;
     if (source is! FlowHeroToolchainProvenanceDiagnosis) return '';
     return kind == FlowHeroToolchainKind.pafio
@@ -847,6 +871,7 @@ class FlowHeroController extends ChangeNotifier {
   }
 
   String resolvedToolchainOrigin(FlowHeroToolchainKind kind) {
+    if (_executionRoute != _desiredRoute) return '';
     final Object? source = _execution;
     return source is FlowHeroToolchainProvenanceDiagnosis
         ? source.selectionOrigins[kind] ?? ''

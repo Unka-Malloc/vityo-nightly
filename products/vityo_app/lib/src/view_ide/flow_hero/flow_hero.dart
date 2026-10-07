@@ -48,6 +48,10 @@ export 'local_service_contract.dart' show FlowHeroLocalServiceOwner;
 export 'theme_store.dart' show FlowHeroThemeStore;
 export 'toolchain_install_contract.dart'
     show
+        FlowHeroToolchainCandidate,
+        FlowHeroToolchainCandidateCatalog,
+        FlowHeroToolchainCandidateDiscovery,
+        FlowHeroToolchainFilePicker,
         FlowHeroToolchainProbe,
         FlowHeroToolchainProbeResult,
         FlowHeroToolchainSaveResult;
