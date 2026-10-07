@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Chrome for Testing paired with playwright-core 1.59.1 (browsers.json).
+# .chromium-version is the local distribution Chromium pin, not a CfT release.
+env:
+  VITYO_CI_CHROME_VERSION: "147.0.7727.15"
+
 jobs:
   local-ci-gate:
     name: local-ci-gate
@@ -55,7 +60,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
           install-dependencies: true
 
       - name: Install Linux desktop dependencies
@@ -157,7 +162,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
 
       - name: Install CMake, Ninja, and LLVM 18 development package
         uses: mamba-org/setup-micromamba@add3a49764cedee8ee24e82dfde87f5bc2914462  # v2
@@ -310,7 +315,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
 
       - name: Install macOS LLVM
         run: |

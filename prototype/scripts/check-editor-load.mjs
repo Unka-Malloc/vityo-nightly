@@ -365,12 +365,17 @@ async function runSelfTest() {
     browser = await runStep("launch-browser", () => chromium.launch({
       headless: true,
       executablePath: chromePath,
-      // Playwright supplies its own headless flag. Passing `--headless=new` as
-      // well produced a browser that exited between launch and the first page on
-      // the macOS CI runner, so let Playwright own the mode.
+      // Playwright supplies its own headless flag; keep one owner of that mode.
+      // The macOS startup exit is not yet attributed to a specific launch flag.
       args: ["--disable-gpu", "--no-first-run", "--no-default-browser-check"],
     }));
     log(`browser: ${browser.version()}; node: ${process.version}; host: ${process.platform}/${process.arch}`);
+    await runStep("verify-browser-version", async () => {
+      const expected = process.env.VITYO_CI_CHROME_VERSION;
+      if (expected && browser.version() !== expected) {
+        throw new Error(`expected CI browser ${expected}, got ${browser.version()}`);
+      }
+    });
     browser.on("disconnected", () => log(`browser disconnected during step: ${currentStep}`));
 
     page = await runStep("create-page", () => browser.newPage({

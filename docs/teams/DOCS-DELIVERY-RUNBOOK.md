@@ -83,6 +83,10 @@ The Prototype editor smoke test names browser resolution, server readiness, brow
 and page creation as separate steps. Startup failures clean up owned resources; screenshot
 capture is best-effort and reports whether an artifact was actually saved. The macOS CI
 lane enables `DEBUG=pw:browser` to retain browser stderr and process-exit diagnostics.
+All three delivery lanes select the single `VITYO_CI_CHROME_VERSION` workflow pin;
+the launched browser must match it. Keep the published Chrome for Testing pairing
+separate from the local distribution `.chromium-version` and verify host tests
+before claiming the startup failure is resolved.
 
 
 For local toolchain delivery, distinguish explicit-path selection, Pafio compiler-contract

@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-10-07
 
 ## Mission
 
@@ -44,6 +44,12 @@ Key SSOTs:
 3. `手写 Web IDE handbook -> ../specs/HANDWRITTEN-WEB-IDE-ENGINEERING-HANDBOOK.md`
 
 ## Daily Workflow
+
+The editor self-test verifies `VITYO_CI_CHROME_VERSION` when CI supplies it, before
+creating a page. Local runs without this variable retain their configured browser.
+Run `node --test prototype/scripts/check-editor-load.test.mjs` to check lifecycle
+cleanup, truthful screenshot reporting, and version-drift rejection. These
+deterministic boundary tests do not replace real editor UI tests on each host.
 
 1. 先确认变更属于“显示层”还是“源码层”；不得把显示替换误写成源码改写。
 2. 改动 `prototype/editor.html` 主线前，先按 handbook 检查分层、渲染切片和工作流约束。
