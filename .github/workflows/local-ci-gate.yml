@@ -357,6 +357,49 @@ jobs:
           --base "${{ steps.ci_refs.outputs.base_ref }}"
           --range "${{ steps.ci_refs.outputs.range }}"
           --install-root "$RUNNER_TEMP/vityo-installed"
+      - name: Capture macOS generated project diagnostics
+        if: failure()
+        working-directory: vityo-nightly
+        run: |
+          "$PYTHON_BIN" - <<'PY_DIAGNOSTICS'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          # Read only these generated metadata files, never the whole checkout diff.
+          paths = [
+              "products/vityo_app/macos/Podfile.lock",
+              "products/vityo_app/macos/Runner.xcodeproj/project.pbxproj",
+          ]
+          commands = [
+              ("checkout", ["git", "rev-parse", "HEAD"]),
+              ("CocoaPods", ["pod", "--version"]),
+              ("Xcode", ["xcodebuild", "-version"]),
+              ("generated metadata diff", ["git", "--no-pager", "diff",
+                  "--no-ext-diff", "--no-textconv", "--no-color", "HEAD", "--", *paths]),
+          ]
+          sections = []
+          for label, command in commands:
+              try:
+                  result = subprocess.run(command, capture_output=True, timeout=30)
+                  # Do not publish stderr, which may include host configuration details.
+                  text = result.stdout[:65536].decode("utf-8", errors="replace")
+                  if len(result.stdout) > 65536:
+                      text += "\n[truncated at 65536 bytes]\n"
+                  status = f"exit {result.returncode}"
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  text, status = "", type(error).__name__
+              for value in (str(Path.cwd()), os.environ.get("RUNNER_TEMP"), str(Path.home())):
+                  if value:
+                      text = text.replace(value, "<host-path>")
+              text = re.sub(r"/(?:Users|home)/[^/\s\"]+", "<home>", text)
+              sections.append(f"## {label} ({status})\n{text}")
+          output = Path("build/evidence/macos-generated-project-diagnostics.txt")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text("\n".join(sections), encoding="utf-8")
+          PY_DIAGNOSTICS
+
       - name: Upload macOS coverage reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
@@ -369,6 +412,7 @@ jobs:
             vityo-nightly/build/evidence/native-pty-macos.json
             vityo-nightly/build/evidence/product-matrix-macos.json
             vityo-nightly/build/evidence/startup-macos.json
+            vityo-nightly/build/evidence/macos-generated-project-diagnostics.txt
           if-no-files-found: ignore
 
       - name: Upload macOS Nightly package
