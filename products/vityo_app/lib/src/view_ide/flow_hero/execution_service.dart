@@ -79,11 +79,19 @@ class FlowHeroToolchainPairCheck {
     required this.compatible,
     this.message = '',
     this.advisory = false,
+    this.productSupport = '',
+    this.selectionSource = '',
+    this.releaseProvenance = '',
   });
 
   final bool compatible;
   final String message;
   final bool advisory;
+
+  /// Pafio-reported facts, not independent certification by Vityo.
+  final String productSupport;
+  final String selectionSource;
+  final String releaseProvenance;
 }
 
 Future<FlowHeroToolchainPairCheck> checkFlowHeroToolchainPair({
@@ -146,6 +154,15 @@ Future<FlowHeroToolchainPairCheck> checkFlowHeroToolchainPair({
     return FlowHeroToolchainPairCheck(
       compatible: accepted,
       advisory: accepted && status == 'warning',
+      productSupport: detail is Map
+          ? _stringValue(detail['product_support']) ?? ''
+          : '',
+      selectionSource: detail is Map
+          ? _stringValue(detail['selection_source']) ?? ''
+          : '',
+      releaseProvenance: detail is Map
+          ? _stringValue(detail['release_provenance']) ?? ''
+          : '',
       message: accepted
           ? (status == 'warning' ? '本地工具链未列入产品矩阵' : '')
           : _sanitize(
@@ -257,9 +274,20 @@ const List<String> kFlowHeroStyioSystemCandidatePaths = <String>[
   '/opt/homebrew/bin/styio',
 ];
 
+/// Optional current-boot facts exposed independently of availability.
+abstract interface class FlowHeroToolchainProvenanceDiagnosis {
+  FlowHeroToolchainPairCheck? get pairCheck;
+  Map<FlowHeroToolchainKind, String> get selectionOrigins;
+  String get pafioBinaryPath;
+  String get styioBinaryPath;
+}
+
 /// Boots the real pafio route and, while live, executes through it.
 class FlowHeroExecutionRuntime
-    implements FlowHeroExecutionSource, FlowHeroToolchainDiagnosis {
+    implements
+        FlowHeroExecutionSource,
+        FlowHeroToolchainDiagnosis,
+        FlowHeroToolchainProvenanceDiagnosis {
   FlowHeroExecutionRuntime._({
     required this.mode,
     required this.statusLine,
@@ -276,6 +304,8 @@ class FlowHeroExecutionRuntime
     Map<FlowHeroToolchainKind, List<FlowHeroToolchainCheck>> toolchainChecks =
         const <FlowHeroToolchainKind, List<FlowHeroToolchainCheck>>{},
     FlowHeroExecutionUnavailableCause? unavailableCause,
+    this.pairCheck,
+    this.selectionOrigins = const <FlowHeroToolchainKind, String>{},
   }) : _workspaceRoot = workspaceRoot,
        _process = process,
        _fileSystem = fileSystem,
@@ -360,6 +390,20 @@ class FlowHeroExecutionRuntime
       );
       final styioBinary =
           catalog.lookup(_styioCliToolchainId)?.executablePath.trim() ?? '';
+      final origins = <FlowHeroToolchainKind, String>{
+        for (final kind in FlowHeroToolchainKind.values)
+          kind:
+              (hostEnvironment[kind.environmentVariable] ?? '')
+                  .trim()
+                  .isNotEmpty
+              ? 'Environment: ${kind.environmentVariable}'
+              : (kind == FlowHeroToolchainKind.pafio
+                        ? toolchainSelection.pafioPath
+                        : toolchainSelection.styioPath)
+                    .isNotEmpty
+              ? 'Saved user selection'
+              : 'Automatically discovered',
+      };
       if (pafioBinary == null) {
         // Both tools are probed before reporting, so the install dialog can
         // offer a section for each one that is actually missing.
@@ -421,10 +465,14 @@ class FlowHeroExecutionRuntime
           styioBinaryPath: styioBinary,
           toolchainChecks: checks,
           unavailableCause: FlowHeroExecutionUnavailableCause.compatibility,
+          pairCheck: pair,
+          selectionOrigins: origins,
         );
       }
       return FlowHeroExecutionRuntime._(
         mode: FlowHeroExecutionMode.live,
+        pairCheck: pair,
+        selectionOrigins: origins,
         statusLine: pair.advisory
             ? 'pafio run/test · ${pair.message}'
             : 'pafio run/test',
@@ -553,6 +601,12 @@ class FlowHeroExecutionRuntime
   @override
   final String unavailableReason;
 
+  /// Last doctor result. Null means compatibility has not been checked.
+  @override
+  final FlowHeroToolchainPairCheck? pairCheck;
+  @override
+  final Map<FlowHeroToolchainKind, String> selectionOrigins;
+
   final String _workspaceRoot;
   final ProcessManager? _process;
   final FileSystemManager? _fileSystem;
@@ -572,9 +626,11 @@ class FlowHeroExecutionRuntime
 
   /// The pafio executable this route resolved; empty while unavailable. Exposed
   /// so a caller can verify *which* binary a boot actually picked.
+  @override
   String get pafioBinaryPath => _pafioBinaryPath;
 
   /// The Styio compiler this route resolved; empty while unavailable.
+  @override
   String get styioBinaryPath => _styioBinaryPath;
 
   @override

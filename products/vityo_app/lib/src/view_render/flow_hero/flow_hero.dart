@@ -122,6 +122,7 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
       agentSecretStore: widget.agentSecretStore ?? runtime?.agentSecretStore,
       toolchainStore: widget.toolchainStore ?? runtime?.toolchainStore,
       toolchainProbe: runtime?.probeToolchain,
+      toolchainCandidateDiscovery: runtime?.discoverToolchainCandidates,
       // The controller owns the execution boot so it can re-probe after the
       // user changes workspace or saves a binary. An injected source keeps
       // its host-owned route.

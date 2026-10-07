@@ -9,6 +9,8 @@
 /// failure, the resulting route — comes from a real probe.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'controller.dart';
@@ -33,6 +35,13 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
       <FlowHeroToolchainKind, FlowHeroToolchainProbeResult?>{};
   final Set<FlowHeroToolchainKind> _probing = <FlowHeroToolchainKind>{};
   final Set<FlowHeroToolchainKind> _saving = <FlowHeroToolchainKind>{};
+  final Map<FlowHeroToolchainKind, List<FlowHeroToolchainCandidate>>
+  _candidates = {};
+  final Map<FlowHeroToolchainKind, String> _discoveryErrors = {};
+  final Set<FlowHeroToolchainKind> _discovering = {};
+  final Set<FlowHeroToolchainKind> _partialDiscovery = {};
+  final Set<FlowHeroToolchainKind> _picking = {};
+  final Map<FlowHeroToolchainKind, int> _edits = {};
   String _note = '';
   bool _noteIsFailure = false;
   bool _retrying = false;
@@ -42,6 +51,62 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
     super.initState();
     for (final FlowHeroToolchainKind kind in FlowHeroToolchainKind.values) {
       _paths[kind] = TextEditingController();
+      _discovering.add(kind);
+      unawaited(_discover(kind));
+    }
+  }
+
+  Future<void> _discover(FlowHeroToolchainKind kind) async {
+    try {
+      final candidates = await widget.controller.discoverToolchainCandidates(
+        kind,
+      );
+      if (!mounted) return;
+      setState(() {
+        _candidates[kind] = candidates;
+        if (candidates is FlowHeroToolchainCandidateCatalog &&
+            candidates.isPartial) {
+          _partialDiscovery.add(kind);
+        }
+        _discovering.remove(kind);
+      });
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _discovering.remove(kind);
+        _discoveryErrors[kind] =
+            'Could not check local locations. Choose a file below.';
+      });
+    }
+  }
+
+  void _setCandidate(FlowHeroToolchainKind kind, String path) {
+    setState(() {
+      _paths[kind]!.text = path;
+      _edits[kind] = (_edits[kind] ?? 0) + 1;
+      _probes[kind] = null;
+      _note = '';
+    });
+  }
+
+  Future<void> _chooseFile(FlowHeroToolchainKind kind) async {
+    final revision = _edits[kind] ?? 0;
+    setState(() => _picking.add(kind));
+    try {
+      final path = await widget.controller.chooseToolchainFile(kind);
+      if (!mounted || revision != (_edits[kind] ?? 0)) return;
+      if (path != null && path.trim().isNotEmpty) {
+        _setCandidate(kind, path.trim());
+      }
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _noteIsFailure = true;
+        _note =
+            'The file chooser is unavailable. Use the manual path fallback.';
+      });
+    } finally {
+      if (mounted) setState(() => _picking.remove(kind));
     }
   }
 
@@ -59,6 +124,7 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
 
   Future<void> _verify(FlowHeroToolchainKind kind) async {
     final String path = _paths[kind]!.text.trim();
+    final revision = _edits[kind] ?? 0;
     setState(() {
       _probing.add(kind);
       _probes[kind] = null;
@@ -69,7 +135,7 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
     if (!mounted) return;
     setState(() {
       _probing.remove(kind);
-      _probes[kind] = result;
+      _probes[kind] = revision == (_edits[kind] ?? 0) ? result : null;
     });
   }
 
@@ -154,6 +220,19 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
                                 _stateBanner(c),
+                                const SizedBox(height: 6),
+                                Text(
+                                  c.toolchainPairCheck == null
+                                      ? 'Runtime compatibility: Not checked'
+                                      : 'Runtime compatibility: ${c.toolchainPairCheck!.compatible ? 'Compatible' : 'Incompatible'}',
+                                  key: const ValueKey(
+                                    'toolchain-install-compatibility',
+                                  ),
+                                  style: P.monoStyle(
+                                    color: P.paperLow,
+                                    size: 10.5,
+                                  ),
+                                ),
                                 for (final FlowHeroToolchainKind kind
                                     in _kinds) ...<Widget>[
                                   const SizedBox(height: 14),
@@ -263,6 +342,38 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Text(kind.displayName, style: P.silkStyle(hi: true)),
+          if (widget.controller
+              .resolvedToolchainPath(kind)
+              .isNotEmpty) ...<Widget>[
+            const SizedBox(height: 5),
+            Text(
+              'Selected: ${widget.controller.resolvedToolchainOrigin(kind)}\n${widget.controller.resolvedToolchainPath(kind)}',
+              key: ValueKey<String>('toolchain-install-selected-${kind.id}'),
+              style: P.monoStyle(color: P.paperLow, size: 10.5),
+            ),
+          ],
+          const SizedBox(height: 5),
+          Text(
+            kind == FlowHeroToolchainKind.pafio
+                ? 'Release provenance: Not verified by Vityo'
+                : widget.controller.toolchainPairCheck?.releaseProvenance ==
+                      'unverified'
+                ? 'Release provenance: Unverified (Pafio report)'
+                : 'Release provenance: Not verified by Vityo; no supported report',
+            key: ValueKey<String>('toolchain-install-provenance-${kind.id}'),
+            style: P.monoStyle(color: P.silkDim, size: 10.5),
+          ),
+          if (kind == FlowHeroToolchainKind.styio &&
+              widget.controller.toolchainPairCheck != null)
+            Text(
+              'Published support: ${switch (widget.controller.toolchainPairCheck!.productSupport) {
+                'published' => 'Listed in Pafio matrix',
+                'unlisted' => 'Not listed in Pafio matrix',
+                _ => 'Not reported',
+              }}',
+              key: const ValueKey('toolchain-install-product-support'),
+              style: P.monoStyle(color: P.silkDim, size: 10.5),
+            ),
           const SizedBox(height: 8),
           Text('已检查的位置', style: P.silkStyle(dim: true)),
           const SizedBox(height: 5),
@@ -295,6 +406,71 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
                 ),
               ),
           const SizedBox(height: 10),
+          Text('Choose a detected installation', style: P.silkStyle(hi: true)),
+          const SizedBox(height: 5),
+          if (_discovering.contains(kind))
+            Text(
+              'Checking app, standard locations and PATH…',
+              style: P.silkStyle(dim: true),
+            )
+          else if ((_candidates[kind] ?? const []).isEmpty)
+            Text(
+              _discoveryErrors[kind] ??
+                  'No suggestions found in the checked locations. Choose a file below.',
+              style: P.silkStyle(dim: true),
+            )
+          else
+            DropdownButton<String>(
+              value:
+                  (_candidates[kind] ?? const <FlowHeroToolchainCandidate>[])
+                      .any((candidate) => candidate.path == _paths[kind]!.text)
+                  ? _paths[kind]!.text
+                  : null,
+              key: ValueKey<String>('toolchain-install-candidates-${kind.id}'),
+              isExpanded: true,
+              dropdownColor: P.panel,
+              style: P.monoStyle(color: P.paperLow, size: 10.5),
+              hint: Text(
+                'Select an installation',
+                style: P.silkStyle(dim: true),
+              ),
+              items: [
+                for (final candidate in _candidates[kind]!)
+                  DropdownMenuItem(
+                    value: candidate.path,
+                    child: Text(
+                      '${candidate.sourceLabel}: ${candidate.path}${candidate.exists ? '' : ' (not found or unavailable)'}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: verifying || saving
+                  ? null
+                  : (path) {
+                      if (path != null) _setCandidate(kind, path);
+                    },
+            ),
+          if (_partialDiscovery.contains(kind))
+            Text(
+              'Some locations could not be checked. You can still choose a file.',
+              key: ValueKey<String>('toolchain-install-partial-${kind.id}'),
+              style: P.silkStyle(dim: true),
+            ),
+          const SizedBox(height: 7),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _ActionButton(
+              buttonKey: ValueKey<String>(
+                'toolchain-install-browse-${kind.id}',
+              ),
+              label: _picking.contains(kind) ? 'Choosing…' : 'Choose file…',
+              enabled: !verifying && !saving && !_picking.contains(kind),
+              onTap: () => _chooseFile(kind),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text('Manual path (fallback)', style: P.silkStyle(dim: true)),
+          const SizedBox(height: 5),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
             decoration: BoxDecoration(
@@ -305,8 +481,10 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
             child: TextField(
               key: ValueKey<String>('toolchain-install-path-${kind.id}'),
               controller: _paths[kind],
+              enabled: !verifying && !saving,
               onChanged: (_) {
-                if (_probes[kind] != null) setState(() => _probes[kind] = null);
+                _edits[kind] = (_edits[kind] ?? 0) + 1;
+                setState(() => _probes[kind] = null);
               },
               style: P.monoStyle(color: P.paperLow, size: 11.5),
               cursorColor: P.orange,
@@ -328,7 +506,7 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
                   'toolchain-install-verify-${kind.id}',
                 ),
                 label: verifying ? '验证中…' : '验证',
-                enabled: !verifying && !saving,
+                enabled: !verifying && !saving && !_picking.contains(kind),
                 color: P.orangeBright,
                 onTap: () => _verify(kind),
               ),
@@ -338,7 +516,11 @@ class _ToolchainInstallDialogState extends State<ToolchainInstallDialog> {
                   'toolchain-install-save-${kind.id}',
                 ),
                 label: saving ? '保存中…' : '保存并启用',
-                enabled: !verifying && !saving && (probe?.ok ?? false),
+                enabled:
+                    !verifying &&
+                    !saving &&
+                    !_picking.contains(kind) &&
+                    (probe?.ok ?? false),
                 color: P.orangeBright,
                 onTap: () => _save(kind),
               ),

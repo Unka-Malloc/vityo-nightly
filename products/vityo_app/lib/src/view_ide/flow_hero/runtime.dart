@@ -14,6 +14,7 @@ import 'runtime_contract.dart';
 import 'theme_store.dart';
 import 'toolchain_install_contract.dart';
 import 'toolchain_install_runtime.dart';
+import 'toolchain_candidates.dart';
 import 'toolchain_store.dart';
 import 'workspace_file_index.dart';
 import 'workspace_store.dart';
@@ -126,6 +127,19 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
     path: path,
     environment: _environment,
     vityodClient: await localServices.client(),
+  );
+
+  @override
+  Future<List<FlowHeroToolchainCandidate>> discoverToolchainCandidates(
+    FlowHeroToolchainKind kind,
+    String selectedPath,
+  ) async => discoverFlowHeroToolchainCandidates(
+    kind: kind,
+    selectedPath: selectedPath,
+    environment: _environment,
+    vityodClient: await localServices.client().timeout(
+      const Duration(seconds: 3),
+    ),
   );
 
   @override

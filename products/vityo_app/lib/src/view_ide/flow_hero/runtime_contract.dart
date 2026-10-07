@@ -43,5 +43,10 @@ abstract interface class FlowHeroFeatureRuntime {
     String path,
   );
 
+  Future<List<FlowHeroToolchainCandidate>> discoverToolchainCandidates(
+    FlowHeroToolchainKind kind,
+    String selectedPath,
+  );
+
   Future<void> dispose();
 }
