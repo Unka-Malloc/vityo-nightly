@@ -365,6 +365,7 @@ jobs:
           import os
           import re
           import subprocess
+          import tempfile
           from pathlib import Path
 
           # Read only these generated metadata files, never the whole checkout diff.
@@ -379,6 +380,16 @@ jobs:
               ("generated metadata diff", ["git", "--no-pager", "diff",
                   "--no-ext-diff", "--no-textconv", "--no-color", "HEAD", "--", *paths]),
           ]
+          # macOS may expose the same temp directory as /var and /private/var.
+          # Keep both lexical roots and their resolved symlink targets, including
+          # the system temp root when RUNNER_TEMP names a different directory.
+          host_roots = [Path.cwd(), Path.home(), Path(tempfile.gettempdir())]
+          if os.environ.get("RUNNER_TEMP"):
+              host_roots.append(Path(os.environ["RUNNER_TEMP"]))
+          redactions = set()
+          for root in host_roots:
+              redactions.update((str(root), str(root.resolve())))
+          redactions.discard("/")
           sections = []
           for label, command in commands:
               try:
@@ -390,9 +401,8 @@ jobs:
                   status = f"exit {result.returncode}"
               except (OSError, subprocess.TimeoutExpired) as error:
                   text, status = "", type(error).__name__
-              for value in (str(Path.cwd()), os.environ.get("RUNNER_TEMP"), str(Path.home())):
-                  if value:
-                      text = text.replace(value, "<host-path>")
+              for value in sorted(redactions, key=len, reverse=True):
+                  text = text.replace(value, "<host-path>")
               text = re.sub(r"/(?:Users|home)/[^/\s\"]+", "<home>", text)
               sections.append(f"## {label} ({status})\n{text}")
           output = Path("build/evidence/macos-generated-project-diagnostics.txt")

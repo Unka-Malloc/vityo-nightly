@@ -87,6 +87,31 @@ class MacOSGeneratedProjectDiagnosticsTest(unittest.TestCase):
             self.assertIn('[truncated at 65536 bytes]', report)
             self.assertLess(len(report.encode()), 4 * 66000)
 
+    @unittest.skipUnless(os.name == 'posix', 'POSIX symlink aliases')
+    def test_macos_style_temp_symlink_aliases_are_both_redacted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            physical_temp = base / 'private' / 'var' / 'folders' / 'T'
+            physical_temp.mkdir(parents=True)
+            (base / 'var').symlink_to(base / 'private' / 'var', target_is_directory=True)
+            lexical_temp = base / 'var' / 'folders' / 'T'
+            lexical_root = lexical_temp / 'checkout'
+            lexical_root.mkdir()
+            resolved_root = lexical_root.resolve()
+            self.assertNotEqual(lexical_root, resolved_root)
+            runner_alias = base / 'runner-temp'
+            runner_alias.symlink_to(physical_temp, target_is_directory=True)
+            payload = f'{lexical_root}/file {resolved_root}/file {runner_alias}/file'.encode()
+            def run(command, **kwargs):
+                return subprocess.CompletedProcess(command, 0, payload, b'')
+            with mock.patch('tempfile.gettempdir', return_value=str(lexical_temp)), mock.patch.dict(
+                os.environ, {'RUNNER_TEMP': str(runner_alias)}
+            ):
+                report = self.run_diagnostic(lexical_root, run)
+            for path in (lexical_temp, physical_temp, lexical_root, resolved_root, runner_alias):
+                self.assertNotIn(str(path), report)
+            self.assertIn('<host-path>', report)
+
     def test_missing_or_timed_out_tools_do_not_hide_other_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
