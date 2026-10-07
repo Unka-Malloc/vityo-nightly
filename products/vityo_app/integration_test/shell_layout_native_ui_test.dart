@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:vityo_app/src/frontend_shell/frontend_shell.dart';
 
+import '../test/support/vityod_test_harness.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -21,7 +23,13 @@ void main() {
       tester.view.resetPhysicalSize();
     });
 
-    final bootstrap = await AppBootstrap.load();
+    // The production filesystem is daemon-backed. Without this client the
+    // bootstrap has an unsupported filesystem and reads default preferences.
+    final daemon = await VityodTestHarness.start(
+      clientId: 'shell-layout-native-ui',
+    );
+    addTearDown(daemon.close);
+    final bootstrap = await AppBootstrap.load(vityodClient: daemon.client);
     final store = bootstrap.shellLayoutPreferencesStore;
     expect(store, isNotNull);
     final workspaceId = bootstrap.workspaceController.activeProject.id;
@@ -56,6 +64,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('bottom-tab-problems')));
     await tester.pump();
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.problems);
     expect(
       find.byKey(const ValueKey('workbench-bottom-panel')),
       findsOneWidget,
@@ -80,12 +89,36 @@ void main() {
       findsOneWidget,
     );
 
+    final live = shell.shellLayoutPreferenceController.preferences;
+    expect(live.activeWorkbenchRoute, BottomSurfaceTab.problems);
     await shell.persistShellLayoutPreferences();
     final restored = await store.readPreferences(workspaceId: workspaceId);
     expect(restored.activeWorkbenchRoute, BottomSurfaceTab.problems);
     expect(restored.primarySidebarWidth, greaterThanOrEqualTo(300));
     expect(restored.bottomPanelHeight, greaterThanOrEqualTo(270));
     expect(restored.bottomPanelExpanded, isTrue);
+    expect(restored.primarySidebarWidth, live.primarySidebarWidth);
+    expect(restored.bottomPanelHeight, live.bottomPanelHeight);
+
+    // Reset only the in-memory controller, then prove hydration comes from the
+    // saved daemon-backed record rather than the still-live widget state.
+    shell.shellLayoutPreferenceController.hydrate(
+      ShellLayoutPreferences(workspaceId: workspaceId),
+    );
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.navigate);
+    await shell.loadShellLayoutPreferences();
+    await tester.pump();
+    expect(shell.activeWorkbenchRoute, BottomSurfaceTab.problems);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('workbench-primary-sidebar')))
+          .width,
+      live.primarySidebarWidth,
+    );
+    expect(
+      find.byKey(const ValueKey('workbench-bottom-panel')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
 
     await _captureEvidence(tester);
