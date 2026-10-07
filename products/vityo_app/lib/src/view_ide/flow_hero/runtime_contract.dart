@@ -16,6 +16,8 @@ import 'workspace_file_index.dart';
 import 'workspace_store.dart';
 
 abstract interface class FlowHeroFeatureRuntime {
+  /// False for isolated compile acceptance, before any Agent state is read.
+  bool get agentEnabled;
   FlowHeroLocalServiceOwner get localServices;
   FlowHeroThemeStore get themeStore;
   FlowHeroWorkspaceStore get workspaceStore;

@@ -353,3 +353,57 @@ root `.gitignore` excludes `.cache/` from commits.
 1. Docs tree guide: [README.md](./README.md)
 2. Product spec: [design/Vityo-Product-Spec.md](./design/Vityo-Product-Spec.md)
 3. Handwritten Web IDE handbook: [specs/HANDWRITTEN-WEB-IDE-ENGINEERING-HANDBOOK.md](./specs/HANDWRITTEN-WEB-IDE-ENGINEERING-HANDBOOK.md)
+
+## Isolated Local Toolchain Acceptance
+
+Use `products/vityo_app/lib/main_compile_acceptance.dart` for the bounded
+no-Agent local toolchain check. It composes the same `FlowHeroApp`, controller,
+selection UI, and production Pafio execution service as `lib/main.dart`.
+Only bootstrap ownership changes: a fresh temporary workspace copy, stores,
+daemon endpoint/state and child-process home/cache roots. Agent restoration,
+provider configuration and keychain access are disabled before they are reached.
+Each launch starts fresh; it does not restore selections from a prior launch or
+replace the installed application. Temporary evidence remains under that launch's
+root. The ordinary production entrypoint is unchanged.
+
+On a supported macOS development host, build the candidate daemon and launch the
+candidate client from `products/vityo_app/`:
+
+```bash
+cargo build --locked --manifest-path native/vityod/Cargo.toml -p vityod
+flutter run -d macos --target lib/main_compile_acceptance.dart \
+  --dart-define=VITYO_COMPILE_ACCEPTANCE_WORKSPACE=/absolute/path/to/small-fixture \
+  --dart-define=VITYO_COMPILE_ACCEPTANCE_DAEMON=/absolute/path/to/candidate/vityod
+```
+
+The explicitly supplied fixture is copied before use; symbolic links and oversized
+fixtures are rejected. Use a small Pafio project, not a live project or a directory
+containing credentials. The daemon override must identify this candidate's built
+executable. Without an override, the entry requires the normal packaged daemon
+location beside the client and still starts it with private state. Do not use the
+normal install stage for this isolated check.
+
+Open Settings → execution service and select the candidate Pafio and full Styio
+binaries. The Pafio candidate owns contract-first admission and prior-receipt
+invalidation; Styio remains the compiler and receipt producer. No Coding Agent
+component or provider account is needed. Test invalid explicit paths, both valid
+selections, real Run, compiler failure after success, and an unlisted local
+version/channel that still satisfies the required contracts. A failed run must
+not display a previous receipt as the new result. Record actual executable/source
+revisions and distinguish these observations from deterministic tests.
+
+The focused engineering command is:
+
+```bash
+flutter test --no-pub test/flow_hero_execution_test.dart \
+  test/flow_hero_local_services_test.dart test/flow_hero_toolchain_install_test.dart \
+  test/pafio_cli_discovery_test.dart test/styio_toolchain_discovery_lspd_test.dart \
+  test/flow_hero_compile_acceptance_test.dart
+```
+
+Run package resolution first with the repository's pinned Flutter/Dart SDK. Keep
+unrelated lockfile changes out of this feature and record any SDK-dependent
+resolution difference in delivery evidence. The daemon-backed discovery groups
+and the isolation socket test require a host that permits Unix-domain sockets;
+a blocked host is incomplete evidence, not a passing test. This bootstrap and
+its deterministic tests do not establish real macOS UI acceptance.

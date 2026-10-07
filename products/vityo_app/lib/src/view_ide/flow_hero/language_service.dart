@@ -129,6 +129,8 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
     FlowHeroToolchainSelection toolchainSelection =
         const FlowHeroToolchainSelection(),
     VityodClient? vityodClient,
+    Map<String, String>? environment,
+    bool requireVityod = false,
   }) async {
     if (workspaceRoot.trim().isEmpty) {
       return FlowHeroLanguageRuntime._(
@@ -143,14 +145,16 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
         workspaceRoot: workspaceRoot,
         vityodClient: vityodClient,
       );
-      final environment = Map<String, String>.of(readHostEnvironment());
+      final languageEnvironment = Map<String, String>.of(
+        environment ?? readHostEnvironment(),
+      );
       if (toolchainSelection.styioPath.isNotEmpty &&
-          (environment['VITYO_STYIO_BIN'] ?? '').isEmpty) {
-        environment['VITYO_STYIO_BIN'] = toolchainSelection.styioPath;
+          (languageEnvironment['VITYO_STYIO_BIN'] ?? '').isEmpty) {
+        languageEnvironment['VITYO_STYIO_BIN'] = toolchainSelection.styioPath;
       }
       final catalog = await createPlatformStyioLanguageToolchainCatalog(
         platformManagers: managers,
-        environment: environment,
+        environment: languageEnvironment,
       );
       final daemon = catalog.lookup(styioLspDaemonToolchainId);
       if (daemon == null) {
@@ -167,6 +171,8 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
           vityodClient: vityodClient,
           executablePath: daemon.executablePath,
           workingDirectory: workingDirectory,
+          environment: languageEnvironment,
+          requireVityod: requireVityod,
         ),
       );
       final cache = lang.StyioServiceResultCache();
@@ -476,12 +482,18 @@ Future<lang.LspByteTransport> _lspTransport({
   required VityodClient? vityodClient,
   required String executablePath,
   required String workingDirectory,
+  required Map<String, String> environment,
+  required bool requireVityod,
 }) {
   final VityodClient? client = vityodClient;
   if (client == null || !client.state.canDispatch) {
+    if (requireVityod) {
+      throw StateError('The isolated language daemon is unavailable.');
+    }
     return lang.createPlatformStyioLspTransport(
       executablePath: executablePath,
       workingDirectory: workingDirectory,
+      environment: environment,
       preferVityod: false,
     );
   }
@@ -489,6 +501,8 @@ Future<lang.LspByteTransport> _lspTransport({
     client: client,
     executablePath: executablePath,
     workingDirectory: workingDirectory,
+    environment: environment,
+    requireVityod: requireVityod,
   );
 }
 
@@ -496,20 +510,26 @@ Future<lang.LspByteTransport> _connectSharedLspTransport({
   required VityodClient client,
   required String executablePath,
   required String workingDirectory,
+  required Map<String, String> environment,
+  required bool requireVityod,
 }) async {
   try {
-    final session = await VityodLspGateway(
-      client: client,
-    ).start(executable: executablePath, workingDirectory: workingDirectory);
+    final session = await VityodLspGateway(client: client).start(
+      executable: executablePath,
+      workingDirectory: workingDirectory,
+      environment: environment,
+    );
     return _SharedVityodLspTransport(
       inner: lang.VityodLspTransport(session: session),
     );
   } on Object {
+    if (requireVityod) rethrow;
     // The shared client could not open the session; a direct child process is
     // the honest fallback and must not open a second daemon connection.
     return lang.createPlatformStyioLspTransport(
       executablePath: executablePath,
       workingDirectory: workingDirectory,
+      environment: environment,
       preferVityod: false,
     );
   }

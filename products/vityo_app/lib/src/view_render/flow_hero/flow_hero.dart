@@ -28,6 +28,7 @@ class FlowHeroApp extends StatefulWidget {
   const FlowHeroApp({
     super.key,
     this.runtime,
+    this.initialWorkspaceRoot,
     this.executionSource,
     this.themeStore,
     this.workspaceFileIndex,
@@ -47,6 +48,10 @@ class FlowHeroApp extends StatefulWidget {
 
   /// Feature operations supplied by the app composition root.
   final FlowHeroFeatureRuntime? runtime;
+
+  /// Explicit workspace for an isolated host; ordinary launches use the
+  /// configured workspace and their persisted selection.
+  final String? initialWorkspaceRoot;
 
   /// Persistence for the light/dark choice. Null keeps the choice session-only.
   final FlowHeroThemeStore? themeStore;
@@ -101,13 +106,15 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
     _themeStore = widget.themeStore ?? runtime?.themeStore;
     controller = FlowHeroController(
       localServices: runtime?.localServices,
+      agentEnabled: runtime?.agentEnabled ?? true,
       executionSource: widget.executionSource,
       themeStore: _themeStore,
       workspaceFileIndex: widget.workspaceFileIndex,
       workspaceFileIndexFactory: runtime?.createWorkspaceFileIndex,
       workspaceStore: widget.workspaceStore ?? runtime?.workspaceStore,
       workspacePicker: widget.workspacePicker,
-      initialWorkspaceRoot: AgentBridge.workspaceDir.trim(),
+      initialWorkspaceRoot:
+          widget.initialWorkspaceRoot ?? AgentBridge.workspaceDir.trim(),
       initialToolchainSelection: widget.initialToolchainSelection,
       modelConfigStore: widget.modelConfigStore ?? runtime?.modelConfigStore,
       providerConfigWriter:

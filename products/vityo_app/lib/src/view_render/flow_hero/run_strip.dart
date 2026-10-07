@@ -317,6 +317,7 @@ class _MissingExecution {
     FlowHeroExecutionUnavailableCause.manifest => '工作区缺少 pafio.toml',
     FlowHeroExecutionUnavailableCause.toolchain => '执行工具链未就绪',
     FlowHeroExecutionUnavailableCause.probeFailed => '执行服务不可用',
+    FlowHeroExecutionUnavailableCause.compatibility => '工具链不兼容',
     // A route that classifies nothing (a scripted embedding) still gets an
     // honest headline: the first clause of its own real reason.
     null => _firstSegment(reason),
@@ -328,6 +329,8 @@ class _MissingExecution {
     FlowHeroExecutionUnavailableCause.workspace => Icons.folder_off_outlined,
     FlowHeroExecutionUnavailableCause.manifest => Icons.description_outlined,
     FlowHeroExecutionUnavailableCause.toolchain => Icons.build_outlined,
+    FlowHeroExecutionUnavailableCause.compatibility =>
+      Icons.warning_amber_outlined,
     FlowHeroExecutionUnavailableCause.probeFailed =>
       Icons.assignment_late_outlined,
     null => Icons.warning_amber_rounded,

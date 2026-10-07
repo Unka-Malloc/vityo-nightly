@@ -26,11 +26,17 @@ import 'local_service_contract.dart';
 
 /// Owns the single vityod client Flow Hero boots its local services with.
 class FlowHeroLocalServices implements FlowHeroLocalServiceOwner {
-  FlowHeroLocalServices({Future<VityodClient?> Function()? clientFactory})
-    : _clientFactory = clientFactory;
+  FlowHeroLocalServices({
+    Future<VityodClient?> Function()? clientFactory,
+    Future<void> Function()? onDispose,
+  }) : _clientFactory = clientFactory,
+       _onDispose = onDispose;
 
   /// Test seam: constructs the platform client. Null uses the packaged one.
   final Future<VityodClient?> Function()? _clientFactory;
+
+  /// Releases resources owned by a dedicated acceptance daemon, if any.
+  final Future<void> Function()? _onDispose;
 
   Future<VityodClient?>? _pendingClient;
   VityodClient? _client;
@@ -94,6 +100,7 @@ class FlowHeroLocalServices implements FlowHeroLocalServiceOwner {
       }
     }
     await _release(client);
+    await _onDispose?.call();
   }
 
   Future<void> _release(VityodClient? client) async {

@@ -67,6 +67,97 @@ enum FlowHeroExecutionUnavailableCause {
 
   /// The toolchain probe itself failed before resolving anything.
   probeFailed,
+
+  /// The chosen binaries cannot satisfy the project execution contract.
+  compatibility,
+}
+
+/// Pafio owns compiler compatibility. Vityo consumes its read-only doctor
+/// check, independently of project cache/lock health and release certification.
+class FlowHeroToolchainPairCheck {
+  const FlowHeroToolchainPairCheck({
+    required this.compatible,
+    this.message = '',
+    this.advisory = false,
+  });
+
+  final bool compatible;
+  final String message;
+  final bool advisory;
+}
+
+Future<FlowHeroToolchainPairCheck> checkFlowHeroToolchainPair({
+  required ProcessManager process,
+  required String pafioBinaryPath,
+  required String styioBinaryPath,
+  required String workspaceRoot,
+  required String manifestPath,
+  Map<String, String> environment = const <String, String>{},
+}) async {
+  try {
+    final result = await process.run(
+      ProcessCommandRequest(
+        executablePath: pafioBinaryPath,
+        arguments: <String>[
+          '--json',
+          'doctor',
+          '--manifest-path',
+          manifestPath,
+          '--styio-bin',
+          styioBinaryPath,
+        ],
+        workingDirectory: workspaceRoot,
+        environment: environment,
+        serviceKind: ProcessServiceKind.pafio,
+      ),
+    );
+    final payload = parseJsonObjectPayload(result.stdout);
+    final checks = payload?['checks'];
+    if (result.exitCode == null ||
+        payload?['command'] != 'doctor' ||
+        checks is! List) {
+      return const FlowHeroToolchainPairCheck(
+        compatible: false,
+        message: 'pafio 未返回有效的工具链兼容性检查',
+      );
+    }
+    final compilerChecks = checks
+        .whereType<Map>()
+        .where((check) => check['name'] == 'styio')
+        .toList(growable: false);
+    if (compilerChecks.length != 1) {
+      return const FlowHeroToolchainPairCheck(
+        compatible: false,
+        message: 'pafio 未返回唯一的 Styio 兼容性检查',
+      );
+    }
+    final check = compilerChecks.single;
+    final status = check['status'];
+    final detail = check['detail'];
+    final versions = detail is Map
+        ? detail['supported_compile_plan_versions']
+        : null;
+    final accepted =
+        (status == 'ok' || status == 'warning') &&
+        versions is List &&
+        versions.contains(1);
+    // Doctor may exit nonzero for a missing lockfile/cache. Those findings are
+    // handled by the real workflow; they do not negate a valid compiler check.
+    return FlowHeroToolchainPairCheck(
+      compatible: accepted,
+      advisory: accepted && status == 'warning',
+      message: accepted
+          ? (status == 'warning' ? '本地工具链未列入产品矩阵' : '')
+          : _sanitize(
+              _stringValue(check['message']) ?? 'Styio 未满足 compile-plan v1 合同',
+            ),
+    );
+  } on Object catch (error) {
+    return FlowHeroToolchainPairCheck(
+      compatible: false,
+      message: '无法检查工具链兼容性 · ${_sanitize('$error')}',
+    );
+  }
 }
 
 /// One finished pafio invocation, described only by the facts pafio returned.
@@ -179,6 +270,7 @@ class FlowHeroExecutionRuntime
     String pafioBinaryPath = '',
     String styioBinaryPath = '',
     String manifestPath = '',
+    Map<String, String> environment = const <String, String>{},
     Set<FlowHeroToolchainKind> missingToolchains =
         const <FlowHeroToolchainKind>{},
     Map<FlowHeroToolchainKind, List<FlowHeroToolchainCheck>> toolchainChecks =
@@ -190,6 +282,7 @@ class FlowHeroExecutionRuntime
        _pafioBinaryPath = pafioBinaryPath,
        _styioBinaryPath = styioBinaryPath,
        _manifestPath = manifestPath,
+       _environment = Map<String, String>.unmodifiable(environment),
        _missingToolchains = missingToolchains,
        _toolchainChecks = toolchainChecks,
        _unavailableCause = unavailableCause;
@@ -258,7 +351,7 @@ class FlowHeroExecutionRuntime
       );
       final styioEnvironment = Map<String, String>.of(hostEnvironment);
       if (toolchainSelection.styioPath.isNotEmpty &&
-          (styioEnvironment['VITYO_STYIO_BIN'] ?? '').isEmpty) {
+          (styioEnvironment['VITYO_STYIO_BIN'] ?? '').trim().isEmpty) {
         styioEnvironment['VITYO_STYIO_BIN'] = toolchainSelection.styioPath;
       }
       final catalog = await createPlatformStyioLanguageToolchainCatalog(
@@ -310,9 +403,31 @@ class FlowHeroExecutionRuntime
           unavailableCause: FlowHeroExecutionUnavailableCause.manifest,
         );
       }
+      final pair = await checkFlowHeroToolchainPair(
+        process: managers.process,
+        pafioBinaryPath: pafioBinary,
+        styioBinaryPath: styioBinary,
+        workspaceRoot: workspaceRoot,
+        manifestPath: manifestPath,
+        environment: hostEnvironment,
+      );
+      if (!pair.compatible) {
+        return FlowHeroExecutionRuntime._(
+          mode: FlowHeroExecutionMode.unavailable,
+          statusLine: '工具链不兼容',
+          unavailableReason: pair.message,
+          workspaceRoot: workspaceRoot,
+          pafioBinaryPath: pafioBinary,
+          styioBinaryPath: styioBinary,
+          toolchainChecks: checks,
+          unavailableCause: FlowHeroExecutionUnavailableCause.compatibility,
+        );
+      }
       return FlowHeroExecutionRuntime._(
         mode: FlowHeroExecutionMode.live,
-        statusLine: 'pafio run/test',
+        statusLine: pair.advisory
+            ? 'pafio run/test · ${pair.message}'
+            : 'pafio run/test',
         unavailableReason: '',
         workspaceRoot: workspaceRoot,
         process: managers.process,
@@ -320,6 +435,7 @@ class FlowHeroExecutionRuntime
         pafioBinaryPath: pafioBinary,
         styioBinaryPath: styioBinary,
         manifestPath: manifestPath,
+        environment: environment ?? const <String, String>{},
         toolchainChecks: checks,
       );
     } on Object {
@@ -333,7 +449,7 @@ class FlowHeroExecutionRuntime
     }
   }
 
-  /// The four slots each tool was probed in, in resolution order.
+  /// The authoritative selection, or automatic discovery slots when unset.
   static Map<FlowHeroToolchainKind, List<FlowHeroToolchainCheck>>
   _checksByKind({
     required Map<String, String> environment,
@@ -368,6 +484,19 @@ class FlowHeroExecutionRuntime
   }) {
     final String environmentPath = (environment[kind.environmentVariable] ?? '')
         .trim();
+    if (environmentPath.isNotEmpty) {
+      return <FlowHeroToolchainCheck>[
+        FlowHeroToolchainCheck(
+          source: '环境变量 ${kind.environmentVariable}',
+          path: environmentPath,
+        ),
+      ];
+    }
+    if (selectedPath.isNotEmpty) {
+      return <FlowHeroToolchainCheck>[
+        FlowHeroToolchainCheck(source: '已保存的用户选择', path: selectedPath),
+      ];
+    }
     return <FlowHeroToolchainCheck>[
       FlowHeroToolchainCheck(
         source: '环境变量 ${kind.environmentVariable}',
@@ -399,6 +528,7 @@ class FlowHeroExecutionRuntime
     required String pafioBinaryPath,
     required String styioBinaryPath,
     required String manifestPath,
+    Map<String, String> environment = const <String, String>{},
   }) {
     return FlowHeroExecutionRuntime._(
       mode: FlowHeroExecutionMode.live,
@@ -410,6 +540,7 @@ class FlowHeroExecutionRuntime
       pafioBinaryPath: pafioBinaryPath,
       styioBinaryPath: styioBinaryPath,
       manifestPath: manifestPath,
+      environment: environment,
     );
   }
 
@@ -428,6 +559,7 @@ class FlowHeroExecutionRuntime
   final String _pafioBinaryPath;
   final String _styioBinaryPath;
   final String _manifestPath;
+  final Map<String, String> _environment;
   final Set<FlowHeroToolchainKind> _missingToolchains;
   final Map<FlowHeroToolchainKind, List<FlowHeroToolchainCheck>>
   _toolchainChecks;
@@ -499,6 +631,7 @@ class FlowHeroExecutionRuntime
             _styioBinaryPath,
           ],
           workingDirectory: _workspaceRoot,
+          environment: _environment,
           serviceKind: ProcessServiceKind.pafio,
           onStarted: (ProcessCommandHandle handle) {
             _handle = handle;
@@ -564,16 +697,42 @@ class FlowHeroExecutionRuntime
         exitCode: result.exitCode,
       );
     }
+    final styio = successPayload?['styio'];
+    final compilerProcess = styio is Map ? styio['process'] : null;
+    if (successPayload?['status'] != 'succeeded' ||
+        successPayload?['command'] != kind.command ||
+        successPayload?['intent'] != kind.command ||
+        successPayload?['mode'] != 'execute' ||
+        styio is! Map ||
+        styio['status'] != 'succeeded' ||
+        compilerProcess is! Map ||
+        compilerProcess['exit_code'] != 0) {
+      return _unverifiedOutcome(
+        kind,
+        duration,
+        result.exitCode,
+        'pafio 未返回有效的 Styio 编译执行结果',
+      );
+    }
     final plan = successPayload?['plan'];
     final buildRoot = await _resolveBuildRoot(
       plan is Map ? _stringValue(plan['build_root']) : null,
     );
     final receipt = await _readReceipt(buildRoot);
-    final String summary = receipt == null
-        ? '${kind.command} 通过 · ${_seconds(duration)}'
-        : '${kind.command} 通过 · ${_seconds(duration)} · 阶段 '
-              '${receipt.phases.length} · 产物 ${receipt.artifacts.length}'
-              ' · 会话 ${receipt.sessionId}';
+    if (receipt == null ||
+        receipt.intent != kind.command ||
+        !receipt.executed) {
+      return _unverifiedOutcome(
+        kind,
+        duration,
+        result.exitCode,
+        '未取得与本次操作匹配的 Styio 执行回执',
+      );
+    }
+    final String summary =
+        '${kind.command} 通过 · ${_seconds(duration)} · 阶段 '
+        '${receipt.phases.length} · 产物 ${receipt.artifacts.length}'
+        ' · 会话 ${receipt.sessionId}';
     return FlowHeroExecutionOutcome(
       kind: kind,
       phase: FlowHeroExecutionPhase.succeeded,
@@ -584,6 +743,20 @@ class FlowHeroExecutionRuntime
       receipt: receipt,
     );
   }
+
+  FlowHeroExecutionOutcome _unverifiedOutcome(
+    FlowHeroExecutionKind kind,
+    Duration duration,
+    int? exitCode,
+    String reason,
+  ) => FlowHeroExecutionOutcome(
+    kind: kind,
+    phase: FlowHeroExecutionPhase.failed,
+    statusLine: '结果未验证',
+    receiptText: '${kind.command} 结果未验证 · $reason · ${_seconds(duration)}',
+    duration: duration,
+    exitCode: exitCode,
+  );
 
   /// Re-expresses pafio's reported build root under the workspace root and
   /// rejects anything outside the tree pafio owns.
@@ -624,10 +797,22 @@ class FlowHeroExecutionRuntime
       final raw = parseJsonObjectPayload(
         await fileSystem.readText(receiptPath),
       );
-      return ExecutionReceiptSnapshot.decode(
-        raw,
-        fallbackSessionId: 'flow-hero',
-      );
+      // This boundary reports compiler evidence, not a legacy projection. Never
+      // invent a session identity or silently drop malformed artifact entries.
+      final sessionId = raw?['session_id'];
+      final artifacts = raw?['artifacts'];
+      final phases = raw?['phases'];
+      if (raw?['schema_version'] != 1 ||
+          raw?['tool'] != 'styio' ||
+          sessionId is! String ||
+          sessionId.trim().isEmpty ||
+          artifacts is! List ||
+          artifacts.any((value) => value is! String) ||
+          (phases != null &&
+              (phases is! List || phases.any((value) => value is! String)))) {
+        return null;
+      }
+      return ExecutionReceiptSnapshot.decode(raw, fallbackSessionId: sessionId);
     } on Object {
       return null;
     }

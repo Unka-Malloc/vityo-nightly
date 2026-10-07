@@ -108,6 +108,13 @@ and must not be treated as the capability contract.
 
 ## 6. Toolchain And Execution Gaps
 
+The local Flow Hero selection slice now keeps explicit paths fail-closed,
+checks the actual Pafio/Styio pair before enabling Run/Test, and requires the
+existing execute envelope plus matching executed receipt before reporting
+success. Product-version advisories do not replace contract checks or prove
+release certification. Deterministic engineering checks and real installed
+macOS UI acceptance remain separate evidence.
+
 | Gap | Status | Owner | Required closure |
 |---|---|---|---|
 | Real JIT compiler/backend contract | Upstream blocked | styio-nightly / backend service | Replace route intent and capability gap with published execution contract. |

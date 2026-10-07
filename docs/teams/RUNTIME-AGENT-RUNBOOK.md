@@ -2,7 +2,7 @@
 
 **Purpose:** Define ownership for runtime/debug surfaces and the IDE-side Agent Workbench without assigning Agent-runtime execution to the IDE.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-07
 
 ## Mission
 
@@ -40,6 +40,11 @@ Key SSOTs:
 3. `测试目录 -> ../assets/workflow/TEST-CATALOG.md`
 
 ## Daily Workflow
+
+Flow Hero Run/Test readiness requires the actual selected Pafio/Styio compiler
+check. A failed rerun clears the current result and never reuses a previous receipt.
+The compile-only acceptance entry uses the production UI/controller/execution path
+with Agent attachment disabled before provider or credential access.
 
 1. 先确认当前变更是 runtime 可视化还是 Agent 协作入口。
 2. 若变更依赖新 adapter payload，先转到 Adapter / Contracts owner 文档确认边界。

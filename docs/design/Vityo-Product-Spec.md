@@ -212,6 +212,26 @@ Styio-owned services provide lexical, semantic, diagnostic, completion, hover, f
 reference, refactor, compile, and runtime facts through explicit adapters. Unavailable facts produce
 capability gaps, not local guesses presented as authoritative results.
 
+#### Local toolchain selection and execution evidence
+
+Flow Hero exposes both local Pafio and Styio selections. An explicit environment
+or saved selection names the tool to use; an invalid explicit path blocks the
+route rather than substituting a bundled or system binary. Environment overrides
+retain precedence over saved selections. With no explicit selection, normal
+bundled/system discovery remains available.
+
+Before enabling Run/Test, the production execution service asks the selected
+Pafio to perform its read-only `doctor` compiler check for the selected Styio.
+The compiler contract check is independent of unrelated project cache/lock
+findings. A local version/channel outside the product matrix is advisory after
+Pafio validates the required contracts; this does not certify a release or waive
+provenance requirements. Pafio continues to own planning and compiler admission.
+
+A successful display requires a successful Pafio execute envelope and a valid
+Styio receipt for the requested run/test intent. An exit code alone, a missing
+receipt, or a failed invocation with an old receipt is not displayed as verified
+success. These checks use existing workflow and receipt contracts.
+
 ### 8.2 Developer loop
 
 The workbench exposes project graph, dependency, toolchain, build, test, run, debug, terminal,

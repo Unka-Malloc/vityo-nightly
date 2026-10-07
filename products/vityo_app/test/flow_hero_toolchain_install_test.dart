@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -474,7 +475,11 @@ void main() {
           'custom',
           'styio',
         ]);
-        await _makeVersionBinary(managers, pafioPath);
+        await _makeVersionBinary(
+          managers,
+          pafioPath,
+          doctorStyioPath: styioPath,
+        );
         await _makeVersionBinary(managers, styioPath);
         await managers.fileSystem.writeText(
           managers.fileSystem.joinPath(<String>[tempRoot.path, 'pafio.toml']),
@@ -664,12 +669,79 @@ void main() {
           find.byKey(const ValueKey('toolchain-install-section-pafio')),
           findsOneWidget,
         );
+        expect(
+          find.byKey(const ValueKey('toolchain-install-section-styio')),
+          findsOneWidget,
+          reason: 'an installed tool can still be replaced to select a pair',
+        );
         expect(find.text('环境变量 VITYO_PAFIO_BIN'), findsOneWidget);
         expect(find.text('已保存的用户选择'), findsOneWidget);
         expect(find.text('/usr/local/bin/pafio'), findsOneWidget);
         await shutdown(tester);
       },
     );
+
+    for (final missingKind in FlowHeroToolchainKind.values) {
+      testWidgets(
+        'the other tool can be selected while only ${missingKind.id} is missing',
+        (WidgetTester tester) async {
+          final selectedKind = FlowHeroToolchainKind.values.firstWhere(
+            (kind) => kind != missingKind,
+          );
+          final controller = FlowHeroController(
+            executionSource: _FakeSource(
+              live: false,
+              unavailableReason: '未发现 ${missingKind.id}',
+              missingToolchains: <FlowHeroToolchainKind>{missingKind},
+            ),
+            toolchainStore: store,
+            toolchainProbe: (FlowHeroToolchainKind _, String __) async =>
+                const FlowHeroToolchainProbeResult(ok: true, detail: 'ok'),
+            executionBoot: (String _, FlowHeroToolchainSelection __) async =>
+                _FakeSource(
+                  live: false,
+                  unavailableReason: '未发现 ${missingKind.id}',
+                  missingToolchains: <FlowHeroToolchainKind>{missingKind},
+                ),
+          );
+          addTearDown(controller.dispose);
+          await boot(tester, controller);
+          controller.openToolchainInstall();
+          await tester.pump();
+
+          final selectedPath = '/tmp/selected-${selectedKind.id}';
+          final pathField = find.byKey(
+            ValueKey('toolchain-install-path-${selectedKind.id}'),
+          );
+          await tester.ensureVisible(pathField);
+          await tester.enterText(pathField, selectedPath);
+          final verify = find.byKey(
+            ValueKey('toolchain-install-verify-${selectedKind.id}'),
+          );
+          await tester.ensureVisible(verify);
+          await tester.tap(verify);
+          await tester.pump();
+          await tester.pump();
+          final save = find.byKey(
+            ValueKey('toolchain-install-save-${selectedKind.id}'),
+          );
+          await tester.ensureVisible(save);
+          await tester.tap(save);
+          await tester.pump();
+          await tester.pump();
+
+          expect(store.saves, <String>['${selectedKind.id}=$selectedPath']);
+          expect(controller.executionLive, isFalse);
+          for (final kind in FlowHeroToolchainKind.values) {
+            expect(
+              find.byKey(ValueKey('toolchain-install-section-${kind.id}')),
+              findsOneWidget,
+            );
+          }
+          await shutdown(tester);
+        },
+      );
+    }
 
     testWidgets('both missing tools get a section, pafio first', (
       WidgetTester tester,
@@ -864,11 +936,31 @@ Future<PlatformManagerBundle> _managers(Directory root) async {
 
 Future<void> _makeVersionBinary(
   PlatformManagerBundle managers,
-  String path,
-) async {
+  String path, {
+  String? doctorStyioPath,
+}) async {
+  final doctorResponse = jsonEncode(<String, Object?>{
+    'command': 'doctor',
+    'checks': <Object?>[
+      <String, Object?>{
+        'name': 'styio',
+        'status': 'ok',
+        'detail': <String, Object?>{
+          'binary': doctorStyioPath,
+          'supported_compile_plan_versions': <int>[1],
+        },
+      },
+    ],
+  });
   await managers.fileSystem.writeText(
     path,
-    '#!/bin/sh\necho "1.2.3"\nexit 0\n',
+    '#!/bin/sh\n'
+    'if [ "\$1" = "--version" ]; then echo "1.2.3"; exit 0; fi\n'
+    '${doctorStyioPath == null ? '' : 'if [ "\$1" = "--json" ] && [ "\$2" = "doctor" ]; then\n'
+              "  echo '$doctorResponse'\n"
+              '  exit 0\n'
+              'fi\n'}'
+    'exit 2\n',
   );
   await managers.fileSystem.setExecutable(path);
 }

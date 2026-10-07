@@ -30,6 +30,18 @@ The canonical contributor entrypoint is `python3 scripts/vityo.py deliver`; test
 
 The quality-runner test compares every file under the app's standalone integration root with its explicit file literals and registered glob patterns. An added file fails that check until it is mapped to a runnable suite; moving a test requires preserving equivalent CI coverage. Deleting or renaming a test cannot turn its requirement into a pass.
 
+## Local Toolchain Slice
+
+The auto-discovered Flutter tests `flow_hero_execution_test.dart`,
+`flow_hero_local_services_test.dart`, `flow_hero_toolchain_install_test.dart`,
+`pafio_cli_discovery_test.dart`, and `styio_toolchain_discovery_lspd_test.dart`
+cover explicit-path failure without fallback, both selection controls, the real
+Pafio doctor-check parser, advisory product lanes, and executed-receipt validation.
+Failure, missing/malformed evidence, wrong intent, and old successful receipts must
+not produce a new success result. The separate `flow_hero_compile_acceptance_test.dart`
+covers isolated bootstrap and disabled Agent access using the production services.
+These tests establish deterministic contracts, not installed macOS UI acceptance.
+
 ## Flow Hero Future Acceptance
 
 These remaining requirements concern source-authoritative graph behavior. The current Flow Hero preview/model and connected Agent operation/review path do not establish Styio graph semantics. Add each applicable test with the implementation that first provides its behavior.

@@ -67,7 +67,7 @@ void main() {
         environment: <String, String>{'VITYO_PAFIO_BIN': overridePath},
       );
 
-      expect(resolved, isNot(overridePath));
+      expect(resolved, isNull);
     },
     skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
   );
@@ -205,31 +205,110 @@ void main() {
     skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
   );
 
+  test('a persisted candidate that fails --version blocks bundled and system '
+      'fallback', () async {
+    final tempRoot = await Directory.systemTemp.createTemp(
+      'vityo_pafio_extra_fallthrough_test_',
+    );
+    addTearDown(() => tempRoot.delete(recursive: true));
+    final managers = await _managers(tempRoot);
+    final appExecutable = _fakeAppExecutablePath(tempRoot);
+    await _makeBundledPafio(managers, appExecutable);
+    final systemPath = '${tempRoot.path}/system/pafio';
+    await _makeVersionBinary(managers, systemPath);
+    final brokenPath = managers.fileSystem.joinPath(<String>[
+      tempRoot.path,
+      'persisted',
+      'pafio',
+    ]);
+    await managers.fileSystem.writeText(brokenPath, '#!/bin/sh\nexit 3\n');
+    await managers.fileSystem.setExecutable(brokenPath);
+
+    final resolved = await resolvePafioBinary(
+      managers,
+      bundledExecutablePath: appExecutable,
+      systemCandidatePaths: <String>[systemPath],
+      extraCandidatePaths: <String>[brokenPath],
+    );
+
+    expect(resolved, isNull);
+  }, skip: Platform.isWindows ? 'POSIX discovery fixture.' : false);
+
   test(
-    'a persisted candidate that fails --version falls through to the bundled '
-    'component',
+    'a missing env override blocks a valid saved, bundled, and system binary',
     () async {
       final tempRoot = await Directory.systemTemp.createTemp(
-        'vityo_pafio_extra_fallthrough_test_',
+        'vityo_pafio_missing_override_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
       final managers = await _managers(tempRoot);
       final appExecutable = _fakeAppExecutablePath(tempRoot);
-      final bundledPath = _bundledComponentPath(appExecutable, 'pafio');
       await _makeBundledPafio(managers, appExecutable);
-      final brokenPath = managers.fileSystem.joinPath(<String>[
-        tempRoot.path,
-        'persisted',
-        'pafio',
-      ]);
-      await managers.fileSystem.writeText(brokenPath, '#!/bin/sh\nexit 3\n');
-      await managers.fileSystem.setExecutable(brokenPath);
+      final selectedPath = '${tempRoot.path}/selected/pafio';
+      final systemPath = '${tempRoot.path}/system/pafio';
+      await _makeVersionBinary(managers, selectedPath);
+      await _makeVersionBinary(managers, systemPath);
+
+      final resolved = await resolvePafioBinary(
+        managers,
+        environment: <String, String>{
+          'VITYO_PAFIO_BIN': '${tempRoot.path}/missing/pafio',
+        },
+        bundledExecutablePath: appExecutable,
+        systemCandidatePaths: <String>[systemPath],
+        extraCandidatePaths: <String>[selectedPath],
+      );
+
+      expect(resolved, isNull);
+    },
+    skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
+  );
+
+  test(
+    'a missing saved path is not replaced by another candidate',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_pafio_missing_selection_test_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
+      final managers = await _managers(tempRoot);
+      final appExecutable = _fakeAppExecutablePath(tempRoot);
+      await _makeBundledPafio(managers, appExecutable);
+      final otherPath = '${tempRoot.path}/other/pafio';
+      await _makeVersionBinary(managers, otherPath);
 
       final resolved = await resolvePafioBinary(
         managers,
         bundledExecutablePath: appExecutable,
+        systemCandidatePaths: <String>[otherPath],
+        extraCandidatePaths: <String>[
+          '${tempRoot.path}/missing/pafio',
+          otherPath,
+        ],
+      );
+
+      expect(resolved, isNull);
+    },
+    skip: Platform.isWindows ? 'POSIX discovery fixture.' : false,
+  );
+
+  test(
+    'empty selections still permit bundled discovery',
+    () async {
+      final tempRoot = await Directory.systemTemp.createTemp(
+        'vityo_pafio_empty_selection_test_',
+      );
+      addTearDown(() => tempRoot.delete(recursive: true));
+      final managers = await _managers(tempRoot);
+      final appExecutable = _fakeAppExecutablePath(tempRoot);
+      final bundledPath = await _makeBundledPafio(managers, appExecutable);
+
+      final resolved = await resolvePafioBinary(
+        managers,
+        environment: const <String, String>{'VITYO_PAFIO_BIN': ''},
+        bundledExecutablePath: appExecutable,
         systemCandidatePaths: const <String>[],
-        extraCandidatePaths: <String>[brokenPath],
+        extraCandidatePaths: const <String>['', '   '],
       );
 
       expect(resolved, bundledPath);

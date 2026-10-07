@@ -32,10 +32,14 @@ void debugOverridePafioExecutableCandidates(List<String>? candidates) {
 /// Resolves the `pafio` CLI, probing candidates in this order:
 ///
 /// 1. `VITYO_PAFIO_BIN` from the injected environment (explicit override).
-/// 2. [extraCandidatePaths] — a user-selected binary that takes effect once
-///    the environment says nothing, and outranks the bundled component.
+/// 2. The first nonempty [extraCandidatePaths] entry — a user-selected binary
+///    that takes effect once the environment says nothing.
 /// 3. The app-bundled component named by `pafio-component.json`.
 /// 4. System locations.
+///
+/// An explicit environment or user selection is authoritative: if its probe
+/// fails, resolution fails rather than silently choosing a different binary.
+/// Bundled and system discovery runs only when neither selection is present.
 ///
 /// [bundledExecutablePath] overrides the app executable the bundled layout is
 /// derived from (defaults to the platform executable); [systemCandidatePaths]
@@ -54,22 +58,28 @@ Future<String?> resolvePafioBinary(
   if (_debugExecutableCandidates case final debugCandidates?) {
     candidates = debugCandidates;
   } else {
-    final isWindows =
-        platformManagers.context.fileSystem.operatingSystem == 'windows';
-    final bundledCandidate = await _readBundledPafioCandidate(
-      executablePath: bundledExecutablePath,
-    );
-    candidates = <String>[
-      if (environment['VITYO_PAFIO_BIN'] case final explicit?
-          when explicit.isNotEmpty)
-        explicit,
-      ...extraCandidatePaths.where((String path) => path.trim().isNotEmpty),
-      if (bundledCandidate != null) bundledCandidate,
-      if (isWindows)
-        r'C:\Program Files\Pafio\pafio.exe'
-      else
-        ...systemCandidatePaths,
-    ];
+    final explicit = environment['VITYO_PAFIO_BIN'];
+    final selected = extraCandidatePaths
+        .where((String path) => path.trim().isNotEmpty)
+        .firstOrNull;
+    if (explicit != null && explicit.isNotEmpty) {
+      candidates = <String>[explicit];
+    } else if (selected != null) {
+      candidates = <String>[selected];
+    } else {
+      final isWindows =
+          platformManagers.context.fileSystem.operatingSystem == 'windows';
+      final bundledCandidate = await _readBundledPafioCandidate(
+        executablePath: bundledExecutablePath,
+      );
+      candidates = <String>[
+        if (bundledCandidate != null) bundledCandidate,
+        if (isWindows)
+          r'C:\Program Files\Pafio\pafio.exe'
+        else
+          ...systemCandidatePaths,
+      ];
+    }
   }
   for (final candidate in candidates) {
     try {
