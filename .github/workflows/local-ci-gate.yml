@@ -342,6 +342,8 @@ jobs:
       - name: Run complete macOS delivery
         working-directory: vityo-nightly
         env:
+          # Include browser stderr and process exit diagnostics for startup failures.
+          DEBUG: pw:browser
           CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path }}
           VITYO_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           PYTHON_BIN: ${{ env.PYTHON_BIN }}

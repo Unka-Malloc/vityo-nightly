@@ -79,6 +79,12 @@ claims.
 
 ## Daily Workflow
 
+The Prototype editor smoke test names browser resolution, server readiness, browser launch,
+and page creation as separate steps. Startup failures clean up owned resources; screenshot
+capture is best-effort and reports whether an artifact was actually saved. The macOS CI
+lane enables `DEBUG=pw:browser` to retain browser stderr and process-exit diagnostics.
+
+
 For local toolchain delivery, distinguish explicit-path selection, Pafio compiler-contract
 evidence, and release certification. Keep the Run/Test receipt rejection cases in the
 auto-discovered Flutter test root; report native Pafio tests and isolated client
