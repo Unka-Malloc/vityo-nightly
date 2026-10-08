@@ -143,7 +143,8 @@ final class _ScriptedDaemonTransport implements VityodTransport {
       // A stat of the scope root itself; nothing in these tests asserts on it.
       return false;
     }
-    return existingPaths.contains(relativePath);
+    // Fixture keys are portable; the real manager uses the host's separator.
+    return existingPaths.contains(relativePath.replaceAll(r'\', '/'));
   }
 
   Map<String, Object?> _taskResult(VityodControlEnvelope request) {

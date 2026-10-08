@@ -412,3 +412,10 @@ only an acknowledged close confirms cleanup. Registered deterministic manager/cl
 transport tests and sandbox metadata-preservation coverage in the test catalog.
 Portable Dart evidence is separate from native daemon cleanup and Windows pipe
 acceptance; no published product or daemon protocol changed.
+
+2026-10-08: Repaired three desktop test-fixture assumptions without changing
+production adapters or security policy. Reconnect expectations use the existing
+portable protocol path, scripted file lookup normalizes host separators, and the
+real-daemon DAP test uses installed native Dart for raw byte echo instead of a
+Unix-only cat path. Preserve byte equality, process ownership, and shutdown checks;
+portable fixture checks do not establish a Windows or macOS CI pass.
