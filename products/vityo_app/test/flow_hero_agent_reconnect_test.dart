@@ -379,7 +379,7 @@ void main() {
       expect(middleTransport.openedWorkspaceRoots, <String>[middleRoot]);
       expect(
         middleTransport.sessionRoots.single,
-        Uri.directory(middleRoot).toFilePath(),
+        Uri.directory(middleRoot).toFilePath(windows: false),
       );
       expect(middleTransport.scopeCloseCount, 1);
       expect(middleTransport.disposeCount, 1);
@@ -388,7 +388,7 @@ void main() {
       expect(finalTransport.openedWorkspaceRoots, <String>[finalRoot]);
       expect(
         finalTransport.sessionRoots.single,
-        Uri.directory(finalRoot).toFilePath(),
+        Uri.directory(finalRoot).toFilePath(windows: false),
       );
       expect(bridge.activeListenerCount, listeners);
 

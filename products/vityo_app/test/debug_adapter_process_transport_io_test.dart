@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_adapter_launcher.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_adapter_process_transport_io.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_launch_contract.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/forwarded_host_environment.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
 
 import 'support/vityod_test_harness.dart';
@@ -23,29 +24,40 @@ void main() {
     'DAP byte transport streams through the real daemon process owner',
     () async {
       final transport = DapProcessTransport(
-        executable: Platform.isMacOS ? '/bin/cat' : '/usr/bin/cat',
+        executable: await _nativeDartExecutable(),
+        arguments: <String>[
+          '--disable-dart-dev',
+          File('test/support/dap_byte_echo.dart').absolute.path,
+        ],
+        environment: forwardedHostEnvironment(),
         client: vityod!.client,
       );
+      addTearDown(transport.shutdown);
       await transport.start();
       expect(transport.processHandle?.processHandleId, startsWith('dap-'));
       expect(transport.processHandle?.pid, greaterThan(0));
       expect(transport.processHandle?.source, 'vityod-dap');
-      final echoed = transport.incomingBytes.first;
-      await transport.send(<int>[100, 97, 112, 45, 111, 107, 10]);
+      const payload = <int>[100, 97, 112, 45, 111, 107, 10, 0, 13, 128, 255];
+      final payloadReceived = Completer<void>();
+      var receivedLength = 0;
+      final echoed = transport.incomingBytes.expand((chunk) {
+        receivedLength += chunk.length;
+        if (receivedLength >= payload.length && !payloadReceived.isCompleted) {
+          payloadReceived.complete();
+        }
+        return chunk;
+      }).toList();
+      await transport.send(payload);
 
-      expect(await echoed.timeout(const Duration(seconds: 5)), <int>[
-        100,
-        97,
-        112,
-        45,
-        111,
-        107,
-        10,
-      ]);
-      expect((await transport.shutdown()).processTerminated, isTrue);
+      await payloadReceived.future.timeout(const Duration(seconds: 5));
+      final shutdown = await transport.shutdown().timeout(
+        const Duration(seconds: 5),
+      );
+      expect(await echoed.timeout(const Duration(seconds: 5)), payload);
+      expect(shutdown.processTerminated, isTrue);
     },
     skip: !VityodTestHarness.isSupported
-        ? 'Unix vityod transport only.'
+        ? 'Desktop vityod transport only.'
         : false,
   );
 
@@ -138,6 +150,26 @@ void main() {
       expect(result.processResult?.metadata['forceRequested'], isTrue);
       expect(process.terminateCalls, 1);
     },
+  );
+}
+
+Future<String> _nativeDartExecutable() async {
+  final name = Platform.isWindows ? 'dart.exe' : 'dart';
+  final current = File(
+    await File(Platform.resolvedExecutable).resolveSymbolicLinks(),
+  );
+  if (current.uri.pathSegments.last == name) return current.path;
+  // flutter_tester lives inside this same installed SDK's engine cache.
+  var directory = current.parent;
+  for (var depth = 0; depth < 8; depth++) {
+    final candidate = File('${directory.path}/bin/cache/dart-sdk/bin/$name');
+    if (await candidate.exists()) return candidate.absolute.path;
+    final parent = directory.parent;
+    if (parent.path == directory.path) break;
+    directory = parent;
+  }
+  throw StateError(
+    'Native Dart binary in the installed Flutter SDK is required',
   );
 }
 
