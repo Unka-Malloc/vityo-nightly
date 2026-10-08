@@ -1786,37 +1786,8 @@ REMOVE_ME=from-file
       request.response.write(artifact);
       request.response.close();
     });
-    final context = PlatformContextSnapshot.compose(
+    final platformManagers = await createDetectedPlatformManagerBundle(
       targetId: 'toolchain-managed-download',
-      fileSystem: FileSystemFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      shell: ShellFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-        defaultShellPath: '/bin/sh',
-      ),
-      process: ProcessFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      resource: ResourceFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      network: NetworkFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      clipboard: ClipboardFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      notification: NotificationFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      localService: LocalServiceFacts.linuxDebianArm(
-        targetId: 'toolchain-managed-download',
-      ),
-      pty: PtyFacts.linuxDebianArm(targetId: 'toolchain-managed-download'),
-    );
-    final platformManagers = await createPlatformManagerBundle(
-      platformContext: context,
       vityodClient: vityod!.client,
     );
     final executor = ToolchainInstallExecutor(
@@ -1949,8 +1920,8 @@ REMOVE_ME=from-file
       request.response.add(archive);
       request.response.close();
     });
-    final platformManagers = await createPlatformManagerBundle(
-      platformContext: createLinuxPlatformContext('toolchain-unsafe-archive'),
+    final platformManagers = await createDetectedPlatformManagerBundle(
+      targetId: 'toolchain-unsafe-archive',
       vityodClient: vityod!.client,
     );
     final executor = ToolchainInstallExecutor(
@@ -2021,10 +1992,8 @@ REMOVE_ME=from-file
         request.response.add(archive);
         request.response.close();
       });
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: createLinuxPlatformContext(
-          'toolchain-directory-executable',
-        ),
+      final platformManagers = await createDetectedPlatformManagerBundle(
+        targetId: 'toolchain-directory-executable',
         vityodClient: vityod!.client,
       );
       final executor = ToolchainInstallExecutor(
@@ -2078,39 +2047,8 @@ REMOVE_ME=from-file
         request.response.add(artifact);
         request.response.close();
       });
-      final context = PlatformContextSnapshot.compose(
+      final platformManagers = await createDetectedPlatformManagerBundle(
         targetId: 'toolchain-managed-download-binary',
-        fileSystem: FileSystemFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        shell: ShellFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-          defaultShellPath: '/bin/sh',
-        ),
-        process: ProcessFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        resource: ResourceFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        network: NetworkFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        clipboard: ClipboardFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        notification: NotificationFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        localService: LocalServiceFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-        pty: PtyFacts.linuxDebianArm(
-          targetId: 'toolchain-managed-download-binary',
-        ),
-      );
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: context,
         vityodClient: vityod!.client,
       );
       final executor = ToolchainInstallExecutor(
@@ -2807,39 +2745,8 @@ REMOVE_ME=from-file
       request.response.close();
     });
     final configurationStore = await createConfigurationStore(tempRoot);
-    final context = PlatformContextSnapshot.compose(
+    final platformManagers = await createDetectedPlatformManagerBundle(
       targetId: 'toolchain-manager-register-staged',
-      fileSystem: FileSystemFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      shell: ShellFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-        defaultShellPath: '/bin/sh',
-      ),
-      process: ProcessFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      resource: ResourceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      network: NetworkFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      clipboard: ClipboardFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      notification: NotificationFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      localService: LocalServiceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-      pty: PtyFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-register-staged',
-      ),
-    );
-    final platformManagers = await createPlatformManagerBundle(
-      platformContext: context,
       vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
@@ -2912,37 +2819,8 @@ REMOVE_ME=from-file
         request.response.close();
       });
       final configurationStore = await createConfigurationStore(tempRoot);
-      final context = PlatformContextSnapshot.compose(
+      final platformManagers = await createDetectedPlatformManagerBundle(
         targetId: 'toolchain-manager-rollback',
-        fileSystem: FileSystemFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        shell: ShellFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-          defaultShellPath: '/bin/sh',
-        ),
-        process: ProcessFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        resource: ResourceFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        network: NetworkFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        clipboard: ClipboardFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        notification: NotificationFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        localService: LocalServiceFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-rollback',
-        ),
-        pty: PtyFacts.linuxDebianArm(targetId: 'toolchain-manager-rollback'),
-      );
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: context,
         vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
@@ -3018,37 +2896,8 @@ REMOVE_ME=from-file
         request.response.close();
       });
       final configurationStore = await createConfigurationStore(tempRoot);
-      final context = PlatformContextSnapshot.compose(
+      final platformManagers = await createDetectedPlatformManagerBundle(
         targetId: 'toolchain-manager-archive',
-        fileSystem: FileSystemFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        shell: ShellFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-          defaultShellPath: '/bin/sh',
-        ),
-        process: ProcessFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        resource: ResourceFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        network: NetworkFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        clipboard: ClipboardFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        notification: NotificationFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        localService: LocalServiceFacts.linuxDebianArm(
-          targetId: 'toolchain-manager-archive',
-        ),
-        pty: PtyFacts.linuxDebianArm(targetId: 'toolchain-manager-archive'),
-      );
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: context,
         vityodClient: vityod!.client,
       );
       final manager = ToolchainManager(
@@ -3146,39 +2995,8 @@ REMOVE_ME=from-file
       request.response.close();
     });
     final configurationStore = await createConfigurationStore(tempRoot);
-    final context = PlatformContextSnapshot.compose(
+    final platformManagers = await createDetectedPlatformManagerBundle(
       targetId: 'toolchain-manager-archive-manifest',
-      fileSystem: FileSystemFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      shell: ShellFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-        defaultShellPath: '/bin/sh',
-      ),
-      process: ProcessFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      resource: ResourceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      network: NetworkFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      clipboard: ClipboardFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      notification: NotificationFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      localService: LocalServiceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-      pty: PtyFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-manifest',
-      ),
-    );
-    final platformManagers = await createPlatformManagerBundle(
-      platformContext: context,
       vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
@@ -3256,39 +3074,8 @@ REMOVE_ME=from-file
       request.response.close();
     });
     final configurationStore = await createConfigurationStore(tempRoot);
-    final context = PlatformContextSnapshot.compose(
+    final platformManagers = await createDetectedPlatformManagerBundle(
       targetId: 'toolchain-manager-archive-reject',
-      fileSystem: FileSystemFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      shell: ShellFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-        defaultShellPath: '/bin/sh',
-      ),
-      process: ProcessFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      resource: ResourceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      network: NetworkFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      clipboard: ClipboardFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      notification: NotificationFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      localService: LocalServiceFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-      pty: PtyFacts.linuxDebianArm(
-        targetId: 'toolchain-manager-archive-reject',
-      ),
-    );
-    final platformManagers = await createPlatformManagerBundle(
-      platformContext: context,
       vityodClient: vityod!.client,
     );
     final manager = ToolchainManager(
@@ -3544,18 +3331,8 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         'vityo_toolchain_discovery_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
-      final context = PlatformContextSnapshot.compose(
+      final platformManagers = await createDetectedPlatformManagerBundle(
         targetId: 'managed-discovery',
-        fileSystem: FileSystemFacts.linuxDebianArm(
-          targetId: 'managed-discovery',
-        ),
-        shell: ShellFacts.linuxDebianArm(
-          targetId: 'managed-discovery',
-          defaultShellPath: '/bin/sh',
-        ),
-      );
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: context,
         vityodClient: vityod!.client,
         workspaceRoot: tempRoot.path,
       );
@@ -3586,18 +3363,8 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         'vityo_native_compiler_discovery_test_',
       );
       addTearDown(() => tempRoot.delete(recursive: true));
-      final context = PlatformContextSnapshot.compose(
+      final platformManagers = await createDetectedPlatformManagerBundle(
         targetId: 'native-compiler-discovery',
-        fileSystem: FileSystemFacts.linuxDebianArm(
-          targetId: 'native-compiler-discovery',
-        ),
-        shell: ShellFacts.linuxDebianArm(
-          targetId: 'native-compiler-discovery',
-          defaultShellPath: '/bin/sh',
-        ),
-      );
-      final platformManagers = await createPlatformManagerBundle(
-        platformContext: context,
         vityodClient: vityod!.client,
         workspaceRoot: tempRoot.path,
       );

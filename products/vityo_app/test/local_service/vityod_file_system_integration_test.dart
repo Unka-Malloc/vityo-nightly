@@ -26,7 +26,7 @@ void main() {
         if (await secondRoot.exists()) await secondRoot.delete(recursive: true);
       });
       final manager = await VityodFileSystemManager.open(
-        facts: FileSystemFacts.linuxDebianArm(),
+        facts: await const LocalFileSystemProber().probe(),
         client: harness.client,
         allowedRoots: <String>[root.path],
       );
