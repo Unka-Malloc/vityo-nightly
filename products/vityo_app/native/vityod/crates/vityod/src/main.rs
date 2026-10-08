@@ -4413,6 +4413,159 @@ mod tests {
         responses
     }
 
+    fn credential_passthrough_environment_fixtures() -> Vec<Value> {
+        let mut environments = vec![];
+        for key in [
+            "VITYO_aUtHoRiZaTiOn_HEADER",
+            "VITYO_CoOkIe_JAR",
+            "VITYO_CrEdEnTiAl_FILE",
+            "VITYO_PaSsWoRd_FILE",
+            "VITYO_SeCrEt_FILE",
+            "VITYO_ToKeN_FILE",
+        ] {
+            for value in ["", "synthetic-value"] {
+                environments.push(json!({(key): value}));
+            }
+        }
+        for value in [
+            "Bearer synthetic-value",
+            "bEaReR synthetic-value",
+            "https://example.invalid/?access_token=synthetic-value",
+            "https://example.invalid/?ACCESS_TOKEN=synthetic-value",
+        ] {
+            environments.push(json!({"VITYO_DISCOVERY_HINT": value}));
+        }
+        environments
+    }
+
+    fn safe_discovery_environment_fixture() -> Value {
+        json!({
+            "PATH": r"C:\fixture\tools;C:\fixture\Windows\System32",
+            "SYSTEMROOT": r"C:\fixture\Windows",
+            "COMSPEC": r"C:\fixture\Windows\System32\cmd.exe",
+            "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+            "VITYO_DISCOVERY_HINT": "synthetic-value"
+        })
+    }
+
+    #[test]
+    fn credential_guard_denies_nested_environment_keys_and_values() {
+        for environment in credential_passthrough_environment_fixtures() {
+            let params = std::collections::BTreeMap::from([(
+                "environment".to_owned(),
+                environment.clone(),
+            )]);
+            assert!(
+                contains_sensitive_input(&params),
+                "sensitive environment was accepted: {environment}"
+            );
+        }
+    }
+
+    #[test]
+    fn credential_guard_checks_arrays_and_fails_closed_at_depth_limit() {
+        for environment in credential_passthrough_environment_fixtures() {
+            let params = std::collections::BTreeMap::from([(
+                "options".to_owned(),
+                json!([{"environment": [environment]}]),
+            )]);
+            assert!(contains_sensitive_input(&params));
+        }
+
+        let mut nested = json!("synthetic-value");
+        for _ in 0..31 {
+            nested = json!([nested]);
+        }
+        let params = std::collections::BTreeMap::from([("options".to_owned(), nested.clone())]);
+        assert!(!contains_sensitive_input(&params));
+        let params = std::collections::BTreeMap::from([("options".to_owned(), json!([nested]))]);
+        assert!(contains_sensitive_input(&params));
+    }
+
+    #[test]
+    fn credential_guard_allows_safe_discovery_environment() {
+        let params = std::collections::BTreeMap::from([(
+            "environment".to_owned(),
+            safe_discovery_environment_fixture(),
+        )]);
+        assert!(!contains_sensitive_input(&params));
+    }
+
+    #[test]
+    fn credential_passthrough_is_denied_before_pafio_task_start() {
+        let root = TestDirectory::new("credential-passthrough");
+        let runtime = Arc::new(Mutex::new(recovery_state(&root)));
+        let executable = std::env::current_exe().unwrap();
+        let environments = credential_passthrough_environment_fixtures();
+        let mut input = control_request("handshake.negotiate", 1, None, json!({}));
+        for (index, environment) in environments.iter().enumerate() {
+            input.extend(control_request(
+                "pafio.request",
+                index as u64 + 2,
+                None,
+                json!({
+                    "action": "start",
+                    "taskId": format!("denied-{index}"),
+                    "executable": executable,
+                    "arguments": ["--exact", "tests::credential_guard_allows_safe_discovery_environment"],
+                    "environment": environment
+                }),
+            ));
+        }
+        let mut connection = ScriptedConnection {
+            input: Cursor::new(input),
+            output: vec![],
+        };
+        handle_connection(&mut connection, &runtime).unwrap();
+        let responses = response_methods(&connection.output);
+        assert_eq!(responses.len(), environments.len() + 1);
+        assert_eq!(responses[0].method, "handshake.negotiate.result");
+        let mut state = runtime.lock().unwrap();
+        assert!(state.runtime.tasks.active_ids().is_empty());
+        for (index, response) in responses[1..].iter().enumerate() {
+            assert_eq!(response.method, "pafio.request.error");
+            assert_eq!(
+                response.params.get("errorCode"),
+                Some(&json!("credential_passthrough_denied")),
+                "environment fixture {index} was not rejected before dispatch"
+            );
+            assert!(matches!(
+                state.runtime.tasks.snapshot(&format!("pafio:denied-{index}")),
+                Err(vityod_runtime::TaskRuntimeError::UnknownTask)
+            ));
+        }
+    }
+
+    #[test]
+    fn credential_guard_allows_safe_environment_through_pafio_dispatch() {
+        let root = TestDirectory::new("safe-discovery-environment");
+        let runtime = Arc::new(Mutex::new(recovery_state(&root)));
+        let mut input = control_request("handshake.negotiate", 1, None, json!({}));
+        input.extend(control_request(
+            "pafio.request",
+            2,
+            None,
+            json!({
+                "action": "output",
+                "taskId": "not-started",
+                "environment": safe_discovery_environment_fixture()
+            }),
+        ));
+        let mut connection = ScriptedConnection {
+            input: Cursor::new(input),
+            output: vec![],
+        };
+        handle_connection(&mut connection, &runtime).unwrap();
+        let responses = response_methods(&connection.output);
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].method, "handshake.negotiate.result");
+        assert_eq!(responses[1].method, "pafio.request.error");
+        assert_eq!(
+            responses[1].params.get("errorCode"),
+            Some(&json!("unknown_task"))
+        );
+    }
+
     #[test]
     fn task_timeout_is_optional_and_explicit_values_are_not_clamped() {
         assert_eq!(optional_task_timeout(None), Ok(None));

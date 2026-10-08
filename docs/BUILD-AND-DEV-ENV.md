@@ -526,3 +526,37 @@ immediately by an always-run upload of this JSON. Missing prerequisites produce
 explicit `not-run` evidence without rebuilding. The existing product gate runs
 first and retains its original failure accounting. Worst additional CI time is
 three minutes plus artifact upload; no new runner or toolchain setup is required.
+
+### Pafio discovery environment boundary
+
+Pafio binary selection reads the supplied host environment locally, including
+`VITYO_PAFIO_BIN`. Its `--version` request forwards only the shared non-secret
+launch allowlist; it must never serialize the entire host environment to vityod.
+The daemon's credential-passthrough rejection and explicit process-environment
+semantics are unchanged. A failed explicit binary still cannot fall back to a
+different candidate, and PATH is retained for child lookup without adding a new
+Pafio PATH-search policy.
+
+`SYSTEMROOT`, `COMSPEC`, and `PATHEXT` are **new entries in this shared allowlist**,
+not previously supported entries. The isolated compile-acceptance launcher already
+preserves these Windows launch inputs; the shell prober uses them to find Windows
+shells and resolve executable extensions. Existing Windows fake-Pafio launchers
+invoke bare `python`, so their child lookup needs the supplied PATH/extension
+context. Microsoft documents [COMSPEC/PATHEXT command lookup](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/start),
+and Python documents [SystemRoot for Windows side-by-side executables](https://docs.python.org/3/library/subprocess.html#subprocess.Popen).
+These sources justify preserving specific launch facts, not arbitrary host data.
+
+Allowlisted names canonicalize and deduplicate case-insensitively. Conflicting
+aliases fail closed rather than selecting a different PATH by insertion order.
+Credential-shaped values under allowed names are rejected before IPC with key-only
+errors. Nothing silently rewrites a credential into a different path. Unknown
+entries and discovery-only overrides are omitted from the child map.
+
+Run `flutter test --no-pub test/pafio_discovery_environment_test.dart` from the app
+after the normal debug daemon build. The suite includes an actual native Dart
+`--version` probe through the real daemon with synthetic ambient credential keys,
+plus an explicit sensitive-map denial. Portable recording-manager assertions prove
+request construction only. The actual version probe deliberately avoids `.cmd`
+wrappers; wrapper lifecycle reliability and Windows transport cancellation remain
+separate. Unix-socket permission denial is a blocked local integration run, not
+permission to bypass the environment policy or call it a native Windows pass.

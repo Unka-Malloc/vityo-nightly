@@ -368,3 +368,11 @@ or replace product gates. The supervisor gates descendants until job assignment,
 records bounded/redacted launch evidence and verifies owned-tree cleanup. Portable
 mock tests establish orchestration only; Windows results remain pending. Any CI
 hook is a separate reviewed patch. No `prototype/` change.
+
+2026-10-08: Documented Pafio discovery's caller-side environment boundary after
+Windows evidence showed credential-passthrough denial before process start. The
+shared allowlist gains SYSTEMROOT/COMSPEC/PATHEXT with explicit casing, duplicate
+and value-rejection tests; the daemon guard and explicit process maps stay intact.
+The new real version-probe regression uses native Dart, leaving batch-wrapper and
+transport lifecycle investigations separate. Never label portable assertions or
+blocked Unix-socket integration as native Windows proof. No `prototype/` change.
