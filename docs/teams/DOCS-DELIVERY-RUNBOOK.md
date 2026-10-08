@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Mission
 
@@ -79,6 +79,21 @@ claims.
 
 ## Daily Workflow
 
+Keep macOS CocoaPods at the CI-verified `1.17.0` version and commit regenerated
+`Podfile.lock` and Runner project metadata when the Flutter plugin graph changes.
+Use observed native generation diffs; preserve product-matrix clean-checkout
+failures rather than restoring or ignoring dirty metadata.
+
+The Prototype editor smoke test names browser resolution, server readiness, browser launch,
+and page creation as separate steps. Startup failures clean up owned resources; screenshot
+capture is best-effort and reports whether an artifact was actually saved. The macOS CI
+lane enables `DEBUG=pw:browser` to retain browser stderr and process-exit diagnostics.
+All three delivery lanes select the single `VITYO_CI_CHROME_VERSION` workflow pin;
+the launched browser must match it. Keep the published Chrome for Testing pairing
+separate from the local distribution `.chromium-version` and verify host tests
+before claiming the startup failure is resolved.
+
+
 For local toolchain delivery, distinguish explicit-path selection, Pafio compiler-contract
 evidence, and release certification. Keep the Run/Test receipt rejection cases in the
 auto-discovered Flutter test root; report native Pafio tests and isolated client
@@ -89,6 +104,15 @@ suites and prototype checks, and stops on failure. Python coverage dependencies 
 in the isolated environment documented in `docs/BUILD-AND-DEV-ENV.md`. Local macOS
 launch opens a new instance of the installed candidate and checks LaunchServices' exit
 status; it does not inspect the running interface or claim live acceptance.
+macOS CI instead supervises the installed executable with the existing candidate-bound
+first-frame probe. Its 120-second startup deadline fails closed, then terminates and
+reaps only the owned PID (five-second grace before kill). The bounded, redacted
+`startup-macos-diagnostics.json` is uploaded alongside startup evidence. Keep exit-zero
+without fresh evidence, stale/wrong/malformed evidence, crash, timeout, kill/reap,
+argument preservation, and output limits covered in the auto-discovered Python tests.
+A supervisor repair is not proof a native startup failure is resolved; require a
+successful native delivery rerun and keep live UI acceptance separate.
+
 
 1. 先判断当前变化属于 owner 文档变化，还是目录/索引/交付接线变化。
 2. 任何结构性文档变更，都要同步更新对应目录的 `README.md` 和 `INDEX.md`。

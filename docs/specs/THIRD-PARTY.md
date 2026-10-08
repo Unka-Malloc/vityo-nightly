@@ -2,13 +2,14 @@
 
 **Purpose:** Record accepted, planned, and deferred dependencies across the Vityo IDE and its first-party companion Agent runtime.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-08
 
 ## 1. 已接受依赖
 
 | Dependency | Status | Role | Notes |
 |------------|--------|------|-------|
 | Flutter SDK | Accepted | 主前端运行时与跨端 UI 框架 | 负责桌面、移动与 Web 端 UI。 |
+| CocoaPods 1.17.0 | Accepted | macOS Flutter plugin integration tooling | macOS CI verifies this exact version before restoring dependencies; generated lockfile and Runner project are committed. |
 | Dart SDK | Accepted | Flutter 语言运行时 | 作为 Flutter 的直接依赖。 |
 | `styio` upstream repository | Accepted (first-party upstream) | 语言与编译器核心 | 非第三方，但属于本仓依赖边界。 |
 | LLVM | Accepted (via `styio`) | CodeGen / JIT / IR 后端 | 由上游 `styio` 维护。 |

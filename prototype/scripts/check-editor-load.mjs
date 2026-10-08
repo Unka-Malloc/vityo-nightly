@@ -181,21 +181,9 @@ async function resolveChromePath() {
 }
 
 async function runSelfTest() {
-  const chromePath = await resolveChromePath();
-
-  const server = await ensureServer(DEFAULT_URL);
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: chromePath,
-    // Playwright supplies its own headless flag. Passing `--headless=new` as
-    // well produced a browser that exited between launch and the first page on
-    // the macOS CI runner, so let Playwright own the mode.
-    args: ["--disable-gpu", "--no-first-run", "--no-default-browser-check"],
-  });
-
-  const page = await browser.newPage({
-    viewport: { width: 1440, height: 1200 },
-  });
+  let server;
+  let browser;
+  let page;
 
   const consoleErrors = [];
   const consoleWarnings = [];
@@ -370,27 +358,49 @@ async function runSelfTest() {
     );
   }
 
-  page.on("console", (message) => {
-    const type = message.type();
-    const text = message.text();
-    if (type === "error") {
-      consoleErrors.push(text);
-      return;
-    }
-    if (type === "warning") {
-      consoleWarnings.push(text);
-    }
-  });
-
-  page.on("pageerror", (error) => {
-    pageErrors.push(error?.stack || error?.message || String(error));
-  });
-
-  page.on("requestfailed", (request) => {
-    requestFailures.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText ?? "unknown"}`);
-  });
-
   try {
+    const chromePath = await runStep("resolve-browser", resolveChromePath);
+
+    server = await runStep("start-server", () => ensureServer(DEFAULT_URL));
+    browser = await runStep("launch-browser", () => chromium.launch({
+      headless: true,
+      executablePath: chromePath,
+      // Playwright supplies its own headless flag; keep one owner of that mode.
+      // The macOS startup exit is not yet attributed to a specific launch flag.
+      args: ["--disable-gpu", "--no-first-run", "--no-default-browser-check"],
+    }));
+    log(`browser: ${browser.version()}; node: ${process.version}; host: ${process.platform}/${process.arch}`);
+    await runStep("verify-browser-version", async () => {
+      const expected = process.env.VITYO_CI_CHROME_VERSION;
+      if (expected && browser.version() !== expected) {
+        throw new Error(`expected CI browser ${expected}, got ${browser.version()}`);
+      }
+    });
+    browser.on("disconnected", () => log(`browser disconnected during step: ${currentStep}`));
+
+    page = await runStep("create-page", () => browser.newPage({
+      viewport: { width: 1440, height: 1200 },
+    }));
+
+    page.on("console", (message) => {
+      const type = message.type();
+      const text = message.text();
+      if (type === "error") {
+        consoleErrors.push(text);
+        return;
+      }
+      if (type === "warning") {
+        consoleWarnings.push(text);
+      }
+    });
+
+    page.on("pageerror", (error) => {
+      pageErrors.push(error?.stack || error?.message || String(error));
+    });
+
+    page.on("requestfailed", (request) => {
+      requestFailures.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText ?? "unknown"}`);
+    });
     log(`opening ${DEFAULT_URL}`);
     const response = await runStep("open-page", () =>
       page.goto(DEFAULT_URL, {
@@ -847,8 +857,14 @@ async function runSelfTest() {
       }
     }
   } catch (error) {
-    await ensureArtifactDir();
-    await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }).catch(() => {});
+    let screenshotSaved = false;
+    if (page && !page.isClosed()) {
+      await settle((async () => {
+        await ensureArtifactDir();
+        await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true, timeout: 5000 });
+        screenshotSaved = true;
+      })(), 6000);
+    }
     const detail = [
       pageErrors.length ? `page errors:\n- ${pageErrors.join("\n- ")}` : "",
       consoleErrors.length ? `console errors:\n- ${consoleErrors.join("\n- ")}` : "",
@@ -857,13 +873,13 @@ async function runSelfTest() {
       .filter(Boolean)
       .join("\n\n");
     throw new Error(
-      [`step ${currentStep} failed`, error?.message ?? String(error), detail, `failure screenshot: ${SCREENSHOT_PATH}`]
+      [`step ${currentStep} failed`, error?.message ?? String(error), detail, screenshotSaved ? `failure screenshot: ${SCREENSHOT_PATH}` : "failure screenshot unavailable"]
         .filter(Boolean)
         .join("\n\n"),
     );
   } finally {
-    await settle(browser.close(), 15000);
-    if (server.started && server.child) {
+    if (browser) await settle(browser.close(), 15000);
+    if (server?.started && server.child) {
       await stopServer(server.child);
     }
   }

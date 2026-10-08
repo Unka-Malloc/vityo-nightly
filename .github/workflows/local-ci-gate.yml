@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Chrome for Testing paired with playwright-core 1.59.1 (browsers.json).
+# .chromium-version is the local distribution Chromium pin, not a CfT release.
+env:
+  VITYO_CI_CHROME_VERSION: "147.0.7727.15"
+
 jobs:
   local-ci-gate:
     name: local-ci-gate
@@ -55,7 +60,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
           install-dependencies: true
 
       - name: Install Linux desktop dependencies
@@ -157,7 +162,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
 
       - name: Install CMake, Ninja, and LLVM 18 development package
         uses: mamba-org/setup-micromamba@add3a49764cedee8ee24e82dfde87f5bc2914462  # v2
@@ -278,6 +283,7 @@ jobs:
       VITYO_PYTHON_VERSION: "3.13.5"
       VITYO_NODE_VERSION: "24.15.0"
       VITYO_FLUTTER_VERSION: "3.41.7"
+      VITYO_COCOAPODS_VERSION: "1.17.0"
 
     steps:
       - name: Checkout Vityo nightly
@@ -310,7 +316,7 @@ jobs:
         id: setup-chrome
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
         with:
-          chrome-version: stable
+          chrome-version: ${{ env.VITYO_CI_CHROME_VERSION }}
 
       - name: Install macOS LLVM
         run: |
@@ -324,6 +330,7 @@ jobs:
           node --version | grep -F "v${VITYO_NODE_VERSION}"
           npm --version
           flutter --version | grep -m1 '^Flutter ' | grep -F "${VITYO_FLUTTER_VERSION}"
+          test "$(pod --version)" = "${VITYO_COCOAPODS_VERSION}"
           flutter config --enable-web --enable-macos-desktop
           "${{ steps.setup-chrome.outputs.chrome-path }}" --version
 
@@ -342,6 +349,8 @@ jobs:
       - name: Run complete macOS delivery
         working-directory: vityo-nightly
         env:
+          # Include browser stderr and process exit diagnostics for startup failures.
+          DEBUG: pw:browser
           CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path }}
           VITYO_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           PYTHON_BIN: ${{ env.PYTHON_BIN }}
@@ -350,6 +359,59 @@ jobs:
           --base "${{ steps.ci_refs.outputs.base_ref }}"
           --range "${{ steps.ci_refs.outputs.range }}"
           --install-root "$RUNNER_TEMP/vityo-installed"
+      - name: Capture macOS generated project diagnostics
+        if: failure()
+        working-directory: vityo-nightly
+        run: |
+          "$PYTHON_BIN" - <<'PY_DIAGNOSTICS'
+          import os
+          import re
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          # Read only these generated metadata files, never the whole checkout diff.
+          paths = [
+              "products/vityo_app/macos/Podfile.lock",
+              "products/vityo_app/macos/Runner.xcodeproj/project.pbxproj",
+          ]
+          commands = [
+              ("checkout", ["git", "rev-parse", "HEAD"]),
+              ("CocoaPods", ["pod", "--version"]),
+              ("Xcode", ["xcodebuild", "-version"]),
+              ("generated metadata diff", ["git", "--no-pager", "diff",
+                  "--no-ext-diff", "--no-textconv", "--no-color", "HEAD", "--", *paths]),
+          ]
+          # macOS may expose the same temp directory as /var and /private/var.
+          # Keep both lexical roots and their resolved symlink targets, including
+          # the system temp root when RUNNER_TEMP names a different directory.
+          host_roots = [Path.cwd(), Path.home(), Path(tempfile.gettempdir())]
+          if os.environ.get("RUNNER_TEMP"):
+              host_roots.append(Path(os.environ["RUNNER_TEMP"]))
+          redactions = set()
+          for root in host_roots:
+              redactions.update((str(root), str(root.resolve())))
+          redactions.discard("/")
+          sections = []
+          for label, command in commands:
+              try:
+                  result = subprocess.run(command, capture_output=True, timeout=30)
+                  # Do not publish stderr, which may include host configuration details.
+                  text = result.stdout[:65536].decode("utf-8", errors="replace")
+                  if len(result.stdout) > 65536:
+                      text += "\n[truncated at 65536 bytes]\n"
+                  status = f"exit {result.returncode}"
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  text, status = "", type(error).__name__
+              for value in sorted(redactions, key=len, reverse=True):
+                  text = text.replace(value, "<host-path>")
+              text = re.sub(r"/(?:Users|home)/[^/\s\"]+", "<home>", text)
+              sections.append(f"## {label} ({status})\n{text}")
+          output = Path("build/evidence/macos-generated-project-diagnostics.txt")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text("\n".join(sections), encoding="utf-8")
+          PY_DIAGNOSTICS
+
       - name: Upload macOS coverage reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
@@ -362,6 +424,8 @@ jobs:
             vityo-nightly/build/evidence/native-pty-macos.json
             vityo-nightly/build/evidence/product-matrix-macos.json
             vityo-nightly/build/evidence/startup-macos.json
+            vityo-nightly/build/evidence/startup-macos-diagnostics.json
+            vityo-nightly/build/evidence/macos-generated-project-diagnostics.txt
           if-no-files-found: ignore
 
       - name: Upload macOS Nightly package

@@ -2,7 +2,7 @@
 
 **Purpose:** Provide the repository-level entry point for bootstrapping a fresh machine, installing shared GUI toolchains, and routing contributors to the correct implementation surface.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-08
 
 ## Who This Is For
 
@@ -69,11 +69,39 @@ Device verification stays host-driven:
 3. Validation Python standard: `3.13.5`.
 4. Node.js standard for prototype tooling: `v24.15.0` LTS.
 5. Flutter / Dart standard: `3.41.7` / `3.11.5`.
-6. Chromium standard for web verification: `147.0.7727.116`.
+6. Local distribution Chromium standard for web verification: `147.0.7727.116`. CI uses the separate Chrome for Testing build described below.
 7. Android combo add-on standard is profile-driven on Linux, macOS, and Windows: command-line tools `14742923`, shared `platform-tools`, and the standardized profile set `android-35`, `android-36`, each with its own pinned platform/build-tools/NDK tuple from [../toolchain/android-sdk-profiles.csv](../toolchain/android-sdk-profiles.csv).
 8. Apple build profiles on macOS are standardized in [../toolchain/apple-platform-profiles.csv](../toolchain/apple-platform-profiles.csv). These profiles pin iOS/macOS deployment targets and optionally select a specific `DEVELOPER_DIR` / Xcode installation.
 9. Rust/Cargo `1.88.0` is the pinned CI toolchain for the independent Coding Agent and `vityod` daemon. The Coding Agent manifest declares Rust `1.88` as its minimum; local builds need Rust/Cargo `1.88` or newer.
-10. CI mirror: GitHub Actions on `ubuntu-latest`, `windows-latest`, and `macos-latest` run the shared Python delivery stages with pinned Python, Node.js, Flutter, Chromium, and Rust versions, then collect host-specific package, install, startup, and native integration evidence.
+10. CI mirror: GitHub Actions on `ubuntu-latest`, `windows-latest`, and `macos-latest` run the shared Python delivery stages with pinned Python, Node.js, Flutter, Chrome for Testing, and Rust versions, then collect host-specific package, install, startup, and native integration evidence.
+
+### macOS CocoaPods metadata
+
+The macOS CI lane requires CocoaPods `1.17.0` and checks the installed version
+exactly before dependency restoration. The committed macOS `Podfile.lock` and
+Runner project are generated metadata for the existing Flutter plugin graph
+under Flutter `3.41.7` and CocoaPods `1.17.0`. Keep both files current when that
+graph changes. A different installed CocoaPods version fails toolchain
+verification instead of silently rewriting the lockfile producer version.
+The product-matrix clean-checkout gate remains required; do not restore or
+ignore generated changes to make it pass.
+
+### CI browser pairing
+
+`VITYO_CI_CHROME_VERSION` in `.github/workflows/local-ci-gate.yml` is the single
+CI browser pin for Linux, Windows, and macOS. It selects Chrome for Testing
+`147.0.7727.15`, the Chromium version recorded in
+[Playwright 1.59.1's browser manifest](https://github.com/microsoft/playwright/blob/v1.59.1/packages/playwright-core/browsers.json).
+The editor self-test checks the launched browser's version against this pin.
+Update this pairing deliberately when updating Playwright; do not use a moving
+`stable` channel in these delivery lanes.
+
+The local distribution Chromium pin remains `.chromium-version`. Its
+`147.0.7727.116` build is absent from the official
+[Chrome for Testing download index](https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json),
+so it cannot be reused as a CfT download version. The selected CI build has
+published Linux x64, Windows x64, macOS x64, and macOS arm64 downloads. This
+version pairing does not by itself establish passing host delivery or UI tests.
 
 ## Required Toolchains
 
@@ -300,6 +328,21 @@ Full local delivery, including tests, coverage, release package, per-user instal
 ```bash
 python3 scripts/vityo.py deliver
 ```
+
+In macOS CI, the launch stage supervises the installed bundle executable directly
+with the existing first-frame probe arguments. A 120-second startup deadline and
+five-second termination grace apply only to this CI probe, not ordinary app use.
+A timeout or nonzero exit fails delivery even if an evidence file exists; success
+also requires fresh, candidate-bound rasterized-first-frame evidence. The supervisor
+terminates only its owned app PID and reaps it, escalating to kill after the grace.
+`build/evidence/startup-macos-diagnostics.json` records the command, owned PID, exit
+status, timeout, and credential-redacted output. Capture retains at most 64 KiB per
+stream, discards a truncated last line, and never dumps environment variables or
+writes unbounded raw logs. After app exit, inherited pipes have a separate 0.2-second
+drain limit; they cannot consume the startup deadline or cause descendant termination.
+CI uploads these diagnostics even on failure. Ordinary
+local macOS launch still uses LaunchServices to open a new installed app instance.
+Startup evidence does not establish live UI or real Agent-task acceptance.
 
 ### Ecosystem product-gate environment
 
