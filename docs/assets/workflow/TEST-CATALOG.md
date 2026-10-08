@@ -59,3 +59,14 @@ These remaining requirements concern source-authoritative graph behavior. The cu
 | Performance and revision churn | Exercise realistic node/edge counts and rapid source/Agent updates through the real projection path; assert stale work is discarded and measure the agreed rendering budget. |
 
 Unit, contract, widget, and deterministic integration evidence belongs in auto-discovered roots or a registered suite used by Checkpoint Health/native CI. Real provider conversations, installed-client inspection, or live UI acceptance remain a separate workflow for the user's designated Agent and an explicit task.
+
+## Windows Pafio Launch Diagnostic
+
+`tests/test_windows_pafio_launch_diagnostic.py` validates the opt-in supervisor's
+Win32 bindings with mocks, assignment-before-release ordering, owned-tree cleanup,
+deadlines, explicit observations, partial evidence persistence and redaction.
+`products/vityo_app/tool/windows_pafio_launch_diagnostic.dart` exercises the real
+process manager and daemon through `scripts/diagnose-windows-pafio-launch.py` on
+Windows only. Its six cells compare direct/native, direct/batch and daemon routes
+with bare versus absolute Python. Collection success is not launch success and
+never replaces native delivery, adapter tests or the 95% coverage floor.

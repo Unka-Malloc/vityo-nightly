@@ -496,3 +496,33 @@ retains the JSON. Status, OS/architecture, elapsed time, bounded redacted logs a
 cleanup outcomes distinguish successful assertions from failures or `not-run`.
 No new runner or permission is required; actual runner time is reported rather
 than assumed to be free. Active cancelled writes must expose Win32 error 995.
+
+### Opt-in Windows Pafio launch diagnosis
+
+After the existing app dependency restore and debug `vityod` build, run
+`python scripts/diagnose-windows-pafio-launch.py --output
+build/evidence/windows-pafio-launch.json`. This collects six observations using
+native Dart and the real daemon: direct/daemon routes crossed with absolute
+Python, the existing bare-Python fake-Pafio batch launcher, and an otherwise
+identical absolute-Python launcher. Every cell receives the same frozen host
+environment and `--version` arguments. No production discovery behavior changes.
+
+The supervisor assigns a gated worker to an owned kill-on-close Windows job
+before releasing it to spawn descendants. Each cell has a 20-second watchdog;
+the six-cell run has a 150-second scheduling deadline plus bounded cleanup.
+An independent 170-second supervisor watchdog exits the owner without waiting
+for blocked cleanup; Windows closes its kill-on-close Job handles. Previously
+persisted current/completed/not-run observations survive this forced exit.
+Outputs are capped and path/credential-redacted. Environment evidence contains
+only selected key names/casing. Reports persist after each cell, including failed
+launches, timeout, missing observations and cleanup failures. `completed` means
+six observations were collected, never that tool launches or product gates passed.
+Non-Windows hosts record `not-run`; portable orchestration tests do not establish
+native Windows behavior. The tool does not build dependencies or run delivery.
+
+Proposed CI integration is a separate patch: an always-run, three-minute step
+after complete Windows delivery reuses its existing daemon build, followed
+immediately by an always-run upload of this JSON. Missing prerequisites produce
+explicit `not-run` evidence without rebuilding. The existing product gate runs
+first and retains its original failure accounting. Worst additional CI time is
+three minutes plus artifact upload; no new runner or toolchain setup is required.

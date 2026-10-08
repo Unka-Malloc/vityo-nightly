@@ -361,3 +361,10 @@ No `prototype/` change.
 composition and the injectable packaged Agent launch resolver. Registered the existing
 BSD-3-Clause workspace chooser in the dependency license gate. Keep unfinished repairs
 on the same Draft PR and validate architecture and governance before pushing.
+
+2026-10-08: Added an isolated, opt-in six-cell Windows Pafio launch diagnostic.
+Reuse the existing Python, Dart packages and debug daemon build; do not rebuild
+or replace product gates. The supervisor gates descendants until job assignment,
+records bounded/redacted launch evidence and verifies owned-tree cleanup. Portable
+mock tests establish orchestration only; Windows results remain pending. Any CI
+hook is a separate reviewed patch. No `prototype/` change.

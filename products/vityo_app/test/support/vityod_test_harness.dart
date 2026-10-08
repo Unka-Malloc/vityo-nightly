@@ -27,8 +27,11 @@ class VityodTestHarness {
 
   static bool get isSupported => _endpoint.isSupported;
 
-  static Future<VityodTestHarness> start({required String clientId}) async {
-    final executable = _findExecutable();
+  static Future<VityodTestHarness> start({
+    required String clientId,
+    File? executableOverride,
+  }) async {
+    final executable = executableOverride ?? _findExecutable();
     if (!executable.existsSync()) {
       throw StateError(
         'Build the focused vityod Cargo target before running this test.',
