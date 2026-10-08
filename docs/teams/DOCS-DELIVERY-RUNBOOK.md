@@ -79,6 +79,11 @@ claims.
 
 ## Daily Workflow
 
+Keep bounded Windows pipe collection documented in the build/dev-environment
+owner and test catalog. Its raw API observations and supervisor tests do not
+replace full Windows delivery or prove native transport cancellation.
+
+
 For local daemon request-lifetime maintenance, keep the deadline and retired-reply
 rules in [Protocol and Capability Negotiation](../design/Vityo-Protocol-And-Capability-Negotiation.md)
 and map portable regression evidence in the [test catalog](../assets/workflow/TEST-CATALOG.md).
