@@ -169,15 +169,54 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
             durationMillis is! int) {
           throw StateError('vityod returned an invalid task receipt');
         }
-        final close = await _client.request(
-          method: typedService ? '$servicePrefix.request' : 'task.close',
-          idempotencyKey: 'task-close-$taskId',
-          params: <String, Object?>{
-            'taskId': taskId,
-            if (typedService) 'action': 'close',
-          },
-        );
-        _throwIfError(close);
+        // Closing retires the daemon record; it cannot change the command's
+        // already validated execution receipt or erase captured output.
+        final cleanup = <String, Object?>{
+          'operation': 'process.close',
+          'sourceManager': 'vityod',
+        };
+        try {
+          final method = typedService ? '$servicePrefix.request' : 'task.close';
+          final close = await _client.request(
+            method: method,
+            idempotencyKey: 'task-close-$taskId',
+            params: <String, Object?>{
+              'taskId': taskId,
+              if (typedService) 'action': 'close',
+            },
+          );
+          if (close.method == '$method.error') {
+            final code = close.params['errorCode'];
+            cleanup.addAll(<String, Object?>{
+              'status': 'failed',
+              'errorCode':
+                  code is String &&
+                      RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(code)
+                  ? code
+                  : 'task_close_failed',
+              if (close.params['retryable'] case final bool retryable)
+                'retryable': retryable,
+            });
+          } else if (close.method == '$method.result' &&
+              close.params['state'] == 'closed') {
+            cleanup['status'] = 'succeeded';
+          } else {
+            cleanup.addAll(<String, Object?>{
+              'status': 'unconfirmed',
+              'errorCode': 'invalid_task_close_receipt',
+            });
+          }
+        } on TimeoutException {
+          cleanup.addAll(<String, Object?>{
+            'status': 'unconfirmed',
+            'errorCode': 'task_close_timeout',
+          });
+        } on Object {
+          cleanup.addAll(<String, Object?>{
+            'status': 'unconfirmed',
+            'errorCode': 'task_close_unconfirmed',
+          });
+        }
         return ProcessCommandResult(
           status: timedOut
               ? ProcessCommandStatus.timedOut
@@ -199,6 +238,7 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
               'stdoutTruncated': true,
             if (output.params['stderrTruncated'] == true)
               'stderrTruncated': true,
+            'cleanup': cleanup,
           },
         );
       }

@@ -405,3 +405,10 @@ The fake header now safely replaces that macro, available/explicit host compiler
 frontends use their own command adapters, and failure output is bounded and
 redacted rather than swallowed. Preserve every wrapper assertion and native gate;
 the exact CI compiler diagnostic still requires a fresh Windows run.
+
+2026-10-08: Documented the Process Manager's local cleanup metadata alongside its
+completed execution receipt. A close failure preserves command status and output;
+only an acknowledged close confirms cleanup. Registered deterministic manager/client
+transport tests and sandbox metadata-preservation coverage in the test catalog.
+Portable Dart evidence is separate from native daemon cleanup and Windows pipe
+acceptance; no published product or daemon protocol changed.

@@ -1,7 +1,7 @@
 # System Compatibility Manager
 
 **Purpose:** Document the `docs/design/environment/system-compatibility-manager/` collection scope, ownership, and maintenance rules.
-**Last updated:** 2026-05-17
+**Last updated:** 2026-10-08
 
 ## Platform Detector Contract
 
@@ -158,6 +158,39 @@ Current Clipboard Manager implementation exposes `ClipboardOperationFailure` thr
 Current Notification Manager implementation exposes `NotificationOperationFailure` through manager-local `failureFor(...)`. This classifies blocked notification delivery and unknown notification failures.
 
 Current Local Service Manager implementation exposes `LocalServiceOperationFailure` through manager-local `classifyFailure(...)`. This classifies unsupported local-service APIs, permission-denied binds, unavailable ports, bind failures, and unknown local-service failures.
+
+### Completed Process Receipts And Cleanup
+
+Once `LocalProcessManager` validates a completed daemon task receipt, that receipt
+owns the command status, exit code, stdout, stderr, duration, timeout message,
+process identity, and output-truncation flags. A later `task.close` or typed-service
+`close` failure must not replace those fields with a spawn failure or empty output.
+`ProcessFailureClassifier` continues to classify the command outcome itself.
+
+The existing `ProcessCommandResult.metadata` carries a separate `cleanup` object:
+
+| Field | Local contract |
+|---|---|
+| `operation` | `process.close` |
+| `sourceManager` | `vityod` |
+| `status` | `succeeded` only after a result with `state: closed`; `failed` for an explicit error response; `unconfirmed` for transport exceptions, timeout, or an invalid acknowledgement |
+| `errorCode` | Optional stable code. Error responses retain a lowercase alphanumeric/underscore code beginning with a letter and at most 64 characters long, otherwise `task_close_failed`. Local uncertainty uses `task_close_timeout`, `task_close_unconfirmed`, or `invalid_task_close_receipt`. |
+| `retryable` | Optional boolean copied only from an explicit daemon error response. It does not request or trigger an automatic retry. |
+
+Absence of `cleanup` means no cleanup outcome was recorded; it does not prove
+resource release. An unconfirmed close may have reached the daemon. The command
+is never rerun to obtain cleanup confirmation. Raw exception text and error
+context are not copied into this metadata. A successful command can therefore
+remain successful while cleanup is failed or unconfirmed.
+
+This is an IDE-local result contract using the existing daemon request/reply
+fields. It adds no Pafio, Styio, or daemon wire schema and does not import the
+higher-level `TaskExecutionRuntimeRecord` into Environment. Consumers that retain
+process metadata retain this outcome; status-only projections do not establish
+cleanup success. The auto-discovered `local_process_manager_test.dart` exercises
+the real manager and client with a controlled transport, and the sandbox test
+checks preservation when output is bounded. These tests do not establish native
+Windows process or pipe behavior.
 
 ## 6. Rationale
 
