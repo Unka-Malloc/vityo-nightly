@@ -289,6 +289,14 @@ cancellation and complete Windows startup remain separately unverified.
 
 ### Windows pipe completion ownership
 
+The Windows client resolves and invokes its thread-local last-error getter before
+opening the first pipe. Dart top-level bindings initialize lazily: resolving the
+getter after a failed call can overwrite the pending-I/O error being classified.
+Only the tiny GetLastError getter uses a leaf binding; waiting Win32 calls do not.
+This follows the upstream [Win32 binding convention](https://pub.dev/documentation/win32/latest/win32/ReadFile.html)
+and still requires the real Windows regression, including a live-reader check
+before intentional peer disconnection.
+
 The Windows client opens the pipe for overlapped I/O. Each pending read or write
 owns its own event, OVERLAPPED state and buffer until completion is observed.
 Closing rejects new submissions, requests native cancellation, drains pending

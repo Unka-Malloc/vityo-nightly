@@ -79,6 +79,11 @@ claims.
 
 ## Daily Workflow
 
+When a native regression reports an impossible zero error after failed I/O,
+check first-use FFI resolution before weakening assertions. Keep the original
+failure evidence and require a live reader before the peer-disconnect scenario.
+
+
 Keep raw Windows API diagnosis, portable request-lifetime tests and bounded real
 Dart transport results distinct. The latter verifies the candidate transport's
 native completion/close behavior but still does not replace complete delivery.

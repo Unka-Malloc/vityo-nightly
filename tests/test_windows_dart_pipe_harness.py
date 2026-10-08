@@ -89,7 +89,7 @@ class DartPipeHarnessTests(unittest.TestCase):
             native.parent.mkdir(parents=True)
             native.write_bytes(b'placeholder')
             with patch.object(harness.shutil, 'which', return_value=str(wrapper)):
-                self.assertEqual(harness.resolve_dart('dart'), str(native))
+                self.assertEqual(harness.resolve_dart('dart'), str(native.resolve()))
 
     def test_batch_wrapper_without_native_executable_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -157,6 +157,36 @@ class DartPipeHarnessTests(unittest.TestCase):
             self.assertEqual(report['schema_version'], 1)
             self.assertTrue(report['os'])
             self.assertTrue(report['architecture'])
+
+    @unittest.skipIf(harness.os.name == 'nt', 'symlink privilege is not assumed')
+    def test_batch_wrapper_through_directory_alias_is_canonical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            real = root / 'real'
+            real.mkdir()
+            wrapper = real / 'dart.bat'
+            wrapper.write_text('wrapper', encoding='ascii')
+            native = real / 'cache/dart-sdk/bin/dart.exe'
+            native.parent.mkdir(parents=True)
+            native.write_text('fixture', encoding='ascii')
+            alias = root / 'alias'
+            alias.symlink_to(real, target_is_directory=True)
+            with patch.object(harness.shutil, 'which', return_value=str(alias / 'dart.bat')):
+                self.assertEqual(harness.resolve_dart('dart'), str(native.resolve()))
+
+    def test_reader_must_be_live_before_peer_disconnect(self):
+        source = (ROOT / 'products/vityo_app/tool/windows_named_pipe_regression.dart').read_text()
+        self.assertLess(source.index('check(!done.isCompleted'), source.index("scenario == 'peer-disconnect'"))
+        self.assertIn('reader failed before scenario action', source)
+
+    def test_last_error_is_resolved_before_first_fallible_api(self):
+        source = (ROOT / 'products/vityo_app/lib/src/ide/local_service/transport/windows_named_pipe.dart').read_text()
+        opening = source.split('int _openPipe(String endpoint)', 1)[1]
+        self.assertLess(opening.index('_getLastError();'), opening.index('_createFile('))
+        getter = source.split('final _GetLastErrorDart _getLastError', 1)[1].split('int _openPipe', 1)[0]
+        self.assertIn('isLeaf: true', getter)
+        waiting = source.split('final _WaitNamedPipeWDart', 1)[1].split('final _ReadFileDart', 1)[0]
+        self.assertNotIn('isLeaf: true', waiting)
 
     def test_dart_worker_imports_production_transport_without_mocks(self):
         source = (ROOT / 'products/vityo_app/tool/windows_named_pipe_regression.dart').read_text()

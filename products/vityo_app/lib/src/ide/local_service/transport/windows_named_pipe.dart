@@ -166,9 +166,17 @@ final _CloseHandleDart _closeHandleFunction = _kernel32
 final _CancelIoExDart _cancelIoEx = _kernel32
     .lookupFunction<_CancelIoExNative, _CancelIoExDart>('CancelIoEx');
 final _GetLastErrorDart _getLastError = _kernel32
-    .lookupFunction<_GetLastErrorNative, _GetLastErrorDart>('GetLastError');
+    .lookupFunction<_GetLastErrorNative, _GetLastErrorDart>(
+      'GetLastError',
+      isLeaf: true,
+    );
 
 int _openPipe(String endpoint) {
+  // Top-level FFI bindings are lazy. Resolve and invoke this getter before
+  // any fallible API: its first lookup/call can overwrite ERROR_IO_PENDING.
+  // See package:win32's resolveGetLastError convention. Only this tiny,
+  // nonblocking getter is leaf; potentially waiting APIs remain non-leaf.
+  _getLastError();
   final name = endpoint.toNativeUtf16();
   try {
     final deadline = DateTime.now().add(const Duration(seconds: 5));

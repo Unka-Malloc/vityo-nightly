@@ -105,6 +105,7 @@ Future<void> main(List<String> args) async {
     final received = StringBuffer();
     final reply = Completer<void>();
     final done = Completer<void>();
+    Object? incomingError;
     connection.incoming.listen(
       (bytes) {
         received.write(ascii.decode(bytes));
@@ -113,13 +114,21 @@ Future<void> main(List<String> args) async {
         }
       },
       onError: (Object error) {
-        // EOF/error is acceptable for a disconnected peer; onDone must follow.
+        incomingError = error;
+        stdout.writeln(
+          jsonEncode({'phase': 'incoming-error', 'error': '$error'}),
+        );
       },
       onDone: done.complete,
     );
     phase('connected');
     // Let the production reader submit a read while the server waits for us.
     await Future<void>.delayed(const Duration(milliseconds: 250));
+    check(
+      incomingError == null,
+      'reader failed before scenario action: $incomingError',
+    );
+    check(!done.isCompleted, 'pipe closed before scenario action');
     phase('reader-first');
     if (scenario == 'reader-first') {
       await connection.write(Uint8List.fromList(ascii.encode('ping\n')));
