@@ -94,7 +94,10 @@ void main() {
         client: harness.client,
       ).search(workspaceId: 'search-workspace', query: 'needle', maxMatches: 2);
       expect(typedSearch.matches, hasLength(2));
-      expect(typedSearch.matches.first.documentId, 'src/main.styio');
+      expect(
+        typedSearch.matches.first.documentId,
+        ['src', 'main.styio'].join(Platform.pathSeparator),
+      );
       expect(typedSearch.matches.first.lineText, 'needle');
       expect(typedSearch.matches.first.range.start, 0);
 
