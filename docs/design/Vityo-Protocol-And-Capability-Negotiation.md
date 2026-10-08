@@ -289,13 +289,21 @@ cancellation and complete Windows startup remain separately unverified.
 
 ### Windows pipe completion ownership
 
-The Windows client resolves and invokes its thread-local last-error getter before
-opening the first pipe. Dart top-level bindings initialize lazily: resolving the
-getter after a failed call can overwrite the pending-I/O error being classified.
-Only the tiny GetLastError getter uses a leaf binding; waiting Win32 calls do not.
-This follows the upstream [Win32 binding convention](https://pub.dev/documentation/win32/latest/win32/ReadFile.html)
-and still requires the real Windows regression, including a live-reader check
-before intentional peer disconnection.
+The Windows client calls the app-owned `vityo_windows_pipe.dll` for each
+fallible operation whose error it classifies. The wrapper captures the Win32
+result and `GetLastError()` together inside one native invocation, before
+returning to Dart. Eagerly resolving or warming a Dart error getter is not enough:
+a separate non-leaf FFI transition can change the calling thread's last-error.
+The wrapper does not change operation ownership or make blocking APIs leaf calls.
+
+Packaged apps load the fixed-name DLL beside their executable, with the ABI and
+required exports checked before opening a pipe. Repository tests use the explicit
+compile-time `VITYO_WINDOWS_PIPE_LIBRARY` absolute-path override for the standalone
+MSVC x64 Release build. Runtime environment variables, PATH, and the working
+directory do not select a production library. The app's CMake install includes
+the same native target; tests do not copy libraries into the Dart or Flutter SDK.
+Actual Windows execution, including the live-reader check before intentional
+peer disconnection, remains required to establish native transport correctness.
 
 The Windows client opens the pipe for overlapped I/O. Each pending read or write
 owns its own event, OVERLAPPED state and buffer until completion is observed.
@@ -317,3 +325,9 @@ that a candidate's native transport or full Windows delivery passed.
 - [Adapter Contracts Runbook](../teams/ADAPTER-CONTRACTS-RUNBOOK.md)
 - [LSP 3.17 Specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) (reference only)
 - [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/specification) (reference only)
+
+The existing installed-client startup probe additionally verifies the Windows
+bundle DLL through the production loader before recording `windows_pipe_abi: 1`.
+Missing files, incompatible ABI versions, or missing exports prevent successful
+startup evidence. This is a loader prerequisite, not native I/O acceptance; the
+five real pipe regressions and complete Windows delivery remain separate gates.

@@ -934,6 +934,8 @@ def run_install_stage(options: DeliveryOptions) -> int:
             or not pafio.is_file()
         ):
             raise ValueError("the installed package is missing a required executable component")
+        if platform == "windows" and not (app_root / "vityo_windows_pipe.dll").is_file():
+            raise ValueError("the installed Windows pipe library is missing")
         if platform != "windows" and any(
             not os.access(component, os.X_OK) for component in (agent, daemon, pafio)
         ):
@@ -969,13 +971,16 @@ def _startup_evidence_path(options: DeliveryOptions) -> Path:
 
 def _validate_startup_evidence(path: Path, *, platform: str, candidate: str) -> None:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or set(payload) != {
+    expected_fields = {
         "schema_version",
         "candidate",
         "platform",
         "launched",
         "first_frame",
-    }:
+    }
+    if platform == "windows":
+        expected_fields.add("windows_pipe_abi")
+    if not isinstance(payload, dict) or set(payload) != expected_fields:
         raise ValueError("startup probe returned an invalid report shape")
     if payload.get("schema_version") != 1:
         raise ValueError("startup probe schema is unsupported")
@@ -983,6 +988,10 @@ def _validate_startup_evidence(path: Path, *, platform: str, candidate: str) -> 
         raise ValueError("startup probe does not identify the installed candidate")
     if payload.get("launched") is not True or payload.get("first_frame") is not True:
         raise ValueError("the installed client did not complete startup")
+    if platform == "windows" and (
+        type(payload.get("windows_pipe_abi")) is not int or payload["windows_pipe_abi"] != 1
+    ):
+        raise ValueError("the installed Windows pipe library ABI was not verified")
 
 
 def _run_ci_startup_probe(

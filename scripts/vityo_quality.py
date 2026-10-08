@@ -18,6 +18,8 @@ _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from windows_pipe_library import test_command
+
 from vityo_validation_receipt import (
     SUPPORTED_HOST_PLATFORMS,
     ValidationReportError,
@@ -122,6 +124,12 @@ def run(
     cwd: pathlib.Path = ROOT,
     environment: dict[str, str] | None = None,
 ) -> int:
+    if cwd.resolve() == (ROOT / "products/vityo_app").resolve():
+        try:
+            command = test_command(command, root=ROOT)
+        except ValueError as error:
+            print(f"[vityo-quality] {error}", file=sys.stderr)
+            return 2
     print(
         f"[vityo-quality] {cwd.relative_to(ROOT) or '.'}: {' '.join(command)}",
         flush=True,

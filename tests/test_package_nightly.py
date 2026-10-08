@@ -46,6 +46,10 @@ class PackageNightlyTest(unittest.TestCase):
             "platform": "windows",
             "package_format": "zip-powershell",
             "build_relative_path": "build/windows/release",
+            "windows_pipe": {
+                "package_relative_path": "vityo_windows_pipe.dll",
+                "abi_version": 1,
+            },
             "coding_agent": {
                 "target": "x86_64-pc-windows-msvc",
                 "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent.exe",
@@ -76,6 +80,7 @@ class PackageNightlyTest(unittest.TestCase):
             build = root / "build/windows/release"
             build.mkdir(parents=True)
             (build / "vityo_app.exe").write_bytes(b"application")
+            (build / "vityo_windows_pipe.dll").write_bytes(b"Windows pipe library")
             packaging = root / "packaging/windows"
             packaging.mkdir(parents=True)
             (packaging / "install.ps1").write_text("# installer\n", encoding="utf-8")
@@ -99,18 +104,73 @@ class PackageNightlyTest(unittest.TestCase):
 
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
+                self.assertEqual(
+                    archive.read("Vityo-Nightly/vityo_windows_pipe.dll"),
+                    b"Windows pipe library",
+                )
         self.assertEqual(
             names,
             {
                 "Vityo-Nightly/install.ps1",
                 "Vityo-Nightly/uninstall.ps1",
                 "Vityo-Nightly/vityo_app.exe",
+                "Vityo-Nightly/vityo_windows_pipe.dll",
                 "Vityo-Nightly/components/vityo-coding-agent.exe",
                 "Vityo-Nightly/components/pafio.exe",
                 "Vityo-Nightly/components/pafio-component.json",
                 "Vityo-Nightly/licenses/RUST-THIRD-PARTY-NOTICES.txt",
             },
         )
+
+    def test_windows_package_requires_declared_pipe_path_and_integer_abi(self) -> None:
+        valid = self._windows_config()
+        component = valid["windows_pipe"]
+        invalid_components = [
+            None,
+            "vityo_windows_pipe.dll",
+            {},
+            {**component, "package_relative_path": "components/vityo_windows_pipe.dll"},
+            {**component, "package_relative_path": "../vityo_windows_pipe.dll"},
+            *({**component, "abi_version": value} for value in (None, 0, 2, True, 1.0, "1")),
+        ]
+        for invalid in invalid_components:
+            with self.subTest(component=invalid):
+                config = {**valid, "windows_pipe": invalid}
+                with self.assertRaisesRegex(ValueError, "Windows pipe"):
+                    self.packager.validate_release_inputs("windows", config, self._versions())
+                with self.assertRaisesRegex(ValueError, "Windows pipe"):
+                    self.packager.package_windows(config, Path("unused.zip"))
+        del valid["windows_pipe"]
+        with self.assertRaisesRegex(ValueError, "missing Windows pipe"):
+            self.packager.validate_release_inputs("windows", valid, self._versions())
+
+    def test_windows_package_rejects_missing_pipe_before_staging_or_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            build = root / "build/windows/release"
+            build.mkdir(parents=True)
+            (build / "vityo_app.exe").write_bytes(b"application")
+            self.packager.ROOT = root
+            output = root / "candidate.zip"
+            with mock.patch.object(self.packager, "stage_vityod") as stage_vityod:
+                for directory_instead in (False, True):
+                    with self.subTest(directory_instead=directory_instead):
+                        if directory_instead:
+                            (build / "vityo_windows_pipe.dll").mkdir()
+                        with self.assertRaisesRegex(FileNotFoundError, "vityo_windows_pipe.dll"):
+                            self.packager.package_windows(self._windows_config(), output)
+                        self.assertFalse(output.exists())
+                stage_vityod.assert_not_called()
+
+    def test_windows_installer_checks_pipe_before_transaction_and_after_activation(self) -> None:
+        installer = (REPO_ROOT / "packaging/windows/install.ps1").read_text(encoding="utf-8")
+        source_guard = 'if (-not (Test-Path -LiteralPath $pipeLibrary -PathType Leaf))'
+        installed_guard = 'if (-not (Test-Path -LiteralPath (Join-Path $Destination "vityo_windows_pipe.dll") -PathType Leaf))'
+        self.assertIn('$pipeLibrary = Join-Path $resolvedSource "vityo_windows_pipe.dll"', installer)
+        self.assertLess(installer.index(source_guard), installer.index("$destinationParent ="))
+        self.assertLess(installer.index("$candidateActivated = $true"), installer.index(installed_guard))
+        self.assertLess(installer.index(installed_guard), installer.index("$installedHealth ="))
+        self.assertLess(installer.index(installed_guard), installer.index("} catch {"))
 
     def test_release_input_validation_covers_each_contract(self) -> None:
         valid = self._windows_config()

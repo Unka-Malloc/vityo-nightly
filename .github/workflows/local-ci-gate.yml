@@ -240,12 +240,21 @@ jobs:
           python -m pip install coverage
           powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bootstrap-workspace.ps1 -Platforms web,windows
 
+      - name: Build Windows pipe native test library
+        id: windows_pipe_library
+        shell: pwsh
+        working-directory: vityo-nightly
+        timeout-minutes: 5
+        run: |
+          python scripts/build-windows-pipe-library.py --github-output "$env:GITHUB_OUTPUT"
+          if ($LASTEXITCODE -ne 0) { throw "Windows pipe native library build failed" }
+
       - name: Run bounded real Dart Windows pipe regressions
         shell: pwsh
         working-directory: vityo-nightly
         timeout-minutes: 3
         run: |
-          python scripts/test-windows-dart-pipe.py --output build/evidence/windows-dart-pipe-tests.json
+          python scripts/test-windows-dart-pipe.py --library "${{ steps.windows_pipe_library.outputs.library }}" --output build/evidence/windows-dart-pipe-tests.json
           if ($LASTEXITCODE -ne 0) { throw "Real Dart Windows pipe regressions failed" }
 
       - name: Upload real Dart Windows pipe evidence immediately

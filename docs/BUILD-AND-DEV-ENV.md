@@ -486,8 +486,60 @@ worker and applies an external deadline so a blocked native call cannot disable
 the watchdog. The report is separate from the raw Win32 diagnostic and does not
 replace the full delivery gate. Non-Windows runs are explicitly not executed.
 
-Run it with `python scripts/test-windows-dart-pipe.py --output
-build/evidence/windows-dart-pipe-tests.json` after restoring app dependencies.
+After restoring app dependencies, first run
+`python scripts/build-windows-pipe-library.py` on native Windows with CMake and
+installed Visual Studio C++ x64 tools. This builds only the app-owned shim, using
+`products/vityo_app/native/windows_pipe` and target `vityo_windows_pipe`; it does
+not build or install the full app. The helper honors the `VSINSTALLDIR` selected
+by existing CI DIA/LLVM discovery and reads its installed C++ version through
+`vswhere.exe`. It chooses a matching x64 generator advertised by the active
+`cmake -E capabilities` response, then binds that exact instance. With no selected
+instance, it chooses the newest installed compatible instance. Unsupported selected
+versions fail without silently switching installations or installing dependencies.
+VS 2026 therefore requires a CMake that advertises its generator; the standard
+bootstrap version is not a promise of support for every installed VS version.
+An existing cache for another generator, instance or architecture requires a fresh
+build directory rather than in-place retargeting. The deterministic output is
+`build/windows-pipe-native/Release/vityo_windows_pipe.dll`.
+
+Then run `python scripts/test-windows-dart-pipe.py --output
+build/evidence/windows-dart-pipe-tests.json`. The harness requires the existing
+DLL and supplies its canonical absolute path to the Dart worker as the
+compile-time `VITYO_WINDOWS_PIPE_LIBRARY` declaration. `--library` can select an
+explicit absolute path to that fixed-name DLL. CI builds it in a separate bounded
+step before the three-minute watchdog step and passes the verified build output.
+Missing or invalid DLL prerequisites produce `not-run`, never passing evidence.
+
+The full Flutter coverage runner, focused quality runner, product gate and native
+PTY runner build/incrementally refresh this same standalone output before their
+Windows Flutter tests, then pass `--dart-define=VITYO_WINDOWS_PIPE_LIBRARY=<absolute
+DLL path>`. The quality runner also supplies the VM `-D` declaration to standalone
+Dart integration scripts. Bare `dart test` does not forward VM declarations into
+its separately compiled test kernels; the existing pure Dart suites use memory
+transports or retain their existing Windows skips. Real Windows pipe test coverage
+runs through Flutter or the standalone Dart watchdog. Test selection, cancellation
+assertions, coverage thresholds and delivery gates are unchanged.
+
+For a manual Windows Flutter test, build the DLL first, then pass
+`--dart-define=VITYO_WINDOWS_PIPE_LIBRARY=<absolute DLL path>` to `flutter test`.
+The production app instead installs and loads the DLL beside its executable.
+Neither route requires copying a DLL into an SDK, changing PATH, or selecting a
+library through a runtime environment variable.
+The portable fake-Win32 boundary test separately uses an available host C++
+compiler (`g++`, `clang++`, `c++`, `cl`, or `clang-cl`), or one explicitly selected
+by `CXX`. The override is a single executable, not a shell command with flags;
+missing/unsupported explicit choices fail without fallback. GNU-style and
+MSVC-style arguments remain separate. Compile/run failures report bounded,
+redacted command/status/stdout/stderr data, including timeouts. Both ordinary and
+predefined-`__declspec` fixtures exercise the same production shim assertions;
+this portable check is distinct from real Windows DLL and pipe execution.
+
+The Windows package manifest also declares this fixed DLL and ABI 1. Packaging
+and installation reject a missing DLL. The existing installed first-frame probe
+loads the bundled DLL (ignoring test overrides), checks its ABI and exports, and
+only then records `windows_pipe_abi: 1`; Windows delivery rejects absent or
+mismatched ABI evidence. This proves loading, not pending/cancelled pipe I/O.
+Linux and macOS keep their existing startup evidence fields and package paths.
 Each of five cases has a 20-second external watchdog plus at most two seconds
 of reap waiting per direct child. The existing CI job gives the step three minutes
 and immediately uploads its JSON with the already-pinned artifact action, including
@@ -499,7 +551,8 @@ than assumed to be free. Active cancelled writes must expose Win32 error 995.
 
 ### Opt-in Windows Pafio launch diagnosis
 
-After the existing app dependency restore and debug `vityod` build, run
+After the existing app dependency restore, standalone native pipe DLL build
+(described above), and debug `vityod` build, run
 `python scripts/diagnose-windows-pafio-launch.py --output
 build/evidence/windows-pafio-launch.json`. This collects six observations using
 native Dart and the real daemon: direct/daemon routes crossed with absolute
@@ -560,3 +613,8 @@ request construction only. The actual version probe deliberately avoids `.cmd`
 wrappers; wrapper lifecycle reliability and Windows transport cancellation remain
 separate. Unix-socket permission denial is a blocked local integration run, not
 permission to bypass the environment policy or call it a native Windows pass.
+
+For this resolver suite on Windows, also build the app-owned pipe DLL and pass
+`--dart-define=VITYO_WINDOWS_PIPE_LIBRARY=<absolute DLL path>` to that Flutter
+command, as described in the Windows pipe regression instructions above. The
+shared CI coverage/quality runners prepare and select it automatically.

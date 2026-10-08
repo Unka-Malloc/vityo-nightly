@@ -1311,6 +1311,37 @@ class InstallStageTest(DeliveryStageTestCase):
                 )
             self.assertIn("--version", agent_run.call_args.args[0])
 
+    def test_windows_install_stage_requires_pipe_library_file(self) -> None:
+        with mock.patch.object(self.delivery, "ROOT", self.root), mock.patch.object(
+            self.delivery, "host_platform", return_value="windows"
+        ):
+            artifact = self.write_candidate("vityo-nightly-windows-0.1.0.zip", "windows")
+            for layout in ("missing", "directory", "file"):
+                with self.subTest(layout=layout):
+                    install_root = self.root / layout
+                    self._layout(install_root, "windows")
+                    pipe = install_root / "vityo_windows_pipe.dll"
+                    if layout == "directory":
+                        pipe.mkdir()
+                    elif layout == "file":
+                        pipe.write_bytes(b"Windows pipe library")
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr), mock.patch.object(
+                        self.delivery, "_install_windows"
+                    ), mock.patch.object(
+                        self.delivery.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+                    ) as agent_run:
+                        code = self.delivery.run_install_stage(
+                            self.options(platform="windows", artifact=artifact, install_root=install_root)
+                        )
+                    if layout == "file":
+                        self.assertEqual(code, 0)
+                        agent_run.assert_called_once()
+                    else:
+                        self.assertEqual(code, 2)
+                        self.assertIn("installed Windows pipe library is missing", stderr.getvalue())
+                        agent_run.assert_not_called()
+
     def test_install_stage_reports_missing_or_non_executable_components(self) -> None:
         with mock.patch.object(self.delivery, "ROOT", self.root), mock.patch.object(
             self.delivery, "host_platform", return_value="macos"
@@ -1479,6 +1510,40 @@ class LaunchStageTest(DeliveryStageTestCase):
                     self.delivery._validate_startup_evidence(
                         evidence, platform="macos", candidate="vityo.dmg"
                     )
+
+    def test_windows_startup_evidence_requires_exact_integer_pipe_abi(self) -> None:
+        path = self.root / "startup-windows.json"
+        base = {
+            "schema_version": 1,
+            "candidate": "vityo.zip",
+            "platform": "windows",
+            "launched": True,
+            "first_frame": True,
+        }
+        for marker in ({}, *({"windows_pipe_abi": value} for value in (None, 0, 2, True, 1.0, "1"))):
+            with self.subTest(marker=marker):
+                path.write_text(json.dumps({**base, **marker}), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    self.delivery._validate_startup_evidence(path, platform="windows", candidate="vityo.zip")
+        path.write_text(json.dumps({**base, "windows_pipe_abi": 1}), encoding="utf-8")
+        self.delivery._validate_startup_evidence(path, platform="windows", candidate="vityo.zip")
+
+    def test_non_windows_startup_evidence_keeps_its_original_shape(self) -> None:
+        path = self.root / "startup.json"
+        for platform in ("macos", "linux"):
+            with self.subTest(platform=platform):
+                evidence = {
+                    "schema_version": 1,
+                    "candidate": "candidate",
+                    "platform": platform,
+                    "launched": True,
+                    "first_frame": True,
+                }
+                path.write_text(json.dumps(evidence), encoding="utf-8")
+                self.delivery._validate_startup_evidence(path, platform=platform, candidate="candidate")
+                path.write_text(json.dumps({**evidence, "windows_pipe_abi": 1}), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "invalid report shape"):
+                    self.delivery._validate_startup_evidence(path, platform=platform, candidate="candidate")
 
     def test_launch_stage_requires_matching_host_and_installed_app(self) -> None:
         stderr = io.StringIO()
@@ -1951,6 +2016,8 @@ class InstallDispatchTest(DeliveryStageTestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("binary", encoding="utf-8")
             target.chmod(0o755)
+        if platform == "windows":
+            (app_root / "vityo_windows_pipe.dll").write_bytes(b"Windows pipe library")
 
     def test_install_stage_dispatches_to_each_platform_installer(self) -> None:
         cases = (

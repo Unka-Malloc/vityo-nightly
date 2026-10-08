@@ -60,6 +60,7 @@ class NativePtyMatrixTest(unittest.TestCase):
         with (
             mock.patch.object(module.shutil, "which", return_value="flutter") as which,
             mock.patch.object(module.subprocess, "run") as run,
+            mock.patch.object(module, "test_command", side_effect=lambda command, **kwargs: command),
         ):
             module.run_matrix(flutter="flutter", app_root=Path("app"))
 

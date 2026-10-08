@@ -21,6 +21,9 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / 'scripts') not in sys.path:
+    sys.path.insert(0, str(ROOT / 'scripts'))
+from windows_pipe_library import dart_define, library_path, require_library
 CASES = ('reader-first', 'stalled-write', 'peer-disconnect', 'queued-close', 'socket-queued-close')
 CASE_TIMEOUT = 20
 REAP_TIMEOUT = 2
@@ -130,7 +133,7 @@ def passed_case(output: str, scenario: str) -> bool:
     return False
 
 
-def supervise(scenario: str, dart: str, root: Path = ROOT) -> dict:
+def supervise(scenario: str, dart: str, root: Path = ROOT, *, library: Path | None = None) -> dict:
     if scenario not in CASES:
         raise ValueError('unknown fixed regression case')
     started = time.monotonic()
@@ -146,6 +149,7 @@ def supervise(scenario: str, dart: str, root: Path = ROOT) -> dict:
              (control / 'client.log').open('w+b') as client_log:
             deadline = time.monotonic() + CASE_TIMEOUT
             try:
+                definition = dart_define(library if library is not None else library_path(root))
                 server = subprocess.Popen(
                     [sys.executable, str(Path(__file__).resolve()), '--server',
                      scenario, '--endpoint', endpoint, '--control', str(control)],
@@ -158,7 +162,7 @@ def supervise(scenario: str, dart: str, root: Path = ROOT) -> dict:
                     time.sleep(0.01)
                 app = root / 'products/vityo_app'
                 client = subprocess.Popen(
-                    [dart, f'--packages={app / ".dart_tool/package_config.json"}',
+                    [dart, definition, f'--packages={app / ".dart_tool/package_config.json"}',
                      str(app / 'tool/windows_named_pipe_regression.dart'),
                      scenario, endpoint, str(control)], cwd=app,
                     stdout=client_log, stderr=subprocess.STDOUT)
@@ -176,7 +180,7 @@ def supervise(scenario: str, dart: str, root: Path = ROOT) -> dict:
                 report['status'] = 'passed'
             except subprocess.TimeoutExpired:
                 report.update(status='timeout', watchdog_expired=True)
-            except (OSError, RuntimeError) as error:
+            except (OSError, RuntimeError, ValueError) as error:
                 report['error'] = sanitize(str(error), paths)
             finally:
                 # Always reap both direct children; no taskkill /IM or other
@@ -214,6 +218,8 @@ def main(argv=None) -> int:
     parser.add_argument('--endpoint', help=argparse.SUPPRESS)
     parser.add_argument('--control', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--dart', default='dart')
+    parser.add_argument('--library', type=Path, default=library_path(ROOT),
+                        help='Absolute path to the already-built native pipe DLL')
     parser.add_argument('--output', type=Path,
                         default=ROOT / 'build/evidence/windows-dart-pipe-tests.json')
     args = parser.parse_args(argv)
@@ -234,16 +240,21 @@ def main(argv=None) -> int:
             report['reason'] = 'Native dart.exe and flutter pub get in products/vityo_app are required'
             result = 2
         else:
-            for case in CASES:
-                case_report = supervise(case, dart)
+            try:
+                library = require_library(args.library)
+            except ValueError as error:
+                report['reason'] = str(error)
+                library = None
+            for case in CASES if library is not None else ():
+                case_report = supervise(case, dart, library=library)
                 report['cases'].append(case_report)
                 print(json.dumps(case_report), flush=True)
                 if not case_report['cleanup_completed']:
                     break
             passed = (len(report['cases']) == len(CASES) and
                       all(case['status'] == 'passed' for case in report['cases']))
-            report['status'] = 'passed' if passed else 'failed'
-            result = 0 if passed else 1
+            report['status'] = ('passed' if passed else 'failed') if library is not None else 'not-run'
+            result = (0 if passed else 1) if library is not None else 2
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'status': report['status'], 'output': sanitize(

@@ -376,3 +376,32 @@ and value-rejection tests; the daemon guard and explicit process maps stay intac
 The new real version-probe regression uses native Dart, leaving batch-wrapper and
 transport lifecycle investigations separate. Never label portable assertions or
 blocked Unix-socket integration as native Windows proof. No `prototype/` change.
+
+2026-10-08: Added the app-owned Windows pipe boundary DLL to the existing CMake
+build/install and early native-test preparation. The local-service transport owns
+same-call Win32 result/error capture and buffer lifetime; Docs / Delivery owns
+standalone test preparation, explicit compile-time DLL selection, and bundle
+installation. Updated the protocol/build guidance and test catalog. Portable
+checks pass; MSVC exports, installed loading, real cancellation and the full
+Windows suite require fresh native evidence. No gate threshold or test omission
+changed. No `prototype/` change.
+
+2026-10-08: Tightened the same Windows pipe delivery slice: the existing Windows
+package manifest declares the required DLL and ABI, packaging/install reject a
+missing file, and the existing startup evidence gate requires ABI 1 from the real
+bundled loader. Added missing-file/ABI negative tests. Linux/macOS package paths
+and startup fields remain unchanged; real Windows validation is still required.
+
+2026-10-08: Corrected the pipe helper's hardcoded VS 2022 selection for runners
+whose existing discovery selects VS 18. Resolve installed C++ metadata with
+`vswhere`, intersect it with actual CMake generator capabilities, preserve the
+selected instance, and reject incompatible cached toolchains. Fresh portable
+version/failure tests do not establish Windows compilation; no native gate,
+dependency installation, or other platform path changed.
+
+2026-10-08: Kept Draft PR 28's portable native-boundary repair test-local after a
+conditional GCC reproduction of a predefined `__declspec` macro collision.
+The fake header now safely replaces that macro, available/explicit host compiler
+frontends use their own command adapters, and failure output is bounded and
+redacted rather than swallowed. Preserve every wrapper assertion and native gate;
+the exact CI compiler diagnostic still requires a fresh Windows run.

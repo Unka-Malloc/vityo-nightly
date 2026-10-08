@@ -103,13 +103,16 @@ def evaluate_lane(
         )
     if evidence is None:
         return DeliveryLaneResult(platform, "failed", "launch evidence is missing")
-    if set(evidence) != {
+    expected_fields = {
         "schema_version",
         "candidate",
         "platform",
         "launched",
         "first_frame",
-    }:
+    }
+    if platform == "windows":
+        expected_fields.add("windows_pipe_abi")
+    if set(evidence) != expected_fields:
         return DeliveryLaneResult(platform, "failed", "startup evidence fields are invalid")
     if type(evidence.get("schema_version")) is not int or evidence.get("schema_version") != 1:
         return DeliveryLaneResult(platform, "failed", "startup evidence schema is invalid")
@@ -121,6 +124,10 @@ def evaluate_lane(
         return DeliveryLaneResult(platform, "failed", "packaged Vityo did not launch")
     if evidence.get("first_frame") is not True:
         return DeliveryLaneResult(platform, "failed", "client did not complete its first frame")
+    if platform == "windows" and (
+        type(evidence.get("windows_pipe_abi")) is not int or evidence["windows_pipe_abi"] != 1
+    ):
+        return DeliveryLaneResult(platform, "failed", "Windows pipe library ABI was not verified")
     return DeliveryLaneResult(platform, "passed", "installed candidate reached its first frame")
 
 

@@ -59,6 +59,11 @@ class VityoQualityTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.quality = load_module()
+        # Native build/define wiring has its own portable mocked suite.
+        command_patch = mock.patch.object(self.quality, "test_command",
+                                          side_effect=lambda command, **kwargs: command)
+        command_patch.start()
+        self.addCleanup(command_patch.stop)
 
     def test_tool_and_run_are_fail_closed(self) -> None:
         with mock.patch.object(

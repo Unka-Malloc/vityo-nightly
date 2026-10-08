@@ -796,13 +796,14 @@ class CollectionAndMainTests(unittest.TestCase):
         self.assertFalse(self.output.with_suffix('.json.tmp').exists())
 
     def test_main_preconditions_never_build_or_launch_missing_dependencies(self):
-        for missing in ('windows', 'dart', 'packages', 'daemon'):
+        for missing in ('windows', 'dart', 'packages', 'daemon', 'library'):
             with self.subTest(missing=missing):
                 environment = SimpleNamespace(name='posix' if missing == 'windows' else 'nt',
                                               environ=self.environment)
                 def is_file(path):
                     return not ((missing == 'packages' and path.name == 'package_config.json') or
-                                (missing == 'daemon' and path.name == 'vityod.exe'))
+                                (missing == 'daemon' and path.name == 'vityod.exe') or
+                                (missing == 'library' and path.name == 'vityo_windows_pipe.dll'))
                 with patch.object(diagnostic, 'os', environment), \
                      patch.object(diagnostic, 'resolve_dart',
                                   return_value=None if missing == 'dart' else 'native-dart.exe') as resolve, \
@@ -858,14 +859,16 @@ class CollectionAndMainTests(unittest.TestCase):
         args = SimpleNamespace(dart='native-dart.exe', worker=CASE, fixture=self.directory)
         with patch.object(diagnostic.sys, 'stdin', new=io.StringIO('GO\n')), \
              patch.object(diagnostic, 'os', SimpleNamespace(environ=self.environment)), \
+             patch.object(diagnostic, 'dart_define', return_value='-DVITYO_WINDOWS_PIPE_LIBRARY=fixture') as define, \
              patch.object(diagnostic.subprocess, 'call', return_value=23) as launch:
             self.assertEqual(diagnostic.worker(args), 23)
         app = ROOT / 'products/vityo_app'
         launch.assert_called_once_with([
-            'native-dart.exe', f'--packages={app / ".dart_tool/package_config.json"}',
+            'native-dart.exe', '-DVITYO_WINDOWS_PIPE_LIBRARY=fixture', f'--packages={app / ".dart_tool/package_config.json"}',
             str(app / 'tool/windows_pafio_launch_diagnostic.dart'), CASE,
             str(Path(diagnostic.sys.executable).resolve()), str(self.directory)],
             cwd=app, env=self.environment)
+        define.assert_called_once_with(diagnostic.library_path(ROOT))
         self.assertIsNot(launch.call_args.kwargs['env'], self.environment)
         self.assertNotIn('shell', launch.call_args.kwargs)
 

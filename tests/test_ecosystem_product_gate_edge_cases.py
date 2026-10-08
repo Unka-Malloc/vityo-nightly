@@ -42,6 +42,11 @@ def load_gate_module():
 class EcosystemProductGateEdgeCaseTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
+        # Native build/define wiring has its own portable mocked suite.
+        command_patch = mock.patch.object(self.gate, "test_command",
+                                          side_effect=lambda command, **kwargs: command)
+        command_patch.start()
+        self.addCleanup(command_patch.stop)
 
     def _revision_step(self, name: str) -> dict[str, object]:
         return {

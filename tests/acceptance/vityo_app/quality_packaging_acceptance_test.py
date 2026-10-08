@@ -96,6 +96,7 @@ class QualityPackagingAcceptanceTest(unittest.TestCase):
             "platform": "windows",
             "launched": True,
             "first_frame": True,
+            "windows_pipe_abi": 1,
         }
         blocked = self.delivery.evaluate_lane(
             platform="windows",
@@ -117,6 +118,44 @@ class QualityPackagingAcceptanceTest(unittest.TestCase):
                     evidence={**evidence, **extra},
                 )
                 self.assertEqual(result.status, "failed")
+
+    def test_windows_startup_report_requires_exact_integer_pipe_abi(self) -> None:
+        evidence = {
+            "schema_version": 1,
+            "candidate": "vityo.zip",
+            "platform": "windows",
+            "launched": True,
+            "first_frame": True,
+        }
+        for marker in ({}, *({"windows_pipe_abi": value} for value in (None, 0, 2, True, 1.0, "1", 1))):
+            with self.subTest(marker=marker):
+                result = self.delivery.evaluate_lane(
+                    platform="windows",
+                    host_platform="windows",
+                    expected_candidate="vityo.zip",
+                    evidence={**evidence, **marker},
+                )
+                verified = type(marker.get("windows_pipe_abi")) is int and marker["windows_pipe_abi"] == 1
+                self.assertEqual(result.status, "passed" if verified else "failed")
+
+    def test_non_windows_startup_report_preserves_original_fields(self) -> None:
+        for platform in ("macos", "linux"):
+            evidence = {
+                "schema_version": 1,
+                "candidate": "candidate",
+                "platform": platform,
+                "launched": True,
+                "first_frame": True,
+            }
+            for extra in ({}, {"windows_pipe_abi": 1}):
+                with self.subTest(platform=platform, extra=extra):
+                    result = self.delivery.evaluate_lane(
+                        platform=platform,
+                        host_platform=platform,
+                        expected_candidate="candidate",
+                        evidence={**evidence, **extra},
+                    )
+                    self.assertEqual(result.status, "failed" if extra else "passed")
 
 
 if __name__ == "__main__":

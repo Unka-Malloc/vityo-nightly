@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
+import 'windows_pipe_library.dart';
+
 final class WindowsNamedPipeUnavailable implements Exception {
   const WindowsNamedPipeUnavailable();
 }
@@ -86,10 +88,11 @@ const _errorBrokenPipe = 109;
 const _errorNoData = 232;
 
 final class _PipeIoException implements Exception {
-  const _PipeIoException(this.code);
+  const _PipeIoException(this.code, this.operation);
   final int code;
+  final String operation;
   @override
-  String toString() => 'vityod named pipe I/O failed (Win32 $code)';
+  String toString() => 'vityod named pipe $operation failed (Win32 $code)';
 }
 
 final class _Overlapped extends Struct {
@@ -109,6 +112,7 @@ const _errorPipeBusy = 231;
 const _invalidHandle = -1;
 
 final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
+final DynamicLibrary _pipeNative = openWindowsPipeLibrary();
 
 typedef _CreateFileWNative =
     IntPtr Function(
@@ -119,9 +123,19 @@ typedef _CreateFileWNative =
       Uint32,
       Uint32,
       IntPtr,
+      Pointer<Uint32>,
     );
 typedef _CreateFileWDart =
-    int Function(Pointer<Utf16>, int, int, Pointer<Void>, int, int, int);
+    int Function(
+      Pointer<Utf16>,
+      int,
+      int,
+      Pointer<Void>,
+      int,
+      int,
+      int,
+      Pointer<Uint32>,
+    );
 typedef _WaitNamedPipeWNative = Int32 Function(Pointer<Utf16>, Uint32);
 typedef _WaitNamedPipeWDart = int Function(Pointer<Utf16>, int);
 typedef _ReadFileNative =
@@ -131,9 +145,17 @@ typedef _ReadFileNative =
       Uint32,
       Pointer<Uint32>,
       Pointer<Void>,
+      Pointer<Uint32>,
     );
 typedef _ReadFileDart =
-    int Function(int, Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Void>);
+    int Function(
+      int,
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint32>,
+      Pointer<Void>,
+      Pointer<Uint32>,
+    );
 typedef _WriteFileNative =
     Int32 Function(
       IntPtr,
@@ -141,42 +163,43 @@ typedef _WriteFileNative =
       Uint32,
       Pointer<Uint32>,
       Pointer<Void>,
+      Pointer<Uint32>,
     );
 typedef _WriteFileDart =
-    int Function(int, Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Void>);
+    int Function(
+      int,
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint32>,
+      Pointer<Void>,
+      Pointer<Uint32>,
+    );
 typedef _CloseHandleNative = Int32 Function(IntPtr);
 typedef _CloseHandleDart = int Function(int);
 typedef _CancelIoExNative = Int32 Function(IntPtr, Pointer<Void>);
 typedef _CancelIoExDart = int Function(int, Pointer<Void>);
-typedef _GetLastErrorNative = Uint32 Function();
-typedef _GetLastErrorDart = int Function();
 
-final _CreateFileWDart _createFile = _kernel32
-    .lookupFunction<_CreateFileWNative, _CreateFileWDart>('CreateFileW');
+final _CreateFileWDart _createFile = _pipeNative
+    .lookupFunction<_CreateFileWNative, _CreateFileWDart>(
+      'vityo_pipe_create_file',
+    );
 final _WaitNamedPipeWDart _waitNamedPipe = _kernel32
     .lookupFunction<_WaitNamedPipeWNative, _WaitNamedPipeWDart>(
       'WaitNamedPipeW',
     );
-final _ReadFileDart _readFile = _kernel32
-    .lookupFunction<_ReadFileNative, _ReadFileDart>('ReadFile');
-final _WriteFileDart _writeFile = _kernel32
-    .lookupFunction<_WriteFileNative, _WriteFileDart>('WriteFile');
+final _ReadFileDart _readFile = _pipeNative
+    .lookupFunction<_ReadFileNative, _ReadFileDart>('vityo_pipe_read');
+final _WriteFileDart _writeFile = _pipeNative
+    .lookupFunction<_WriteFileNative, _WriteFileDart>('vityo_pipe_write');
 final _CloseHandleDart _closeHandleFunction = _kernel32
     .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
 final _CancelIoExDart _cancelIoEx = _kernel32
     .lookupFunction<_CancelIoExNative, _CancelIoExDart>('CancelIoEx');
-final _GetLastErrorDart _getLastError = _kernel32
-    .lookupFunction<_GetLastErrorNative, _GetLastErrorDart>(
-      'GetLastError',
-      isLeaf: true,
-    );
 
 int _openPipe(String endpoint) {
-  // Top-level FFI bindings are lazy. Resolve and invoke this getter before
-  // any fallible API: its first lookup/call can overwrite ERROR_IO_PENDING.
-  // See package:win32's resolveGetLastError convention. Only this tiny,
-  // nonblocking getter is leaf; potentially waiting APIs remain non-leaf.
-  _getLastError();
+  // The shim captures errors before a non-leaf FFI return can enter the VM.
+  // It is mandatory: never fall back to a separate GetLastError call in Dart.
+  final nativeError = calloc<Uint32>();
   final name = endpoint.toNativeUtf16();
   try {
     final deadline = DateTime.now().add(const Duration(seconds: 5));
@@ -189,9 +212,10 @@ int _openPipe(String endpoint) {
         _openExisting,
         _fileFlagOverlapped,
         0,
+        nativeError,
       );
       if (handle != _invalidHandle) return handle;
-      if (_getLastError() != _errorPipeBusy ||
+      if (nativeError.value != _errorPipeBusy ||
           DateTime.now().isAfter(deadline)) {
         throw const WindowsNamedPipeUnavailable();
       }
@@ -199,36 +223,61 @@ int _openPipe(String endpoint) {
     }
   } finally {
     malloc.free(name);
+    calloc.free(nativeError);
   }
 }
 
 typedef _CreateEventWNative =
-    IntPtr Function(Pointer<Void>, Int32, Int32, Pointer<Utf16>);
+    IntPtr Function(
+      Pointer<Void>,
+      Int32,
+      Int32,
+      Pointer<Utf16>,
+      Pointer<Uint32>,
+    );
 typedef _CreateEventWDart =
-    int Function(Pointer<Void>, int, int, Pointer<Utf16>);
+    int Function(Pointer<Void>, int, int, Pointer<Utf16>, Pointer<Uint32>);
 typedef _GetOverlappedResultNative =
-    Int32 Function(IntPtr, Pointer<_Overlapped>, Pointer<Uint32>, Int32);
+    Int32 Function(
+      IntPtr,
+      Pointer<_Overlapped>,
+      Pointer<Uint32>,
+      Int32,
+      Pointer<Uint32>,
+    );
 typedef _GetOverlappedResultDart =
-    int Function(int, Pointer<_Overlapped>, Pointer<Uint32>, int);
+    int Function(
+      int,
+      Pointer<_Overlapped>,
+      Pointer<Uint32>,
+      int,
+      Pointer<Uint32>,
+    );
 
-final _CreateEventWDart _createEvent = _kernel32
-    .lookupFunction<_CreateEventWNative, _CreateEventWDart>('CreateEventW');
-final _GetOverlappedResultDart _getOverlappedResult = _kernel32
+final _CreateEventWDart _createEvent = _pipeNative
+    .lookupFunction<_CreateEventWNative, _CreateEventWDart>(
+      'vityo_pipe_create_event',
+    );
+final _GetOverlappedResultDart _getOverlappedResult = _pipeNative
     .lookupFunction<_GetOverlappedResultNative, _GetOverlappedResultDart>(
-      'GetOverlappedResult',
+      'vityo_pipe_get_result',
     );
 
 Future<int> _completeOperation(
   int handle,
   Pointer<_Overlapped> operation,
   Pointer<Uint32> transferred,
+  Pointer<Uint32> nativeError,
 ) async {
   while (true) {
-    if (_getOverlappedResult(handle, operation, transferred, 0) != 0) {
+    if (_getOverlappedResult(handle, operation, transferred, 0, nativeError) !=
+        0) {
       return transferred.value;
     }
-    final error = _getLastError();
-    if (error != _errorIoIncomplete) throw _PipeIoException(error);
+    final error = nativeError.value;
+    if (error != _errorIoIncomplete) {
+      throw _PipeIoException(error, 'GetOverlappedResult');
+    }
     // Poll only pending overlapped I/O; never block the isolate in native read,
     // write or completion waits. The event belongs exclusively to this op.
     await Future<void>.delayed(const Duration(milliseconds: 1));
@@ -239,16 +288,30 @@ Future<Uint8List> _readPipeBytes(int handle) async {
   final operation = calloc<_Overlapped>();
   final buffer = malloc<Uint8>(64 * 1024);
   final transferred = calloc<Uint32>();
+  final nativeError = calloc<Uint32>();
   var event = 0;
   try {
-    event = _createEvent(nullptr, 1, 0, nullptr);
-    if (event == 0) throw _PipeIoException(_getLastError());
+    event = _createEvent(nullptr, 1, 0, nullptr, nativeError);
+    if (event == 0) throw _PipeIoException(nativeError.value, 'CreateEventW');
     operation.ref.event = event;
-    if (_readFile(handle, buffer, 64 * 1024, nullptr, operation.cast()) == 0) {
-      final error = _getLastError();
-      if (error != _errorIoPending) throw _PipeIoException(error);
+    if (_readFile(
+          handle,
+          buffer,
+          64 * 1024,
+          nullptr,
+          operation.cast(),
+          nativeError,
+        ) ==
+        0) {
+      final error = nativeError.value;
+      if (error != _errorIoPending) throw _PipeIoException(error, 'ReadFile');
     }
-    final count = await _completeOperation(handle, operation, transferred);
+    final count = await _completeOperation(
+      handle,
+      operation,
+      transferred,
+      nativeError,
+    );
     return Uint8List.fromList(buffer.asTypedList(count));
   } on _PipeIoException catch (error) {
     if (error.code == _errorBrokenPipe || error.code == _errorNoData) {
@@ -257,6 +320,7 @@ Future<Uint8List> _readPipeBytes(int handle) async {
     rethrow;
   } finally {
     if (event != 0) _closeHandle(event);
+    calloc.free(nativeError);
     calloc.free(transferred);
     malloc.free(buffer);
     calloc.free(operation);
@@ -267,22 +331,38 @@ Future<int> _writePipeBytes(int handle, Uint8List bytes) async {
   final operation = calloc<_Overlapped>();
   final buffer = malloc<Uint8>(bytes.length);
   final transferred = calloc<Uint32>();
+  final nativeError = calloc<Uint32>();
   var event = 0;
   try {
     buffer.asTypedList(bytes.length).setAll(0, bytes);
-    event = _createEvent(nullptr, 1, 0, nullptr);
-    if (event == 0) throw _PipeIoException(_getLastError());
+    event = _createEvent(nullptr, 1, 0, nullptr, nativeError);
+    if (event == 0) throw _PipeIoException(nativeError.value, 'CreateEventW');
     operation.ref.event = event;
-    if (_writeFile(handle, buffer, bytes.length, nullptr, operation.cast()) ==
+    if (_writeFile(
+          handle,
+          buffer,
+          bytes.length,
+          nullptr,
+          operation.cast(),
+          nativeError,
+        ) ==
         0) {
-      final error = _getLastError();
-      if (error != _errorIoPending) throw _PipeIoException(error);
+      final error = nativeError.value;
+      if (error != _errorIoPending) throw _PipeIoException(error, 'WriteFile');
     }
-    final count = await _completeOperation(handle, operation, transferred);
-    if (count == 0) throw const _PipeIoException(_errorNoData);
+    final count = await _completeOperation(
+      handle,
+      operation,
+      transferred,
+      nativeError,
+    );
+    if (count == 0) {
+      throw const _PipeIoException(_errorNoData, 'WriteFile zero progress');
+    }
     return count;
   } finally {
     if (event != 0) _closeHandle(event);
+    calloc.free(nativeError);
     calloc.free(transferred);
     malloc.free(buffer);
     calloc.free(operation);

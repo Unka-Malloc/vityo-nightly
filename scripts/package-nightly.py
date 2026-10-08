@@ -405,6 +405,17 @@ def stage_rust_notices(platform: str, destination_root: Path) -> Path:
     return destination
 
 
+def validate_windows_pipe_component(config: dict[str, object]) -> Path:
+    component = config.get("windows_pipe")
+    if not isinstance(component, dict):
+        raise ValueError("missing Windows pipe package component")
+    if component.get("package_relative_path") != "vityo_windows_pipe.dll":
+        raise ValueError("Windows pipe package path must be vityo_windows_pipe.dll")
+    if type(component.get("abi_version")) is not int or component["abi_version"] != 1:
+        raise ValueError("Windows pipe ABI version must be integer 1")
+    return Path("vityo_windows_pipe.dll")
+
+
 def validate_release_inputs(platform: str, config: dict[str, object], versions: dict[str, object]) -> str:
     if versions.get("schema_version") != 1:
         raise ValueError("invalid release versions schema")
@@ -439,6 +450,8 @@ def validate_release_inputs(platform: str, config: dict[str, object], versions: 
     if relative.is_absolute() or ".." in relative.parts or not relative.parts:
         raise ValueError(f"{platform} Coding Agent package path is invalid")
     component_outputs: list[tuple[Path, str]] = [(relative, "Coding Agent executable")]
+    if platform == "windows":
+        component_outputs.append((validate_windows_pipe_component(config), "Windows pipe library"))
     vityod = config.get("vityod")
     if isinstance(vityod, dict):
         vityod_relative = require_contained_relative_path(
@@ -565,7 +578,9 @@ def package_linux(
 def package_windows(
     config: dict[str, object], output: Path, *, pafio_binary: Path | None = None
 ) -> Path:
+    pipe_relative = validate_windows_pipe_component(config)
     build = require_dir(ROOT / str(config["build_relative_path"]))
+    require_file(build / pipe_relative)
     with tempfile.TemporaryDirectory(prefix="vityo-win-") as raw_stage:
         stage = Path(raw_stage) / "Vityo-Nightly"
         copy_tree_contents(build, stage)
@@ -575,6 +590,7 @@ def package_windows(
         stage_rust_notices("windows", stage)
         shutil.copy2(ROOT / "packaging/windows/install.ps1", stage / "install.ps1")
         shutil.copy2(ROOT / "packaging/windows/uninstall.ps1", stage / "uninstall.ps1")
+        require_file(stage / pipe_relative)
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(stage.rglob("*")):
                 if path.is_file():

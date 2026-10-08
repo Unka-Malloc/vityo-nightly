@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 Flutter 主壳、编辑器核心、language UI 外壳与手写 Web Editor 主线的日常维护入口。
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Mission
 
@@ -127,3 +127,9 @@ Record:
 2026-09-05: Wired the Observable bottom-panel tab (`BottomSurfaceTab.observable`, surface id `observable.graph`) through app bootstrap, shell runtime facade, and scaffold. The controller is optional on non-IO or hosted workspaces; existing editing, build, run, and test surfaces stay unchanged. No `prototype/` change.
 
 2026-09-05: Added `Run observed` on the Observable panel, facade `runObservedProgram`, execution-controller observed run, and bootstrap injection of the IO runtime intake. No new `AppCommandId`. Compact Observable layout remains a scrolling `ListView`. No `prototype/` change.
+
+2026-10-08: The existing installed Windows first-frame probe now verifies the
+app-owned pipe DLL through the bundled loader before reporting its ABI. A missing
+or incompatible library prevents success evidence; the probe cannot select the
+test DLL override. Ordinary launches and Linux/macOS startup behavior are
+unchanged. Keep loader proof separate from real pipe I/O and full-product gates.

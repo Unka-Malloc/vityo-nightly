@@ -22,6 +22,9 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / 'scripts') not in sys.path:
+    sys.path.insert(0, str(ROOT / 'scripts'))
+from windows_pipe_library import dart_define, library_path
 CASES = tuple(f'{route}-{kind}' for route in ('direct', 'daemon')
               for kind in ('native', 'bare-wrapper', 'absolute-wrapper'))
 CASE_TIMEOUT = 20.0
@@ -157,7 +160,7 @@ def worker(args):
     if sys.stdin.readline() != 'GO\n':
         return 2
     app = ROOT / 'products/vityo_app'
-    command = [args.dart, f'--packages={app / ".dart_tool/package_config.json"}',
+    command = [args.dart, dart_define(library_path(ROOT)), f'--packages={app / ".dart_tool/package_config.json"}',
                str(app / 'tool/windows_pafio_launch_diagnostic.dart'),
                args.worker, str(Path(sys.executable).resolve()), str(args.fixture)]
     return subprocess.call(command, cwd=app, env=dict(os.environ))
@@ -325,9 +328,10 @@ def collect_if_ready(args):
     dart = resolve_dart(args.dart) if os.name == 'nt' else None
     if (os.name != 'nt' or dart is None or
             not (app / '.dart_tool/package_config.json').is_file() or
-            not (app / 'native/vityod/target/debug/vityod.exe').is_file()):
+            not (app / 'native/vityod/target/debug/vityod.exe').is_file() or
+            not library_path(ROOT).is_file()):
         save(args.output, {'schema_version': 1, **host_metadata(), 'status': 'not-run',
-                          'reason': 'requires Windows, native dart.exe, restored app packages and already-built vityod.exe',
+                          'reason': 'requires Windows, native dart.exe, restored app packages, already-built vityod.exe and native pipe DLL',
                           'cases': [{'case': case, 'status': 'not-run'} for case in CASES]})
         return 2
     return collect(dart, args.output, dict(os.environ))

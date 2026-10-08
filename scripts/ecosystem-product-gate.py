@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from windows_pipe_library import test_command
+
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_TEST = ROOT / "products/vityo_app/test/local_product_workflow_test.dart"
 PRODUCT_MARKER = b"VITYO_PRODUCT_REPORT "
@@ -494,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
                     pafio_bin=pafio.resolve(),
                 )
                 process = run_bounded_process(
-                    ["flutter", "test", str(PRODUCT_TEST)],
+                    test_command(["flutter", "test", str(PRODUCT_TEST)], root=ROOT),
                     cwd=ROOT / "products/vityo_app",
                     env=environment,
                 )

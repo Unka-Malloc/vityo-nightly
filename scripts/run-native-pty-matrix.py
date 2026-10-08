@@ -9,6 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from windows_pipe_library import test_command
+
 
 CAPABILITY = "desktop-native-pty"
 PORTABLE_PTY_VERSION = "0.9.0"
@@ -79,7 +84,8 @@ def run_matrix(*, flutter: str, app_root: Path) -> None:
         ],
     )
     for command in commands:
-        subprocess.run(command, cwd=app_root, check=True)
+        subprocess.run(test_command(command, root=app_root.resolve().parents[1]),
+                       cwd=app_root, check=True)
 
 
 def build_report(*, platform: str, vityo_commit: str) -> dict[str, object]:
