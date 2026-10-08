@@ -525,6 +525,15 @@ For a manual Windows Flutter test, build the DLL first, then pass
 The production app instead installs and loads the DLL beside its executable.
 Neither route requires copying a DLL into an SDK, changing PATH, or selecting a
 library through a runtime environment variable.
+The portable fake-Win32 boundary test separately uses an available host C++
+compiler (`g++`, `clang++`, `c++`, `cl`, or `clang-cl`), or one explicitly selected
+by `CXX`. The override is a single executable, not a shell command with flags;
+missing/unsupported explicit choices fail without fallback. GNU-style and
+MSVC-style arguments remain separate. Compile/run failures report bounded,
+redacted command/status/stdout/stderr data, including timeouts. Both ordinary and
+predefined-`__declspec` fixtures exercise the same production shim assertions;
+this portable check is distinct from real Windows DLL and pipe execution.
+
 The Windows package manifest also declares this fixed DLL and ABI 1. Packaging
 and installation reject a missing DLL. The existing installed first-frame probe
 loads the bundled DLL (ignoring test overrides), checks its ABI and exports, and

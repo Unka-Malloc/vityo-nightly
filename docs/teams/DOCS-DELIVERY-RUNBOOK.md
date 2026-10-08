@@ -398,3 +398,10 @@ whose existing discovery selects VS 18. Resolve installed C++ metadata with
 selected instance, and reject incompatible cached toolchains. Fresh portable
 version/failure tests do not establish Windows compilation; no native gate,
 dependency installation, or other platform path changed.
+
+2026-10-08: Kept Draft PR 28's portable native-boundary repair test-local after a
+conditional GCC reproduction of a predefined `__declspec` macro collision.
+The fake header now safely replaces that macro, available/explicit host compiler
+frontends use their own command adapters, and failure output is bounded and
+redacted rather than swallowed. Preserve every wrapper assertion and native gate;
+the exact CI compiler diagnostic still requires a fresh Windows run.
