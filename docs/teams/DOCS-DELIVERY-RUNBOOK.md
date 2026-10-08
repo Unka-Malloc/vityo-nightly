@@ -79,6 +79,21 @@ claims.
 
 ## Daily Workflow
 
+Native backpressure fixtures must first pass the real protocol frame encoder.
+Keep the outer socket fixture within the existing control-payload maximum and
+retain oversized-frame rejection; do not raise protocol limits to make a test run.
+
+
+When a native regression reports an impossible zero error after failed I/O,
+check first-use FFI resolution before weakening assertions. Keep the original
+failure evidence and require a live reader before the peer-disconnect scenario.
+
+
+Keep raw Windows API diagnosis, portable request-lifetime tests and bounded real
+Dart transport results distinct. The latter verifies the candidate transport's
+native completion/close behavior but still does not replace complete delivery.
+
+
 Keep bounded Windows pipe collection documented in the build/dev-environment
 owner and test catalog. Its raw API observations and supervisor tests do not
 replace full Windows delivery or prove native transport cancellation.

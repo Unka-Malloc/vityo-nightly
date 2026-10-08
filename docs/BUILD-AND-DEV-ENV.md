@@ -475,3 +475,24 @@ CancelIoEx request. Non-Windows execution reports `not-run`. These raw Win32
 observations do not establish the exact Dart-isolate CI deadlock or fix it.
 The existing full delivery command and acceptance gates remain unchanged; a
 successful collection never substitutes for a passing Windows product gate.
+
+### Real Dart Windows pipe regression
+
+Before complete Windows delivery, the bounded Dart pipe harness exercises the
+candidate's actual WindowsNamedPipeConnection against a synthetic native server.
+It covers reader-first request/reply, peer disconnect, pending-write cancellation,
+queued writes and repeated close. The Python parent owns the server and Dart
+worker and applies an external deadline so a blocked native call cannot disable
+the watchdog. The report is separate from the raw Win32 diagnostic and does not
+replace the full delivery gate. Non-Windows runs are explicitly not executed.
+
+Run it with `python scripts/test-windows-dart-pipe.py --output
+build/evidence/windows-dart-pipe-tests.json` after restoring app dependencies.
+Each of five cases has a 20-second external watchdog plus at most two seconds
+of reap waiting per direct child. The existing CI job gives the step three minutes
+and immediately uploads its JSON with the already-pinned artifact action, including
+on failure. A missing report is an upload error; the original final artifact also
+retains the JSON. Status, OS/architecture, elapsed time, bounded redacted logs and
+cleanup outcomes distinguish successful assertions from failures or `not-run`.
+No new runner or permission is required; actual runner time is reported rather
+than assumed to be free. Active cancelled writes must expose Win32 error 995.

@@ -287,6 +287,28 @@ If a response arrived before a permanently pending send, closing prevents later
 success but the request may wait until its original deadline. Windows named-pipe
 cancellation and complete Windows startup remain separately unverified.
 
+### Windows pipe completion ownership
+
+The Windows client resolves and invokes its thread-local last-error getter before
+opening the first pipe. Dart top-level bindings initialize lazily: resolving the
+getter after a failed call can overwrite the pending-I/O error being classified.
+Only the tiny GetLastError getter uses a leaf binding; waiting Win32 calls do not.
+This follows the upstream [Win32 binding convention](https://pub.dev/documentation/win32/latest/win32/ReadFile.html)
+and still requires the real Windows regression, including a live-reader check
+before intentional peer disconnection.
+
+The Windows client opens the pipe for overlapped I/O. Each pending read or write
+owns its own event, OVERLAPPED state and buffer until completion is observed.
+Closing rejects new submissions, requests native cancellation, drains pending
+operations, then releases their resources and closes the pipe. Error 995 is an
+expected read cancellation only while closing; unexpected read cancellation is
+reported. The outer transport shares its Windows close future and rejects
+reconnect until that close finishes. POSIX transport and wire messages are unchanged.
+
+This implementation requires real Dart transport regressions on Windows. Raw
+Win32 API probes and portable request tests are separate evidence; neither proves
+that a candidate's native transport or full Windows delivery passed.
+
 ## 9. Cross-Reference
 
 - [Vityo Mainstream Architecture Alignment](./Vityo-Mainstream-Architecture-Alignment.md)
