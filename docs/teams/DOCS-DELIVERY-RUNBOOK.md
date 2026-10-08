@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Mission
 
@@ -78,6 +78,11 @@ claims.
 16. `已实现决策摘要 -> ../adr/IMPLEMENTED-DECISIONS.md`
 
 ## Daily Workflow
+
+Keep macOS CocoaPods at the CI-verified `1.17.0` version and commit regenerated
+`Podfile.lock` and Runner project metadata when the Flutter plugin graph changes.
+Use observed native generation diffs; preserve product-matrix clean-checkout
+failures rather than restoring or ignoring dirty metadata.
 
 The Prototype editor smoke test names browser resolution, server readiness, browser launch,
 and page creation as separate steps. Startup failures clean up owned resources; screenshot

@@ -2,7 +2,7 @@
 
 **Purpose:** Provide the repository-level entry point for bootstrapping a fresh machine, installing shared GUI toolchains, and routing contributors to the correct implementation surface.
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Who This Is For
 
@@ -74,6 +74,17 @@ Device verification stays host-driven:
 8. Apple build profiles on macOS are standardized in [../toolchain/apple-platform-profiles.csv](../toolchain/apple-platform-profiles.csv). These profiles pin iOS/macOS deployment targets and optionally select a specific `DEVELOPER_DIR` / Xcode installation.
 9. Rust/Cargo `1.88.0` is the pinned CI toolchain for the independent Coding Agent and `vityod` daemon. The Coding Agent manifest declares Rust `1.88` as its minimum; local builds need Rust/Cargo `1.88` or newer.
 10. CI mirror: GitHub Actions on `ubuntu-latest`, `windows-latest`, and `macos-latest` run the shared Python delivery stages with pinned Python, Node.js, Flutter, Chrome for Testing, and Rust versions, then collect host-specific package, install, startup, and native integration evidence.
+
+### macOS CocoaPods metadata
+
+The macOS CI lane requires CocoaPods `1.17.0` and checks the installed version
+exactly before dependency restoration. The committed macOS `Podfile.lock` and
+Runner project are generated metadata for the existing Flutter plugin graph
+under Flutter `3.41.7` and CocoaPods `1.17.0`. Keep both files current when that
+graph changes. A different installed CocoaPods version fails toolchain
+verification instead of silently rewriting the lockfile producer version.
+The product-matrix clean-checkout gate remains required; do not restore or
+ignore generated changes to make it pass.
 
 ### CI browser pairing
 

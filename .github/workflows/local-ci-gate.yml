@@ -283,6 +283,7 @@ jobs:
       VITYO_PYTHON_VERSION: "3.13.5"
       VITYO_NODE_VERSION: "24.15.0"
       VITYO_FLUTTER_VERSION: "3.41.7"
+      VITYO_COCOAPODS_VERSION: "1.17.0"
 
     steps:
       - name: Checkout Vityo nightly
@@ -329,6 +330,7 @@ jobs:
           node --version | grep -F "v${VITYO_NODE_VERSION}"
           npm --version
           flutter --version | grep -m1 '^Flutter ' | grep -F "${VITYO_FLUTTER_VERSION}"
+          test "$(pod --version)" = "${VITYO_COCOAPODS_VERSION}"
           flutter config --enable-web --enable-macos-desktop
           "${{ steps.setup-chrome.outputs.chrome-path }}" --version
 
