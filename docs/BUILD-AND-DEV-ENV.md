@@ -450,3 +450,28 @@ resolution difference in delivery evidence. The daemon-backed discovery groups
 and the isolation socket test require a host that permits Unix-domain sockets;
 a blocked host is incomplete evidence, not a passing test. This bootstrap and
 its deterministic tests do not establish real macOS UI acceptance.
+
+### Bounded Windows named-pipe diagnostics
+
+The existing Windows delivery job runs `python scripts/windows-pipe-diagnostics.py
+--output build/evidence/windows-pipe-diagnostics.json` after Python setup, before
+heavy build/test work. The existing coverage artifact carries the report. This
+adds no runner, service, secret, or permission grant; elapsed runner usage remains
+billable according to the repository's GitHub plan.
+
+Five isolated worker processes probe synchronous same-handle read/write,
+overlapped duplex I/O, synchronous and overlapped pending-write cancellation,
+and closing a synchronous handle with a pending write. Each worker has an
+8-second parent watchdog and at most 2 seconds of reap waiting. The CI step has a
+2-minute outer limit. Workers create only uniquely named local pipes and synthetic
+payloads. The report includes OS/architecture, numeric API errors, completion and
+cancellation observations, watchdog/cleanup outcomes, and actual elapsed time;
+it excludes stderr text and local paths.
+
+`completed` describes diagnostic execution, not product correctness. A reader
+entry marker precedes the native call and cannot prove kernel scheduling order.
+Cancellation is observed only from operation completion, not a successful
+CancelIoEx request. Non-Windows execution reports `not-run`. These raw Win32
+observations do not establish the exact Dart-isolate CI deadlock or fix it.
+The existing full delivery command and acceptance gates remain unchanged; a
+successful collection never substitutes for a passing Windows product gate.

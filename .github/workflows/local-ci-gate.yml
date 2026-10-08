@@ -143,6 +143,12 @@ jobs:
         with:
           python-version: ${{ env.VITYO_PYTHON_VERSION }}
 
+      - name: Collect bounded Windows pipe diagnostics
+        shell: pwsh
+        working-directory: vityo-nightly
+        timeout-minutes: 2
+        run: python scripts/windows-pipe-diagnostics.py --output build/evidence/windows-pipe-diagnostics.json
+
       - name: Set up Rust 1.88 toolchain
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0, community-maintained
         with:
@@ -258,6 +264,7 @@ jobs:
         with:
           name: vityo-coverage-reports-windows
           path: |
+            vityo-nightly/build/evidence/windows-pipe-diagnostics.json
             vityo-nightly/.coverage
             vityo-nightly/products/vityo_app/coverage/lcov.info
             vityo-nightly/build/evidence/product-gate-windows.json
