@@ -5,8 +5,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
+
 import 'package:vityo_app/src/ide/local_service/transport/windows_named_pipe.dart';
 import 'package:vityo_app/src/ide/local_service/transport/socket_transport.dart';
+
+const windowsPipeControlFixtureBytes = vityodMaxControlPayloadBytes;
 
 void check(bool value, String reason) {
   if (!value) throw StateError(reason);
@@ -51,7 +55,12 @@ Future<void> checkSocketClose(String endpoint) async {
     return failed;
   }
 
-  final writes = [send(Uint8List(8 * 1024 * 1024)), send(Uint8List(1))];
+  // Exercise backpressure with a valid control frame, not a frame rejected
+  // before native I/O. The server's inbound quota is only 4 KiB.
+  final writes = [
+    send(Uint8List(windowsPipeControlFixtureBytes)),
+    send(Uint8List(1)),
+  ];
   await Future<void>.delayed(const Duration(milliseconds: 250));
   check(settled == 0, 'socket writes did not remain pending');
   phase('socket-write-pending');

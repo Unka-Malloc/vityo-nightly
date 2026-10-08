@@ -79,6 +79,11 @@ claims.
 
 ## Daily Workflow
 
+Native backpressure fixtures must first pass the real protocol frame encoder.
+Keep the outer socket fixture within the existing control-payload maximum and
+retain oversized-frame rejection; do not raise protocol limits to make a test run.
+
+
 When a native regression reports an impossible zero error after failed I/O,
 check first-use FFI resolution before weakening assertions. Keep the original
 failure evidence and require a live reader before the peer-disconnect scenario.
