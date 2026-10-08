@@ -240,6 +240,22 @@ jobs:
           python -m pip install coverage
           powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bootstrap-workspace.ps1 -Platforms web,windows
 
+      - name: Run bounded real Dart Windows pipe regressions
+        shell: pwsh
+        working-directory: vityo-nightly
+        timeout-minutes: 3
+        run: |
+          python scripts/test-windows-dart-pipe.py --output build/evidence/windows-dart-pipe-tests.json
+          if ($LASTEXITCODE -ne 0) { throw "Real Dart Windows pipe regressions failed" }
+
+      - name: Upload real Dart Windows pipe evidence immediately
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: vityo-windows-dart-pipe-tests
+          path: vityo-nightly/build/evidence/windows-dart-pipe-tests.json
+          if-no-files-found: error
+
       - name: Resolve CI refs
         id: ci_refs
         shell: bash
@@ -265,6 +281,7 @@ jobs:
           name: vityo-coverage-reports-windows
           path: |
             vityo-nightly/build/evidence/windows-pipe-diagnostics.json
+            vityo-nightly/build/evidence/windows-dart-pipe-tests.json
             vityo-nightly/.coverage
             vityo-nightly/products/vityo_app/coverage/lcov.info
             vityo-nightly/build/evidence/product-gate-windows.json

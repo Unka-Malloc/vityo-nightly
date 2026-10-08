@@ -287,6 +287,20 @@ If a response arrived before a permanently pending send, closing prevents later
 success but the request may wait until its original deadline. Windows named-pipe
 cancellation and complete Windows startup remain separately unverified.
 
+### Windows pipe completion ownership
+
+The Windows client opens the pipe for overlapped I/O. Each pending read or write
+owns its own event, OVERLAPPED state and buffer until completion is observed.
+Closing rejects new submissions, requests native cancellation, drains pending
+operations, then releases their resources and closes the pipe. Error 995 is an
+expected read cancellation only while closing; unexpected read cancellation is
+reported. The outer transport shares its Windows close future and rejects
+reconnect until that close finishes. POSIX transport and wire messages are unchanged.
+
+This implementation requires real Dart transport regressions on Windows. Raw
+Win32 API probes and portable request tests are separate evidence; neither proves
+that a candidate's native transport or full Windows delivery passed.
+
 ## 9. Cross-Reference
 
 - [Vityo Mainstream Architecture Alignment](./Vityo-Mainstream-Architecture-Alignment.md)

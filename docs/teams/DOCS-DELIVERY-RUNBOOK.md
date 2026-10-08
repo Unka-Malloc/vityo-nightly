@@ -79,6 +79,11 @@ claims.
 
 ## Daily Workflow
 
+Keep raw Windows API diagnosis, portable request-lifetime tests and bounded real
+Dart transport results distinct. The latter verifies the candidate transport's
+native completion/close behavior but still does not replace complete delivery.
+
+
 Keep bounded Windows pipe collection documented in the build/dev-environment
 owner and test catalog. Its raw API observations and supervisor tests do not
 replace full Windows delivery or prove native transport cancellation.

@@ -18,6 +18,7 @@ final class SocketVityodTransport implements VityodTransport {
   final List<int> _buffer = <int>[];
   Socket? _socket;
   WindowsNamedPipeConnection? _windowsPipe;
+  Future<void>? _windowsClosing;
   StreamSubscription<Uint8List>? _subscription;
   int _sequence = 0;
   Future<void> _writeTail = Future<void>.value();
@@ -30,7 +31,7 @@ final class SocketVityodTransport implements VityodTransport {
 
   @override
   Future<String> connect() async {
-    if (_socket != null || _windowsPipe != null) {
+    if (_socket != null || _windowsPipe != null || _windowsClosing != null) {
       throw StateError('transport is already connected');
     }
     if (Platform.isWindows) {
@@ -40,7 +41,11 @@ final class SocketVityodTransport implements VityodTransport {
         _acceptBytes,
         onError: _incoming.addError,
         onDone: () {
-          _windowsPipe = null;
+          if (identical(_windowsPipe, pipe)) {
+            unawaited(close());
+          } else {
+            unawaited(pipe.close());
+          }
         },
         cancelOnError: false,
       );
@@ -135,6 +140,12 @@ final class SocketVityodTransport implements VityodTransport {
 
   @override
   Future<void> close() async {
+    final closing = _windowsClosing;
+    if (closing != null) return closing;
+    final activePipe = _windowsPipe;
+    if (activePipe != null) {
+      return _windowsClosing = _closeWindowsPipe(activePipe);
+    }
     await _writeTail;
     final subscription = _subscription;
     _subscription = null;
@@ -146,6 +157,21 @@ final class SocketVityodTransport implements VityodTransport {
     _windowsPipe = null;
     await pipe?.close();
     _buffer.clear();
+  }
+
+  Future<void> _closeWindowsPipe(WindowsNamedPipeConnection pipe) async {
+    _windowsPipe = null;
+    final subscription = _subscription;
+    _subscription = null;
+    try {
+      // Native cancellation must happen before waiting for queued sends.
+      await pipe.close();
+      await _writeTail;
+      await subscription?.cancel();
+      _buffer.clear();
+    } finally {
+      _windowsClosing = null;
+    }
   }
 
   @override
