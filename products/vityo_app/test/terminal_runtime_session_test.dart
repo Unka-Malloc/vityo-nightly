@@ -847,17 +847,8 @@ Future<ToolchainManager> _createToolchainManager(
     ),
     credentialDataStore: InMemoryCredentialDataStore(),
   );
-  final platformManagers = await createPlatformManagerBundle(
-    platformContext: PlatformContextSnapshot.compose(
-      targetId: 'toolchain-runtime-test',
-      fileSystem: FileSystemFacts.linuxDebianArm(
-        targetId: 'toolchain-runtime-test',
-      ),
-      shell: ShellFacts.linuxDebianArm(
-        targetId: 'toolchain-runtime-test',
-        defaultShellPath: '/bin/sh',
-      ),
-    ),
+  final platformManagers = await createDetectedPlatformManagerBundle(
+    targetId: 'toolchain-runtime-test',
     vityodClient: client,
     workspaceRoot: root.path,
   );
