@@ -44,6 +44,8 @@ final class VityodClient {
   VityodServiceSnapshot? _snapshot;
   int _requestSequence = 0;
   Future<void>? _fullResync;
+  int _connectionEpoch = 0;
+  final Map<String, Timer> _pendingDispatches = <String, Timer>{};
   final Map<String, Completer<VityodControlEnvelope>> _pendingRequests =
       <String, Completer<VityodControlEnvelope>>{};
 
@@ -122,7 +124,16 @@ final class VityodClient {
       capabilities: capabilities,
       deadline: deadline,
     );
-    await _transport.sendControl(VityodControlCodec.encode(envelope));
+    final requestId = envelope.requestId!;
+    _pendingDispatches[requestId] = Timer(deadline, () {
+      _pendingDispatches.remove(requestId);
+    });
+    try {
+      await _transport.sendControl(VityodControlCodec.encode(envelope));
+    } catch (_) {
+      _pendingDispatches.remove(requestId)?.cancel();
+      rethrow;
+    }
   }
 
   Future<VityodControlEnvelope> request({
@@ -169,11 +180,22 @@ final class VityodClient {
       deadline: deadline,
     );
     final requestId = envelope.requestId!;
+    final epoch = _connectionEpoch;
     final completer = Completer<VityodControlEnvelope>();
     _pendingRequests[requestId] = completer;
     try {
-      await _transport.sendControl(VityodControlCodec.encode(envelope));
-      return await completer.future.timeout(deadline);
+      // Subscribe to both futures immediately: close may fail the response
+      // while the transport write is still pending. The deadline covers both.
+      final results = await Future.wait<Object?>(<Future<Object?>>[
+        completer.future,
+        Future<void>.sync(
+          () => _transport.sendControl(VityodControlCodec.encode(envelope)),
+        ),
+      ], eagerError: true).timeout(deadline);
+      if (_connectionEpoch != epoch) {
+        throw StateError('vityod client disconnected');
+      }
+      return results.first! as VityodControlEnvelope;
     } finally {
       _pendingRequests.remove(requestId);
     }
@@ -212,7 +234,12 @@ final class VityodClient {
   }
 
   Future<void> close() async {
-    await _transport.close();
+    _connectionEpoch += 1;
+    _fullResync = null;
+    for (final timer in _pendingDispatches.values) {
+      timer.cancel();
+    }
+    _pendingDispatches.clear();
     final pending = _pendingRequests.values.toList(growable: false);
     _pendingRequests.clear();
     for (final request in pending) {
@@ -226,6 +253,7 @@ final class VityodClient {
         lastEventCursor: _state.lastEventCursor,
       ),
     );
+    await _transport.close();
   }
 
   Future<void> dispose() async {
@@ -239,14 +267,23 @@ final class VityodClient {
     final envelope = VityodControlCodec.decode(payload);
     final requestId = envelope.requestId;
     final pending = requestId == null ? null : _pendingRequests[requestId];
-    if (pending != null && !pending.isCompleted) pending.complete(envelope);
+    final dispatch = requestId == null
+        ? null
+        : _pendingDispatches.remove(requestId);
+    dispatch?.cancel();
+    // Replies to retired requests (including a previous connection) cannot
+    // update snapshots, trigger resync, or complete a newer request.
+    if (requestId != null && pending == null && dispatch == null) return;
+    if (pending != null && pending.isCompleted) return;
+    if (pending != null) pending.complete(envelope);
     if (envelope.method == 'event.resume.error') {
       final code = envelope.params['errorCode'];
       requireResync(code is String ? code : 'event_resume_failed');
       if (envelope.params['context'] case final Map<Object?, Object?> context) {
         if (context['resyncMode'] == 'full_snapshot') {
+          final epoch = _connectionEpoch;
           _fullResync ??= _requestFullSnapshot().whenComplete(() {
-            _fullResync = null;
+            if (_connectionEpoch == epoch) _fullResync = null;
           });
         }
       }
@@ -261,6 +298,11 @@ final class VityodClient {
   }
 
   Future<void> _requestFullSnapshot() async {
+    final epoch = _connectionEpoch;
+    void fail(String reason) {
+      if (_connectionEpoch == epoch) requireResync(reason);
+    }
+
     try {
       final response = await _requestEnvelope(
         method: 'snapshot.get',
@@ -274,16 +316,16 @@ final class VityodClient {
       );
       if (response.method != 'snapshot.get.result') {
         final code = response.params['errorCode'];
-        requireResync(code is String ? code : 'full_snapshot_failed');
+        fail(code is String ? code : 'full_snapshot_failed');
       }
     } on VityodProtocolException catch (error) {
-      requireResync(error.code);
+      fail(error.code);
     } on TimeoutException {
-      requireResync('full_snapshot_timeout');
+      fail('full_snapshot_timeout');
     } on StateError {
-      requireResync('full_snapshot_transport_failed');
+      fail('full_snapshot_transport_failed');
     } on Object {
-      requireResync('full_snapshot_failed');
+      fail('full_snapshot_failed');
     }
   }
 

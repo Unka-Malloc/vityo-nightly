@@ -79,6 +79,12 @@ claims.
 
 ## Daily Workflow
 
+For local daemon request-lifetime maintenance, keep the deadline and retired-reply
+rules in [Protocol and Capability Negotiation](../design/Vityo-Protocol-And-Capability-Negotiation.md)
+and map portable regression evidence in the [test catalog](../assets/workflow/TEST-CATALOG.md).
+Do not turn those client tests into a claim of native Windows cancellation or startup.
+
+
 Keep macOS CocoaPods at the CI-verified `1.17.0` version and commit regenerated
 `Podfile.lock` and Runner project metadata when the Flutter plugin graph changes.
 Use observed native generation diffs; preserve product-matrix clean-checkout
