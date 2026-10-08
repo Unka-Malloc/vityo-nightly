@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../environment/configuration/forwarded_host_environment.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process.dart';
 import 'bundled_toolchain_candidates.dart';
@@ -46,7 +47,8 @@ void debugOverridePafioExecutableCandidates(List<String>? candidates) {
 /// overrides the system locations list; [extraCandidatePaths] inserts a caller
 /// owned slot after the environment override. All three exist so callers (and
 /// tests) can exercise ordering hermetically without changing production
-/// behavior.
+/// behavior. The full environment is used locally for candidate selection;
+/// version probes forward only the non-secret host launch allowlist.
 Future<String?> resolvePafioBinary(
   PlatformManagerBundle platformManagers, {
   Map<String, String> environment = const <String, String>{},
@@ -87,7 +89,7 @@ Future<String?> resolvePafioBinary(
         ProcessCommandRequest(
           executablePath: candidate,
           arguments: const <String>['--version'],
-          environment: environment,
+          environment: forwardedHostEnvironment(source: environment),
           serviceKind: ProcessServiceKind.pafio,
         ),
       );

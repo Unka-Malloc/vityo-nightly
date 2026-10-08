@@ -70,3 +70,17 @@ process manager and daemon through `scripts/diagnose-windows-pafio-launch.py` on
 Windows only. Its six cells compare direct/native, direct/batch and daemon routes
 with bare versus absolute Python. Collection success is not launch success and
 never replaces native delivery, adapter tests or the 95% coverage floor.
+
+## Pafio Discovery Environment Boundary
+
+`products/vityo_app/test/pafio_discovery_environment_test.dart` covers the shared
+non-secret allowlist, new Windows launch keys, case-insensitive deduplication,
+conflict/value rejection, and authoritative Pafio selection with safe child PATH.
+Its real-daemon group probes the installed native Dart executable with `--version`
+and verifies that an explicitly credential-shaped environment still cannot start.
+No fake batch launcher is involved in that integration regression.
+
+The vityod binary's Rust tests cover nested sensitive key/value rejection, empty
+credential-key values, array/depth handling, safe Windows launch keys and rejection
+before task registration. These preserve the production guard. Portable mocks and
+scripted protocol tests do not establish native Windows launch or wrapper behavior.
