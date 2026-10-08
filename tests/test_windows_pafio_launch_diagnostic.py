@@ -538,7 +538,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(result['status'], 'launched')
         self.assertEqual(result['stdout'], 'original launch')
         self.assertEqual(result['exit_code'], 11)
-        self.assertEqual(result['daemon_executable'], '<fixture>/native/vityod.exe')
+        self.assertEqual(result['daemon_executable'], str(Path('<fixture>') / 'native/vityod.exe'))
         self.assertEqual(result['diagnostic_error'], {'case': CASE, 'status': 'diagnostic-error',
                                                     'exit_code': 0, 'message': 'shutdown failed'})
         self.assertIn('shutdown failed', output)
