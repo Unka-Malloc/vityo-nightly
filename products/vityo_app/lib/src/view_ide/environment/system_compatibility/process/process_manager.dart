@@ -153,6 +153,14 @@ class ProcessCommandResult {
   final String stderr;
   final Duration duration;
   final String? message;
+
+  /// Local process evidence, including identity and output truncation flags.
+  ///
+  /// After a valid daemon execution receipt, `cleanup` independently records
+  /// `operation: process.close`, `sourceManager: vityod`, and a `status` of
+  /// `succeeded`, `failed`, or `unconfirmed`, with an optional safe `errorCode`
+  /// and boolean `retryable`. Cleanup does not replace the execution outcome.
+  /// This metadata is an IDE-local contract, not a daemon wire-schema change.
   final Map<String, Object?> metadata;
   bool get succeeded => status == ProcessCommandStatus.succeeded;
 

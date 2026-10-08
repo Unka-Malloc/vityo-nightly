@@ -1,5 +1,9 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:vityo_app/src/view_ide/environment/environment.dart';
+import 'package:test/test.dart';
+import 'package:vityo_app/src/view_ide/environment/execution/execution_manager.dart';
+import 'package:vityo_app/src/view_ide/environment/execution/execution_sandbox.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_adapter.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_facts.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
 
 void main() {
   group('ExecutionSandbox', () {
@@ -221,6 +225,14 @@ void main() {
           stdout: 'abcdef',
           stderr: 'wxyz',
           duration: Duration(milliseconds: 1),
+          metadata: <String, Object?>{
+            'cleanup': <String, Object?>{
+              'operation': 'process.close',
+              'sourceManager': 'vityod',
+              'status': 'unconfirmed',
+              'errorCode': 'task_close_timeout',
+            },
+          },
         ),
       );
       final manager = ExecutionManager(
@@ -258,6 +270,12 @@ void main() {
       expect(result.processResult.stderr, 'wx');
       expect(result.processResult.metadata['stdoutTruncated'], isTrue);
       expect(result.processResult.metadata['stderrTruncated'], isTrue);
+      expect(result.processResult.metadata['cleanup'], <String, Object?>{
+        'operation': 'process.close',
+        'sourceManager': 'vityod',
+        'status': 'unconfirmed',
+        'errorCode': 'task_close_timeout',
+      });
     });
 
     test('blocks untrusted workspace write tasks before process run', () async {
