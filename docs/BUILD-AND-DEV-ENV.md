@@ -488,9 +488,18 @@ replace the full delivery gate. Non-Windows runs are explicitly not executed.
 
 After restoring app dependencies, first run
 `python scripts/build-windows-pipe-library.py` on native Windows with CMake and
-Visual Studio 2022 C++ x64 tools. This builds only the app-owned shim, using
+installed Visual Studio C++ x64 tools. This builds only the app-owned shim, using
 `products/vityo_app/native/windows_pipe` and target `vityo_windows_pipe`; it does
-not build or install the full app. The deterministic output is
+not build or install the full app. The helper honors the `VSINSTALLDIR` selected
+by existing CI DIA/LLVM discovery and reads its installed C++ version through
+`vswhere.exe`. It chooses a matching x64 generator advertised by the active
+`cmake -E capabilities` response, then binds that exact instance. With no selected
+instance, it chooses the newest installed compatible instance. Unsupported selected
+versions fail without silently switching installations or installing dependencies.
+VS 2026 therefore requires a CMake that advertises its generator; the standard
+bootstrap version is not a promise of support for every installed VS version.
+An existing cache for another generator, instance or architecture requires a fresh
+build directory rather than in-place retargeting. The deterministic output is
 `build/windows-pipe-native/Release/vityo_windows_pipe.dll`.
 
 Then run `python scripts/test-windows-dart-pipe.py --output

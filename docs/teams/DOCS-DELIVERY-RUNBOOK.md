@@ -391,3 +391,10 @@ package manifest declares the required DLL and ABI, packaging/install reject a
 missing file, and the existing startup evidence gate requires ABI 1 from the real
 bundled loader. Added missing-file/ABI negative tests. Linux/macOS package paths
 and startup fields remain unchanged; real Windows validation is still required.
+
+2026-10-08: Corrected the pipe helper's hardcoded VS 2022 selection for runners
+whose existing discovery selects VS 18. Resolve installed C++ metadata with
+`vswhere`, intersect it with actual CMake generator capabilities, preserve the
+selected instance, and reject incompatible cached toolchains. Fresh portable
+version/failure tests do not establish Windows compilation; no native gate,
+dependency installation, or other platform path changed.

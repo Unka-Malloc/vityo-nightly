@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import io
 from pathlib import Path
 import subprocess
@@ -35,6 +37,10 @@ class WindowsPipeLibraryTests(unittest.TestCase):
         self.dll = library.library_path(self.root)
         self.dll.parent.mkdir(parents=True)
         self.dll.write_bytes(b'mocked DLL')
+        selector = patch.object(library, 'visual_studio_generator',
+                                return_value=('Visual Studio 17 2022', r'C:\VS\2022'))
+        selector.start()
+        self.addCleanup(selector.stop)
         library._prepared_library.cache_clear()
         self.addCleanup(library._prepared_library.cache_clear)
 
@@ -78,7 +84,8 @@ class WindowsPipeLibraryTests(unittest.TestCase):
         build = self.root / 'build/windows-pipe-native'
         self.assertEqual([call.args[0] for call in run.call_args_list], [
             ['verified-cmake.exe', '-S', str(self.source), '-B', str(build),
-             '-G', 'Visual Studio 17 2022', '-A', 'x64'],
+             '-G', 'Visual Studio 17 2022', '-A', 'x64',
+             r'-DCMAKE_GENERATOR_INSTANCE=C:\VS\2022'],
             ['verified-cmake.exe', '--build', str(build), '--config', 'Release',
              '--target', 'vityo_windows_pipe'],
         ])
@@ -250,6 +257,149 @@ class WindowsPipeLibraryTests(unittest.TestCase):
             source = (ROOT / 'scripts' / script).read_text()
             self.assertIn('test_command([', source)
             self.assertIn('root=ROOT)', source)
+
+
+class VisualStudioSelectorTests(unittest.TestCase):
+    @staticmethod
+    def instance(major=18, path=r'C:\VS\18'):
+        return {'installationVersion': f'{major}.1.23456.7', 'installationPath': path,
+                'isComplete': True, 'isLaunchable': True}
+
+    @staticmethod
+    def capabilities(*majors):
+        years = {16: 2019, 17: 2022, 18: 2026, 19: 2030}
+        return {'generators': [{'name': f'Visual Studio {major} {years[major]}',
+                                'platformSupport': True, 'supportedPlatforms': ['Win32', 'x64']}
+                               for major in majors]}
+
+    def test_installed_versions_use_advertised_generators_not_folder_names(self):
+        for major in (16, 17, 18, 19):
+            path = r'C:\Unrelated folder\Edition'
+            with self.subTest(major=major):
+                selected = library._select_visual_studio([self.instance(major, path)],
+                                                        self.capabilities(major), path)
+                self.assertEqual(selected, (self.capabilities(major)['generators'][0]['name'], path))
+
+    def test_active_instance_case_and_slashes_are_honored_before_newest(self):
+        old = self.instance(17, r'C:\Program Files\Visual Studio\2022')
+        new = self.instance(18)
+        self.assertEqual(library._select_visual_studio([new, old], self.capabilities(17, 18),
+                         'c:/program files/visual studio/2022/'),
+                         ('Visual Studio 17 2022', old['installationPath']))
+        self.assertEqual(library._select_visual_studio([old, new], self.capabilities(17, 18),
+                         None), ('Visual Studio 18 2026', new['installationPath']))
+
+    def test_explicit_missing_or_unsupported_selection_cannot_fallback(self):
+        instances = [self.instance(17, r'C:\VS\17'), self.instance()]
+        for requested in (r'C:\VS\18', r'C:\Missing'):
+            with self.subTest(requested=requested), self.assertRaises(ValueError):
+                library._select_visual_studio(instances, self.capabilities(17), requested)
+        self.assertEqual(library._select_visual_studio(instances, self.capabilities(17), None)[0],
+                         'Visual Studio 17 2022')
+
+    def test_capability_platform_contract_and_ambiguity(self):
+        capabilities = self.capabilities(18)
+        del capabilities['generators'][0]['supportedPlatforms']
+        self.assertEqual(library._select_visual_studio([self.instance()], capabilities, None)[0],
+                         'Visual Studio 18 2026')
+        for override in ({'supportedPlatforms': ['ARM64']}, {'supportedPlatforms': 'x64'},
+                         {'platformSupport': False}, {'platformSupport': 1},
+                         {'name': 'Ninja'}, {'name': 'Visual Studio not-a-version'}):
+            capabilities = self.capabilities(18)
+            capabilities['generators'][0].update(override)
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                library._select_visual_studio([self.instance()], capabilities, None)
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            library._select_visual_studio([self.instance()], self.capabilities(18, 18), None)
+
+    def test_invalid_incomplete_and_malformed_metadata_is_rejected(self):
+        bad_instances = [None, {}, [], [None], [{}]]
+        for field, value in [('installationVersion', 'not-a-version'), ('installationVersion', 18),
+                             ('installationPath', 'relative'), ('isComplete', False),
+                             ('isLaunchable', False)]:
+            bad_instances.append([{**self.instance(), field: value}])
+        for bad in bad_instances:
+            with self.subTest(instances=bad), self.assertRaises(ValueError):
+                library._select_visual_studio(bad, self.capabilities(18), None)
+        for bad in (None, [], {}, {'generators': None}, {'generators': [None]}):
+            with self.subTest(capabilities=bad), self.assertRaises(ValueError):
+                library._select_visual_studio([self.instance()], bad, None)
+
+    def test_queries_use_installed_vswhere_component_filter_and_cmake_capabilities(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            vswhere = root / 'Microsoft Visual Studio/Installer/vswhere.exe'
+            vswhere.parent.mkdir(parents=True)
+            vswhere.touch()
+            responses = [subprocess.CompletedProcess([], 0, json.dumps([self.instance()])),
+                         subprocess.CompletedProcess([], 0, json.dumps(self.capabilities(18)))]
+            with patch.dict(os.environ, {'ProgramFiles(x86)': str(root),
+                                         'VSINSTALLDIR': r'C:\VS\18'}, clear=True), \
+                 patch.object(library.subprocess, 'run', side_effect=responses) as run:
+                self.assertEqual(library.visual_studio_generator('cmake.exe', root),
+                                 ('Visual Studio 18 2026', r'C:\VS\18'))
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(commands[1], ['cmake.exe', '-E', 'capabilities'])
+            self.assertEqual(commands[0][0], str(vswhere))
+            self.assertIn('Microsoft.VisualStudio.Component.VC.Tools.x86.x64', commands[0])
+            self.assertNotIn('-latest', commands[0])
+            self.assertIn('-utf8', commands[0])
+            for call in run.call_args_list:
+                self.assertEqual(call.kwargs['timeout'], 15)
+                self.assertEqual(call.kwargs['encoding'], 'utf-8-sig')
+                self.assertTrue(call.kwargs['check'])
+                self.assertNotIn('shell', call.kwargs)
+
+    def test_missing_vswhere_and_bad_probe_outputs_fail_before_build(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            for env in ({}, {'ProgramFiles': str(root)}):
+                with patch.dict(os.environ, env, clear=True), \
+                     patch.object(library.subprocess, 'run') as run, self.assertRaises(ValueError):
+                    library.visual_studio_generator('cmake', root)
+                run.assert_not_called()
+            vswhere = root / 'Microsoft Visual Studio/Installer/vswhere.exe'
+            vswhere.parent.mkdir(parents=True)
+            vswhere.touch()
+            for failure in (OSError('absent'), subprocess.CalledProcessError(2, 'query'),
+                            subprocess.TimeoutExpired('query', 15),
+                            subprocess.CompletedProcess([], 0, '{bad-json')):
+                for position in (0, 1):
+                    good = subprocess.CompletedProcess([], 0, json.dumps([self.instance()]))
+                    with self.subTest(position=position, failure=failure), \
+                         patch.dict(os.environ, {'ProgramFiles': str(root)}, clear=True), \
+                         patch.object(library.subprocess, 'run', side_effect=[good]*position + [failure]), \
+                         self.assertRaisesRegex(ValueError, 'discovery failed'):
+                        library.visual_studio_generator('cmake', root)
+
+    def test_cache_must_match_generator_instance_and_x64_before_reconfigure(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            source = root / 'products/vityo_app/native/windows_pipe'
+            source.mkdir(parents=True)
+            (source / 'CMakeLists.txt').touch()
+            dll = library.library_path(root)
+            dll.parent.mkdir(parents=True)
+            dll.touch()
+            cache = dll.parent.parent / 'CMakeCache.txt'
+            valid = ('CMAKE_GENERATOR:INTERNAL=Visual Studio 18 2026\n'
+                     'CMAKE_GENERATOR_PLATFORM:INTERNAL=x64\n'
+                     'CMAKE_GENERATOR_INSTANCE:INTERNAL=C:\\VS\\18\n')
+            for contents in (valid, valid.replace('18 2026', '17 2022'),
+                             valid.replace('x64', 'ARM64'), valid.replace('C:\\VS\\18', 'C:\\other'), ''):
+                cache.write_text(contents)
+                with patch.object(library.sys, 'platform', 'win32'), \
+                     patch.object(library.shutil, 'which', return_value='cmake'), \
+                     patch.object(library, 'visual_studio_generator',
+                                  return_value=('Visual Studio 18 2026', r'C:\VS\18')), \
+                     patch.object(library.subprocess, 'run') as run:
+                    if contents == valid:
+                        self.assertEqual(library.build_library(root), dll)
+                        self.assertEqual(run.call_count, 2)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'fresh build directory'):
+                            library.build_library(root)
+                        run.assert_not_called()
 
 
 if __name__ == '__main__':
