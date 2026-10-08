@@ -274,6 +274,27 @@ jobs:
           --base "${{ steps.ci_refs.outputs.base_ref }}"
           --range "${{ steps.ci_refs.outputs.range }}"
           --install-root "$RUNNER_TEMP/vityo-installed"
+      - name: Collect bounded Windows Pafio launch evidence
+        if: always()
+        working-directory: vityo-nightly
+        shell: bash
+        timeout-minutes: 3
+        env:
+          CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path }}
+          VITYO_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          PYTHON_BIN: python
+        run: >-
+          "$PYTHON_BIN" scripts/diagnose-windows-pafio-launch.py
+          --output build/evidence/windows-pafio-launch.json
+
+      - name: Upload Windows Pafio launch evidence immediately
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: vityo-windows-pafio-launch
+          path: vityo-nightly/build/evidence/windows-pafio-launch.json
+          if-no-files-found: error
+
       - name: Upload Windows coverage reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
