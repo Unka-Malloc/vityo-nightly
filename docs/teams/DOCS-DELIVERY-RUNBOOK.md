@@ -104,6 +104,15 @@ suites and prototype checks, and stops on failure. Python coverage dependencies 
 in the isolated environment documented in `docs/BUILD-AND-DEV-ENV.md`. Local macOS
 launch opens a new instance of the installed candidate and checks LaunchServices' exit
 status; it does not inspect the running interface or claim live acceptance.
+macOS CI instead supervises the installed executable with the existing candidate-bound
+first-frame probe. Its 120-second startup deadline fails closed, then terminates and
+reaps only the owned PID (five-second grace before kill). The bounded, redacted
+`startup-macos-diagnostics.json` is uploaded alongside startup evidence. Keep exit-zero
+without fresh evidence, stale/wrong/malformed evidence, crash, timeout, kill/reap,
+argument preservation, and output limits covered in the auto-discovered Python tests.
+A supervisor repair is not proof a native startup failure is resolved; require a
+successful native delivery rerun and keep live UI acceptance separate.
+
 
 1. 先判断当前变化属于 owner 文档变化，还是目录/索引/交付接线变化。
 2. 任何结构性文档变更，都要同步更新对应目录的 `README.md` 和 `INDEX.md`。

@@ -22,6 +22,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 from vityo_toolchains import ToolchainError, provision, validate_executable
+from vityo_startup_probe import run_macos_startup_probe
 
 
 FLUTTER_DIR = Path("products/vityo_app")
@@ -1007,15 +1008,14 @@ def _run_ci_startup_probe(
             print("[vityo] launch stage: xvfb-run is required for the Linux CI startup probe", file=sys.stderr)
             return 2
         command = [xvfb, "-a", str(executable), *arguments]
-    elif options.platform == "macos":
-        opener = shutil.which("open")
-        if opener is None:
-            print("[vityo] launch stage: macOS open is unavailable", file=sys.stderr)
-            return 2
-        command = [opener, "-W", str(app_root), "--args", *arguments]
     else:
         command = [str(executable), *arguments]
-    code = run_command(command, app_root, None)
+    if options.platform == "macos":
+        diagnostics = evidence.with_name("startup-macos-diagnostics.json")
+        code = run_macos_startup_probe(command, app_root, diagnostics)
+        print(f"[vityo] startup probe exit {code}; diagnostics: {diagnostics}", flush=True)
+    else:
+        code = run_command(command, app_root, None)
     if code != 0:
         return code
     try:

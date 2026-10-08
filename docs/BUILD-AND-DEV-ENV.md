@@ -329,6 +329,21 @@ Full local delivery, including tests, coverage, release package, per-user instal
 python3 scripts/vityo.py deliver
 ```
 
+In macOS CI, the launch stage supervises the installed bundle executable directly
+with the existing first-frame probe arguments. A 120-second startup deadline and
+five-second termination grace apply only to this CI probe, not ordinary app use.
+A timeout or nonzero exit fails delivery even if an evidence file exists; success
+also requires fresh, candidate-bound rasterized-first-frame evidence. The supervisor
+terminates only its owned app PID and reaps it, escalating to kill after the grace.
+`build/evidence/startup-macos-diagnostics.json` records the command, owned PID, exit
+status, timeout, and credential-redacted output. Capture retains at most 64 KiB per
+stream, discards a truncated last line, and never dumps environment variables or
+writes unbounded raw logs. After app exit, inherited pipes have a separate 0.2-second
+drain limit; they cannot consume the startup deadline or cause descendant termination.
+CI uploads these diagnostics even on failure. Ordinary
+local macOS launch still uses LaunchServices to open a new installed app instance.
+Startup evidence does not establish live UI or real Agent-task acceptance.
+
 ### Ecosystem product-gate environment
 
 The required language-fixture stage resolves Styio in this order: explicit

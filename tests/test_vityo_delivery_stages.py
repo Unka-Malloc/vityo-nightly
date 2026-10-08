@@ -1645,7 +1645,7 @@ class LaunchStageTest(DeliveryStageTestCase):
 
             with mock.patch.object(
                 self.delivery.shutil, "which", return_value="/usr/bin/open"
-            ), mock.patch.object(self.delivery, "run_command", side_effect=runner):
+            ), mock.patch.object(self.delivery, "run_macos_startup_probe", side_effect=runner):
                 self.assertEqual(self.delivery.run_launch_stage(options), 0)
 
     def test_ci_startup_probe_rejects_incomplete_evidence(self) -> None:
@@ -1686,7 +1686,7 @@ class LaunchStageTest(DeliveryStageTestCase):
             stderr = io.StringIO()
             with redirect_stderr(stderr), mock.patch.object(
                 self.delivery.shutil, "which", return_value="/usr/bin/open"
-            ), mock.patch.object(self.delivery, "run_command", side_effect=runner):
+            ), mock.patch.object(self.delivery, "run_macos_startup_probe", side_effect=runner):
                 self.assertEqual(self.delivery.run_launch_stage(options), 2)
             self.assertIn("did not complete startup", stderr.getvalue())
 

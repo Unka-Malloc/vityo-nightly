@@ -424,6 +424,7 @@ jobs:
             vityo-nightly/build/evidence/native-pty-macos.json
             vityo-nightly/build/evidence/product-matrix-macos.json
             vityo-nightly/build/evidence/startup-macos.json
+            vityo-nightly/build/evidence/startup-macos-diagnostics.json
             vityo-nightly/build/evidence/macos-generated-project-diagnostics.txt
           if-no-files-found: ignore
 
