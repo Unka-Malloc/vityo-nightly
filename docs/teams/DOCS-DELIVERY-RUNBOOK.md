@@ -376,3 +376,18 @@ and value-rejection tests; the daemon guard and explicit process maps stay intac
 The new real version-probe regression uses native Dart, leaving batch-wrapper and
 transport lifecycle investigations separate. Never label portable assertions or
 blocked Unix-socket integration as native Windows proof. No `prototype/` change.
+
+2026-10-08: Added the app-owned Windows pipe boundary DLL to the existing CMake
+build/install and early native-test preparation. The local-service transport owns
+same-call Win32 result/error capture and buffer lifetime; Docs / Delivery owns
+standalone test preparation, explicit compile-time DLL selection, and bundle
+installation. Updated the protocol/build guidance and test catalog. Portable
+checks pass; MSVC exports, installed loading, real cancellation and the full
+Windows suite require fresh native evidence. No gate threshold or test omission
+changed. No `prototype/` change.
+
+2026-10-08: Tightened the same Windows pipe delivery slice: the existing Windows
+package manifest declares the required DLL and ABI, packaging/install reject a
+missing file, and the existing startup evidence gate requires ABI 1 from the real
+bundled loader. Added missing-file/ABI negative tests. Linux/macOS package paths
+and startup fields remain unchanged; real Windows validation is still required.

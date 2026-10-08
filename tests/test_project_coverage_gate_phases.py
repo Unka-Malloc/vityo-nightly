@@ -30,6 +30,11 @@ def load_gate_module():
 class ProjectCoverageGatePhaseTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
+        # Native build/define wiring has its own portable mocked suite.
+        command_patch = mock.patch.object(self.gate, "test_command",
+                                          side_effect=lambda command, **kwargs: command)
+        command_patch.start()
+        self.addCleanup(command_patch.stop)
 
     def test_run_python_gate_selects_the_requested_phase(self) -> None:
         for collect, report, flag in (

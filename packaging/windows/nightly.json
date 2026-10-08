@@ -7,6 +7,10 @@
   "icon_relative_path": "products/vityo_app/windows/runner/resources/app_icon.ico",
   "installer_definition": "packaging/windows/install.ps1",
   "uninstaller_definition": "packaging/windows/uninstall.ps1",
+  "windows_pipe": {
+    "package_relative_path": "vityo_windows_pipe.dll",
+    "abi_version": 1
+  },
   "vityod": {
     "target": "x86_64-pc-windows-msvc",
     "source_relative_path": "products/vityo_app/native/vityod/target/release/vityod.exe",

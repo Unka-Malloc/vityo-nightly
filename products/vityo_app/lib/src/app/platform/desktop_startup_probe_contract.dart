@@ -75,15 +75,27 @@ final class DesktopStartupProbeRequest {
   Future<Map<String, Object?>> recordAfterFirstFrame({
     required Future<void> firstFrameRasterized,
     required String platform,
+    Future<int> Function()? verifyWindowsPipeLibrary,
     required Future<void> Function(Map<String, Object?> evidence) writeEvidence,
   }) async {
     await firstFrameRasterized;
+    int? windowsPipeAbi;
+    if (platform == 'windows') {
+      if (verifyWindowsPipeLibrary == null) {
+        throw StateError('Windows startup requires bundled pipe verification');
+      }
+      windowsPipeAbi = await verifyWindowsPipeLibrary();
+      if (windowsPipeAbi != 1) {
+        throw StateError('Windows startup pipe ABI is incompatible');
+      }
+    }
     final evidence = <String, Object?>{
       'schema_version': 1,
       'candidate': candidate,
       'platform': platform,
       'launched': true,
       'first_frame': true,
+      if (windowsPipeAbi != null) 'windows_pipe_abi': windowsPipeAbi,
     };
     await writeEvidence(evidence);
     return evidence;

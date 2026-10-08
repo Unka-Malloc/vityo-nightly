@@ -5,9 +5,11 @@ param(
 $ErrorActionPreference = "Stop"
 $resolvedSource = (Resolve-Path -LiteralPath $Source).Path
 $app = Join-Path $resolvedSource "vityo_app.exe"
+$pipeLibrary = Join-Path $resolvedSource "vityo_windows_pipe.dll"
 $daemon = Join-Path $resolvedSource "components\vityod.exe"
 $componentManifest = Join-Path $resolvedSource "components\vityod-component.json"
 if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw "Vityo application executable is missing" }
+if (-not (Test-Path -LiteralPath $pipeLibrary -PathType Leaf)) { throw "Packaged Windows pipe library is missing" }
 if (-not (Test-Path -LiteralPath $daemon -PathType Leaf)) { throw "Packaged vityod component is missing" }
 if (-not (Test-Path -LiteralPath $componentManifest -PathType Leaf)) { throw "Packaged vityod manifest is missing" }
 $identity = Get-Content -LiteralPath $componentManifest -Raw | ConvertFrom-Json
@@ -39,6 +41,9 @@ try {
   }
   Move-Item -LiteralPath $staging -Destination $Destination
   $candidateActivated = $true
+  if (-not (Test-Path -LiteralPath (Join-Path $Destination "vityo_windows_pipe.dll") -PathType Leaf)) {
+    throw "Installed Windows pipe library is missing"
+  }
   $installedHealth = & (Join-Path $Destination "components\vityod.exe") --health | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0 -or $installedHealth.status -ne "ready") {
     throw "Installed vityod health check failed"

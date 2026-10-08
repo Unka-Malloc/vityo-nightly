@@ -8,6 +8,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from windows_pipe_library import test_command
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON_COVERAGE_GATE = ROOT / "scripts" / "python-coverage-gate.py"
@@ -162,7 +167,12 @@ def run_flutter_gate(
         )
         if code != 0:
             return code
-        code = run_command([flutter, "test", "--coverage"], cwd=app_dir)
+        try:
+            command = test_command([flutter, "test", "--coverage"], root=ROOT)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        code = run_command(command, cwd=app_dir)
         if code != 0:
             return code
 

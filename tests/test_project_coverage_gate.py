@@ -29,6 +29,11 @@ def load_gate_module():
 class ProjectCoverageGateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
+        # Native build/define wiring has its own portable mocked suite.
+        command_patch = mock.patch.object(self.gate, "test_command",
+                                          side_effect=lambda command, **kwargs: command)
+        command_patch.start()
+        self.addCleanup(command_patch.stop)
 
     def test_delivery_runner_reaches_portable_product_suites(self) -> None:
         script = (REPO_ROOT / "scripts/vityo.py").read_text(encoding="utf-8")

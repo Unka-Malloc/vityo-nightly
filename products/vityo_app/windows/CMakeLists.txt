@@ -1,5 +1,5 @@
 # Project-level configuration.
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.15)
 project(vityo_app LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
@@ -52,6 +52,10 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# App-owned atomic Win32 result/error capture, also built by focused CI tests.
+add_subdirectory("../native/windows_pipe" "native/windows_pipe")
+add_dependencies(${BINARY_NAME} vityo_windows_pipe)
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -71,6 +75,9 @@ endif()
 
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
+
+install(TARGETS vityo_windows_pipe RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)

@@ -20,6 +20,12 @@ SPEC.loader.exec_module(harness)
 
 
 class DartPipeHarnessTests(unittest.TestCase):
+    def setUp(self):
+        self.definition = f'-DVITYO_WINDOWS_PIPE_LIBRARY={ROOT / "test-vityo_windows_pipe.dll"}'
+        self.define_patch = patch.object(harness, 'dart_define', return_value=self.definition)
+        self.define_patch.start()
+        self.addCleanup(self.define_patch.stop)
+
     def fake_spawn(self, *, client_timeout=False, client_output=True):
         self.server = Mock(returncode=0)
         self.client = Mock(returncode=0)
@@ -34,7 +40,7 @@ class DartPipeHarnessTests(unittest.TestCase):
                 (control / 'ready').write_text('ready')
                 return self.server
             if client_output:
-                kwargs['stdout'].write((json.dumps({'phase': 'passed', 'case': command[3]}) + '\n').encode())
+                kwargs['stdout'].write((json.dumps({'phase': 'passed', 'case': command[-3]}) + '\n').encode())
                 kwargs['stdout'].flush()
             return self.client
         return spawn
@@ -46,8 +52,9 @@ class DartPipeHarnessTests(unittest.TestCase):
         self.assertTrue(report['cleanup_completed'])
         command = spawn.call_args_list[1].args[0]
         self.assertEqual(command[0], 'verified-dart.exe')
-        self.assertIn('windows_named_pipe_regression.dart', command[2])
-        self.assertEqual(command[3], 'reader-first')
+        self.assertEqual(command[1], self.definition)
+        self.assertIn('windows_named_pipe_regression.dart', command[3])
+        self.assertEqual(command[4], 'reader-first')
         self.assertNotIn('shell', spawn.call_args_list[1].kwargs)
 
     def test_watchdog_kills_only_both_owned_children_with_bounded_reap(self):
@@ -135,6 +142,9 @@ class DartPipeHarnessTests(unittest.TestCase):
             config = root / 'products/vityo_app/.dart_tool/package_config.json'
             config.parent.mkdir(parents=True)
             config.write_text('{}')
+            library = harness.library_path(root)
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b'fixture')
             output = root / 'report.json'
             with patch.object(harness, 'ROOT', root), \
                  patch.object(harness, 'os', SimpleNamespace(name='nt')), \
@@ -221,14 +231,26 @@ class DartPipeHarnessTests(unittest.TestCase):
         self.assertIn('reader failed before scenario action', source)
 
 
-    def test_last_error_is_resolved_before_first_fallible_api(self):
+    def test_error_result_pairs_cross_one_native_boundary(self):
         source = (ROOT / 'products/vityo_app/lib/src/ide/local_service/transport/windows_named_pipe.dart').read_text()
-        opening = source.split('int _openPipe(String endpoint)', 1)[1]
-        self.assertLess(opening.index('_getLastError();'), opening.index('_createFile('))
-        getter = source.split('final _GetLastErrorDart _getLastError', 1)[1].split('int _openPipe', 1)[0]
-        self.assertIn('isLeaf: true', getter)
-        waiting = source.split('final _WaitNamedPipeWDart', 1)[1].split('final _ReadFileDart', 1)[0]
-        self.assertNotIn('isLeaf: true', waiting)
+        native = (ROOT / 'products/vityo_app/native/windows_pipe/windows_pipe.cpp').read_text()
+        self.assertNotIn('_getLastError', source)
+        self.assertNotIn("'GetLastError'", source)
+        for symbol in ('create_file', 'create_event', 'read', 'write', 'get_result'):
+            self.assertIn(f'vityo_pipe_{symbol}', source)
+            self.assertIn(f'vityo_pipe_{symbol}', native)
+        self.assertEqual(native.count('*error = captured;'), 5)
+        self.assertEqual(native.count('return result;'), 5)
+        self.assertNotIn('isLeaf: true', source)
+
+    def test_five_cases_and_native_cancellation_assertions_are_preserved(self):
+        self.assertEqual(harness.CASES, ('reader-first', 'stalled-write',
+                         'peer-disconnect', 'queued-close', 'socket-queued-close'))
+        source = (ROOT / 'products/vityo_app/tool/windows_named_pipe_regression.dart').read_text()
+        self.assertIn('995', source)
+        self.assertIn('!done.isCompleted', source)
+        self.assertEqual(harness.CASE_TIMEOUT, 20)
+        self.assertEqual(harness.REAP_TIMEOUT, 2)
 
 
 class NativeServerBoundaryTests(unittest.TestCase):
@@ -372,6 +394,11 @@ class NativeServerBoundaryTests(unittest.TestCase):
 
 
 class HarnessOrchestrationTests(unittest.TestCase):
+    def setUp(self):
+        define_patch = patch.object(harness, 'dart_define', return_value='-DVITYO_WINDOWS_PIPE_LIBRARY=fixture')
+        define_patch.start()
+        self.addCleanup(define_patch.stop)
+
     def test_resolver_missing_and_direct_executable(self):
         with patch.object(harness.shutil, 'which', return_value=None):
             self.assertIsNone(harness.resolve_dart('missing'))
@@ -432,6 +459,9 @@ class HarnessOrchestrationTests(unittest.TestCase):
                 config = root / 'products/vityo_app/.dart_tool/package_config.json'
                 config.parent.mkdir(parents=True)
                 config.write_text('{}')
+                library = harness.library_path(root)
+                library.parent.mkdir(parents=True)
+                library.write_bytes(b'fixture')
                 output = root / 'report.json'
                 reports = [{'case': case, 'cleanup_completed': True,
                             'status': 'failed' if index == failed_index else 'passed'}

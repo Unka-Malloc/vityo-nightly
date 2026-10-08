@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'desktop_startup_probe_contract.dart';
+import '../../ide/local_service/transport/windows_pipe_library.dart';
 
 /// Launches the requested app and exits a probe process after verified startup.
 void runDesktopStartupProbe(List<String> arguments, Widget app) {
@@ -74,6 +75,9 @@ Future<void> _recordFirstFrameAndExit(
     await request.recordAfterFirstFrame(
       firstFrameRasterized: firstFrameRasterized,
       platform: Platform.operatingSystem,
+      verifyWindowsPipeLibrary: Platform.isWindows
+          ? () async => verifyBundledWindowsPipeLibrary()
+          : null,
       writeEvidence: (evidence) async {
         final target = File(request.evidenceFile);
         await target.parent.create(recursive: true);
