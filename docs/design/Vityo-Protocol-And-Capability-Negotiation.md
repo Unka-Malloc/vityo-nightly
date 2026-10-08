@@ -3,7 +3,7 @@
 **Purpose:** Define versioning and capability-negotiation rules across Vityo adapter contracts and the IDE-to-Agent protocol without assigning model/provider ownership to the IDE.
 
 **Owner:** Adapter contracts owner (`CODEOWNERS` → adapter-contracts domain)
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-08
 
 ---
 
@@ -270,6 +270,22 @@ Every adapter contract test must verify:
 3. Unknown fields are preserved in `extensions`
 4. Blocked reasons use standard codes
 5. Stale revision is detectable
+
+### Local daemon request lifetime
+
+`VityodClient` applies one request deadline to transport submission and the correlated
+response together. Both futures are observed immediately, so disconnecting while a
+send is pending reports a request error without an unhandled response error.
+Closing retires logical requests before waiting for transport cleanup. Dispatch reply
+correlations expire at their deadline; retired replies cannot update snapshots or
+trigger resynchronization, including after reconnect. Old full-resync continuations
+cannot change a newer connection's state.
+
+This is client request bookkeeping, not native I/O cancellation. A timed-out write
+may still reach the daemon later, and transport close may still wait for native I/O.
+If a response arrived before a permanently pending send, closing prevents later
+success but the request may wait until its original deadline. Windows named-pipe
+cancellation and complete Windows startup remain separately unverified.
 
 ## 9. Cross-Reference
 
