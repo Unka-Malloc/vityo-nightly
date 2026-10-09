@@ -1,7 +1,7 @@
 # System Compatibility Manager
 
 **Purpose:** Document the `docs/design/environment/system-compatibility-manager/` collection scope, ownership, and maintenance rules.
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 
 ## Platform Detector Contract
 
@@ -100,6 +100,12 @@ Detailed detector contract: [platform-detector/README.md](./platform-detector/RE
 `createDetectedPlatformManagerBundle` is the default top-of-stack construction path. It runs a `Platform Detector`, receives a `Platform Context`, adapts compatibility through `Platform Adapter`, and then creates the concrete managers from that context.
 
 `PlatformManagerBundle.snapshot()` exposes a top-level status projection for upper layers and tests. It includes target id, context source, schema state, aggregate Linux/Debian/ARM compatibility, and the manager keys present in the bundle. It does not expose or reimplement manager behavior.
+
+The shell live-operation check sends the no-output `exit 0` command through the
+selected Shell Manager. Its existing Shell Adapter retains executable selection,
+family-specific arguments, and unknown-family fallback; the bundle does not infer
+a shell from the host OS. Missing/unsupported managers and unsuccessful command
+results remain blocked. The aggregate live check still requires all nine managers.
 
 | Manager interface | Owns |
 |---|---|
