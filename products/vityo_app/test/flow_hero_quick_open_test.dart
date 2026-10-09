@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -80,12 +81,31 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(
-      find.byKey(ValueKey<String>('flow-hero-quick-open-result-$betaPath')),
-    );
+    await tester.runAsync(() async {
+      final loaded = Completer<void>();
+      void onEngineChanged() {
+        if (controller.engine.activeFile.path == betaPath &&
+            !loaded.isCompleted) {
+          loaded.complete();
+        }
+      }
+
+      controller.engine.addListener(onEngineChanged);
+      try {
+        await tester.tap(
+          find.byKey(ValueKey<String>('flow-hero-quick-open-result-$betaPath')),
+        );
+        // Real file I/O must finish before teardown deletes the workspace.
+        await loaded.future.timeout(const Duration(seconds: 5));
+      } finally {
+        controller.engine.removeListener(onEngineChanged);
+      }
+    });
     await tester.pump();
 
     expect(controller.activeFile, 'beta.txt');
+    expect(controller.engine.activeFile.path, betaPath);
+    expect(controller.engine.activeFile.text, 'plain text\n');
     expect(controller.editorMode, isTrue);
     expect(controller.quickOpenVisible, isFalse);
 
