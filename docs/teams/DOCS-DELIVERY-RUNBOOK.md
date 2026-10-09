@@ -432,3 +432,10 @@ selected file's editor-load notification before deleting its workspace. Preserve
 the exact path/text and UI assertions; pumping demo timers alone does not prove
 real file I/O completed. The bounded observer is removed in finally. This is a
 test-lifetime repair, not a production controller or Windows CI pass claim.
+
+2026-10-09: Registered focused shell live-operation adapter coverage. The probe
+uses the no-output exit command accepted by the recognized shell families while
+the existing manager and adapter retain entrypoint selection and fallback policy.
+Preserve missing/unsupported and failed-result reporting, and the native test's
+all-nine-manager requirement. Its diagnostic breakdown is evidence, not a relaxed
+gate. Controlled process fixtures remain separate from native Windows execution.

@@ -736,7 +736,9 @@ Future<PlatformManagerLiveOperationProbeResult> _probeShellManager(
   PlatformManagerBundle bundle,
 ) async {
   final result = await bundle.shell.run(
-    const ShellCommandRequest(command: ':', loginShell: false),
+    // Every supported family accepts this command. The selected manager and
+    // its adapter still own the executable and family-specific invocation.
+    const ShellCommandRequest(command: 'exit 0', loginShell: false),
   );
   return _liveResult(
     managerKey: 'shell',

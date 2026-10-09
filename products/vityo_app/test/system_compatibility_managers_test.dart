@@ -490,7 +490,22 @@ void main() {
       final health = await bundle.probeLiveOperationHealthSnapshot();
 
       expect(health.components, hasLength(9));
-      expect(health.ready, isTrue);
+      expect(
+        health.ready,
+        isTrue,
+        reason: health.components
+            .map(
+              (component) => <String, Object>{
+                'manager': component.managerKey,
+                'ready': component.ready,
+                if (component.metadata['status'] case final String status)
+                  'status': status,
+                if (component.metadata['exitCode'] case final int exitCode)
+                  'exitCode': exitCode,
+              },
+            )
+            .join('; '),
+      );
       expect(health.readyCount, 9);
       expect(health.blockedCount, 0);
       expect(health.recoveryActions, isEmpty);
