@@ -5,11 +5,14 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/pty/pty_manager_io.dart'
+    show FailedPtySession;
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/language/service/styio_service_connector.dart';
 import 'package:vityo_app/src/view_ide/language/service/styio_service_manager_connector.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain.dart';
+import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 import 'support/test_file_system_manager.dart';
 import 'support/test_secure_credential_backend.dart';
@@ -3454,10 +3457,24 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
     'terminal runtime starts configured shell through pty manager',
     () async {
       final ptyFacts = await const LocalPtyProber().probe();
+      final powerShell = Platform.isWindows
+          ? (await const LocalShellProber().probe()).availableShells
+                .where((shell) => shell.family == ShellFamily.powershell)
+                .firstOrNull
+          : null;
+      if (Platform.isWindows) {
+        expect(
+          powerShell,
+          isNotNull,
+          reason:
+              'The native terminal fixture requires a discovered PowerShell.',
+        );
+      }
       final profile = Platform.isWindows
-          ? const ShellProfileConfiguration(
+          ? ShellProfileConfiguration(
               id: 'powershell',
-              executablePath: 'powershell.exe',
+              // The explicit fixture environment has no PATH for PTY lookup.
+              executablePath: File(powerShell!.path).absolute.path,
               family: ShellFamily.powershell,
               arguments: <String>['-NoLogo', '-NoProfile'],
               environment: <String, String>{'STYIO_MODE': 'profile'},
@@ -3495,8 +3512,24 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ],
         environment: const <String, String>{'RUNTIME_FLAG': 'runtime'},
       );
+      addTearDown(
+        () => session.close(force: true).timeout(_interactivePtyTimeout),
+      );
       final output = <String>[];
       if (Platform.isWindows) {
+        final startError = session is FailedPtySession ? session.error : null;
+        final errorCode =
+            startError is VityodProtocolException &&
+                RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(startError.code)
+            ? startError.code
+            : null;
+        expect(
+          session.state,
+          PtySessionState.running,
+          reason:
+              'PTY start state=${session.state.name}'
+              '${errorCode == null ? '' : ', errorCode=$errorCode'}',
+        );
         final ready = Completer<void>();
         final done = Completer<void>();
         final subscription = session.output.listen((chunk) {
@@ -3505,6 +3538,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
             ready.complete();
           }
         }, onDone: done.complete);
+        addTearDown(subscription.cancel);
         await ready.future.timeout(_interactivePtyTimeout);
         await session.write(
           r'''if ([Console]::IsOutputRedirected) { exit 1 }; Write-Output "terminal-ok:${env:STYIO_MODE}:${env:STYIO_CHANNEL}:${env:RUNTIME_FLAG}"; exit 0'''
