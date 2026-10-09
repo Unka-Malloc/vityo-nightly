@@ -2,7 +2,7 @@
 library;
 
 import '../../ide/local_service/vityod_client.dart';
-import '../environment/configuration/host_environment.dart';
+import '../environment/configuration/forwarded_host_environment.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process_manager.dart';
 import 'toolchain_install_contract.dart';
@@ -36,7 +36,7 @@ Future<FlowHeroToolchainProbeResult> probeFlowHeroToolchainBinary({
       managers.process,
       kind: kind,
       path: trimmed,
-      environment: environment ?? readHostEnvironment(),
+      environment: environment ?? forwardedHostEnvironment(),
       timeout: timeout,
     );
     final String versionOutput = probe.result?.stdout.trim() ?? '';

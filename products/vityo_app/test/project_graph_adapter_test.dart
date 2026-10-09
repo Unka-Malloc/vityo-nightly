@@ -7,6 +7,7 @@ import 'package:vityo_app/src/view_ide/backend_toolchain/project_graph_adapter_i
 import 'package:vityo_app/src/view_ide/backend_toolchain/project_graph_contract.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/host_environment.dart'
     show debugOverrideHostEnvironment;
+import 'package:vityo_app/src/view_ide/environment/configuration/forwarded_host_environment.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 
 import 'backend_provider_test_support.dart';
@@ -48,9 +49,11 @@ void main() {
 
     Directory.current = tempRoot;
     debugOverrideProjectGraphEnvironment(<String, String>{
+      ...forwardedHostEnvironment(source: Platform.environment),
       'PWD': tempRoot.path,
       'VITYO_PAFIO_BIN': fakes.pafio,
       'VITYO_STYIO_BIN': fakes.styio,
+      'TOKEN': 'synthetic-discovery-only',
     });
 
     final adapter = await createProjectGraphAdapter(
@@ -103,9 +106,11 @@ void main() {
       // provider must read the host environment, which is where the
       // `VITYO_PAFIO_BIN` / `VITYO_STYIO_BIN` discovery overrides live.
       debugOverrideHostEnvironment(<String, String>{
+        ...forwardedHostEnvironment(source: Platform.environment),
         'PWD': tempRoot.path,
         'VITYO_PAFIO_BIN': fakes.pafio,
         'VITYO_STYIO_BIN': fakes.styio,
+        'TOKEN': 'synthetic-discovery-only',
       });
 
       final adapter = await createProjectGraphAdapter(

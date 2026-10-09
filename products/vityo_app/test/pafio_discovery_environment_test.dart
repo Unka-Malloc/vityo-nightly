@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/pafio_cli_discovery.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/forwarded_host_environment.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/host_environment.dart';
@@ -15,6 +15,34 @@ void main() {
     debugOverrideHostEnvironment(null);
     debugOverridePafioExecutableCandidates(null);
   });
+
+  for (final environment in <Map<String, String>?>[
+    null,
+    const <String, String>{},
+    const <String, String>{'PATH': ''},
+  ]) {
+    test(
+      'Pafio discovery distinguishes omitted context from $environment',
+      () async {
+        debugOverrideHostEnvironment(const <String, String>{
+          'PATH': '/fixture/host-bin',
+          'TOKEN': 'synthetic-fixture',
+        });
+        final process = _RecordingProcess();
+        await resolvePafioBinary(
+          _ProbeManagers(process),
+          environment: environment,
+          extraCandidatePaths: const <String>['/fixture/pafio'],
+        );
+        expect(
+          process.requests.single.environment,
+          environment == null
+              ? <String, String>{'PATH': '/fixture/host-bin'}
+              : <String, String>{},
+        );
+      },
+    );
+  }
 
   test('forwarding uses only the explicit non-secret launch allowlist', () {
     const allowed = <String, String>{
@@ -245,11 +273,11 @@ void main() {
           reason: recording.results.single.message,
         );
         expect(
-          recording.requests.single.environment.keys,
+          recording.requests.single.environment!.keys,
           isNot(contains('VITYO_DISCOVERY_TOKEN')),
         );
         expect(
-          recording.requests.single.environment.keys,
+          recording.requests.single.environment!.keys,
           isNot(contains('VITYO_PAFIO_BIN')),
         );
       },

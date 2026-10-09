@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../environment/configuration/forwarded_host_environment.dart';
+import '../environment/configuration/host_environment.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process.dart';
 import 'bundled_toolchain_candidates.dart';
@@ -49,18 +50,23 @@ void debugOverridePafioExecutableCandidates(List<String>? candidates) {
 /// tests) can exercise ordering hermetically without changing production
 /// behavior. The full environment is used locally for candidate selection;
 /// version probes forward only the non-secret host launch allowlist.
+/// Omitted [environment] reads the host context. A supplied map, even empty,
+/// replaces that context and never falls back to ambient launch entries.
 Future<String?> resolvePafioBinary(
   PlatformManagerBundle platformManagers, {
-  Map<String, String> environment = const <String, String>{},
+  Map<String, String>? environment,
   String? bundledExecutablePath,
   Iterable<String> systemCandidatePaths = _defaultPafioSystemCandidatePaths,
   Iterable<String> extraCandidatePaths = const <String>[],
 }) async {
+  final discoveryEnvironment = Map<String, String>.unmodifiable(
+    environment ?? readHostEnvironment(),
+  );
   final List<String> candidates;
   if (_debugExecutableCandidates case final debugCandidates?) {
     candidates = debugCandidates;
   } else {
-    final explicit = environment['VITYO_PAFIO_BIN'];
+    final explicit = discoveryEnvironment['VITYO_PAFIO_BIN'];
     final selected = extraCandidatePaths
         .where((String path) => path.trim().isNotEmpty)
         .firstOrNull;
@@ -89,7 +95,7 @@ Future<String?> resolvePafioBinary(
         ProcessCommandRequest(
           executablePath: candidate,
           arguments: const <String>['--version'],
-          environment: forwardedHostEnvironment(source: environment),
+          environment: forwardedHostEnvironment(source: discoveryEnvironment),
           serviceKind: ProcessServiceKind.pafio,
         ),
       );

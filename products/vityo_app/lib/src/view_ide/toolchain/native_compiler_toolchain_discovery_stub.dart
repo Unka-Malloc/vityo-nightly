@@ -1,9 +1,9 @@
-import '../environment/environment.dart';
+import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import 'toolchain_catalog.dart';
 
 Future<ToolchainCatalog> createPlatformNativeCompilerToolchainCatalog({
   required PlatformManagerBundle platformManagers,
-  Map<String, String> environment = const <String, String>{},
+  Map<String, String>? environment,
   Iterable<String> cCompilerCandidatePaths = const <String>[],
   Iterable<String> cxxCompilerCandidatePaths = const <String>[],
   Iterable<String> cmakeCandidatePaths = const <String>[],

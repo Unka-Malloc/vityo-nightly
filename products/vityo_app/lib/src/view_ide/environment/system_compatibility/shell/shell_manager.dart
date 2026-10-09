@@ -18,7 +18,7 @@ class ShellCommandRequest {
   const ShellCommandRequest({
     required this.command,
     this.arguments = const <String>[],
-    this.environment = const <String, String>{},
+    this.environment,
     this.workingDirectory,
     this.timeout,
     this.profile,
@@ -28,7 +28,9 @@ class ShellCommandRequest {
 
   final String command;
   final List<String> arguments;
-  final Map<String, String> environment;
+  /// Null leaves inheritance to the process manager only when no explicit
+  /// shell configuration or profile supplies an environment.
+  final Map<String, String>? environment;
   final String? workingDirectory;
   final Duration? timeout;
   final ShellProfileConfiguration? profile;

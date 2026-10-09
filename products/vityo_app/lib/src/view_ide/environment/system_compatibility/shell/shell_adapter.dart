@@ -53,11 +53,16 @@ class ShellAdapter {
       request: request,
       executablePath: shell.path,
       arguments: shellArguments,
-      environment: <String, String>{
-        ...effectiveConfiguration.environmentOverlay,
-        if (profile != null) ...profile.environment,
-        ...request.environment,
-      },
+      environment:
+          request.environment == null &&
+              configuration == null &&
+              request.profile == null
+          ? null
+          : Map<String, String>.unmodifiable(<String, String>{
+              ...effectiveConfiguration.environmentOverlay,
+              if (profile != null) ...profile.environment,
+              ...?request.environment,
+            }),
       workingDirectory: request.workingDirectory,
       timeout: request.timeout ?? effectiveConfiguration.timeout,
       family: shell.family,
@@ -174,7 +179,7 @@ class ShellExecutionPlan {
   final ShellCommandRequest request;
   final String executablePath;
   final List<String> arguments;
-  final Map<String, String> environment;
+  final Map<String, String>? environment;
   final String? workingDirectory;
   final Duration? timeout;
   final ShellFamily family;

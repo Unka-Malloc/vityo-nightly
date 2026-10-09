@@ -3,12 +3,148 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/host_environment.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/shell_configuration.dart';
+import 'package:vityo_app/src/view_ide/environment/execution/execution_manager.dart';
+import 'package:vityo_app/src/view_ide/environment/execution/execution_sandbox.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_facts.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager_io.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/shell/shell_facts.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/shell/shell_manager.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/shell/shell_manager_io.dart';
 import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 void main() {
+  tearDown(() => debugOverrideHostEnvironment(null));
+
+  group('environment ownership', () {
+    const safeHost = <String, String>{
+      'PATH': '/fixture/bin',
+      'HOME': '/fixture/home',
+    };
+    setUp(
+      () => debugOverrideHostEnvironment(<String, String>{
+        ...safeHost,
+        'TOKEN': 'synthetic-fixture',
+      }),
+    );
+
+    for (final environment in <Map<String, String>?>[
+      null,
+      const <String, String>{},
+      const <String, String>{'PATH': ''},
+      const <String, String>{'ONLY': 'explicit'},
+    ]) {
+      test(
+        'process preserves omitted versus supplied environment $environment',
+        () async {
+          final fixture = await _Fixture.start();
+          await fixture.manager.run(
+            ProcessCommandRequest(
+              executablePath: '/fixture/compiler',
+              environment: environment,
+            ),
+          );
+          expect(_launchedEnvironment(fixture), environment ?? safeHost);
+        },
+      );
+    }
+
+    test('const omitted and explicitly empty requests remain distinct', () {
+      const omitted = ProcessCommandRequest(
+        executablePath: '/fixture/compiler',
+      );
+      const isolated = ProcessCommandRequest(
+        executablePath: '/fixture/compiler',
+        environment: <String, String>{},
+      );
+      expect(omitted.environment, isNull);
+      expect(isolated.environment, isEmpty);
+    });
+
+    for (final environment in <Map<String, String>?>[
+      null,
+      const <String, String>{},
+      const <String, String>{'ONLY': 'explicit'},
+    ]) {
+      test('default shell preserves environment intent $environment', () async {
+        final fixture = await _Fixture.start();
+        final shell = LocalShellManager(
+          facts: ShellFacts.linuxDebianArm(defaultShellPath: '/fixture/shell'),
+          processManager: fixture.manager,
+        );
+        await shell.run(
+          ShellCommandRequest(command: ':', environment: environment),
+        );
+        expect(_launchedEnvironment(fixture), environment ?? safeHost);
+      });
+    }
+
+    test(
+      'configured empty shell environment never inherits host values',
+      () async {
+        final fixture = await _Fixture.start();
+        final shell = LocalShellManager(
+          facts: ShellFacts.linuxDebianArm(defaultShellPath: '/fixture/shell'),
+          processManager: fixture.manager,
+        );
+        await shell.run(
+          const ShellCommandRequest(command: ':'),
+          configuration: const ShellConfiguration(
+            defaultProfileId: 'none',
+            profiles: [],
+          ),
+        );
+        expect(_launchedEnvironment(fixture), isEmpty);
+      },
+    );
+
+    test(
+      'sandbox-approved empty environment stays empty at daemon boundary',
+      () async {
+        final fixture = await _Fixture.start();
+        final execution = ExecutionManager(
+          processManager: fixture.manager,
+          executionSandbox: const ExecutionSandbox(
+            policy: ExecutionSandboxPolicy(
+              workspaceRoot: '/fixture',
+              trustState: WorkspaceTrustState.trusted,
+            ),
+          ),
+        );
+        final result = await execution.run(
+          const ExecutionRequest(
+            executablePath: '/fixture/compiler',
+            workingDirectory: '/fixture',
+          ),
+        );
+        expect(result.succeeded, isTrue);
+        expect(result.redactedEnvironment, isEmpty);
+        expect(_launchedEnvironment(fixture), isEmpty);
+      },
+    );
+
+    test('explicit empty shell profile never inherits host values', () async {
+      final fixture = await _Fixture.start();
+      final shell = LocalShellManager(
+        facts: ShellFacts.linuxDebianArm(defaultShellPath: '/fixture/shell'),
+        processManager: fixture.manager,
+      );
+      await shell.run(
+        const ShellCommandRequest(
+          command: ':',
+          profile: ShellProfileConfiguration(
+            id: 'explicit',
+            executablePath: '/fixture/shell',
+            family: ShellFamily.sh,
+          ),
+        ),
+      );
+      expect(_launchedEnvironment(fixture), isEmpty);
+    });
+  });
+
   for (final service in ProcessServiceKind.values) {
     for (final receipt in <({int exitCode, bool timedOut})>[
       (exitCode: 0, timedOut: false),
@@ -135,6 +271,13 @@ void main() {
     },
   );
 }
+
+Object? _launchedEnvironment(_Fixture fixture) => fixture.transport.requests
+    .firstWhere(
+      (request) =>
+          request.method == 'task.start' || request.params['action'] == 'start',
+    )
+    .params['environment'];
 
 void _expectReceipt(ProcessCommandResult result, int exitCode, bool timedOut) {
   expect(

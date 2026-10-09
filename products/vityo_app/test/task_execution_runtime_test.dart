@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:vityo_app/src/view_ide/environment/configuration/environment_variable_configuration.dart';
 import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/pty/pty_manager.dart';
 import 'package:vityo_app/src/view_ide/runtime/task_execution_runtime.dart';
 
 Future<void> main() async {
+  _testEnvironmentIntent();
   var tick = 0;
   final runtime = TaskExecutionRuntime(
     redactionPolicy: const EnvironmentVariableRedactionPolicy(),
@@ -54,6 +58,11 @@ Future<void> main() async {
     'redacted TOKEN',
   );
   _expect(record.redactedEnvironment['PATH'] == '/usr/bin', 'PATH');
+  _expect(record.inheritsHostEnvironment == false, 'explicit environment');
+  _expect(
+    restored.inheritsHostEnvironment == false,
+    'round-trip explicit environment',
+  );
   _expect(record.stdoutDeltas.length == 1, 'stdout count');
   _expect(record.stderrDeltas.length == 1, 'stderr count');
   _expect(record.stdoutDeltas.single.text == 'hello\n', 'stdout text');
@@ -184,6 +193,124 @@ Future<void> main() async {
 
   // ignore: avoid_print
   print('task_execution_runtime_test passed');
+}
+
+void _testEnvironmentIntent() {
+  final startedAt = DateTime.utc(2026, 6, 29, 12);
+  for (final fixture
+      in <
+        ({
+          String label,
+          ProcessCommandRequest request,
+          bool inheritsHostEnvironment,
+        })
+      >[
+        (
+          label: 'omitted',
+          request: const ProcessCommandRequest(executablePath: 'dart'),
+          inheritsHostEnvironment: true,
+        ),
+        (
+          label: 'null',
+          request: const ProcessCommandRequest(
+            executablePath: 'dart',
+            environment: null,
+          ),
+          inheritsHostEnvironment: true,
+        ),
+        (
+          label: 'empty',
+          request: const ProcessCommandRequest(
+            executablePath: 'dart',
+            environment: <String, String>{},
+          ),
+          inheritsHostEnvironment: false,
+        ),
+      ]) {
+    final runtime = TaskExecutionRuntime(clock: () => startedAt);
+    runtime.startFromProcessRequest(
+      operationId: 'environment.${fixture.label}',
+      request: fixture.request,
+    );
+    runtime.stdout('started');
+    runtime.complete();
+    final record = runtime.snapshot();
+    final payload =
+        jsonDecode(jsonEncode(record.toJson())) as Map<String, Object?>;
+    final restored = TaskExecutionRuntimeRecord.fromJson(payload);
+    _expect(
+      record.inheritsHostEnvironment == fixture.inheritsHostEnvironment &&
+          restored.inheritsHostEnvironment == fixture.inheritsHostEnvironment,
+      '${fixture.label} environment intent survives runtime updates and JSON',
+    );
+    _expect(
+      payload['inheritsHostEnvironment'] == fixture.inheritsHostEnvironment &&
+          !restored.extensions.containsKey('inheritsHostEnvironment'),
+      '${fixture.label} environment intent is a typed contract field',
+    );
+    _expect(
+      record.redactedEnvironment.isEmpty &&
+          restored.redactedEnvironment.isEmpty &&
+          (payload['redactedEnvironment'] as Map).isEmpty,
+      '${fixture.label} redacted environment remains an empty map',
+    );
+    _expect(
+      restored
+              .toRuntimeTaskSnapshot()
+              .definition
+              .metadata['inheritsHostEnvironment'] ==
+          fixture.inheritsHostEnvironment,
+      '${fixture.label} environment intent survives snapshot projection',
+    );
+  }
+
+  final manual = TaskExecutionRuntimeRecord(
+    operationId: 'manual',
+    argv: const <String>['dart'],
+    cwd: '.',
+    redactedEnvironment: const <String, String>{},
+    startedAt: startedAt,
+  );
+  final pty = TaskExecutionRuntimeRecord.fromPtyRequest(
+    operationId: 'pty',
+    request: const PtySessionRequest(executablePath: 'sh'),
+    startedAt: startedAt,
+  );
+  for (final record in <TaskExecutionRuntimeRecord>[manual, pty]) {
+    _expect(
+      record.inheritsHostEnvironment == null &&
+          record.copyWith().inheritsHostEnvironment == null &&
+          !record.toJson().containsKey('inheritsHostEnvironment') &&
+          !record.toRuntimeTaskSnapshot().definition.metadata.containsKey(
+            'inheritsHostEnvironment',
+          ),
+      '${record.operationId} environment intent remains unknown',
+    );
+  }
+  for (final environment in <Map<String, String>>[
+    <String, String>{},
+    <String, String>{'PATH': '/usr/bin'},
+  ]) {
+    final legacy = TaskExecutionRuntimeRecord.fromJson(<String, Object?>{
+      ...manual.toJson(),
+      'redactedEnvironment': environment,
+      'futureRecordField': 'retained',
+    });
+    _expect(
+      legacy.inheritsHostEnvironment == null &&
+          !legacy.copyWith().toJson().containsKey('inheritsHostEnvironment') &&
+          legacy.toJson()['futureRecordField'] == 'retained',
+      'legacy environment contents do not invent inheritance intent',
+    );
+  }
+  _expect(
+    manual
+            .copyWith(inheritsHostEnvironment: true)
+            .copyWith(inheritsHostEnvironment: false)
+            .inheritsHostEnvironment ==
+        false,
+    'copyWith can set either known environment intent',
+  );
 }
 
 void _expect(bool condition, String label) {

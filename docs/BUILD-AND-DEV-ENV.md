@@ -585,8 +585,12 @@ three minutes plus artifact upload; no new runner or toolchain setup is required
 Pafio binary selection reads the supplied host environment locally, including
 `VITYO_PAFIO_BIN`. Its `--version` request forwards only the shared non-secret
 launch allowlist; it must never serialize the entire host environment to vityod.
-The daemon's credential-passthrough rejection and explicit process-environment
-semantics are unchanged. A failed explicit binary still cannot fall back to a
+The daemon's credential-passthrough rejection remains unchanged. Process requests
+distinguish omitted/null environment (safe host allowlist) from supplied maps
+(exact, including `{}`). A filtered discovery context that becomes empty never
+restores ambient PATH. Pafio/native discovery uses host context only when that
+context is omitted; Styio inspection and Pafio metadata use the same explicit
+safe launch context selected for the project graph. A failed explicit binary still cannot fall back to a
 different candidate, and PATH is retained for child lookup without adding a new
 Pafio PATH-search policy.
 

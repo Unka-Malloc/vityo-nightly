@@ -277,9 +277,9 @@ void main() {
     expect(processManager.requests.single.arguments, <String>['--version']);
     expect(processManager.requests.single.workingDirectory, '/workspace');
     expect(processManager.requests.single.timeout, const Duration(seconds: 3));
-    expect(processManager.requests.single.environment['STYIO_HOME'], '/workspace/.styio');
-    expect(processManager.requests.single.environment['STYIO_MODE'], 'coverage');
-    expect(processManager.requests.single.environment['PATH'], '/tools/bin:/usr/bin');
+    expect(processManager.requests.single.environment!['STYIO_HOME'], '/workspace/.styio');
+    expect(processManager.requests.single.environment!['STYIO_MODE'], 'coverage');
+    expect(processManager.requests.single.environment!['PATH'], '/tools/bin:/usr/bin');
   });
 
   test('health checker marks failed probes structurally', () async {

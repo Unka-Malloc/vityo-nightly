@@ -75,7 +75,7 @@ void main() {
       expect(receipt.launchResults.single.pid, greaterThan(0));
       expect(processManager.lastRequest?.arguments, <String>['--stdio']);
       expect(processManager.lastRequest?.workingDirectory, '/workspace');
-      expect(processManager.lastRequest?.environment['VITYO_HOST'], '1');
+      expect(processManager.lastRequest?.environment?['VITYO_HOST'], '1');
       expect(
         receipt.telemetryEvents
             .map((event) => event.status)

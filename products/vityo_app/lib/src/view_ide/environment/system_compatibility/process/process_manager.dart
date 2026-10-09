@@ -85,7 +85,7 @@ class ProcessCommandRequest {
   const ProcessCommandRequest({
     required this.executablePath,
     this.arguments = const <String>[],
-    this.environment = const <String, String>{},
+    this.environment,
     this.workingDirectory,
     this.timeout,
     this.standardInput,
@@ -95,7 +95,10 @@ class ProcessCommandRequest {
 
   final String executablePath;
   final List<String> arguments;
-  final Map<String, String> environment;
+
+  /// Omitted means inherit the non-secret host launch allowlist. A supplied
+  /// map is the entire child environment, including an explicitly empty map.
+  final Map<String, String>? environment;
   final String? workingDirectory;
   final Duration? timeout;
   final String? standardInput;

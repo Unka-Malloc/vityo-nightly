@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 adapter 合同、integration 层以及上游 `styio` / `pafio` handoff 文档的日常维护入口。
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Mission
 
@@ -143,3 +143,10 @@ is the producer `s1_` snapshot identity. Bounded query remains deferred. No `pro
 (`runtime_events` machine-info, receipt `outputs.runtime_events_path`, Pafio
 `--emit-runtime-observation`), migrated generic runtime-event intake from retired v1 parsers to v2
 envelopes, and left live tailing deferred. No `prototype/` change.
+
+2026-10-08: Project discovery keeps binary-selection context local and passes an
+explicit safe child environment to both Styio inspection and Pafio metadata.
+Omitted context may read the host; a supplied context, including empty, cannot
+fall back to ambient values. Process request omission is now distinct from an
+explicit map. This is a local owner/consumer contract, not a new daemon, Pafio,
+or Styio wire field; credential rejection and explicit runtime maps are preserved.

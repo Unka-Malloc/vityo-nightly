@@ -10,7 +10,7 @@ class StyioCompilerAdapter {
   const StyioCompilerAdapter({
     required this.binaryPath,
     required this.processManager,
-    this.environment = const <String, String>{},
+    required this.environment,
   });
 
   final String binaryPath;

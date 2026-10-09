@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 import 'package:vityo_app/src/ide/agent_client/agent_client_models.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/host_environment.dart';
 import 'package:vityo_app/src/view_render/flow_hero/agent_bridge.dart';
 import 'package:vityo_app/src/view_render/flow_hero/controller.dart';
 import 'package:vityo_app/src/view_render/flow_hero/engine/machine.dart';
@@ -36,6 +37,7 @@ final class _ScriptedDaemonTransport implements VityodTransport {
       StreamController<VityodBinaryFrame>.broadcast(sync: true);
   final List<String> methods = <String>[];
   final List<String> spawnedExecutables = <String>[];
+  final List<Map<String, Object?>> processStarts = <Map<String, Object?>>[];
   final Map<Object?, String> _taskStdout = <Object?, String>{};
   final Map<String, String> _scopeRoots = <String, String>{};
   int disposeCalls = 0;
@@ -150,6 +152,7 @@ final class _ScriptedDaemonTransport implements VityodTransport {
   Map<String, Object?> _taskResult(VityodControlEnvelope request) {
     final Object? action = request.params['action'];
     if (action == 'start') {
+      processStarts.add(Map<String, Object?>.of(request.params));
       final Object? executable = request.params['executable'];
       if (executable is String) spawnedExecutables.add(executable);
       final arguments = request.params['arguments'];
@@ -367,12 +370,46 @@ void main() {
     });
 
     tearDown(() {
+      debugOverrideHostEnvironment(null);
       if (workspace.existsSync()) workspace.deleteSync(recursive: true);
     });
 
     _ScriptedDaemonTransport scripted() => _ScriptedDaemonTransport(
       existingPaths: const <String>{'pafio.toml', 'bin/pafio', 'bin/styio'},
     );
+
+    for (final environment in <Map<String, String>?>[
+      null,
+      const <String, String>{},
+    ]) {
+      test('boot and run preserve omitted versus empty environment $environment', () async {
+        debugOverrideHostEnvironment(const <String, String>{
+          'PATH': '/fixture/host-bin', 'TOKEN': 'synthetic-fixture',
+        });
+        final transport = scripted();
+        final client = await _connectedClient(transport, 'boot-environment');
+        addTearDown(client.dispose);
+        final runtime = await FlowHeroExecutionRuntime.boot(
+          workspaceRoot: workspace.path,
+          vityodClient: client,
+          toolchainSelection: FlowHeroToolchainSelection(
+            pafioPath: pafioPath, styioPath: styioPath,
+          ),
+          environment: environment,
+          pafioSystemCandidatePaths: const <String>[],
+        );
+        addTearDown(runtime.dispose);
+        expect(runtime.live, isTrue);
+        await runtime.execute(FlowHeroExecutionKind.run);
+        expect(transport.processStarts.any((request) =>
+            (request['arguments'] as List).contains('run')), isTrue);
+        for (final request in transport.processStarts) {
+          expect(request['environment'], environment == null
+              ? <String, String>{'PATH': '/fixture/host-bin'}
+              : <String, String>{});
+        }
+      });
+    }
 
     test('a live client discovers the fake pafio and boots live', () async {
       final transport = scripted();

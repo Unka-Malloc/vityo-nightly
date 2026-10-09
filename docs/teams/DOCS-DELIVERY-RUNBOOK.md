@@ -214,6 +214,13 @@ This command stops at the first failing stage. A targeted repair reruns the affe
 
 ## Handoff / Recovery
 
+The process-environment isolation slice distinguishes omitted/null requests from
+explicit maps, including empty maps, and keeps discovery context separate from
+child launch inputs. Maintain the System Compatibility Manager contract, runtime
+provenance notes, and corresponding test-catalog entries together. Configured and
+sandbox-validated environments must never regain ambient values after validation.
+Record pure Dart, Flutter, and native-platform results separately.
+
 Record:
 
 1. 更新了哪些 owner 文档、README、INDEX 或 history。

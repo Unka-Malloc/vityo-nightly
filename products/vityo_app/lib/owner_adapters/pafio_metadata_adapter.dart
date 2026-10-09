@@ -12,10 +12,12 @@ class PafioMetadataAdapter {
   const PafioMetadataAdapter({
     required this.binaryPath,
     required this.processManager,
+    required this.environment,
   });
 
   final String binaryPath;
   final ProcessManager processManager;
+  final Map<String, String> environment;
 
   Future<PafioMetadataDocument> load({required String manifestPath}) async {
     final result = await processManager.run(
@@ -28,6 +30,7 @@ class PafioMetadataAdapter {
           manifestPath,
         ],
         serviceKind: ProcessServiceKind.pafio,
+        environment: environment,
       ),
     );
     if (!result.succeeded) {

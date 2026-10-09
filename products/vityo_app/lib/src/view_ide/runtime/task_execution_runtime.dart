@@ -360,6 +360,7 @@ class TaskExecutionRuntimeRecord {
     required this.cwd,
     required this.redactedEnvironment,
     required this.startedAt,
+    this.inheritsHostEnvironment,
     this.stdoutDeltas = const <TaskExecutionOutputDelta>[],
     this.stderrDeltas = const <TaskExecutionOutputDelta>[],
     this.diagnostics = const <TaskExecutionDiagnostic>[],
@@ -394,8 +395,9 @@ class TaskExecutionRuntimeRecord {
       argv: <String>[request.executablePath, ...request.arguments],
       cwd: request.workingDirectory ?? '.',
       redactedEnvironment: redactionPolicy.redactEnvironment(
-        request.environment,
+        request.environment ?? const <String, String>{},
       ),
+      inheritsHostEnvironment: request.environment == null,
       startedAt: startTimestamp,
       maxStdoutBytes: maxStdoutBytes,
       maxStderrBytes: maxStderrBytes,
@@ -466,6 +468,7 @@ class TaskExecutionRuntimeRecord {
       argv: _jsonStringList(json['argv']),
       cwd: json['cwd'] as String? ?? '.',
       redactedEnvironment: _jsonStringMap(json['redactedEnvironment']),
+      inheritsHostEnvironment: json['inheritsHostEnvironment'] as bool?,
       startedAt:
           DateTime.tryParse(json['startedAt'] as String? ?? '')?.toUtc() ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -505,6 +508,7 @@ class TaskExecutionRuntimeRecord {
     'argv',
     'cwd',
     'redactedEnvironment',
+    'inheritsHostEnvironment',
     'startedAt',
     'status',
     'stdoutDeltaCount',
@@ -530,6 +534,10 @@ class TaskExecutionRuntimeRecord {
   final List<String> argv;
   final String cwd;
   final Map<String, String> redactedEnvironment;
+
+  /// Whether the process requested the safe host launch environment. Null
+  /// means the request's inheritance intent was not recorded.
+  final bool? inheritsHostEnvironment;
   final DateTime startedAt;
   final List<TaskExecutionOutputDelta> stdoutDeltas;
   final List<TaskExecutionOutputDelta> stderrDeltas;
@@ -571,6 +579,7 @@ class TaskExecutionRuntimeRecord {
     List<String>? argv,
     String? cwd,
     Map<String, String>? redactedEnvironment,
+    bool? inheritsHostEnvironment,
     DateTime? startedAt,
     List<TaskExecutionOutputDelta>? stdoutDeltas,
     List<TaskExecutionOutputDelta>? stderrDeltas,
@@ -596,6 +605,8 @@ class TaskExecutionRuntimeRecord {
       argv: argv ?? this.argv,
       cwd: cwd ?? this.cwd,
       redactedEnvironment: redactedEnvironment ?? this.redactedEnvironment,
+      inheritsHostEnvironment:
+          inheritsHostEnvironment ?? this.inheritsHostEnvironment,
       startedAt: startedAt ?? this.startedAt,
       stdoutDeltas: stdoutDeltas ?? this.stdoutDeltas,
       stderrDeltas: stderrDeltas ?? this.stderrDeltas,
@@ -771,6 +782,8 @@ class TaskExecutionRuntimeRecord {
         environment: redactedEnvironment,
         metadata: <String, Object?>{
           'operationId': operationId,
+          if (inheritsHostEnvironment != null)
+            'inheritsHostEnvironment': inheritsHostEnvironment,
           'stdoutTruncated': stdoutTruncated,
           'stderrTruncated': stderrTruncated,
           'runtimeEventCount': runtimeEvents.length,
@@ -839,6 +852,8 @@ class TaskExecutionRuntimeRecord {
       'argv': argv,
       'cwd': cwd,
       'redactedEnvironment': redactedEnvironment,
+      if (inheritsHostEnvironment != null)
+        'inheritsHostEnvironment': inheritsHostEnvironment,
       'startedAt': startedAt.toIso8601String(),
       'status': status.wireValue,
       'stdoutDeltaCount': stdoutDeltas.length,
