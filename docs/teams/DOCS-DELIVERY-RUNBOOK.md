@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-09
 
 ## Mission
 
@@ -426,3 +426,9 @@ portable protocol path, scripted file lookup normalizes host separators, and the
 real-daemon DAP test uses installed native Dart for raw byte echo instead of a
 Unix-only cat path. Preserve byte equality, process ownership, and shutdown checks;
 portable fixture checks do not establish a Windows or macOS CI pass.
+
+2026-10-09: The Quick Open widget test now waits in real async time for the
+selected file's editor-load notification before deleting its workspace. Preserve
+the exact path/text and UI assertions; pumping demo timers alone does not prove
+real file I/O completed. The bounded observer is removed in finally. This is a
+test-lifetime repair, not a production controller or Windows CI pass claim.
