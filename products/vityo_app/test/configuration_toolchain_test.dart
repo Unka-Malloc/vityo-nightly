@@ -3,13 +3,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrintSynchronously;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/pty/pty_manager_io.dart'
+    show FailedPtySession;
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/language/service/styio_service_connector.dart';
 import 'package:vityo_app/src/view_ide/language/service/styio_service_manager_connector.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain.dart';
+import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 import 'support/test_file_system_manager.dart';
 import 'support/test_secure_credential_backend.dart';
@@ -3453,11 +3457,47 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
   test(
     'terminal runtime starts configured shell through pty manager',
     () async {
+      var phase = 'initial';
+      var startAccepted = false;
+      var outputObserved = false;
+      var eofObserved = false;
+      PtySession? observedSession;
+      void markPhase(String next) {
+        phase = next;
+        debugPrintSynchronously('configured-pty phase=$phase');
+      }
+
+      addTearDown(() {
+        debugPrintSynchronously(
+          'configured-pty lastPhase=$phase '
+          'state=${observedSession?.state.name ?? 'not-returned'} '
+          'startAccepted=$startAccepted outputObserved=$outputObserved '
+          'eofObserved=$eofObserved',
+        );
+      });
+      markPhase('pty-probe:begin');
       final ptyFacts = await const LocalPtyProber().probe();
+      markPhase('pty-probe:completed');
+      markPhase('shell-selection:begin');
+      final powerShell = Platform.isWindows
+          ? (await const LocalShellProber().probe()).availableShells
+                .where((shell) => shell.family == ShellFamily.powershell)
+                .firstOrNull
+          : null;
+      if (Platform.isWindows) {
+        expect(
+          powerShell,
+          isNotNull,
+          reason:
+              'The native terminal fixture requires a discovered PowerShell.',
+        );
+      }
+      markPhase('shell-selection:completed');
       final profile = Platform.isWindows
-          ? const ShellProfileConfiguration(
+          ? ShellProfileConfiguration(
               id: 'powershell',
-              executablePath: 'powershell.exe',
+              // The explicit fixture environment has no PATH for PTY lookup.
+              executablePath: File(powerShell!.path).absolute.path,
               family: ShellFamily.powershell,
               arguments: <String>['-NoLogo', '-NoProfile'],
               environment: <String, String>{'STYIO_MODE': 'profile'},
@@ -3481,6 +3521,7 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ),
       );
 
+      markPhase('start:begin');
       final session = await terminal.start(
         envFileVariables: const <Map<String, String?>>[
           <String, String?>{'STYIO_CHANNEL': 'nightly'},
@@ -3495,30 +3536,93 @@ printf '{"kind":"facts","protocolVersion":"styio-cli-jsonl-v1","parserEngine":"n
         ],
         environment: const <String, String>{'RUNTIME_FLAG': 'runtime'},
       );
+      addTearDown(() async {
+        try {
+          debugPrintSynchronously(
+            'configured-pty cleanup-close:begin lastPhase=$phase',
+          );
+        } finally {
+          await session.close(force: true).timeout(_interactivePtyTimeout);
+        }
+        debugPrintSynchronously('configured-pty cleanup-close:completed');
+      });
+      observedSession = session;
+      startAccepted =
+          session.state == PtySessionState.running ||
+          session.state == PtySessionState.exited;
+      markPhase('start:completed');
+      debugPrintSynchronously(
+        'configured-pty startAccepted=$startAccepted state=${session.state.name}',
+      );
       final output = <String>[];
       if (Platform.isWindows) {
+        final startError = session is FailedPtySession ? session.error : null;
+        final errorCode =
+            startError is VityodProtocolException &&
+                RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(startError.code)
+            ? startError.code
+            : null;
+        expect(
+          session.state,
+          PtySessionState.running,
+          reason:
+              'PTY start state=${session.state.name}'
+              '${errorCode == null ? '' : ', errorCode=$errorCode'}',
+        );
         final ready = Completer<void>();
         final done = Completer<void>();
-        final subscription = session.output.listen((chunk) {
-          output.add(chunk);
-          if (!ready.isCompleted) {
-            ready.complete();
+        final subscription = session.output.listen(
+          (chunk) {
+            output.add(chunk);
+            outputObserved = true;
+            if (!ready.isCompleted) {
+              ready.complete();
+            }
+          },
+          onDone: () {
+            eofObserved = true;
+            done.complete();
+          },
+        );
+        addTearDown(() async {
+          try {
+            debugPrintSynchronously(
+              'configured-pty cleanup-listener:begin lastPhase=$phase',
+            );
+          } finally {
+            await subscription.cancel();
           }
-        }, onDone: done.complete);
+          debugPrintSynchronously('configured-pty cleanup-listener:completed');
+        });
+        markPhase('first-output:begin');
         await ready.future.timeout(_interactivePtyTimeout);
+        markPhase('first-output:completed');
+        markPhase('write-command:begin');
         await session.write(
           r'''if ([Console]::IsOutputRedirected) { exit 1 }; Write-Output "terminal-ok:${env:STYIO_MODE}:${env:STYIO_CHANNEL}:${env:RUNTIME_FLAG}"; exit 0'''
           '\r\n',
         );
+        markPhase('write-command:completed');
+        markPhase('output-eof:begin');
         await done.future.timeout(_interactivePtyTimeout);
+        markPhase('output-eof:completed');
+        markPhase('cancel-listener:begin');
         await subscription.cancel();
+        markPhase('cancel-listener:completed');
       } else {
+        markPhase('output-eof:begin');
         output.add(await session.output.join().timeout(_interactivePtyTimeout));
+        outputObserved = output.any((chunk) => chunk.isNotEmpty);
+        eofObserved = true;
+        markPhase('output-eof:completed');
       }
+      markPhase('exit-code:begin');
       final exitCode = await session.exitCode.timeout(_interactivePtyTimeout);
+      markPhase('exit-code:completed');
 
       expect(exitCode, 0);
       expect(output.join(), contains('terminal-ok:profile:nightly:runtime'));
+      markPhase('assertions:completed');
     },
     skip: !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)
         ? 'Desktop native PTY only.'
