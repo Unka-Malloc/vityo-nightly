@@ -254,7 +254,7 @@ void main() {
             '/selected/styio',
           ]);
           expect(request.workingDirectory, '/project');
-          expect(request.environment['PAIR_TEST'], 'yes');
+          expect(request.environment!['PAIR_TEST'], 'yes');
         },
       );
       expect(result.compatible, isTrue);
@@ -494,8 +494,8 @@ void main() {
       );
 
       final process = _ScriptedProcessManager((request) async {
-        expect(request.environment['HOME'], '/isolated/home');
-        expect(request.environment['PAFIO_HOME'], '/isolated/pafio');
+        expect(request.environment!['HOME'], '/isolated/home');
+        expect(request.environment!['PAFIO_HOME'], '/isolated/pafio');
         request.onStarted?.call(
           const ProcessCommandHandle(
             processHandleId: 'h-1',

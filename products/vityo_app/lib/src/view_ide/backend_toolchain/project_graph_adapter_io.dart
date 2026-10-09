@@ -2,6 +2,7 @@ import '../../../owner_adapters/pafio_metadata_adapter.dart';
 import '../../../owner_adapters/platform_hosted_adapter.dart';
 import '../../../owner_adapters/styio_compiler_adapter.dart';
 import '../environment/configuration/host_environment.dart';
+import '../environment/configuration/forwarded_host_environment.dart';
 import '../environment/system_compatibility/file_system/file_system_manager.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process.dart';
@@ -39,6 +40,9 @@ Future<ProjectGraphAdapter> createPlatformProjectGraphAdapter({
     return _ScratchProjectGraphAdapter(workspaceRoot: _currentDirectoryPath());
   }
   final environment = _environmentProvider();
+  final childEnvironment = Map<String, String>.unmodifiable(
+    forwardedHostEnvironment(source: environment),
+  );
   final environmentWorkingDirectory = environment['PWD']?.trim();
   final workspaceRoot = await _discoverProjectRoot(
     managers,
@@ -53,6 +57,7 @@ Future<ProjectGraphAdapter> createPlatformProjectGraphAdapter({
   final styioBinary = await _resolveManagedStyioBinary(
     managers,
     environment: environment,
+    childEnvironment: childEnvironment,
   );
   return _ManagedMetadataProjectGraphAdapter(
     workspaceRoot: workspaceRoot,
@@ -62,13 +67,14 @@ Future<ProjectGraphAdapter> createPlatformProjectGraphAdapter({
         : PafioMetadataAdapter(
             binaryPath: pafioBinary,
             processManager: managers.process,
+            environment: childEnvironment,
           ),
     compilerAdapter: styioBinary == null
         ? null
         : StyioCompilerAdapter(
             binaryPath: styioBinary,
             processManager: managers.process,
-            environment: environment,
+            environment: childEnvironment,
           ),
   );
 }
@@ -294,6 +300,7 @@ Future<String> _discoverProjectRoot(
 Future<String?> _resolveManagedStyioBinary(
   PlatformManagerBundle managers, {
   required Map<String, String> environment,
+  required Map<String, String> childEnvironment,
 }) async {
   final candidates = <String>[
     if (environment['VITYO_STYIO_BIN'] case final explicit?
@@ -313,7 +320,7 @@ Future<String?> _resolveManagedStyioBinary(
         ProcessCommandRequest(
           executablePath: candidate,
           arguments: const <String>['--machine-info=json'],
-          environment: environment,
+          environment: childEnvironment,
           serviceKind: ProcessServiceKind.styio,
         ),
       );

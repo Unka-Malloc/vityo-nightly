@@ -92,7 +92,7 @@ class ProcessExecutionPlan {
   final ProcessCommandRequest request;
   final String executablePath;
   final List<String> arguments;
-  final Map<String, String> environment;
+  final Map<String, String>? environment;
   final String? workingDirectory;
   final Duration? timeout;
   final String? standardInput;

@@ -17,6 +17,7 @@ import '../backend_toolchain/execution_adapter.dart';
 import '../backend_toolchain/pafio_cli_discovery.dart';
 import '../backend_toolchain/pafio_cli_support.dart';
 import '../environment/configuration/host_environment.dart';
+import '../environment/configuration/forwarded_host_environment.dart';
 import '../environment/system_compatibility/file_system/file_system_manager.dart';
 import '../environment/system_compatibility/platform_manager/platform_manager.dart';
 import '../environment/system_compatibility/process/process_manager.dart';
@@ -338,7 +339,12 @@ class FlowHeroExecutionRuntime
             workspaceRoot: workspaceRoot,
             vityodClient: vityodClient,
           );
-      final hostEnvironment = environment ?? readHostEnvironment();
+      final hostEnvironment = Map<String, String>.unmodifiable(
+        environment ?? readHostEnvironment(),
+      );
+      final childEnvironment = Map<String, String>.unmodifiable(
+        forwardedHostEnvironment(source: hostEnvironment),
+      );
       final checks = _checksByKind(
         environment: hostEnvironment,
         selection: toolchainSelection,
@@ -409,7 +415,7 @@ class FlowHeroExecutionRuntime
         styioBinaryPath: styioBinary,
         workspaceRoot: workspaceRoot,
         manifestPath: manifestPath,
-        environment: hostEnvironment,
+        environment: childEnvironment,
       );
       if (!pair.compatible) {
         return FlowHeroExecutionRuntime._(
@@ -435,7 +441,7 @@ class FlowHeroExecutionRuntime
         pafioBinaryPath: pafioBinary,
         styioBinaryPath: styioBinary,
         manifestPath: manifestPath,
-        environment: environment ?? const <String, String>{},
+        environment: environment == null ? childEnvironment : hostEnvironment,
         toolchainChecks: checks,
       );
     } on Object {

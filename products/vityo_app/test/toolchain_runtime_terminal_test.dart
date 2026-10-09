@@ -83,9 +83,9 @@ void main() {
     final request = processManager.requests.single;
     expect(request.executablePath, '/tools/styio');
     expect(request.arguments, <String>['compile', 'main.styio']);
-    expect(request.environment['BUILD_ID'], 'coverage');
-    expect(request.environment['STYIO_CACHE'], '/tmp/styio');
-    expect(request.environment['PATH'], '/usr/bin:/tools/bin');
+    expect(request.environment!['BUILD_ID'], 'coverage');
+    expect(request.environment!['STYIO_CACHE'], '/tmp/styio');
+    expect(request.environment!['PATH'], '/usr/bin:/tools/bin');
     expect(request.workingDirectory, '/workspace');
     expect(request.timeout, const Duration(seconds: 2));
     expect(request.standardInput, 'source');

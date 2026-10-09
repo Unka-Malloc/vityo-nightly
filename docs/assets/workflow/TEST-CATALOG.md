@@ -38,6 +38,17 @@ The quality-runner test compares every file under the app's standalone integrati
 
 ## Local Toolchain Slice
 
+`local_process_manager_test.dart` exercises actual client dispatch for omitted
+versus explicit-empty process and shell environments, configured-shell isolation,
+and sandbox-approved empty maps. `native_compiler_environment_test.dart` and
+`pafio_discovery_environment_test.dart` cover omitted versus supplied discovery
+context and safe child maps. `task_execution_runtime_test.dart` preserves nullable
+inheritance provenance through copies, JSON, and runtime snapshots. Project graph
+tests provide fake launchers with safe host prerequisites and include a synthetic
+credential in discovery context; only allowlisted launch facts may reach children.
+Flow Hero boot/run tests distinguish omitted host context from explicit `{}`.
+These tests do not replace native Windows launch or daemon credential-denial tests.
+
 The auto-discovered Flutter tests `flow_hero_execution_test.dart`,
 `flow_hero_local_services_test.dart`, `flow_hero_toolchain_install_test.dart`,
 `pafio_cli_discovery_test.dart`, and `styio_toolchain_discovery_lspd_test.dart`

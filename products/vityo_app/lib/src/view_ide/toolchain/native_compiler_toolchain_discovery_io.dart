@@ -1,4 +1,7 @@
-import '../environment/environment.dart';
+import '../environment/system_compatibility/platform_manager/platform_manager.dart';
+import '../environment/system_compatibility/process/process_manager.dart';
+import '../environment/configuration/forwarded_host_environment.dart';
+import '../environment/configuration/host_environment.dart';
 import 'clang_cpp_version_parser.dart';
 import 'toolchain_catalog.dart';
 
@@ -64,7 +67,7 @@ const List<String> _defaultCtestCandidatePaths = <String>[
 
 Future<ToolchainCatalog> createPlatformNativeCompilerToolchainCatalog({
   required PlatformManagerBundle platformManagers,
-  Map<String, String> environment = const <String, String>{},
+  Map<String, String>? environment,
   Iterable<String> cCompilerCandidatePaths = _defaultClangCandidatePaths,
   Iterable<String> cxxCompilerCandidatePaths = _defaultClangxxCandidatePaths,
   Iterable<String> cmakeCandidatePaths = _defaultCmakeCandidatePaths,
@@ -79,7 +82,9 @@ Future<ToolchainCatalog> createPlatformNativeCompilerToolchainCatalog({
   Future<String?> Function(String executablePath)? clangVersionOutputProbe,
 }) async {
   final catalog = ToolchainCatalog();
-  final effectiveEnvironment = environment;
+  final effectiveEnvironment = Map<String, String>.unmodifiable(
+    environment ?? readHostEnvironment(),
+  );
   Future<String?> discover(
     String overrideKey,
     String executableName,
@@ -317,7 +322,7 @@ Future<String?> _probeClangVersionOutput(
       ProcessCommandRequest(
         executablePath: executablePath,
         arguments: const <String>['--version'],
-        environment: environment,
+        environment: forwardedHostEnvironment(source: environment),
       ),
     );
     if (!result.succeeded) {
@@ -359,7 +364,7 @@ Future<String?> _discoverManagedExecutablePath(
     ProcessCommandRequest(
       executablePath: lookupExecutable,
       arguments: <String>[executableName],
-      environment: environment,
+      environment: forwardedHostEnvironment(source: environment),
     ),
   );
   if (!lookup.succeeded) {

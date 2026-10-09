@@ -192,6 +192,39 @@ the real manager and client with a controlled transport, and the sandbox test
 checks preservation when output is bounded. These tests do not establish native
 Windows process or pipe behavior.
 
+### Process Environment Ownership
+
+`ProcessCommandRequest.environment` and `ProcessExecutionPlan.environment` are
+nullable local API fields. Null means that the Process Manager resolves the
+existing non-secret host launch allowlist. A supplied map is the complete child
+environment: `{}` means empty, and supplied empty values stay empty. The manager
+freezes the resolved map before IPC. It never expands an explicit map or filters
+an explicit credential into a different request; the daemon's credential guard
+and environment clearing remain authoritative.
+
+Unconfigured `ShellCommandRequest` omission is preserved through its plan. A
+supplied environment, configuration, or profile instead produces an explicit
+map, including an empty one. Execution Manager's resolved and sandbox-validated
+map, toolchain builder results, and extension definitions are also explicit;
+the Process Manager cannot inject host entries after their validation.
+
+Discovery has a different input: a host context used locally for binary
+selection. Omitted Pafio/native-compiler discovery context reads the host;
+supplied context replaces it. Project graph discovery derives a safe child map
+from its selected context and passes that explicit map to both Styio inspection
+and Pafio metadata. A filter yielding `{}` stays isolated. Discovery-only
+overrides and ambient credentials do not cross that launch boundary. Flow Hero
+resolves safe host launch inputs when its environment is omitted, while its
+explicit runtime map remains exact.
+
+`TaskExecutionRuntimeRecord.inheritsHostEnvironment` records requested process
+intent independently from its redacted environment map: true for omitted/null,
+false for any supplied map, and null for older/manual records without that fact.
+Copy, JSON, and runtime snapshot metadata preserve the distinction. The field
+does not contain host values, establish effective environment contents, or grant
+access. These are local contracts; the daemon wire still receives one resolved
+environment map, with no new published protocol fields.
+
 ## 6. Rationale
 
 A centralized permission layer or universal system facade adds latency and coupling without owning real operations. Concrete managers already know the target, facts, provider constraints, fallback path, and recovery options, so system compatibility behavior should remain local to operation-owning managers.

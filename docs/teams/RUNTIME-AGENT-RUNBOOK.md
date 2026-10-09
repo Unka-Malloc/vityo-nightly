@@ -2,7 +2,7 @@
 
 **Purpose:** Define ownership for runtime/debug surfaces and the IDE-side Agent Workbench without assigning Agent-runtime execution to the IDE.
 
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-08
 
 ## Mission
 
@@ -110,3 +110,10 @@ Record:
 4. 下一个阻塞点、回滚点与 history 链接。
 
 2026-09-05: Migrated generic runtime-event intake and replay-summary keys to Styio runtime-events v2 (`from_phase`/`to_phase`; retired v1 `message`/`file`/`thread_id` reads). Runtime surface still degrades unknown v2 kinds. No `prototype/` change.
+
+2026-10-08: Runtime task records retain optional `inheritsHostEnvironment`
+provenance separately from redacted environment maps. Process request omission is
+true, an explicit map is false, and historical/manual/PTY records without this fact
+remain unknown. Copies, JSON, and runtime snapshot metadata preserve that state;
+no host values are read or added to the record. Execution and extension sandbox
+maps remain explicit at the Process Manager boundary.

@@ -98,10 +98,9 @@ class LocalProcessManager implements ProcessManager, CancellableProcessManager {
     final typedService = request.serviceKind != ProcessServiceKind.generic;
     final taskId =
         '$servicePrefix-${_client.clientInstanceId}-${++_globalTaskSequence}';
-    final environment =
-        plan.environment.isEmpty && compatibility.supportsEnvironmentOverlay
-        ? forwardedHostEnvironment()
-        : plan.environment;
+    final environment = Map<String, String>.unmodifiable(
+      plan.environment ?? forwardedHostEnvironment(),
+    );
     final stopwatch = Stopwatch()..start();
     var taskStarted = false;
     int? processId;
