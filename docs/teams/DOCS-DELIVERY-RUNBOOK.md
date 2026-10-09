@@ -445,5 +445,10 @@ PowerShell-family executable through the shell prober and makes its path absolut
 before starting the PTY with the original sparse environment. Preserve TTY,
 overlay-precedence, output, and exit assertions; register bounded session cleanup
 and listener cancellation before awaiting completion. Start diagnostics contain
-only state and a bounded protocol error code. This test-only repair leaves the
-separate PTY live probe unresolved and requires native Windows validation.
+only state and a bounded protocol error code. Fixed begin/completed markers now
+identify capability probing, shell selection, start, first output, command write,
+output EOF, exit, and cleanup waits. A teardown summary records only the last
+phase, state, and start/output/EOF booleans; it never logs terminal contents,
+environment values, or executable paths. All original deadlines and assertions
+remain. This test-only repair leaves the separate PTY live probe unresolved and
+requires native Windows validation.
