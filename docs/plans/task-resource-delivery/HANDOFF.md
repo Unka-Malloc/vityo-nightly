@@ -2,7 +2,7 @@
 
 **Purpose:** Maintain the finite FINAL/CLOSE execution contract and accepted source/integration evidence for the same E03 / TASK-001.
 
-**Last updated:** 2026-10-12
+**Last updated:** 2026-10-15
 
 ## Current FINAL/CLOSE execution contract
 
@@ -953,3 +953,27 @@ copied to shared reports.
 | FINAL isolation repair test/record files; no matched line | Repository credential/home-path rules and manual runtime-data review | No matched sensitive category | Four-file scan in `build/task-resource-final/repair-isolation/privacy.json` returned no findings | No detected disclosure in scanned scope | Complete host logs remain ignored; shared records use relative references |
 | Reviewer changed/new text; no matched line | Repository credential/home-path rules and manual runtime-payload review | No matched sensitive content in 88 scanned text files | Scoped scan in `build/task-resource-review/privacy.json`; result-only additions manually reviewed | No detected disclosure within reviewed scope | Raw commands, paths, logs and payloads remain ignored; no shared raw payload |
 | CLOSE changed/unignored text; no matched line | Repository credential/home-path rules and manual runtime-payload review | No matched sensitive category in 97 text files | `build/task-resource-final/close/privacy.json` records no matches; final additions contain relative references and result summaries only | No detected disclosure in this scope; not universal secret detection | No content remediation required; complete raw evidence remains ignored |
+
+## Coordinator join and delivery closure — 2026-10-15
+
+The coordinator joined the three current-candidate results. Candidate
+revisions: vityo `cb8883de` (including the vityod zero-deadline fix), styio
+`ba37f64`, pafio `62636ea`; all three worktrees clean.
+
+- The same-candidate E2E gate through real production services and vityod was
+  rerun on the current binaries: `host-ehiyo1yz` — 35 required real cases and
+  4 deterministic contract cases accepted, `ok=true`, failure category null,
+  not skipped; input identities are in `inputs.json` (current styio CLI,
+  `styio_lspd`, Pafio with bounded retention, vityod with the zero-deadline
+  fix). This supersedes the Oct 12 run for current-candidate claims; the
+  earlier run remains historical evidence.
+- Expanded Pafio joined integration gate on the same binaries: `ok=true`,
+  `validation_errors` empty. vityod crate tests: 56 passed, 0 failed.
+- The registered CLOSE review check was executed as host during this closure;
+  NODE-CLOSE is completed with its result amended accordingly.
+- Source `TASK-001` and Tree delivery are recorded; hosted E03 is closed.
+
+Boundaries are unchanged: macOS arm64 only; Linux/Windows/Android/iOS/Web
+providers, Release, sanitizers, native installed-client UI, real
+Agent/provider conversations, coverage-threshold evaluation and unadvertised
+`didSave` semantics remain unverified. Landing is a separate step.

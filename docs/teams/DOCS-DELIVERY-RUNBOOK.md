@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-11
+**Last updated:** 2026-10-15
 
 ## Mission
 
@@ -327,3 +327,12 @@ repository's own workspace, not a mirror of the upstream canonical plan;
 DOCUMENTATION-POLICY, IMPLEMENTED-DECISIONS, and COORDINATION-RUNBOOK now name
 the split, the milestone directory has a README, `final.py` no longer loses
 the rlimit diagnostic on the error path, and generated indexes are refreshed.
+
+2026-10-15: Recorded the coordinator join and delivery closure for the
+task-resource milestone. The current candidate reran the E2E gate through real
+production services and vityod (`host-ehiyo1yz`; 35 scenarios and 4 contract
+cases accepted) with the expanded Pafio integration gate, the vityod crate
+tests and the bounded-retention probe as the joined evidence; the milestone
+Tree/Task delivery now carries the join result and its boundaries. The
+registered CLOSE review check executed as host, and NODE-CLOSE was amended
+accordingly.
