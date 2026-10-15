@@ -4232,6 +4232,12 @@ fn acp_error_code(error: AcpError) -> &'static str {
 }
 
 fn bounded_request_timeout(request: &ControlEnvelope) -> std::time::Duration {
+    // A zero deadline is the protocol's documented "no implicit work
+    // deadline"; bound the wait by the default request budget instead of
+    // expiring 1ms later.
+    if request.deadline_unix_millis == 0 {
+        return std::time::Duration::from_millis(30_000);
+    }
     let remaining = request
         .deadline_unix_millis
         .saturating_sub(unix_time_millis())
