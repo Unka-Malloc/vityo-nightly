@@ -506,7 +506,7 @@ class ResolvePinnedCliTest(DeliveryStageTestCase):
             ), mock.patch.object(
                 self.delivery, "validate_executable", return_value=True
             ):
-                resolved = self.delivery.resolve_pinned_cli("styio")
+                resolved = self.delivery.resolve_pinned_cli("styio", environment={})
             self.assertEqual(resolved, candidate.resolve())
         finally:
             shutil.rmtree(checkout, ignore_errors=True)
@@ -522,7 +522,7 @@ class ResolvePinnedCliTest(DeliveryStageTestCase):
             side_effect=self.delivery.ToolchainError("no pinned checkout"),
         ):
             with self.assertRaisesRegex(ValueError, "no pinned checkout"):
-                self.delivery.resolve_pinned_cli("styio")
+                self.delivery.resolve_pinned_cli("styio", environment={})
 
 
 class LanguageFixtureTest(DeliveryStageTestCase):
@@ -659,6 +659,88 @@ class ProductAcceptanceTest(DeliveryStageTestCase):
 
 
 class TestStageTest(DeliveryStageTestCase):
+    def test_resolved_stage_preserves_complete_local_selection(self) -> None:
+        recorded: list[tuple[str, ...]] = []
+        styio = self.root / "accepted-styio"
+
+        def runner(argv, *_args, **_kwargs):
+            recorded.append(tuple(argv))
+            return 0
+
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            self.delivery, "require_rust_toolchain", return_value=True
+        ), mock.patch.object(
+            self.delivery, "ensure_rust_coverage_tools", return_value=True
+        ), mock.patch.object(
+            self.delivery.shutil, "which", return_value="flutter"
+        ), mock.patch.object(
+            self.delivery, "resolve_pinned_cli", side_effect=AssertionError("compiler already admitted")
+        ), mock.patch.object(
+            self.delivery, "run_command", side_effect=AssertionError("explicit runner owns every command")
+        ), mock.patch.object(
+            self.delivery, "_run_product_acceptance", side_effect=AssertionError("local scope")
+        ):
+            self.assertEqual(
+                self.delivery._run_resolved_test_stage(
+                    self.options(platform="macos"), styio, runner=runner
+                ),
+                0,
+            )
+
+        self.assertEqual(recorded[0], ("flutter", "analyze"))
+        self.assertIn("scripts/project-coverage-gate.py", recorded[1])
+        self.assertIn("--collect-only", recorded[1])
+        builds = recorded[2:4]
+        self.assertEqual([cmd[:3] for cmd in builds], [("cargo", "build", "--locked")] * 2)
+        self.assertEqual([cmd[cmd.index("--bin") + 1] for cmd in builds],
+                         ["vityo-coding-agent", "vityod"])
+        suites = recorded[4:-3]
+        self.assertEqual(tuple(cmd[cmd.index("--suite") + 1] for cmd in suites),
+                         self.delivery.PORTABLE_IDE_SUITES)
+        language = recorded[-3]
+        self.assertEqual(language[:3], ("dart", "run", "tool/language_fixture_gate.dart"))
+        self.assertEqual(language[language.index("--styio") + 1], str(styio))
+        self.assertEqual(language.count("--root"), 2)
+        self.assertEqual(recorded[-2:], [("npm", "run", "governance"),
+                                        ("npm", "run", "selftest:editor")])
+
+    def test_resolved_stage_skips_verified_completed_steps(self) -> None:
+        recorded: list[tuple[str, ...]] = []
+        styio = self.root / "accepted-styio"
+
+        def runner(argv, *_args, **_kwargs):
+            recorded.append(tuple(argv))
+            return 0
+
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            self.delivery, "require_rust_toolchain", return_value=True
+        ), mock.patch.object(
+            self.delivery, "ensure_rust_coverage_tools",
+            side_effect=AssertionError("retained pass must not re-execute")
+        ), mock.patch.object(
+            self.delivery.shutil, "which", return_value="flutter"
+        ), mock.patch.object(
+            self.delivery, "run_command", side_effect=AssertionError("explicit runner owns every command")
+        ), mock.patch.object(
+            self.delivery, "_run_product_acceptance", side_effect=AssertionError("local scope")
+        ):
+            self.assertEqual(
+                self.delivery._run_resolved_test_stage(
+                    self.options(platform="macos"), styio, runner=runner,
+                    completed_steps=(self.delivery.RUST_COVERAGE_TOOLS_STEP,
+                                     "Flutter analysis"),
+                ),
+                0,
+            )
+
+        self.assertNotIn(("flutter", "analyze"), recorded)
+        self.assertIn("scripts/project-coverage-gate.py", recorded[0])
+        self.assertIn("--collect-only", recorded[0])
+        language = recorded[-3]
+        self.assertEqual(language[:3], ("dart", "run", "tool/language_fixture_gate.dart"))
+        self.assertEqual(recorded[-2:], [("npm", "run", "governance"),
+                                        ("npm", "run", "selftest:editor")])
+
     def test_unsupported_platform_fails(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):
@@ -1743,6 +1825,8 @@ class DeliveryDispatchTest(DeliveryStageTestCase):
             flutter_dir=Path("products/app"),
             styio_bin="/bin/styio",
             pafio_bin="/bin/pafio",
+            lspd_bin="/bin/styio_lspd",
+            vityod_bin="/bin/vityod",
             output_dir=Path("build/out"),
             evidence_dir=Path("build/evidence"),
             artifact=Path("build/app.deb"),
@@ -1756,6 +1840,8 @@ class DeliveryDispatchTest(DeliveryStageTestCase):
         self.assertEqual(options.revision_range, "a..b")
         self.assertEqual(options.scope, "coverage")
         self.assertEqual(options.install_root, Path("/tmp/install"))
+        self.assertEqual(options.lspd_bin, "/bin/styio_lspd")
+        self.assertEqual(options.vityod_bin, "/bin/vityod")
 
     def test_main_dispatches_stage_and_deliver(self) -> None:
         with mock.patch.object(

@@ -13,7 +13,10 @@ final class VityodTestEndpoint {
     'Local vityod endpoints are unavailable on this platform.',
   );
 
-  Future<void> waitUntilServing(String endpoint) async => throw UnsupportedError(
+  Future<void> waitUntilServing(
+    String endpoint, {
+    Future<int>? processExit,
+  }) async => throw UnsupportedError(
     'Local vityod endpoints are unavailable on this platform.',
   );
 }

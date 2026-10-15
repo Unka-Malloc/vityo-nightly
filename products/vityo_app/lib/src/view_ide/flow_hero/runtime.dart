@@ -6,6 +6,7 @@
 library;
 
 import '../../ide/local_service/vityod_client.dart';
+import '../../ide/workspace/workspace_document_store.dart';
 import 'execution_service.dart';
 import 'language_service.dart';
 import 'local_services.dart';
@@ -58,6 +59,20 @@ class ProductionFlowHeroRuntime implements FlowHeroFeatureRuntime {
   @override
   FlowHeroWorkspaceFileIndex createWorkspaceFileIndex(String root) =>
       FlowHeroWorkspaceFileIndexIO(root: root);
+
+  @override
+  Future<WorkspaceDocumentOperationStore?> bootDocuments(
+    String workspaceRoot,
+  ) async {
+    final client = await _clientFor(workspaceRoot);
+    if (client == null) return null;
+    final store = await createWorkspaceDocumentStore(
+      vityodClient: client,
+      workspaceId: 'flow-hero',
+      workspaceRoot: workspaceRoot,
+    );
+    return store is WorkspaceDocumentOperationStore ? store : null;
+  }
 
   @override
   Future<FlowHeroExecutionSource> bootExecution(

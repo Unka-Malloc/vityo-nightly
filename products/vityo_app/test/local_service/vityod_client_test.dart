@@ -1,10 +1,135 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/ide/local_service/vityod_client.dart';
 import 'package:vityo_daemon_protocol/vityo_daemon_protocol.dart';
 
 void main() {
+  for (final endOfStream in [false, true]) {
+    test(
+      'transport ${endOfStream ? 'EOF' : 'error'} settles pending work without replay',
+      () async {
+        final transport = _FaultingTransport();
+        final client = VityodClient(
+          transport: transport,
+          clientInstanceId: 'failure-settlement',
+        );
+        try {
+          await client.connect();
+          final pending = client.request(
+            method: 'workspace.read',
+            idempotencyKey: 'one-operation',
+          );
+          final failed = expectLater(pending, throwsStateError);
+          if (endOfStream) {
+            await transport.control.close();
+          } else {
+            transport.control.addError(StateError('peer failed'));
+          }
+          await failed;
+          expect(client.state.phase, VityodConnectionPhase.disconnected);
+          expect(
+            transport.delegate.sent
+                .map(VityodControlCodec.decode)
+                .where((r) => r.method == 'workspace.read'),
+            hasLength(1),
+          );
+          if (!endOfStream) {
+            await client.connect();
+            expect(client.state.canDispatch, isTrue);
+            expect(
+              transport.delegate.sent
+                  .map(VityodControlCodec.decode)
+                  .where((r) => r.method == 'workspace.read'),
+              hasLength(1),
+            );
+          }
+        } finally {
+          await client.dispose();
+        }
+      },
+    );
+  }
+
+  test(
+    'real socket EOF settles the pending handshake',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('vityo-eof-');
+      final endpoint = '${directory.path}/service.sock';
+      final server = await ServerSocket.bind(
+        InternetAddress(endpoint, type: InternetAddressType.unix),
+        0,
+      );
+      final client = VityodClient(
+        transport: SocketVityodTransport(endpointPath: endpoint),
+        clientInstanceId: 'socket-eof',
+      );
+      Socket? peer;
+      try {
+        final connected = server.first;
+        final failed = expectLater(client.connect(), throwsStateError);
+        peer = await connected;
+        await peer.first;
+        peer.destroy();
+        await failed;
+        expect(client.state.phase, VityodConnectionPhase.disconnected);
+      } finally {
+        peer?.destroy();
+        await client.dispose();
+        await server.close();
+        await directory.delete(recursive: true);
+      }
+    },
+    skip: !(Platform.isLinux || Platform.isMacOS)
+        ? 'Unix socket path; Windows named-pipe execution needs its platform owner.'
+        : false,
+  );
+
+  testWidgets(
+    'healthy daemon request has no implicit deadline and retains its response',
+    (tester) async {
+      final transport = MemoryVityodTransport();
+      final client = VityodClient(
+        transport: transport,
+        clientInstanceId: 'held-request',
+      );
+      try {
+        await client.connect();
+        var completed = false;
+        final pending = client
+            .request(method: 'workspace.read', idempotencyKey: 'held')
+            .then((value) {
+              completed = true;
+              return value;
+            });
+        await tester.pump(const Duration(minutes: 3));
+        expect(completed, isFalse);
+        final request = VityodControlCodec.decode(transport.sent.last);
+        expect(request.deadlineUnixMillis, 0);
+        transport.receiveControl(
+          VityodControlCodec.encode(
+            VityodControlEnvelope(
+              method: 'workspace.read.result',
+              requestId: request.requestId,
+              clientInstanceId: 'daemon',
+              idempotencyKey: request.idempotencyKey,
+              deadlineUnixMillis: 0,
+              params: const {'contents': 'completed'},
+            ),
+          ),
+        );
+        await tester.pump();
+        expect((await pending).params['contents'], 'completed');
+      } finally {
+        // Stream cleanup must complete outside WidgetTester's fake clock.
+        await tester.runAsync(client.dispose);
+      }
+    },
+  );
+
   test(
     'connect sends revisioned resume request and accepts ordered snapshot',
     () async {
@@ -296,4 +421,32 @@ void main() {
       await transport.dispose();
     },
   );
+}
+
+class _FaultingTransport implements VityodTransport {
+  _FaultingTransport() {
+    subscription = delegate.incomingControl.listen(control.add);
+  }
+  final delegate = MemoryVityodTransport();
+  final control = StreamController<Uint8List>.broadcast(sync: true);
+  late final StreamSubscription<Uint8List> subscription;
+  @override
+  Stream<Uint8List> get incomingControl => control.stream;
+  @override
+  Stream<VityodBinaryFrame> get incomingBinary => delegate.incomingBinary;
+  @override
+  Future<String> connect() => delegate.connect();
+  @override
+  Future<void> sendControl(Uint8List payload) => delegate.sendControl(payload);
+  @override
+  Future<void> sendBinary(VityodBinaryFrame frame) =>
+      delegate.sendBinary(frame);
+  @override
+  Future<void> close() => delegate.close();
+  @override
+  Future<void> dispose() async {
+    await subscription.cancel();
+    await delegate.dispose();
+    await control.close();
+  }
 }

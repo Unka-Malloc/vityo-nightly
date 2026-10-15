@@ -30,7 +30,11 @@ final class VityodClient {
   }) : _transport = transport,
        outbox = outbox ?? BufferDeltaOutbox(),
        _clock = clock ?? DateTime.now {
-    _controlSubscription = _transport.incomingControl.listen(_acceptControl);
+    _controlSubscription = _transport.incomingControl.listen(
+      _acceptControl,
+      onError: _transportFailed,
+      onDone: () => _transportFailed(StateError('vityod transport closed')),
+    );
   }
 
   final VityodTransport _transport;
@@ -110,7 +114,7 @@ final class VityodClient {
     int? workspaceRevision,
     Map<String, Object?> params = const <String, Object?>{},
     List<String> capabilities = const <String>[],
-    Duration deadline = const Duration(seconds: 30),
+    Duration? deadline,
   }) async {
     if (!_state.canDispatch) throw StateError('vityod client is not connected');
     final envelope = _createEnvelope(
@@ -132,7 +136,7 @@ final class VityodClient {
     int? workspaceRevision,
     Map<String, Object?> params = const <String, Object?>{},
     List<String> capabilities = const <String>[],
-    Duration deadline = const Duration(seconds: 30),
+    Duration? deadline,
   }) => _requestEnvelope(
     method: method,
     idempotencyKey: idempotencyKey,
@@ -151,7 +155,7 @@ final class VityodClient {
     required int? workspaceRevision,
     required Map<String, Object?> params,
     required List<String> capabilities,
-    required Duration deadline,
+    required Duration? deadline,
     required bool allowResync,
   }) async {
     if (!_state.canDispatch &&
@@ -171,9 +175,14 @@ final class VityodClient {
     final requestId = envelope.requestId!;
     final completer = Completer<VityodControlEnvelope>();
     _pendingRequests[requestId] = completer;
+    // A disconnect can arrive while sendControl is still flushing. Observe
+    // that failure immediately; the caller below still receives the error.
+    unawaited(completer.future.then<void>((_) {}, onError: (Object _) {}));
     try {
       await _transport.sendControl(VityodControlCodec.encode(envelope));
-      return await completer.future.timeout(deadline);
+      return await (deadline == null
+          ? completer.future
+          : completer.future.timeout(deadline));
     } finally {
       _pendingRequests.remove(requestId);
     }
@@ -212,12 +221,16 @@ final class VityodClient {
   }
 
   Future<void> close() async {
+    _transportFailed(StateError('vityod client disconnected'));
     await _transport.close();
+  }
+
+  void _transportFailed(Object error, [StackTrace? stackTrace]) {
     final pending = _pendingRequests.values.toList(growable: false);
     _pendingRequests.clear();
     for (final request in pending) {
       if (!request.isCompleted) {
-        request.completeError(StateError('vityod client disconnected'));
+        request.completeError(error, stackTrace);
       }
     }
     _setState(
@@ -269,7 +282,7 @@ final class VityodClient {
         workspaceRevision: null,
         params: const <String, Object?>{},
         capabilities: vityodCoreCapabilities,
-        deadline: const Duration(seconds: 30),
+        deadline: null,
         allowResync: true,
       );
       if (response.method != 'snapshot.get.result') {
@@ -367,7 +380,7 @@ final class VityodClient {
     required int? workspaceRevision,
     required Map<String, Object?> params,
     required List<String> capabilities,
-    required Duration deadline,
+    required Duration? deadline,
   }) {
     return VityodControlEnvelope(
       method: method,
@@ -376,7 +389,9 @@ final class VityodClient {
       idempotencyKey: idempotencyKey,
       workspaceId: workspaceId,
       workspaceRevision: workspaceRevision,
-      deadlineUnixMillis: _clock().add(deadline).millisecondsSinceEpoch,
+      deadlineUnixMillis: deadline == null
+          ? 0
+          : _clock().add(deadline).millisecondsSinceEpoch,
       params: params,
       capabilities: capabilities,
     );

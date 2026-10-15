@@ -16,8 +16,6 @@ final class VityodTestEndpoint {
   /// The daemon validates this prefix and the 256-character pipe limit.
   static const String _windowsPipePrefix = r'\\.\pipe\vityo-';
 
-  static const Duration _readinessDeadline = Duration(seconds: 15);
-
   bool get isSupported =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -55,16 +53,27 @@ final class VityodTestEndpoint {
     return '$_windowsPipePrefix$suffix';
   }
 
-  Future<void> waitUntilServing(String endpoint) async {
+  Future<void> waitUntilServing(
+    String endpoint, {
+    Future<int>? processExit,
+  }) async {
+    int? exited;
+    unawaited(
+      processExit?.then((code) {
+        exited = code;
+      }),
+    );
     if (Platform.isWindows) {
-      await _waitForNamedPipe(endpoint);
+      await _waitForNamedPipe(endpoint, () => exited);
       return;
     }
-    await _waitForUnixSocket(endpoint);
+    await _waitForUnixSocket(endpoint, () => exited);
   }
 
-  Future<void> _waitForUnixSocket(String endpoint) async {
-    final deadline = DateTime.now().add(_readinessDeadline);
+  Future<void> _waitForUnixSocket(
+    String endpoint,
+    int? Function() exited,
+  ) async {
     while (true) {
       try {
         final probe = await Socket.connect(
@@ -74,8 +83,10 @@ final class VityodTestEndpoint {
         probe.destroy();
         return;
       } on SocketException {
-        if (DateTime.now().isAfter(deadline)) {
-          throw TimeoutException('vityod test endpoint was not created');
+        if (exited() != null) {
+          throw StateError(
+            'vityod exited before creating its endpoint: ${exited()}',
+          );
         }
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
@@ -84,16 +95,20 @@ final class VityodTestEndpoint {
 
   /// A named pipe reports `ERROR_FILE_NOT_FOUND` before the daemon creates it,
   /// so readiness is probed by opening and immediately closing a connection.
-  Future<void> _waitForNamedPipe(String endpoint) async {
-    final deadline = DateTime.now().add(_readinessDeadline);
+  Future<void> _waitForNamedPipe(
+    String endpoint,
+    int? Function() exited,
+  ) async {
     while (true) {
       try {
         final probe = await WindowsNamedPipeConnection.connect(endpoint);
         await probe.close();
         return;
       } on WindowsNamedPipeUnavailable {
-        if (DateTime.now().isAfter(deadline)) {
-          throw TimeoutException('vityod test endpoint was not created');
+        if (exited() != null) {
+          throw StateError(
+            'vityod exited before creating its endpoint: ${exited()}',
+          );
         }
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,9 @@ def parse_lcov(path: Path) -> LineCoverage:
 
 
 def run_command(command: list[str], *, cwd: Path) -> int:
+    if __name__ == "__main__" and os.environ.get("VITYO_CHECK_LOG_DIR"):
+        from vityo_check_log import run_logged
+        return run_logged(command, cwd=cwd)
     return subprocess.run(command, cwd=cwd, check=False).returncode
 
 

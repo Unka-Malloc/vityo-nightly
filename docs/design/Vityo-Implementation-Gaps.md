@@ -2,7 +2,7 @@
 
 **Purpose:** Track current implementation and integration facts that ground the two delivery tracks for one Vityo product without duplicating their workflow state.
 
-**Last updated:** 2026-10-05
+**Last updated:** 2026-10-12
 
 **Latest audit run:** 2026-06-25 02:00–02:30 UTC
 
@@ -35,6 +35,13 @@ Status values:
 |---|---|---|---|
 | Retire IDE direct model-provider/controller ownership | Closed | Vityo IDE + Coding Agent runtime | Vityo IDE no longer owns model/provider transport, prompt profiles, coding-loop orchestration, tool-loop policy, or durable Agent session controllers. Collaboration goes exclusively through the versioned Agent Client (`lib/src/ide/agent_client`), immutable Workbench projections (`lib/src/ide/workbench/agent_collaboration`), and presentation Workbench UI (`lib/src/presentation/agent_workbench`). Model/provider and durable Agent ownership remain in compatible Agent runtimes. IDE retains revisioned context export, permission presentation, change review, and workspace transactions. |
 | Agent Workbench product closure | Partially implemented | Vityo | Prove a task loop with plan visibility, explicit permission decisions, revision-bound change preview, IDE-owned apply/rollback, and verification receipts through the shared Agent protocol. The IDE must also prove `edit -> analyze -> test -> run -> observe` with no Agent connected. |
+
+## Task-resource Consumer Evidence Boundary
+
+| Gap | Status | Owner | Required closure |
+|---|---|---|---|
+| Accepted task-resource source produces editor syntax errors | Repaired; scoped integration verified | Styio, coordinated with Vityo | The coordinator accepted the U3 CLI/LSP correction. The independent Vityo document selection now passes good/error/repaired and stale-revision assertions through the production daemon path. Historical failure evidence remains under `build/task-resource-repair/`; current targeted evidence is `build/task-resource-review/document-controller.json`. The complete host matrix remains separate. |
+| Complete production task-resource matrix | Scoped engineering evidence accepted | Vityo independent Reviewer + coordinator join | Coordinator accepted registered integration `d5deb633e4fe8f39e9bad2a56c7ea1de`: all 35 required real cases and four boundaries, process exit 0. The independent closing review reconciles local regression, explicit skips and subsequent input changes in [HANDOFF](../plans/task-resource-delivery/HANDOFF.md). This does not establish other-platform, release or live acceptance; joint delivery remains coordinator-owned. |
 
 ## 1.2 Closed Since The Previous Register Update
 

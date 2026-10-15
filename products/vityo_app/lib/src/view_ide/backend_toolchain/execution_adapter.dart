@@ -20,6 +20,9 @@ class ExecutionReceiptSnapshot {
     required this.executed,
     this.phases = const <String>[],
     this.artifacts = const <String>[],
+    this.runtimeEventsPath,
+    this.observableDelta,
+    this.observableReason,
   });
 
   final int schemaVersion;
@@ -28,6 +31,9 @@ class ExecutionReceiptSnapshot {
   final bool executed;
   final List<String> phases;
   final List<String> artifacts;
+  final String? runtimeEventsPath;
+  final String? observableDelta;
+  final String? observableReason;
 
   static ExecutionReceiptSnapshot? decode(
     Object? payload, {
@@ -54,6 +60,12 @@ class ExecutionReceiptSnapshot {
               .where((item) => item.isNotEmpty)
               .toList(growable: false)
         : const <String>[];
+    String? nestedString(String section, String key) {
+      final object = payload[section];
+      final value = object is Map ? object[key] : null;
+      return value is String ? value : null;
+    }
+
     return ExecutionReceiptSnapshot(
       schemaVersion: 1,
       intent: intentValue.trim(),
@@ -63,6 +75,9 @@ class ExecutionReceiptSnapshot {
       executed: executedValue,
       phases: strings(payload['phases']),
       artifacts: strings(payload['artifacts']),
+      runtimeEventsPath: nestedString('outputs', 'runtime_events_path'),
+      observableDelta: nestedString('observable_static_snapshot', 'delta'),
+      observableReason: nestedString('observable_static_snapshot', 'reason'),
     );
   }
 

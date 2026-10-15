@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../view_ide/flow_hero/flow_hero.dart';
+import '../../ide/workspace/workspace_document_store.dart';
 import '../../view_ide/language/contract/language_contract.dart' as lang;
 import 'agent_bridge.dart';
 import 'engine/machine.dart';
@@ -150,10 +151,17 @@ class _FlowHeroRouteIdentity extends FlowHeroExecutionOrigin {
 }
 
 class _FlowHeroActiveExecution {
-  const _FlowHeroActiveExecution({required this.source, required this.origin});
+  const _FlowHeroActiveExecution({
+    required this.source,
+    required this.origin,
+    required this.document,
+    required this.revision,
+  });
 
   final FlowHeroExecutionSource source;
   final FlowHeroExecutionOrigin origin;
+  final BufferFile document;
+  final int revision;
 }
 
 /// One real source line shown by the dock, numbered from the active buffer.
@@ -180,6 +188,7 @@ class FlowHeroController extends ChangeNotifier {
     FlowHeroToolchainStore? toolchainStore,
     FlowHeroExecutionBoot? executionBoot,
     FlowHeroLanguageBoot? languageBoot,
+    Future<WorkspaceDocumentOperationStore?> Function(String)? documentBoot,
     FlowHeroToolchainProbe? toolchainProbe,
     this.localServices,
   }) : _workspaceFileIndexFactory =
@@ -197,6 +206,8 @@ class FlowHeroController extends ChangeNotifier {
     _toolchainStore = toolchainStore;
     _executionBoot = executionBoot;
     _languageBoot = languageBoot;
+    _documentBoot = documentBoot;
+    bridge.ownsDocumentBinding = documentBoot == null;
     _toolchainProbe = toolchainProbe;
     _workspaceStore = workspaceStore;
     _workspacePicker = workspacePicker ?? pickFlowHeroWorkspaceDirectory;
@@ -273,6 +284,9 @@ class FlowHeroController extends ChangeNotifier {
     }
     return runtime.statusLine;
   }
+
+  FlowHeroLanguageSession? get languageSession =>
+      _languageRoute == _desiredRoute ? _languageRuntime : null;
 
   String? get languageProviderVersion => _languageRoute == _desiredRoute
       ? _languageRuntime?.providerVersion
@@ -378,8 +392,18 @@ class FlowHeroController extends ChangeNotifier {
     notifyListeners();
   }
 
+  _FlowHeroActiveExecution? _completedExecution;
+
   void _onEngineChanged() {
     if (_disposed) return;
+    final completed = _completedExecution;
+    if (completed != null &&
+        (!identical(completed.document, engine.activeFile) ||
+            completed.revision != engine.activeFile.sourceRevision)) {
+      _completedExecution = null;
+      lastExecutionOutcome = null;
+      if (!executionBusy) executionPhase = FlowHeroExecutionPhase.idle;
+    }
     _syncDemoMode();
     final String signature = _signature();
     if (signature != _projectionSignature) {
@@ -726,6 +750,8 @@ class FlowHeroController extends ChangeNotifier {
     final _FlowHeroActiveExecution active = _FlowHeroActiveExecution(
       source: source,
       origin: origin,
+      document: engine.activeFile,
+      revision: engine.activeFile.sourceRevision,
     );
     _activeExecution = active;
     executionPhase = FlowHeroExecutionPhase.pending;
@@ -747,9 +773,15 @@ class FlowHeroController extends ChangeNotifier {
       );
       if (_disposed) return;
       if (identical(_activeExecution, active) &&
-          active.origin == _desiredRoute) {
+          active.origin == _desiredRoute &&
+          identical(active.document, engine.activeFile) &&
+          active.revision == engine.activeFile.sourceRevision) {
+        _completedExecution = active;
         lastExecutionOutcome = outcome;
         executionPhase = outcome.phase;
+      }
+      if (lastExecutionOutcome == null && active.origin == _desiredRoute) {
+        executionPhase = FlowHeroExecutionPhase.idle;
       }
       // The receipt remains attached to the route that produced it, including
       // when that route is no longer the current workspace.
@@ -798,6 +830,7 @@ class FlowHeroController extends ChangeNotifier {
   FlowHeroToolchainStore? _toolchainStore;
   FlowHeroExecutionBoot? _executionBoot;
   FlowHeroLanguageBoot? _languageBoot;
+  Future<WorkspaceDocumentOperationStore?> Function(String)? _documentBoot;
   FlowHeroToolchainProbe? _toolchainProbe;
   FlowHeroToolchainSelection _toolchainSelection =
       const FlowHeroToolchainSelection();
@@ -941,6 +974,7 @@ class FlowHeroController extends ChangeNotifier {
     _languageRuntime = null;
     _languageRoute = null;
     engine.attachLanguageService(null);
+    if (_documentBoot != null) engine.detachWorkspaceDocumentStore();
     if (language != null) unawaited(language.dispose());
 
     executionPhase = FlowHeroExecutionPhase.idle;
@@ -963,8 +997,13 @@ class FlowHeroController extends ChangeNotifier {
 
     final Future<void> execution = _bootExecutionFor(identity, generation);
     final Future<void> language = _bootLanguageFor(identity, generation);
+    final Future<void> documents = _bootDocumentsFor(identity, generation);
     final Future<void> activation =
-        Future.wait<void>(<Future<void>>[execution, language]).then<void>((_) {
+        Future.wait<void>(<Future<void>>[
+          execution,
+          language,
+          documents,
+        ]).then<void>((_) {
           if (!_disposed && generation == _routeGeneration) {
             _routeActivationFuture = null;
             notifyListeners();
@@ -972,6 +1011,21 @@ class FlowHeroController extends ChangeNotifier {
         });
     _routeActivationFuture = activation;
     return activation;
+  }
+
+  Future<void> _bootDocumentsFor(
+    _FlowHeroRouteIdentity identity,
+    int generation,
+  ) async {
+    final boot = _documentBoot;
+    if (boot == null || identity.workspaceRoot.isEmpty) return;
+    final store = await boot(identity.workspaceRoot);
+    if (_disposed ||
+        generation != _routeGeneration ||
+        identity != _desiredRoute) {
+      return;
+    }
+    if (store != null) await engine.attachWorkspaceDocumentStore(store);
   }
 
   Future<void> _bootExecutionFor(

@@ -33,7 +33,7 @@ void main() {
       final redactor = LogRedactor();
       final redacted = redactor.redact(
         'Authorization: Bearer bearer-token-123456\n'
-        'OPENAI_API_KEY=sk-proj-secretvalue123456\n'
+        'OPENAI_API_KEY=vityo-redaction-fixture-0001\n'
         'https://example.test/callback?token=query-token-123&safe=1\n'
         'email ada@example.com\n'
         'path /home/alice/project/.env\n'
@@ -49,7 +49,7 @@ void main() {
       expect(redacted, contains('<redacted-path>'));
       expect(redacted, contains('<redacted-session-id>'));
       expect(redacted, isNot(contains('bearer-token-123456')));
-      expect(redacted, isNot(contains('sk-proj-secretvalue123456')));
+      expect(redacted, isNot(contains('vityo-redaction-fixture-0001')));
       expect(redacted, isNot(contains('query-token-123')));
       expect(redacted, isNot(contains('ada@example.com')));
       expect(redacted, isNot(contains('/home/alice')));

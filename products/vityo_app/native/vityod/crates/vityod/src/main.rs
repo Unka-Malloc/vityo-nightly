@@ -287,7 +287,9 @@ fn handle_connection<Connection: Read + Write>(
         let request = ControlEnvelope::decode(&payload).map_err(|error| format!("{error:?}"))?;
         let response = if !negotiated && request.method != "handshake.negotiate" {
             error_response(request, "handshake_required", false, 0)
-        } else if request.deadline_unix_millis < unix_time_millis() {
+        } else if request.deadline_unix_millis != 0
+            && request.deadline_unix_millis < unix_time_millis()
+        {
             error_response(request, "deadline_exceeded", false, 0)
         } else if request.method == "handshake.negotiate" {
             let unsupported = required_capabilities(&request)
@@ -4380,7 +4382,8 @@ mod tests {
             idempotency_key: format!("key-{sequence}"),
             workspace_id: None,
             workspace_revision: None,
-            deadline_unix_millis: u64::MAX,
+            // Zero explicitly means no implicit work deadline.
+            deadline_unix_millis: 0,
             cancellation_id: cancellation_id.map(str::to_owned),
             params: params.as_object().unwrap().clone().into_iter().collect(),
             capabilities: vec![],

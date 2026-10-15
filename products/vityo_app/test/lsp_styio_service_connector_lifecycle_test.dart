@@ -56,6 +56,62 @@ LspStyioServiceConnector _connector(
 }
 
 void main() {
+  test(
+    'delayed save cannot replace a newer synchronized document revision',
+    () async {
+      final server = LspTestServer();
+      _installEmptyHandshake(server);
+      final connector = _connector((_) async => server.transport);
+      await connector.didSave(_document(text: 'current', revision: 3));
+      await connector.didSave(
+        _document(text: 'earlier saved text', revision: 2),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final opened =
+          server.requestsFor('textDocument/didOpen').single['params'] as Map;
+      expect((opened['textDocument'] as Map)['version'], 3);
+      expect(server.requestsFor('textDocument/didChange'), isEmpty);
+      final saved = server.requestsFor('textDocument/didSave');
+      expect(saved, hasLength(2));
+      expect((saved.last['params'] as Map)['text'], 'earlier saved text');
+      await connector.close();
+      await server.dispose();
+    },
+  );
+
+  test(
+    'analysis consumes the merged diagnostics published during foreground requests',
+    () async {
+      final server = LspTestServer();
+      server.handler = (message) {
+        switch (message['method']) {
+          case 'initialize':
+            server.respond(message['id'], {
+              'capabilities': {'documentSymbolProvider': true},
+            });
+          case 'textDocument/didOpen':
+            server.notify('textDocument/publishDiagnostics', {
+              'uri': _documentUri,
+              'version': 1,
+              'diagnostics': [_diagnostic('syntax-stage')],
+            });
+          case 'textDocument/documentSymbol':
+            server.notify('textDocument/publishDiagnostics', {
+              'uri': _documentUri,
+              'version': 1,
+              'diagnostics': [_diagnostic('semantic-stage')],
+            });
+            server.respond(message['id'], []);
+        }
+      };
+      final connector = _connector((_) async => server.transport);
+      final result = await connector.analyzeDocument(_document());
+      expect(result.diagnostics.single.message, 'semantic-stage');
+      await connector.close();
+      await server.dispose();
+    },
+  );
+
   test('same-root session startup is shared and idempotent', () async {
     final server = LspTestServer();
     final transport = _CountingTransport(server.transport);

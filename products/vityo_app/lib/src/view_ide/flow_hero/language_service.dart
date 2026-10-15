@@ -59,6 +59,13 @@ class FlowHeroLanguageResult {
 ///
 /// The engine discovers this capability on the service instance it receives;
 /// a plain [lang.StyioLanguageService] without it is used synchronously.
+abstract interface class FlowHeroDocumentSaveListener {
+  Future<void> documentSaved(
+    DocumentState document, {
+    required String filePath,
+  });
+}
+
 abstract class FlowHeroAsyncLanguageSource {
   /// True while a real daemon session backs the service.
   bool get live;
@@ -94,7 +101,8 @@ abstract interface class FlowHeroLanguageSession
 
 /// Boots the minimal language stack and, while live, doubles as the routed
 /// [lang.StyioLanguageService] the engine holds.
-class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
+class FlowHeroLanguageRuntime
+    implements FlowHeroLanguageSession, FlowHeroDocumentSaveListener {
   FlowHeroLanguageRuntime._({
     required FlowHeroLanguageMode mode,
     required String statusLine,
@@ -238,7 +246,8 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
   lang.StyioLanguageService? _service;
   lang.StyioServiceAnalysisDriver? _driver;
   lang.LspStyioServiceConnector? _connector;
-  final Map<String, int> _revisions = <String, int>{};
+  final Map<String, DocumentState> _analysisDocuments =
+      <String, DocumentState>{};
   Object? _probeOwner;
   bool _disposed = false;
 
@@ -271,6 +280,8 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
   /// The routed service handed to the engine, or null when not live.
   lang.StyioLanguageService? get service => _service;
 
+  String? get executablePath => _connector?.executablePath;
+
   /// Runs one analysis pass against the live daemon.
   ///
   /// The driver writes the report to the shared cache, so a follow-up
@@ -288,7 +299,10 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
     if (path.isEmpty) {
       return null;
     }
-    final revision = nextRevision(path);
+    final previous = _analysisDocuments[path];
+    if (previous != null && previous.revision > document.revision) return null;
+    _analysisDocuments[path] = document;
+    final revision = document.revision;
     final request = DocumentState(
       documentId: path,
       text: document.text,
@@ -300,6 +314,12 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
         filePath: path,
         workingDirectory: workspaceRoot,
       );
+      final current = _analysisDocuments[path];
+      if (_disposed ||
+          current?.revision != document.revision ||
+          current?.text != document.text) {
+        return null;
+      }
       final response = report.response;
       final authoritative =
           report.usedFreshStyioServiceResponse &&
@@ -325,11 +345,21 @@ class FlowHeroLanguageRuntime implements FlowHeroLanguageSession {
     }
   }
 
-  /// Next monotonic revision for [path], so the daemon never sees a rewind.
-  int nextRevision(String path) {
-    final next = (_revisions[path] ?? 0) + 1;
-    _revisions[path] = next;
-    return next;
+  @override
+  Future<void> documentSaved(
+    DocumentState document, {
+    required String filePath,
+  }) async {
+    if (!live) return;
+    await _connector?.didSave(
+      lang.StyioServiceDocument(
+        documentId: filePath,
+        filePath: filePath,
+        text: document.text,
+        revision: document.revision,
+        workingDirectory: workspaceRoot,
+      ),
+    );
   }
 
   @override
@@ -497,22 +527,12 @@ Future<lang.LspByteTransport> _connectSharedLspTransport({
   required String executablePath,
   required String workingDirectory,
 }) async {
-  try {
-    final session = await VityodLspGateway(
-      client: client,
-    ).start(executable: executablePath, workingDirectory: workingDirectory);
-    return _SharedVityodLspTransport(
-      inner: lang.VityodLspTransport(session: session),
-    );
-  } on Object {
-    // The shared client could not open the session; a direct child process is
-    // the honest fallback and must not open a second daemon connection.
-    return lang.createPlatformStyioLspTransport(
-      executablePath: executablePath,
-      workingDirectory: workingDirectory,
-      preferVityod: false,
-    );
-  }
+  final session = await VityodLspGateway(
+    client: client,
+  ).start(executable: executablePath, workingDirectory: workingDirectory);
+  return _SharedVityodLspTransport(
+    inner: lang.VityodLspTransport(session: session),
+  );
 }
 
 /// An LSP transport over a vityod session on a *borrowed* client: closing the

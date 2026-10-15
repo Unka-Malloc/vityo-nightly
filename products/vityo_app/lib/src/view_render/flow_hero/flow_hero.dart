@@ -82,6 +82,36 @@ class FlowHeroApp extends StatefulWidget {
   /// Overrides language boot supplied by the feature runtime.
   final FlowHeroLanguageBoot? languageBoot;
 
+  /// The production composition used by the mounted app and headless
+  /// engineering checks. Service ownership is identical in both entrypoints.
+  FlowHeroController createController({String? workspaceRoot}) {
+    return FlowHeroController(
+      localServices: runtime?.localServices,
+      executionSource: executionSource,
+      themeStore: themeStore ?? runtime?.themeStore,
+      workspaceFileIndex: workspaceFileIndex,
+      workspaceFileIndexFactory: runtime?.createWorkspaceFileIndex,
+      workspaceStore: workspaceStore ?? runtime?.workspaceStore,
+      workspacePicker: workspacePicker,
+      initialWorkspaceRoot: workspaceRoot ?? AgentBridge.workspaceDir.trim(),
+      initialToolchainSelection: initialToolchainSelection,
+      modelConfigStore: modelConfigStore ?? runtime?.modelConfigStore,
+      providerConfigWriter:
+          providerConfigWriter ?? runtime?.providerConfigWriter,
+      agentSecretStore: agentSecretStore ?? runtime?.agentSecretStore,
+      toolchainStore: toolchainStore ?? runtime?.toolchainStore,
+      toolchainProbe: runtime?.probeToolchain,
+      // The controller owns the execution boot so it can re-probe after the
+      // user changes workspace or saves a binary. An injected source keeps
+      // its host-owned route.
+      executionBoot: executionSource != null
+          ? executionBoot
+          : (executionBoot ?? runtime?.bootExecution),
+      languageBoot: languageBoot ?? runtime?.bootLanguage,
+      documentBoot: runtime?.bootDocuments,
+    );
+  }
+
   @override
   State<FlowHeroApp> createState() => _FlowHeroAppState();
 }
@@ -99,30 +129,7 @@ class _FlowHeroAppState extends State<FlowHeroApp> {
     super.initState();
     runtime = widget.runtime;
     _themeStore = widget.themeStore ?? runtime?.themeStore;
-    controller = FlowHeroController(
-      localServices: runtime?.localServices,
-      executionSource: widget.executionSource,
-      themeStore: _themeStore,
-      workspaceFileIndex: widget.workspaceFileIndex,
-      workspaceFileIndexFactory: runtime?.createWorkspaceFileIndex,
-      workspaceStore: widget.workspaceStore ?? runtime?.workspaceStore,
-      workspacePicker: widget.workspacePicker,
-      initialWorkspaceRoot: AgentBridge.workspaceDir.trim(),
-      initialToolchainSelection: widget.initialToolchainSelection,
-      modelConfigStore: widget.modelConfigStore ?? runtime?.modelConfigStore,
-      providerConfigWriter:
-          widget.providerConfigWriter ?? runtime?.providerConfigWriter,
-      agentSecretStore: widget.agentSecretStore ?? runtime?.agentSecretStore,
-      toolchainStore: widget.toolchainStore ?? runtime?.toolchainStore,
-      toolchainProbe: runtime?.probeToolchain,
-      // The controller owns the execution boot so it can re-probe after the
-      // user changes workspace or saves a binary. An injected source keeps
-      // its host-owned route.
-      executionBoot: widget.executionSource != null
-          ? widget.executionBoot
-          : (widget.executionBoot ?? runtime?.bootExecution),
-      languageBoot: widget.languageBoot ?? runtime?.bootLanguage,
-    );
+    controller = widget.createController();
     unawaited(_restoreTheme());
   }
 

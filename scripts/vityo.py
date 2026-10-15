@@ -112,6 +112,8 @@ class DeliveryOptions:
     flutter_dir: Path = FLUTTER_DIR
     styio_bin: str | None = None
     pafio_bin: str | None = None
+    lspd_bin: str | None = None
+    vityod_bin: str | None = None
     output_dir: Path = Path("build/nightly")
     evidence_dir: Path = Path("build/evidence")
     artifact: Path | None = None
@@ -244,6 +246,9 @@ def run_command(
     cwd: Path = ROOT,
     environment: dict[str, str] | None = None,
 ) -> int:
+    if __name__ == "__main__" and os.environ.get("VITYO_CHECK_LOG_DIR"):
+        from vityo_check_log import run_logged
+        return run_logged(argv, cwd=cwd, environment=environment)
     return subprocess.run(
         list(argv),
         cwd=cwd,
@@ -492,12 +497,15 @@ def _project_coverage_command(options: DeliveryOptions, *, collect_only: bool) -
     return _python(*args)
 
 
-def _run_language_fixture_gate(options: DeliveryOptions) -> int:
-    try:
-        styio = resolve_pinned_cli("styio", options.styio_bin)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        print(f"[vityo] language fixture stage: {error}", file=sys.stderr)
-        return 2
+def _run_language_fixture_gate(
+    options: DeliveryOptions, *, styio: Path | None = None, runner: Runner | None = None
+) -> int:
+    if styio is None:
+        try:
+            styio = resolve_pinned_cli("styio", options.styio_bin)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(f"[vityo] language fixture stage: {error}", file=sys.stderr)
+            return 2
     command = [
         "dart",
         "run",
@@ -509,7 +517,7 @@ def _run_language_fixture_gate(options: DeliveryOptions) -> int:
         "--root",
         "test/fixtures/styio_language/syntax_contract",
     ]
-    return run_command(command, ROOT / options.flutter_dir)
+    return (runner or run_command)(command, ROOT / options.flutter_dir, None)
 
 
 def _run_quality_suite(product: str, suite: str, *, receipt: str | None = None) -> int:
@@ -536,6 +544,10 @@ def _run_product_acceptance(
         str(styio),
         "--pafio-bin",
         str(pafio),
+        "--lspd-bin",
+        options.lspd_bin or str(styio.with_name("styio_lspd.exe" if options.platform == "windows" else "styio_lspd")),
+        "--vityod-bin",
+        options.vityod_bin or str(ROOT / options.flutter_dir / "native/vityod/target/debug" / ("vityod.exe" if options.platform == "windows" else "vityod")),
         "--output",
         str(evidence),
         "--require-real-matrix",
@@ -624,11 +636,37 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"[vityo] test stage: {error}", file=sys.stderr)
         return 2
+    return _run_resolved_test_stage(options, styio, runner=runner)
+
+
+RUST_COVERAGE_TOOLS_STEP = "prepare pinned Rust coverage tools"
+
+
+def _drop_completed(commands: list[Command], completed: frozenset[str]) -> list[Command]:
+    """Remove steps whose retained exit-0 evidence the caller verified."""
+    remaining = []
+    for command in commands:
+        if command.label in completed:
+            print(f"[vityo] retained passing step: {command.label}", flush=True)
+        else:
+            remaining.append(command)
+    return remaining
+
+
+def _run_resolved_test_stage(
+    options: DeliveryOptions, styio: Path, *, runner: Runner = run_command,
+    completed_steps: Iterable[str] = (),
+) -> int:
+    """Run the existing test stage after its caller has admitted the compiler."""
+    completed = frozenset(completed_steps)
+    platform = options.platform or host_platform()
     flutter_state = capture_flutter_state(ROOT / options.flutter_dir)
 
     if not require_rust_toolchain():
         return 2
-    if not ensure_rust_coverage_tools(runner=runner):
+    if RUST_COVERAGE_TOOLS_STEP in completed:
+        print(f"[vityo] retained passing step: {RUST_COVERAGE_TOOLS_STEP}", flush=True)
+    elif not ensure_rust_coverage_tools(runner=runner):
         return 2
 
     flutter = shutil.which("flutter")
@@ -674,10 +712,11 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
                 tuple(_python("scripts/vityo_quality.py", "--product", "ide", "--suite", suite)),
             )
         )
+    commands = _drop_completed(commands, completed)
     code = run_commands(commands, runner=runner)
     if code != 0:
         return code
-    code = _run_language_fixture_gate(options)
+    code = _run_language_fixture_gate(options, styio=styio, runner=runner)
     if code != 0:
         return code
 
@@ -709,6 +748,7 @@ def run_test_stage(options: DeliveryOptions, *, runner: Runner = run_command) ->
                 )
             )
 
+    commands = _drop_completed(commands, completed)
     code = run_commands(commands, runner=runner)
     if code != 0:
         return code
@@ -1131,6 +1171,8 @@ def _add_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--flutter-dir", type=Path, default=FLUTTER_DIR)
     parser.add_argument("--styio-bin")
     parser.add_argument("--pafio-bin")
+    parser.add_argument("--lspd-bin")
+    parser.add_argument("--vityod-bin")
     parser.add_argument("--output-dir", type=Path, default=Path("build/nightly"))
     parser.add_argument("--evidence-dir", type=Path, default=Path("build/evidence"))
     parser.add_argument("--artifact", type=Path)
@@ -1147,6 +1189,8 @@ def options_from_args(args: argparse.Namespace) -> DeliveryOptions:
         flutter_dir=args.flutter_dir,
         styio_bin=args.styio_bin,
         pafio_bin=args.pafio_bin,
+        lspd_bin=args.lspd_bin,
+        vityod_bin=args.vityod_bin,
         output_dir=args.output_dir,
         evidence_dir=args.evidence_dir,
         artifact=args.artifact,

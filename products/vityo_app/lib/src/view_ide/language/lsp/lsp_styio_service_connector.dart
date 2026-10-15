@@ -625,8 +625,8 @@ class LspStyioServiceConnector implements StyioServiceConnector {
     this.toolchainId = 'local-styio-lsp-daemon',
     this.protocolVersion = 'styio-lsp-3.17',
     this.mapper = const LspStyioServiceResponseMapper(),
-    this.diagnosticsTimeout = const Duration(seconds: 3),
-    this.requestTimeout = const Duration(seconds: 15),
+    this.diagnosticsTimeout,
+    this.requestTimeout,
   });
 
   final String executablePath;
@@ -634,8 +634,8 @@ class LspStyioServiceConnector implements StyioServiceConnector {
   final String toolchainId;
   final String protocolVersion;
   final LspStyioServiceResponseMapper mapper;
-  final Duration diagnosticsTimeout;
-  final Duration requestTimeout;
+  final Duration? diagnosticsTimeout;
+  final Duration? requestTimeout;
 
   StyioLspClient? _client;
   _LspClientStartup? _clientStartup;
@@ -739,7 +739,7 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         );
       }
       final capabilities = client.capabilities;
-      final revisionDiagnostics = await _syncAndAwaitDiagnostics(
+      var revisionDiagnostics = await _syncAndAwaitDiagnostics(
         client,
         uri,
         filePath: filePath,
@@ -747,20 +747,12 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         revision: document.revision,
         languageId: document.languageId,
       );
-      final diagnostics = revisionDiagnostics?.diagnostics ?? const <Object?>[];
 
       Object? semanticTokens;
       Object? symbols;
       Object? hints;
       final capabilityStates = <String, String>{'analysis': 'available'};
       final capabilityMessages = <String, String>{};
-      capabilityStates[StyioServiceCapability.diagnostics.wireValue] =
-          revisionDiagnostics == null ? 'unavailable' : 'available';
-      if (revisionDiagnostics == null) {
-        capabilityMessages[StyioServiceCapability.diagnostics.wireValue] =
-            'styio_lspd did not publish diagnostics tagged with the exact '
-            'open-document version for this revision.';
-      }
 
       if (capabilities?.semanticTokensProvider == true) {
         try {
@@ -827,8 +819,26 @@ class LspStyioServiceConnector implements StyioServiceConnector {
         );
       }
 
+      // The server publishes syntax first and drains merged semantic facts
+      // after foreground requests. Consume the latest matching publication,
+      // not the first notification captured before those requests completed.
+      final currentDocument = _openDocuments[uri];
+      final latest = _latestDiagnostics[uri];
+      if (currentDocument != null &&
+          latest != null &&
+          latest.belongsTo(currentDocument)) {
+        revisionDiagnostics = latest;
+      }
+      capabilityStates[StyioServiceCapability.diagnostics.wireValue] =
+          revisionDiagnostics == null ? 'unavailable' : 'available';
+      if (revisionDiagnostics == null) {
+        capabilityMessages[StyioServiceCapability.diagnostics.wireValue] =
+            'styio_lspd did not publish diagnostics tagged with the exact '
+            'open-document version for this revision.';
+      }
+
       final mappedDiagnostics = mapper.diagnosticsFrom(
-        diagnostics,
+        revisionDiagnostics?.diagnostics ?? const <Object?>[],
         document.text,
       );
       final mappedSymbols = symbols == null
@@ -1092,15 +1102,38 @@ class LspStyioServiceConnector implements StyioServiceConnector {
       if (cached != null && cached.belongsTo(document)) {
         return cached;
       }
-      return await waiter.completer.future.timeout(
-        diagnosticsTimeout,
-        onTimeout: () => null,
-      );
+      final timeout = diagnosticsTimeout;
+      return await (timeout == null
+          ? waiter.completer.future
+          : waiter.completer.future.timeout(timeout, onTimeout: () => null));
     } finally {
       if (identical(_diagnosticWaiters[uri], waiter)) {
         _diagnosticWaiters.remove(uri);
       }
     }
+  }
+
+  /// Synchronizes the saved revision before notifying the existing server.
+  Future<void> didSave(StyioServiceDocument document) async {
+    final path = document.filePath;
+    if (path == null) return;
+    final uri = _fileUri(path);
+    await _serializeDocument(uri, () async {
+      final client = await _ensureClient(document.workingDirectory, path);
+      if (client == null) return;
+      final current = _openDocuments[uri];
+      if (current == null || current.sourceRevision <= document.revision) {
+        await _syncDocument(
+          client,
+          uri,
+          filePath: path,
+          text: document.text,
+          revision: document.revision,
+          languageId: document.languageId,
+        );
+      }
+      await client.didSave(uri: uri, text: document.text);
+    });
   }
 
   Future<_OpenLspDocument> _syncDocument(

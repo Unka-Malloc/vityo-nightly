@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib.util
-import hashlib
 import tempfile
 import sys
 import io
@@ -11,6 +10,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
+from test_ecosystem_product_gate import passing_gate_report
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,93 +32,7 @@ def load_module():
 class ProductMatrixEvidenceTest(unittest.TestCase):
     @staticmethod
     def gate_report(platform: str = "windows") -> dict[str, object]:
-        source = hashlib.sha256(b'>_("vityo-observed-r1")\n').hexdigest()
-        sessions = ("c" * 64, "d" * 64, "e" * 64)
-
-        def step(name: str) -> dict[str, object]:
-            return {
-                "name": name,
-                "status": "succeeded",
-                "workspace_revision": 1,
-                "source_sha256": source,
-            }
-
-        scenario = {
-            "schema_version": 1,
-            "scenario": "trusted-desktop-styio-loop",
-            "evidence_kind": "real-pinned-matrix",
-            "ok": True,
-            "workspace_revision": 1,
-            "source_sha256": source,
-            "preflight": {
-                "metadata_contract": "metadata-v1",
-                "sync_status": "succeeded",
-                "compiler_tool": "styio",
-                "compile_plan_contract": 1,
-                "runtime_events_contract": 1,
-                "runtime_event_stream": True,
-                "package": "vityo/product-gate",
-                "bin_target": "product-gate",
-                "test_target": "product-gate-test",
-            },
-            "steps": [
-                step("edit"),
-                {**step("check"), "owner_contract": "pafio-current+styio-files-v1", "session_id_sha256": sessions[0]},
-                {**step("test"), "owner_contract": "pafio-current+styio-files-v1", "session_id_sha256": sessions[1]},
-                {**step("run"), "owner_contract": "pafio-current+styio-files-v1", "session_id_sha256": sessions[2]},
-                {
-                    **step("observe"),
-                    "session_id_sha256": sessions[2],
-                    "eventKind": "log.emitted",
-                    "observation_sha256": hashlib.sha256(
-                        b"vityo-observed-r1"
-                    ).hexdigest(),
-                },
-            ],
-        }
-        contracts = [
-            {
-                "schema_version": 1,
-                "scenario": "trusted-desktop-styio-loop",
-                "evidence_kind": "deterministic-contract",
-                "case": case,
-                "accepted": True,
-                "outcome": outcome,
-                "error_category": category,
-                "success_observation": False,
-            }
-            for case, outcome, category in (
-                ("missing-styio", "blocked", "styio_missing"),
-                (
-                    "incompatible-machine-contract",
-                    "blocked",
-                    "styio_machine_contract_incompatible",
-                ),
-                ("compiler-execution-failure", "failed", "compiler_execution_failed"),
-            )
-        ]
-        return {
-            "schema_version": 1,
-            "gate": "vityo-desktop-product-gate",
-            "platform": platform,
-            "capability": "trusted-desktop-ide-loop",
-            "evidence_kind": "real-pinned-matrix",
-            "ok": True,
-            "required": True,
-            "skipped": False,
-            "failure_category": None,
-            "steps": [
-                {"name": "product-process", "ok": True},
-                {"name": "real-scenario", "ok": True},
-                {"name": "deterministic-contract-cases", "ok": True},
-            ],
-            "report": {
-                "scenario_count": 1,
-                "scenarios": [scenario],
-                "contract_case_count": 3,
-                "contract_cases": contracts,
-            },
-        }
+        return passing_gate_report(platform)
 
     @staticmethod
     def pty_report(platform: str = "windows", commit: str = "v" * 40):
@@ -273,10 +187,7 @@ class ProductMatrixEvidenceTest(unittest.TestCase):
         module = load_module()
         report = self.gate_report(platform="linux")
         scenario = report["report"]["scenarios"][0]
-        for step in scenario["steps"][1:4]:
-            step.pop("owner_contract")
-            step["workflow_payload_version"] = 1
-        scenario["steps"][4]["event_kind"] = scenario["steps"][4].pop("eventKind")
+        scenario["workflow_payload_version"] = 1
         with self.assertRaises(ValueError):
             module.validate_gate_report(report, platform="linux")
 
@@ -285,9 +196,7 @@ class ProductMatrixEvidenceTest(unittest.TestCase):
         report = self.gate_report(platform="linux")
         module.validate_gate_report(report, platform="linux")
         scenario = report["report"]["scenarios"][0]
-        for step in scenario["steps"][1:4]:
-            step["workflow_payload_version"] = 1
-        scenario["steps"][4]["event_kind"] = "log.emitted"
+        scenario["event_kind"] = "log.emitted"
         with self.assertRaises(ValueError):
             module.validate_gate_report(report, platform="linux")
 
@@ -349,7 +258,7 @@ class ProductMatrixEvidenceTest(unittest.TestCase):
                 self.assertEqual(module.main(), 0)
             evidence = json.loads(output.read_text(encoding="utf-8"))
         self.assertTrue(evidence["productCapabilityComplete"])
-        self.assertEqual(evidence["gateEvidence"]["scenarioCount"], 1)
+        self.assertEqual(evidence["gateEvidence"]["scenarioCount"], len(self.gate_report()["report"]["scenarios"]))
 
 
 if __name__ == "__main__":

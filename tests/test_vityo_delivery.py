@@ -71,7 +71,7 @@ class VityoDeliveryTest(unittest.TestCase):
             self.delivery, "_project_coverage_command", return_value=("python3", "project-coverage-gate.py", "--collect-only")
         ), mock.patch.object(
             self.delivery, "_run_language_fixture_gate",
-            side_effect=lambda _options: runner(("language-fixtures",), None, None),
+            side_effect=lambda _options, **_kwargs: runner(("language-fixtures",), None, None),
         ), mock.patch.object(
             self.delivery, "run_command", return_value=0
         ):

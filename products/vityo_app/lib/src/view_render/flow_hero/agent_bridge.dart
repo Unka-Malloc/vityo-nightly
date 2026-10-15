@@ -258,12 +258,14 @@ class AgentBridge extends ChangeNotifier {
     await _requestReconcile();
   }
 
+  bool ownsDocumentBinding = true;
+
   Future<void> _requestReconcile() {
     if (_disposed) return Future<void>.value();
     _requestedRoot ??= _workspaceRoot;
     // Retire the former store synchronously, including when this request is
     // coalesced into a reconcile loop that is waiting on an older attach.
-    _engine?.detachWorkspaceDocumentStore();
+    if (ownsDocumentBinding) _engine?.detachWorkspaceDocumentStore();
     final running = _reconcileCompleter;
     if (running != null) return running.future;
 
@@ -393,7 +395,9 @@ class AgentBridge extends ChangeNotifier {
         if (store is! WorkspaceDocumentOperationStore) {
           throw StateError('workspace operations are unavailable');
         }
-        await engine.attachWorkspaceDocumentStore(store);
+        if (ownsDocumentBinding) {
+          await engine.attachWorkspaceDocumentStore(store);
+        }
         if (!_isDesired(generation, workspaceRoot)) return;
         operationPort = FlowHeroAgentOperationPort(
           engine: engine,
@@ -568,7 +572,7 @@ class AgentBridge extends ChangeNotifier {
     _disposed = true;
     _lifecycleGeneration++;
     final engine = _engine;
-    engine?.detachWorkspaceDocumentStore();
+    if (ownsDocumentBinding) engine?.detachWorkspaceDocumentStore();
     final attachment = _activeAttachment;
     _activeAttachment = null;
     _pendingPermissions.clear();

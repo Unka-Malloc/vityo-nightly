@@ -11,6 +11,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import '../services/observable_topology/observable_runtime_model.dart';
+
 import '../../ide/local_service/vityod_client.dart';
 import '../backend_toolchain/bundled_toolchain_candidates.dart';
 import '../backend_toolchain/execution_adapter.dart';
@@ -32,6 +34,8 @@ const String kFlowHeroPafioManifestName = 'pafio.toml';
 
 /// What Flow Hero asks pafio to do. One entry per real `pafio` subcommand.
 enum FlowHeroExecutionKind {
+  check('check'),
+  build('build'),
   run('run'),
   test('test');
 
@@ -79,6 +83,10 @@ class FlowHeroExecutionOutcome {
     required this.duration,
     this.exitCode,
     this.receipt,
+    this.plan = const <String, Object?>{},
+    this.stdout = '',
+    this.stderr = '',
+    this.processMetadata = const <String, Object?>{},
   });
 
   final FlowHeroExecutionKind kind;
@@ -94,6 +102,10 @@ class FlowHeroExecutionOutcome {
   final Duration duration;
   final int? exitCode;
   final ExecutionReceiptSnapshot? receipt;
+  final Map<String, Object?> plan;
+  final String stdout;
+  final String stderr;
+  final Map<String, Object?> processMetadata;
 
   bool get succeeded => phase == FlowHeroExecutionPhase.succeeded;
 }
@@ -462,6 +474,18 @@ class FlowHeroExecutionRuntime
   Future<FlowHeroExecutionOutcome> execute(
     FlowHeroExecutionKind kind, {
     VoidCallback? onStarted,
+  }) => executeWorkflow(kind, onStarted: onStarted);
+
+  /// The same selected project route serves checks, builds and observation.
+  /// Each outcome owns only the paths returned by this invocation.
+  Future<FlowHeroExecutionOutcome> executeWorkflow(
+    FlowHeroExecutionKind kind, {
+    VoidCallback? onStarted,
+    bool jsonOutput = true,
+    bool dryRun = false,
+    bool staticSnapshot = false,
+    String? parentSnapshotPath,
+    RuntimeObservationRequest? observation,
   }) async {
     final process = _process;
     if (_disposed || !live || process == null) {
@@ -491,12 +515,23 @@ class FlowHeroExecutionRuntime
         ProcessCommandRequest(
           executablePath: _pafioBinaryPath,
           arguments: <String>[
-            '--json',
+            if (jsonOutput) '--json',
             kind.command,
             '--manifest-path',
             _manifestPath,
             '--styio-bin',
             _styioBinaryPath,
+            if (dryRun) '--dry-run',
+            if (staticSnapshot) '--emit-observable-static-snapshot',
+            if (parentSnapshotPath != null) ...<String>[
+              '--observable-parent-snapshot',
+              parentSnapshotPath,
+            ],
+            if (observation != null) ...<String>[
+              '--emit-runtime-observation',
+              '--runtime-observation-mode',
+              observation.mode.wireValue,
+            ],
           ],
           workingDirectory: _workspaceRoot,
           serviceKind: ProcessServiceKind.pafio,
@@ -518,9 +553,11 @@ class FlowHeroExecutionRuntime
           exitCode: result.exitCode,
         );
       }
-      return _outcomeFromResult(
+      return await _outcomeFromResult(
         kind,
         result,
+        jsonOutput: jsonOutput,
+        dryRun: dryRun,
         duration: result.duration > Duration.zero
             ? result.duration
             : clock.elapsed,
@@ -545,6 +582,8 @@ class FlowHeroExecutionRuntime
     FlowHeroExecutionKind kind,
     ProcessCommandResult result, {
     required Duration duration,
+    required bool jsonOutput,
+    required bool dryRun,
   }) async {
     final successPayload = parseJsonObjectPayload(result.stdout);
     final failurePayload = parseJsonObjectPayload(result.stderr);
@@ -562,13 +601,39 @@ class FlowHeroExecutionRuntime
             '${kind.command} 失败 · ${_sanitize(message)} · ${_seconds(duration)}',
         duration: duration,
         exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        processMetadata: <String, Object?>{
+          ...result.metadata,
+          'argv': <String>[result.executablePath, ...result.arguments],
+        },
       );
     }
     final plan = successPayload?['plan'];
     final buildRoot = await _resolveBuildRoot(
       plan is Map ? _stringValue(plan['build_root']) : null,
+      mustExist: !dryRun,
     );
-    final receipt = await _readReceipt(buildRoot);
+    final receipt = dryRun ? null : await _readReceipt(buildRoot);
+    if (jsonOutput &&
+        (successPayload?['status'] != (dryRun ? 'planned' : 'succeeded') ||
+            buildRoot == null ||
+            (!dryRun && receipt == null))) {
+      return FlowHeroExecutionOutcome(
+        kind: kind,
+        phase: FlowHeroExecutionPhase.failed,
+        statusLine: '执行结果不可用',
+        receiptText: 'Current workflow result is missing.',
+        duration: duration,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        processMetadata: <String, Object?>{
+          ...result.metadata,
+          'argv': <String>[result.executablePath, ...result.arguments],
+        },
+      );
+    }
     final String summary = receipt == null
         ? '${kind.command} 通过 · ${_seconds(duration)}'
         : '${kind.command} 通过 · ${_seconds(duration)} · 阶段 '
@@ -582,12 +647,24 @@ class FlowHeroExecutionRuntime
       duration: duration,
       exitCode: result.exitCode,
       receipt: receipt,
+      plan: plan is Map
+          ? Map<String, Object?>.from(plan)
+          : const <String, Object?>{},
+      stdout: result.stdout,
+      stderr: result.stderr,
+      processMetadata: <String, Object?>{
+        ...result.metadata,
+        'argv': <String>[result.executablePath, ...result.arguments],
+      },
     );
   }
 
   /// Re-expresses pafio's reported build root under the workspace root and
   /// rejects anything outside the tree pafio owns.
-  Future<String?> _resolveBuildRoot(String? reported) async {
+  Future<String?> _resolveBuildRoot(
+    String? reported, {
+    bool mustExist = true,
+  }) async {
     final fileSystem = _fileSystem;
     if (fileSystem == null || reported == null || reported.isEmpty) {
       return null;
@@ -596,7 +673,7 @@ class FlowHeroExecutionRuntime
         ? reported
         : fileSystem.joinPath(<String>[_workspaceRoot, reported]);
     try {
-      if (!await fileSystem.exists(joined)) {
+      if (mustExist && !await fileSystem.exists(joined)) {
         return null;
       }
       if (!fileSystem.isWithin(joined, _workspaceRoot)) {

@@ -6,7 +6,7 @@ final class VityodLspGateway {
   VityodLspGateway({required VityodClient client}) : _client = client;
 
   final VityodClient _client;
-  var _sequence = 0;
+  static var _sequence = 0;
 
   Future<VityodLspSession> start({
     required String executable,

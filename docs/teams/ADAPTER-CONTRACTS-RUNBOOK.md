@@ -2,7 +2,7 @@
 
 **Purpose:** 提供 adapter 合同、integration 层以及上游 `styio` / `pafio` handoff 文档的日常维护入口。
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-12
 
 ## Mission
 
@@ -137,3 +137,16 @@ is the producer `s1_` snapshot identity. Bounded query remains deferred. No `pro
 (`runtime_events` machine-info, receipt `outputs.runtime_events_path`, Pafio
 `--emit-runtime-observation`), migrated generic runtime-event intake from retired v1 parsers to v2
 envelopes, and left live tailing deferred. No `prototype/` change.
+
+### Task-resource Consumer Checks
+
+Use the current [test catalog](../assets/workflow/TEST-CATALOG.md) for the
+production document/execution and observation cases. Pafio output ownership
+follows returned invocation paths; the existing receipt projection and
+snapshot/runtime consumers are authoritative. Good/error/repaired checks and
+missing-case rejection are permanent behavior checks, not static-anchor proof.
+
+2026-10-12: Independent task-resource review restored canonical owner-path coverage
+and controller-owned current-result checks. The daemon control transport now
+propagates peer EOF/error to pending requests without a healthy-work deadline or
+automatic request replay; explicit reconnect remains caller-owned.

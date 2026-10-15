@@ -18,6 +18,40 @@ void main() {
 
   Future<void> pump() => Future<void>.delayed(Duration.zero);
 
+  testWidgets(
+    'healthy LSP request survives elapsed observation time and save is explicit',
+    (tester) async {
+      final heldServer = LspTestServer();
+      final client = StyioLspClient(transport: heldServer.transport);
+      Object? response;
+      final pending = client.sendRequest('test/held').then((value) {
+        response = value;
+      });
+      await tester.pump(const Duration(minutes: 3));
+      expect(response, isNull);
+      final request = heldServer.requestsFor('test/held').single;
+      heldServer.respond(request['id'], 'completed');
+      await tester.pump();
+      await pending;
+      expect(response, 'completed');
+      await client.didSave(
+        uri: 'file:///workspace/main.styio',
+        text: 'saved text',
+      );
+      await tester.pump();
+      expect(heldServer.requestsFor('textDocument/didSave').single['params'], {
+        'textDocument': {'uri': 'file:///workspace/main.styio'},
+        'text': 'saved text',
+      });
+      // Stream cancellation uses real-zone futures; do not await teardown in
+      // WidgetTester's fake clock.
+      await tester.runAsync(() async {
+        await client.close();
+        await heldServer.dispose();
+      });
+    },
+  );
+
   test(
     'initialize performs the LSP handshake and parses capabilities',
     () async {

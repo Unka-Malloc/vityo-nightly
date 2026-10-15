@@ -273,9 +273,9 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             headers=request_headers,
             method=method,
         )
-        opener = urllib.request.build_opener()
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         if not follow_redirects:
-            opener = urllib.request.build_opener(_NoRedirectHandler)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirectHandler)
 
         for attempt in range(2 if retry_on_disconnect else 1):
             try:
@@ -762,6 +762,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
 
     def test_mutation_rejects_invalid_json_and_bad_content_length(self) -> None:
         os.environ[dev_server.ENABLE_MUTATION_ENV] = "1"
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         request = urllib.request.Request(
             f"{self.base_url}/api/workspace/create-file",
@@ -770,7 +771,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:
@@ -786,7 +787,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:
@@ -803,7 +804,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:

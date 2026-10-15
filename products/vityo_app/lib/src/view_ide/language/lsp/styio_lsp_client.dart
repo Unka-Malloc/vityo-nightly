@@ -75,7 +75,7 @@ class StyioLspPendingRequest {
 class StyioLspClient {
   StyioLspClient({
     required LspByteTransport transport,
-    this.requestTimeout = const Duration(seconds: 15),
+    this.requestTimeout,
     LspContentFrameCodec codec = const LspContentFrameCodec(),
   }) : _transport = transport,
        _codec = codec {
@@ -88,7 +88,7 @@ class StyioLspClient {
 
   final LspByteTransport _transport;
   final LspContentFrameCodec _codec;
-  final Duration requestTimeout;
+  final Duration? requestTimeout;
   final LspRequestIdGenerator _ids = LspRequestIdGenerator();
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
   final Map<int, String> _pendingMethods = <int, String>{};
@@ -140,7 +140,7 @@ class StyioLspClient {
           },
           'synchronization': <String, Object?>{
             'dynamicRegistration': false,
-            'didSave': false,
+            'didSave': true,
             'willSave': false,
           },
           'completion': <String, Object?>{
@@ -211,6 +211,12 @@ class StyioLspClient {
     });
   }
 
+  Future<void> didSave({required String uri, required String text}) =>
+      _sendNotification('textDocument/didSave', <String, Object?>{
+        'textDocument': <String, Object?>{'uri': uri},
+        'text': text,
+      });
+
   Future<void> didClose({required String uri}) {
     return _sendNotification('textDocument/didClose', <String, Object?>{
       'textDocument': <String, Object?>{'uri': uri},
@@ -244,14 +250,16 @@ class StyioLspClient {
       }),
     );
     final timeout = requestTimeout;
-    final result = completer.future.timeout(
-      timeout,
-      onTimeout: () {
-        _pending.remove(id);
-        _pendingMethods.remove(id);
-        throw StyioLspTimeoutFailure(method: method, timeout: timeout);
-      },
-    );
+    final result = timeout == null
+        ? completer.future
+        : completer.future.timeout(
+            timeout,
+            onTimeout: () {
+              _pending.remove(id);
+              _pendingMethods.remove(id);
+              throw StyioLspTimeoutFailure(method: method, timeout: timeout);
+            },
+          );
     return StyioLspPendingRequest(id: id, result: result);
   }
 

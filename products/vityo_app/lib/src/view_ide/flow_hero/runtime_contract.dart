@@ -5,6 +5,7 @@
 /// production composition module.
 library;
 
+import '../../ide/workspace/workspace_document_store.dart';
 import 'execution_service.dart';
 import 'language_service.dart';
 import 'local_service_contract.dart';
@@ -25,6 +26,8 @@ abstract interface class FlowHeroFeatureRuntime {
   FlowHeroToolchainStore get toolchainStore;
 
   FlowHeroWorkspaceFileIndex createWorkspaceFileIndex(String root);
+
+  Future<WorkspaceDocumentOperationStore?> bootDocuments(String workspaceRoot);
 
   Future<FlowHeroExecutionSource> bootExecution(
     String workspaceRoot,

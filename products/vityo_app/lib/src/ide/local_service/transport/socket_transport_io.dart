@@ -38,9 +38,17 @@ final class SocketVityodTransport implements VityodTransport {
       _windowsPipe = pipe;
       _subscription = pipe.incoming.listen(
         _acceptBytes,
-        onError: _incoming.addError,
-        onDone: () {
+        onError: (Object error, StackTrace stackTrace) {
+          if (!identical(_windowsPipe, pipe)) return;
           _windowsPipe = null;
+          unawaited(pipe.close());
+          _connectionLost(error, stackTrace);
+        },
+        onDone: () {
+          if (!identical(_windowsPipe, pipe)) return;
+          _windowsPipe = null;
+          unawaited(pipe.close());
+          _connectionLost(StateError('vityod transport closed'));
         },
         cancelOnError: false,
       );
@@ -53,13 +61,27 @@ final class SocketVityodTransport implements VityodTransport {
     _socket = socket;
     _subscription = socket.listen(
       _acceptBytes,
-      onError: _incoming.addError,
-      onDone: () {
+      onError: (Object error, StackTrace stackTrace) {
+        if (!identical(_socket, socket)) return;
         _socket = null;
+        socket.destroy();
+        _connectionLost(error, stackTrace);
+      },
+      onDone: () {
+        if (!identical(_socket, socket)) return;
+        _socket = null;
+        socket.destroy();
+        _connectionLost(StateError('vityod transport closed'));
       },
       cancelOnError: false,
     );
     return 'vityod-local-service';
+  }
+
+  void _connectionLost(Object error, [StackTrace? stackTrace]) {
+    _buffer.clear();
+    // Keep the logical streams open so an explicit reconnect can reuse them.
+    _incoming.addError(error, stackTrace);
   }
 
   @override

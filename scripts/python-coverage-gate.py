@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -57,6 +58,9 @@ def coverage_available() -> bool:
 
 
 def run_command(command: list[str]) -> int:
+    if __name__ == "__main__" and os.environ.get("VITYO_CHECK_LOG_DIR"):
+        from vityo_check_log import run_logged
+        return run_logged(command, cwd=ROOT)
     proc = subprocess.run(command, cwd=ROOT, check=False)
     return proc.returncode
 

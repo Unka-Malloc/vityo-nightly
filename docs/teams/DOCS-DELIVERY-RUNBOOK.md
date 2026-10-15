@@ -2,7 +2,7 @@
 
 **Purpose:** Define the daily maintenance workflow for Vityo documentation, repository hygiene, test ownership, and delivery records.
 
-**Last updated:** 2026-10-06
+**Last updated:** 2026-10-11
 
 ## Mission
 
@@ -79,6 +79,14 @@ claims.
 
 ## Daily Workflow
 
+For the current task-resource milestone, use the
+[support/test inventory](../plans/task-resource-delivery/BASELINE.md) and
+[current handoff](../plans/task-resource-delivery/HANDOFF.md). The registered
+baseline host check builds once and retains raw input provenance and command
+logs under ignored `build/task-resource-baseline/`; input-only preparation is
+not build evidence. REPAIR consumes the actual host result before the independent
+integration review. This routing does not admit final regression or publication.
+
 The shared test stage runs actual pinned language fixtures between the portable IDE
 suites and prototype checks, and stops on failure. Python coverage dependencies belong
 in the isolated environment documented in `docs/BUILD-AND-DEV-ENV.md`. Local macOS
@@ -107,6 +115,10 @@ status; it does not inspect the running interface or claim live acceptance.
 19. External audit shard updates must name the remediated finding, the changed security boundary, and the exact validation command; if code and audit evidence move together, update the owning team runbook in the same change.
 20. The ecosystem CLI doc gate (`scripts/ecosystem-cli-doc-gate.py`) remains part of the documented architecture stage; its cross-repository severity is defined by the docs gate, not by an alternate delivery mode.
 21. Keep [the delivery pipeline](../assets/workflow/DELIVERY-GATE.md), [test and coverage map](../assets/workflow/CHECKPOINT-HEALTH.md), and [test catalog](../assets/workflow/TEST-CATALOG.md) aligned with the actual `scripts/vityo.py` stage registry. `test` collects Python and Flutter reports and instrumented Rust reports for both workspaces once; `coverage` evaluates them without rerunning suites. Rust reports require executed source coverage, with mapped requirement-module coverage for the Agent report, and have no default percentage floor. Styio fixtures are required; the resolver provisions the pinned tool when needed, while invalid explicit overrides or failed provisioning fail the stage.
+    The [task/resource milestone](../plans/task-resource-delivery/HANDOFF.md) consumes
+    its coordinator-admitted source candidates through the same test-stage body.
+    Its private admission record and explicit logging runner do not change normal
+    pinned delivery or CI gates; the language fixtures use the admitted compiler.
 21. Language-service ADR or contract updates must refresh both the owning contract runbook and generated docs indexes in the same worktree pass; do not rely on passing Flutter tests as evidence that docs ownership is closed.
 22. Docs tree structure, milestone files, prototype manifest entries, and fixture paths must be organized by content or functional effect. Version strings, dates, and stage numbers may appear as state metadata or external wire values, but must not define repository directories, entry files, task identities, or implementation routing.
 23. Governance docs are part of docs delivery. API compatibility, security, release checklist, CODEOWNERS policy, root contribution/security entries, and PR template changes must keep generated docs indexes current.

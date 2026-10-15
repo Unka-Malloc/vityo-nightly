@@ -2,7 +2,7 @@
 
 **Purpose:** Map current deterministic test ownership and CI reach, and define the future Flow Hero acceptance evidence without treating plans as results.
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-12
 
 ## Test To CI Contract
 
@@ -29,6 +29,37 @@ The canonical contributor entrypoint is `python3 scripts/vityo.py deliver`; test
 | Styio parser-backed language fixtures | `dart run tool/language_fixture_gate.dart` through the `test` stage, using the exact product-matrix revision | The stage reuses a matching executable or prepares the pinned checkout; an invalid explicit override or failed preparation fails `test`. Passing fixtures establish only the declared fixture roots and executable contract, not every language feature or the real product matrix. |
 
 The quality-runner test compares every file under the app's standalone integration root with its explicit file literals and registered glob patterns. An added file fails that check until it is mapped to a runnable suite; moving a test requires preserving equivalent CI coverage. Deleting or renaming a test cannot turn its requirement into a pass.
+
+## Task-resource Production Route
+
+`docs/plans/task-resource-delivery/checks.sh focused` registers analysis, static
+anchors, report-admission counterexamples and deterministic behavior checks for
+execution ownership, document operations, language lifecycle, no implicit
+request deadline, actual socket EOF/error settlement without request replay, recreated service identities, snapshot publication and runtime
+intake. Static anchors alone do not establish runtime behavior.
+
+`local_product_workflow_test.dart` uses `FlowHeroApp.createController`, the
+production feature runtime, existing `VityodTestHarness` and real selected
+CLI/LSP/Pafio binaries. Its permanent required-case manifest is
+`toolchain/vityo-product-cases.json`: component selection; open/change/save and
+versioned diagnostics; check/build/test/run good/error/repaired; task history,
+f64, handled/unhandled settlement; stale/delayed/concurrent ownership; dry run;
+static snapshot, exact retained parent, unreadable-parent full snapshot;
+runtime-only and observed good/error/repaired; observation-off continuation.
+The missing/incompatible/compiler-failure boundaries and canonical absolute
+owner-path case remain mandatory. Ordinary matrix operations use the application
+controller; a real pending build cannot become current after an ABA edit.
+Fixtures and expectations are copied from Pafio's authoritative task-resource
+fixture directory. Missing cases, missing inputs and failed builds cannot pass
+as skips.
+
+The registered host integration supplies the current-source daemon and explicit
+accepted Styio CLI/LSP/Pafio paths. It is the sole complete E2E run for this
+milestone. Private logs, argv, exits, daemon control transcript and runtime
+artifacts remain under ignored `build/`; public reports contain only case
+identities, outcomes and admission results. Headless checks do not authorize
+installed UI inspection or real Agent conversations. Independent source review
+and required invalidated-target rebuilds precede host admission.
 
 ## Flow Hero Future Acceptance
 

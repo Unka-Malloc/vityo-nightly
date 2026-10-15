@@ -363,10 +363,11 @@ class WorkbenchController extends ChangeNotifier {
     final int token = ++_analysisSeq;
     _analysisTokens[f] = token;
     final String text = f.text;
+    final int revision = f.sourceRevision;
     FlowHeroLanguageResult? result;
     try {
       result = await source.analyzeFresh(
-        DocumentState(documentId: path, text: text, revision: f.sourceRevision),
+        DocumentState(documentId: path, text: text, revision: revision),
         filePath: path,
       );
     } on Object {
@@ -375,10 +376,8 @@ class WorkbenchController extends ChangeNotifier {
     if (!identical(_languageSource, source) || _analysisTokens[f] != token) {
       return; // superseded by a newer pass or a replaced service
     }
-    if (f.text != text) {
-      // The buffer moved on while the daemon answered; the newer pass owns it.
-      // The previous result stays on screen as last-known state.
-      return;
+    if (f.sourceRevision != revision || f.text != text) {
+      return; // An edit invalidates the old result even if its text returns.
     }
     if (result != null && result.authoritative) {
       _serviceFacts[f] = _factsFrom(result.analysis, text);
@@ -554,6 +553,10 @@ class WorkbenchController extends ChangeNotifier {
   void onBufferChanged(String text, {required int line, required int column}) {
     activeFile.text = text;
     activeFile.sourceRevision++;
+    if (_languageSource != null) {
+      _serviceFacts.remove(activeFile);
+      _analysisTokens.remove(activeFile);
+    }
     if (activeFile.savable) activeFile.dirty = true;
     cursorLine = line;
     cursorColumn = column;
@@ -710,9 +713,9 @@ class WorkbenchController extends ChangeNotifier {
     if (!f.savable || !f.dirty) return f.savable && !f.dirty;
     final store = _documentStore;
     final documentStoreGeneration = _documentStoreGeneration;
+    final sourceRevision = f.sourceRevision;
+    final contents = f.text;
     if (store != null) {
-      final sourceRevision = f.sourceRevision;
-      final contents = f.text;
       try {
         final relativePath = store.relativeDocumentPath(f.path!);
         final snapshot = await store.readWorkspaceSnapshot(f.path!);
@@ -749,19 +752,44 @@ class WorkbenchController extends ChangeNotifier {
       } on Object {
         return false;
       }
+      await _notifyDocumentSaved(f, contents, sourceRevision);
       notifyListeners();
       return !f.dirty;
     }
     try {
-      await File(f.path!).writeAsString(f.text);
+      await File(f.path!).writeAsString(contents);
       if (!_hasDocumentStoreGeneration(documentStoreGeneration)) return false;
     } on FileSystemException {
       return false;
     }
-    f.dirty = false;
-    f.persistedText = f.text;
+    f.dirty = f.sourceRevision != sourceRevision;
+    f.persistedText = contents;
+    await _notifyDocumentSaved(f, contents, sourceRevision);
     notifyListeners();
     return true;
+  }
+
+  Future<void> _notifyDocumentSaved(
+    BufferFile file,
+    String contents,
+    int revision,
+  ) async {
+    final service = _languageService;
+    if (service is FlowHeroDocumentSaveListener && file.path != null) {
+      try {
+        await (service as FlowHeroDocumentSaveListener).documentSaved(
+          DocumentState(
+            documentId: file.path!,
+            text: contents,
+            revision: revision,
+          ),
+          filePath: file.path!,
+        );
+      } on Object {
+        // Persistence already committed. A failed language notification must
+        // not report a failed write or cause that committed write to replay.
+      }
+    }
   }
 
   /// Binds live file buffers to the existing revisioned workspace owner.

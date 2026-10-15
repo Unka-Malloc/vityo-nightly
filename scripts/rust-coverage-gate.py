@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -367,7 +368,11 @@ def collect_product(
         "--remap-path-prefix",
     ]
     try:
-        code = subprocess.run(command, cwd=ROOT, check=False).returncode
+        if __name__ == "__main__" and os.environ.get("VITYO_CHECK_LOG_DIR"):
+            from vityo_check_log import run_logged
+            code = run_logged(command, cwd=ROOT)
+        else:
+            code = subprocess.run(command, cwd=ROOT, check=False).returncode
     except OSError:
         discard_report(destination)
         print(f"cargo llvm-cov could not start for {product}", file=sys.stderr)

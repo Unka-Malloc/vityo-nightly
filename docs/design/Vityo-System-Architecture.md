@@ -2,7 +2,7 @@
 
 **Purpose:** Define Vityo's maintained system boundaries, application composition, language/runtime adapters, and source-authoritative Flow Hero target. Product commitments remain in [Vityo-Product-Spec.md](./Vityo-Product-Spec.md).
 
-**Last updated:** 2026-10-03
+**Last updated:** 2026-10-11
 
 **Status:** Current system architecture
 
@@ -120,13 +120,14 @@ python3 scripts/import-boundary-gate.py
 
 ## 1.3 Application Composition And Current Flow Hero Entry
 
-`AppBootstrap.load()` and `VityoApp` are reusable composition surfaces, but the current
-`products/vityo_app/lib/main.dart` passes `const FlowHeroApp()` to the desktop startup probe; the
-normal launch still uses Flow Hero directly and does not load `AppBootstrap` or construct
-`VityoApp`. Flow Hero's `WorkbenchController` owns built-in demonstration buffers and can open
-path-bound `BufferFile` values. Those local buffer and file paths do not by themselves establish
-the shared daemon document revision and transaction authority; in particular, pathless demo
-buffers are not workspace resources.
+`main.dart` composes `ProductionFlowHeroRuntime` with `FlowHeroApp`. The app's
+`createController` method is also the headless engineering composition entry:
+its shared local-service client binds document transactions, selected Styio LSP,
+and Pafio execution. Workspace document boot is independent of an Agent
+connection. Path-bound buffers use revisioned daemon reads and atomic saves;
+committed saves notify the existing LSP session with the saved source revision.
+Pathless demonstration buffers remain separate from workspace resources.
+`AppBootstrap.load()` and `VityoApp` remain reusable shell composition surfaces.
 
 Flow Hero still renders a sample graph from a restricted parser and uses demonstration runtime
 presentation. Its graph is not Styio semantic truth. For an explicitly configured workspace, the

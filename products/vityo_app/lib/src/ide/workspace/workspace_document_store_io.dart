@@ -32,7 +32,7 @@ final class VityodWorkspaceDocumentStore
   final VityodClient _client;
   final String? workspaceId;
   final String? workspaceRoot;
-  var _sequence = 0;
+  static var _sequence = 0;
 
   Future<void> open() async {
     final id = workspaceId;

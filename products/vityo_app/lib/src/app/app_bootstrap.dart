@@ -971,7 +971,9 @@ class AppBootstrap {
         platformTarget == PlatformTarget.macos;
     final observableGraphController = ioDesktop && !projectSnapshot.isHosted
         ? ObservableGraphController(
-            publisher: createObservableSnapshotPublisher(),
+            publisher: createObservableSnapshotPublisher(
+              processManager: platformManagers.process,
+            ),
             projectGraph: () => workspaceController.activeProject,
             ioPlatform: true,
             fileSystemManager: platformManagers.fileSystem,

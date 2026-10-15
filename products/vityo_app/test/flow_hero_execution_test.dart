@@ -201,6 +201,39 @@ ProcessCommandResult _failed({
 
 void main() {
   group('controller RUN/TEST states', () {
+    test(
+      'delayed result cannot become current after an edit and failure clears success',
+      () async {
+        final source = _FakeExecutionSource(live: true);
+        final controller = FlowHeroController(executionSource: source);
+        addTearDown(controller.dispose);
+        await controller.workspaceBootSettled;
+        final pending = controller.runExecution(FlowHeroExecutionKind.run);
+        controller.engine.onBufferChanged('changed', line: 1, column: 1);
+        source.complete(
+          _outcome(FlowHeroExecutionKind.run, FlowHeroExecutionPhase.succeeded),
+        );
+        await pending;
+        expect(controller.lastExecutionOutcome, isNull);
+        expect(controller.messages.where((m) => m.receipt), isNotEmpty);
+        final success = controller.runExecution(FlowHeroExecutionKind.run);
+        source.complete(
+          _outcome(FlowHeroExecutionKind.run, FlowHeroExecutionPhase.succeeded),
+        );
+        await success;
+        expect(controller.lastExecutionOutcome!.succeeded, isTrue);
+        final failure = controller.runExecution(FlowHeroExecutionKind.run);
+        expect(controller.lastExecutionOutcome, isNull);
+        source.complete(
+          _outcome(FlowHeroExecutionKind.run, FlowHeroExecutionPhase.failed),
+        );
+        await failure;
+        expect(controller.lastExecutionOutcome!.succeeded, isFalse);
+        controller.engine.onBufferChanged('edited again', line: 1, column: 1);
+        expect(controller.lastExecutionOutcome, isNull);
+      },
+    );
+
     test('an unavailable route disables RUN and names the reason', () async {
       final source = _FakeExecutionSource(
         live: false,
@@ -386,6 +419,66 @@ void main() {
         '/usr/bin/styio',
       ]);
     });
+
+    test(
+      'zero exit without a current receipt and escaped roots cannot report success',
+      () async {
+        for (final payload in <Object?>[
+          <String, Object?>{'status': 'succeeded'},
+          <String, Object?>{
+            'status': 'succeeded',
+            'plan': {'build_root': workspace.parent.path},
+          },
+        ]) {
+          final process = _ScriptedProcessManager(
+            (request) async =>
+                _succeeded(request: request, stdout: jsonEncode(payload)),
+          );
+          final runtime = runtimeWith(process, pafioPath: 'selected-pafio');
+          final outcome = await runtime.execute(FlowHeroExecutionKind.check);
+          expect(outcome.succeeded, isFalse);
+          expect(outcome.receipt, isNull);
+          await runtime.dispose();
+        }
+      },
+    );
+
+    test(
+      'dry run admits only a plan and never consumes an earlier receipt',
+      () async {
+        final buildRoot = '${workspace.path}/planned';
+        Directory(buildRoot).createSync();
+        final previous = File('$buildRoot/receipt.json');
+        previous.writeAsStringSync(
+          jsonEncode({
+            'schema_version': 1,
+            'intent': 'build',
+            'session_id': 'earlier',
+            'executed': false,
+          }),
+        );
+        final original = previous.readAsBytesSync();
+        final process = _ScriptedProcessManager(
+          (request) async => _succeeded(
+            request: request,
+            stdout: jsonEncode({
+              'status': 'planned',
+              'plan': {'build_root': buildRoot},
+            }),
+          ),
+        );
+        final runtime = runtimeWith(process, pafioPath: 'selected-pafio');
+        final result = await runtime.executeWorkflow(
+          FlowHeroExecutionKind.build,
+          dryRun: true,
+        );
+        expect(result.succeeded, isTrue);
+        expect(result.receipt, isNull);
+        expect(previous.readAsBytesSync(), original);
+        expect(process.commands.single, contains('--dry-run'));
+        await runtime.dispose();
+      },
+    );
 
     test('a non-zero exit becomes an honest failure', () async {
       final process = _ScriptedProcessManager(

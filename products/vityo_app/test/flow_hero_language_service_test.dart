@@ -298,6 +298,45 @@ void main() {
       expect(engine.activeSemanticSpans, isEmpty);
     });
 
+    test(
+      'editing invalidates authoritative diagnostics and rejects an ABA completion',
+      () async {
+        for (final completeBeforeEdit in [true, false]) {
+          final service = _LiveService();
+          final engine = WorkbenchController(languageService: service);
+          expect(await engine.openPath(path), isTrue);
+          final original = engine.activeFile.text;
+          final result = FlowHeroLanguageResult(
+            analysis: _analysisFor(
+              original,
+              ident: 'pipeline',
+              message: 'old revision',
+            ),
+            authoritative: true,
+          );
+          if (completeBeforeEdit) {
+            service.next.complete(result);
+            await Future<void>.delayed(Duration.zero);
+            expect(engine.analysisOrigin, FlowHeroAnalysisOrigin.service);
+          }
+          engine.onBufferChanged('$original\n', line: 1, column: 1);
+          engine.onBufferChanged(original, line: 1, column: 1);
+          expect(engine.activeServiceDiagnostics, isEmpty);
+          expect(engine.analysisOrigin, isNot(FlowHeroAnalysisOrigin.service));
+          if (!completeBeforeEdit) {
+            service.next.complete(result);
+            await Future<void>.delayed(Duration.zero);
+            expect(engine.activeServiceDiagnostics, isEmpty);
+            expect(
+              engine.analysisOrigin,
+              isNot(FlowHeroAnalysisOrigin.service),
+            );
+          }
+          engine.dispose();
+        }
+      },
+    );
+
     test('edits debounce into one follow-up analysis', () async {
       final service = _LiveService();
       final engine = WorkbenchController(languageService: service);

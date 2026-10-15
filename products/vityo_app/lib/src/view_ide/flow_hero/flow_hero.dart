@@ -21,6 +21,7 @@ export 'language_service.dart'
     show
         FlowHeroAnalysisOrigin,
         FlowHeroAsyncLanguageSource,
+        FlowHeroDocumentSaveListener,
         FlowHeroLanguageMode,
         FlowHeroLanguageResult,
         FlowHeroLanguageSession,

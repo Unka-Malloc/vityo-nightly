@@ -126,6 +126,9 @@ def run(
         f"[vityo-quality] {cwd.relative_to(ROOT) or '.'}: {' '.join(command)}",
         flush=True,
     )
+    if __name__ == "__main__" and os.environ.get("VITYO_CHECK_LOG_DIR"):
+        from vityo_check_log import run_logged
+        return run_logged(command, cwd=cwd, environment=environment)
     return subprocess.run(
         command,
         cwd=cwd,
