@@ -81,3 +81,6 @@ docs/audit/defects/
 !products/vityo_app/test/**/tmp/**
 !products/vityo_app/test/**/*.tmp
 !products/vityo_app/test/**/*.log
+
+# Better Plan runtime lock state is host-local; never commit it.
+docs/plans/**/.better-plan.lock
