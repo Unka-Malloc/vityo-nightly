@@ -20,7 +20,7 @@
 | `governance/` | [Governance Index](./governance/INDEX.md) | Define the repository-owned rules for compatibility, security, release readiness, code ownership, and migration discipline. |
 | `history/` | [History Index](./history/INDEX.md) | 定义 docs/history/ 的主题化恢复记录范围；具体主题索引见 INDEX.md。 |
 | `plan/` | [Planning Index](./plan/INDEX.md) | Explain the repository's planning-document scope and link to Vityo's execution workflow. |
-| `plans/` | [Vityo delivery programme](./plans/README.md) | Own current milestone sequencing and acceptance without duplicating product contracts. |
+| `plans/` | [Plans Index](./plans/INDEX.md) | Own current milestone sequencing and acceptance without duplicating product contracts. |
 | `release/` | [Release Index](./release/INDEX.md) | Define the release evidence directory for Vityo platform packaging, local validation ledgers, and launch closure requirements. |
 | `review/` | [Review Index](./review/INDEX.md) | 定义 docs/review/ 中风险、冲突与待裁决问题的范围；索引见 INDEX.md。 |
 | `rollups/` | [Rollups Index](./rollups/INDEX.md) | Provide compact active summaries and a default current-state entry point for Vityo without treating historical reports as product truth. |

@@ -35,8 +35,8 @@
 | 文档目录与更新规则 | `DOCUMENTATION-POLICY.md` | 链接 |
 | 人机协作、变更批处理要求 | `CONTRIBUTOR-AND-AGENT-SPEC.md` | 链接 |
 | 团队 ownership、review routing、handoff | `../teams/COORDINATION-RUNBOOK.md` | 链接 |
-| 三仓统一交付总纲 | 上游 `styio-nightly` canonical plan | 本仓不再保留本地 plan 镜像 |
-| 三仓文件治理对齐 | 上游 `styio-nightly` canonical governance plan | 本仓不再保留本地 plan 镜像 |
+| 三仓统一交付总纲 | 上游 `styio-nightly` canonical plan | 跨仓权威留上游；`docs/plans/` 只持有本仓交付计划与里程碑执行状态，不是上游镜像 |
+| 三仓文件治理对齐 | 上游 `styio-nightly` canonical governance plan | 跨仓权威留上游；`docs/plans/` 只持有本仓交付计划与里程碑执行状态，不是上游镜像 |
 | 第三方依赖清单 | `THIRD-PARTY.md` | 与实现同步更新 |
 | `styio` 对接边界与接口合同 | `../external/for-styio/` | 链接 |
 | `pafio` 对接边界与接口合同 | `../external/for-pafio/` | 链接 |
@@ -56,7 +56,7 @@
 3. `docs/rollups/` 负责压缩当前状态和活跃缺口，不替代 owner 文档。
 4. `docs/history/` 负责活跃恢复记录；原始历史一旦退役，应迁入 `docs/archive/`。
 5. `docs/archive/` 负责归档 provenance 与 lifecycle 元数据，不用来隐藏仍活跃的 owner 文档。
-6. `docs/plan/` may contain maintained product plans and task lists organized by function. Dates and version numbers are state metadata, not directory, entrypoint, or task identity.
+6. `docs/plan/` may contain maintained product plans and task lists organized by function. Dates and version numbers are state metadata, not directory, entrypoint, or task identity. `docs/plans/` is the repository-owned Better Plan workspace for the active delivery programme (`Programme.json`, `Requirements.json`, and per-milestone Tree/Node/Task state with its check surface); it is this repository's own programme state, not a mirror of the upstream canonical plan.
 7. `docs/review/` 中的未决问题一旦裁决，应按评审需要迁入 ADR，或在实现吸收到 owner SSOT 后压缩进 `docs/adr/IMPLEMENTED-DECISIONS.md`，并在 review 文档中回填链接。
 
 ## 1. 目录职责
@@ -66,6 +66,7 @@
 | `docs/design/` | 产品规格、系统架构、核心术语、不变量、已交付设计基线、活跃缺口登记 |
 | `docs/specs/` | 文档策略、仓库边界、协作规范、依赖清单 |
 | `docs/plan/` | 冻结的阶段目标、任务表与门禁 |
+| `docs/plans/` | 本仓当前交付计划的 Better Plan 工作区：Programme/Requirements 与里程碑 Tree/Node/Task 状态、检查面与证据 |
 | `docs/adr/` | 仍需直接评审的架构决策记录与当前已实现决策摘要 |
 | `docs/review/` | 风险、冲突、待裁决问题 |
 | `docs/assets/` | 测试目录、复用交付资产 |
@@ -90,7 +91,7 @@
 3. 新增一个长期架构边界时，必须新增或更新设计文档；仍需直接评审时新增 ADR，实现并吸收到 owner SSOT 后压缩进 `docs/adr/IMPLEMENTED-DECISIONS.md`，不能只写在缺口登记里。
 4. 新增一个重要风险但尚未裁决时，先写入 `review/Logic-Conflicts.md`。
 5. 若一次变更改变了维护责任、review 触发条件或恢复路径，必须同步更新受影响的 `../teams/*.md` 与 `../teams/COORDINATION-RUNBOOK.md`。
-6. 若一次变更改动了三仓共同里程碑、repo exit、checkpoint ID 或跨仓 cutover 条件，本仓只更新相关 external handoff、设计基线或缺口登记；跨仓计划的权威副本留在上游 canonical 仓库。
+6. 若一次变更改动了三仓共同里程碑、repo exit、checkpoint ID 或跨仓 cutover 条件，本仓只更新相关 external handoff、设计基线或缺口登记；跨仓计划的权威副本留在上游 canonical 仓库。`docs/plans/` 持有本仓自己的交付计划与里程碑执行状态，不作为上游计划的镜像。
 7. 若一次变更改动了 docs tree、索引生成规则、archive/rollup lifecycle、ignore-policy 或 fixture 反忽略规则，更新本文件、`../teams/COORDINATION-RUNBOOK.md` 和受影响目录入口。
 8. docs tree 变化后，必须运行 `python3 scripts/docs-lifecycle.py refresh`、`python3 scripts/docs-index.py --write`、`python3 scripts/docs-audit.py`。
 9. 根 `.gitignore` 若扩展 temp/build/log/cache 忽略规则，必须同批补 `docs/**` 与 `products/vityo_app/test/**` 的显式 negate 规则，并让 `python3 scripts/repo-hygiene-gate.py --mode tracked` 通过。
@@ -100,8 +101,9 @@
 1. 设计级文档使用稳定主题名，优先 `Vityo-*.md`。
 2. 规范文件使用稳定全大写或描述性短横线命名。
 3. Use `docs/plan/` for repository-owned product planning documents and execution guidance when
-   present. Active state for an installed planning tool follows that tool's configured workspace;
-   this directory neither requires a planning tool nor grants execution authority. Keep product facts
+   present, and `docs/plans/` for the repository's own Better Plan delivery programme. Active state
+   for an installed planning tool follows that tool's configured workspace;
+   `docs/plan/` neither requires a planning tool nor grants execution authority. Keep product facts
    in their owner documents. Do not mirror external tool state here or restore a retired local
    validator; use the current tool for state it owns.
 4. 历史、审计和 rollup 文件使用稳定主题名；日期只能写入 `Date`、`Last updated` 或正文状态说明。

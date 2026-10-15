@@ -60,7 +60,7 @@ def raise_open_file_floor(minimum: int = OPEN_FILE_FLOOR) -> None:
             return
         resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
     except (OSError, ValueError) as error:
-        print(f"[vityo] could not raise open-file limit above {soft}: {error}", flush=True)
+        print(f"[vityo] could not raise the open-file limit: {error}", flush=True)
         return
     print(f"[vityo] raised open-file soft limit: {soft} -> {target}", flush=True)
 

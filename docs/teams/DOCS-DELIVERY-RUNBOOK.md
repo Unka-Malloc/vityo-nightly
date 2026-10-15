@@ -318,3 +318,12 @@ No `prototype/` change.
 composition and the injectable packaged Agent launch resolver. Registered the existing
 BSD-3-Clause workspace chooser in the dependency license gate. Keep unfinished repairs
 on the same Draft PR and validate architecture and governance before pushing.
+
+2026-10-15: Registered `docs/plans/` as a documentation collection. The active
+delivery programme (Programme/Requirements plus the task-resource-delivery
+milestone's Tree/Node/Task state, check surface, and evidence) is this
+repository's own workspace, not a mirror of the upstream canonical plan;
+`docs/plan/` retains execution guidance and completed planning material.
+DOCUMENTATION-POLICY, IMPLEMENTED-DECISIONS, and COORDINATION-RUNBOOK now name
+the split, the milestone directory has a README, `final.py` no longer loses
+the rlimit diagnostic on the error path, and generated indexes are refreshed.

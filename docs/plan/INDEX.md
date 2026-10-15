@@ -1,6 +1,6 @@
 # Planning Index
 
-**Purpose:** Provide the generated inventory for `docs/plan/`; current execution guidance and historical planning boundaries live in [README.md](./README.md).
+**Purpose:** Provide the generated inventory for `docs/plan/`; execution guidance and completed planning material live in [README.md](./README.md).
 
 **Last updated:** 2026-10-02
 
