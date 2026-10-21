@@ -2,7 +2,7 @@
 
 **Purpose:** Define the extension/module domain owner's responsibilities, owned paths, review checklist, and required gates for Vityo's extension and contribution system. Enforce manifest schema validation, contribution routing, activation lifecycle, and extension isolation.
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-08-31
 
 ## Mission
 
@@ -26,11 +26,17 @@ Key SSOTs:
 ## Daily Workflow
 
 1. Review PRs touching extension/module paths against the review checklist.
-2. Verify extension manifests have valid schemaVersion, unique ID, and satisfiable requiredCapabilities.
+2. Verify extension manifests have a valid schema version, unique ID, valid
+   contribution targets, and capability flags compatible with the module matrix.
 3. Verify contributions use typed Dart classes, not string identifiers.
 4. Verify extension isolation level is appropriate for declared permissions.
 5. Verify activation lifecycle (validate → register → activate → deactivate) is tested.
 6. Verify staged update cycle (verify → stage → activate → rollback on failure).
+7. Verify every activated host leaves `starting` through a concrete platform
+   launcher and that its transition appears in the Activation & Hosts inspector.
+8. Verify marketplace packages come from an allowed URI, carry verified
+   publisher metadata, match their declared SHA-256 digest, and are cached only
+   after verification. Confirm lifecycle choices round-trip through Settings.
 
 ## Change Classes
 
@@ -43,8 +49,22 @@ Key SSOTs:
 Minimum:
 ```bash
 cd products/vityo_app && flutter test test/extension_manifest_contract_test.dart test/extension_contribution_manifest_test.dart test/module_lifecycle_test.dart
+cd products/vityo_app && flutter test test/extension_host_isolation_test.dart test/extension_host_platform_launchers_test.dart test/extensions_surface_test.dart
+cd products/vityo_app && flutter test test/extension_marketplace_test.dart test/settings_surface_test.dart
+cd products/vityo_app && flutter test --platform chrome test/extension_host_web_launcher_test.dart
 cd products/vityo_app && flutter analyze
 ```
+
+For native launcher or telemetry UI changes, also run
+`integration_test/extension_manifest_native_ui_test.dart` on macOS. The test
+must start a real vityod-managed process, click the telemetry disclosure, and
+capture the rendered evidence without foregrounding the app.
+
+For marketplace network, cache, or policy UI changes, also run
+`integration_test/extension_marketplace_native_ui_test.dart` on macOS. It must
+save settings through the rendered controls, fetch an index and package from a
+real loopback HTTP server, verify/cache/register the package, and capture the
+post-install surface without foregrounding the app.
 
 ## Cross-Team Dependencies
 

@@ -1,24 +1,54 @@
 import 'package:flutter/foundation.dart';
 
+import '../../debugger/debugger.dart';
+import '../../environment/system_compatibility/process/process_manager.dart';
+import '../../foundation/foundation.dart';
 import '../../runtime/runtime.dart';
 import '../../testing/testing.dart';
+import 'native_tool_test_run_provider.dart';
 
 class ShellTestingController extends ChangeNotifier {
   ShellTestingController({
     required this.sessionController,
     required this.workspaceRoot,
-    required this.runTestsFallback,
+    required this.runNativeTests,
+    required this.processManager,
     required this.runtimeOutputBuffer,
     required this.log,
-  });
+    this.debugAdapterLauncher,
+  }) {
+    sessionController?.addListener(_handleSessionChanged);
+    _runProvider = NativeToolTestRunProvider(
+      runNativeTests: runNativeTests,
+      processManager: processManager,
+      debugAdapterLauncher: debugAdapterLauncher,
+      runtimeOutputBuffer: runtimeOutputBuffer,
+    );
+    sessionController?.providerCatalog?.registerRunProvider(
+      TestingProviderRegistration(
+        id: 'native-tool-runTests',
+        provider: _runProvider,
+        priority: 100,
+        state: FoundationRegistryEntryState.active,
+        metadata: const <String, Object?>{
+          'runtime': 'toolchain-manager',
+          'processIdentity': 'vityod-process-handle',
+        },
+      ),
+    );
+  }
 
   final TestingSessionController? sessionController;
   final String Function() workspaceRoot;
-  final Future<void> Function() runTestsFallback;
+  final NativeTestCommandExecutor runNativeTests;
+  final ProcessManager? processManager;
   final RuntimeOutputLiveBuffer runtimeOutputBuffer;
   final void Function(String message) log;
+  final DapDebugAdapterLauncher? debugAdapterLauncher;
+  late final NativeToolTestRunProvider _runProvider;
 
   String _selectedConfigurationId = '';
+  bool _disposed = false;
 
   TestDiscoveryResult? get discovery => sessionController?.discovery;
   TestRunResult? get lastRun => sessionController?.lastRun;
@@ -28,6 +58,7 @@ class ShellTestingController extends ChangeNotifier {
       sessionController?.failedRetryHistory ?? const <FailedTestRetryRecord>[];
   FailedTestDebugCancellationRoute? get failedDebugCancellationRoute =>
       sessionController?.lastFailedDebugCancellationRoute;
+  bool get runActive => sessionController?.lastRuntimeTask?.active == true;
 
   TestRunConfigurationSet get configurationSet {
     final root = workspaceRoot();
@@ -81,9 +112,12 @@ class ShellTestingController extends ChangeNotifier {
   }
 
   Future<void> rerunFailed() async {
+    if (_blockWhileRunActive('Rerun failed tests')) {
+      return;
+    }
     final controller = sessionController;
-    if (controller == null || controller.runProvider == null) {
-      await runTestsFallback();
+    if (controller == null || !controller.hasActiveRunProvider) {
+      await _runNativeTestsDirect();
       return;
     }
     final result = await controller.rerunFailed(workspaceRoot: workspaceRoot());
@@ -92,9 +126,13 @@ class ShellTestingController extends ChangeNotifier {
   }
 
   Future<void> debugFailed() async {
+    if (_blockWhileRunActive('Debug failed tests')) {
+      return;
+    }
     final controller = sessionController;
-    if (controller == null || controller.runProvider == null) {
-      await rerunFailed();
+    if (controller == null || !controller.hasActiveRunProvider) {
+      log('Debug failed tests blocked: no test run provider is available.');
+      notifyListeners();
       return;
     }
     final result = await controller.rerunFailed(
@@ -106,9 +144,12 @@ class ShellTestingController extends ChangeNotifier {
   }
 
   Future<void> runConfiguration(TestRunConfiguration configuration) async {
+    if (_blockWhileRunActive('Run test configuration')) {
+      return;
+    }
     final controller = sessionController;
-    if (controller == null) {
-      await runTestsFallback();
+    if (controller == null || !controller.hasActiveRunProvider) {
+      await _runNativeTestsDirect();
       return;
     }
     final result = await controller.runConfiguration(configuration);
@@ -117,6 +158,9 @@ class ShellTestingController extends ChangeNotifier {
   }
 
   Future<void> debugConfiguration(TestRunConfiguration configuration) async {
+    if (_blockWhileRunActive('Debug test configuration')) {
+      return;
+    }
     final debugConfiguration = configuration.debug
         ? configuration
         : configuration.copyWith(debug: true);
@@ -130,20 +174,46 @@ class ShellTestingController extends ChangeNotifier {
             '${route.ready ? 'ready' : 'blocked'} ${route.profileId}: ${route.handoff.plan.message}',
         timestamp: DateTime.now().toUtc(),
         metadata: <String, Object?>{
-          'testDebugLaunchRoute': route.toJson(),
-          'configuration': debugConfiguration.toJson(),
+          'testDebugLaunchRoute': <String, Object?>{
+            'profileId': route.profileId,
+            'status': route.status.wireValue,
+            'ready': route.ready,
+            'message': route.handoff.plan.message,
+          },
+          'configurationId': debugConfiguration.id,
+          'providerId': debugConfiguration.providerId,
         },
       ),
     );
+    if (!route.ready) {
+      log(route.handoff.plan.message);
+      notifyListeners();
+      return;
+    }
     final controller = sessionController;
-    if (controller == null) {
-      log('Debug test configuration routed: ${route.profileId}.');
+    if (controller == null || !controller.hasActiveRunProvider) {
+      log(
+        'Debug test configuration blocked: no test run provider is available.',
+      );
       notifyListeners();
       return;
     }
     final result = await controller.debugConfiguration(debugConfiguration);
     log(resultMessage('Debug test configuration', result));
     notifyListeners();
+  }
+
+  Future<void> runAllTests() async {
+    final configuration = configurationSet.configurations.first;
+    await runConfiguration(configuration);
+  }
+
+  Future<void> _runNativeTestsDirect() async {
+    final result = await runNativeTests(recordTestingResult: false);
+    recordNativeToolResult(
+      message: result.message,
+      metadata: result.metadata['testResult'],
+    );
   }
 
   Future<void> cancelFailedDebug(Map<String, Object?> failedTest) async {
@@ -198,79 +268,43 @@ class ShellTestingController extends ChangeNotifier {
     if (controller == null) {
       return;
     }
-    final normalized = switch (metadata) {
-      Map<String, Object?> value => value,
-      Map value => value.map((key, value) => MapEntry(key.toString(), value)),
-      _ => null,
-    };
+    final normalized = normalizeNativeToolMetadata(metadata);
     if (normalized == null) {
       return;
     }
     controller.recordRunResult(
-      _testRunResultFromNativeToolMetadata(normalized, message: message),
+      testRunResultFromNativeToolMetadata(normalized, message: message),
     );
   }
 
-  TestRunResult _testRunResultFromNativeToolMetadata(
-    Map<String, Object?> metadata, {
-    required String message,
-  }) {
-    return TestRunResult(
-      providerId: 'native-tool-runTests',
-      runner: metadata['runner']?.toString() ?? 'native-tool',
-      status: _testRunStatusFromNativeToolMetadata(metadata['status']),
-      message: message,
-      totalCount: _intFromNativeToolMetadata(metadata['totalCount']) ?? 0,
-      passedCount: _intFromNativeToolMetadata(metadata['passedCount']) ?? 0,
-      failedCount: _intFromNativeToolMetadata(metadata['failedCount']) ?? 0,
-      skippedCount: _intFromNativeToolMetadata(metadata['skippedCount']) ?? 0,
-      cases: _failedTestCasesFromNativeToolMetadata(metadata),
-      metadata: Map<String, Object?>.unmodifiable(metadata),
-    );
+  bool _blockWhileRunActive(String action) {
+    if (!runActive) {
+      return false;
+    }
+    log('$action blocked: another test task is already active.');
+    notifyListeners();
+    return true;
   }
 
-  List<TestCaseResult> _failedTestCasesFromNativeToolMetadata(
-    Map<String, Object?> metadata,
-  ) {
-    final value = metadata['failedTests'];
-    if (value is! List) {
-      return const <TestCaseResult>[];
-    }
-    return value
-        .whereType<Map>()
-        .map((entry) {
-          final normalized = entry.map(
-            (key, value) => MapEntry(key.toString(), value),
-          );
-          return TestCaseResult(
-            id: normalized['id']?.toString() ?? '',
-            name: normalized['name']?.toString() ?? 'unknown',
-            status: _testRunStatusFromNativeToolMetadata(
-              normalized['status'] ?? 'failed',
-            ),
-            message: normalized['message']?.toString() ?? '',
-          );
-        })
-        .toList(growable: false);
+  void _handleSessionChanged() {
+    notifyListeners();
   }
 
-  TestRunStatus _testRunStatusFromNativeToolMetadata(Object? value) {
-    return switch (value?.toString()) {
-      'passed' => TestRunStatus.passed,
-      'failed' => TestRunStatus.failed,
-      'skipped' => TestRunStatus.skipped,
-      'not-run' || 'blocked' => TestRunStatus.notRun,
-      _ => TestRunStatus.error,
-    };
+  @override
+  void notifyListeners() {
+    if (!_disposed) {
+      super.notifyListeners();
+    }
   }
 
-  int? _intFromNativeToolMetadata(Object? value) {
-    if (value is int) {
-      return value;
+  @override
+  void dispose() {
+    if (_disposed) {
+      return;
     }
-    if (value is num) {
-      return value.toInt();
-    }
-    return int.tryParse(value?.toString() ?? '');
+    _disposed = true;
+    sessionController?.removeListener(_handleSessionChanged);
+    _runProvider.dispose();
+    super.dispose();
   }
 }

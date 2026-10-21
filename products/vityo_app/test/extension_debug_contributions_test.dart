@@ -78,4 +78,34 @@ void main() {
       );
     },
   );
+
+  test('extension debug catalog preserves non-C++ adapter identity', () {
+    final route = const ExtensionContributionRouter().routeContribution(
+      extensionId: 'python.debug',
+      contribution: const ExtensionContributionPoint(
+        kind: ExtensionContributionKind.debugger,
+        id: 'python-dap',
+        target: 'debugger.dap',
+        title: 'Python Debug Adapter',
+        metadata: <String, Object?>{
+          'executablePath': '/usr/bin/debugpy-adapter',
+          'adapterProtocol': 'dap',
+          'programPath': '/workspace/main.py',
+          'languages': <String>['python'],
+          'debuggerType': 'python',
+        },
+      ),
+    );
+
+    final profile = ExtensionDebugContributionCatalog.fromRoutes(
+      ExtensionContributionRouteManifest(
+        routes: <ExtensionContributionRoute>[route],
+      ),
+    ).runnableProfiles.single;
+
+    expect(profile.configuration.debuggerId, 'python-dap');
+    expect(profile.metadata['languages'], <String>['python']);
+    expect(profile.metadata['debuggerType'], 'python');
+    expect(profile.configuration.ready, isTrue);
+  });
 }

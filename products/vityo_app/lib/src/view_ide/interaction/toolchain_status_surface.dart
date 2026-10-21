@@ -693,6 +693,7 @@ class ToolchainInstallPlanSurface {
     this.message,
     this.downloadUri,
     this.externalCommand,
+    this.requiresConfirmation = false,
   });
 
   factory ToolchainInstallPlanSurface.fromPlan(ToolchainInstallPlan plan) {
@@ -704,6 +705,9 @@ class ToolchainInstallPlanSurface {
       message: plan.message,
       downloadUri: plan.downloadUri?.toString(),
       externalCommand: plan.externalCommand,
+      requiresConfirmation:
+          plan.mode == ToolchainInstallMode.managedDownload ||
+          plan.mode == ToolchainInstallMode.externalCommand,
     );
   }
 
@@ -714,6 +718,7 @@ class ToolchainInstallPlanSurface {
   final String? message;
   final String? downloadUri;
   final String? externalCommand;
+  final bool requiresConfirmation;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -724,6 +729,7 @@ class ToolchainInstallPlanSurface {
       if (message != null) 'message': message,
       if (downloadUri != null) 'downloadUri': downloadUri,
       if (externalCommand != null) 'externalCommand': externalCommand,
+      'requiresConfirmation': requiresConfirmation,
     };
   }
 }

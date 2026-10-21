@@ -71,6 +71,7 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     final workspaceId = projectGraph.hostedWorkspace?.workspaceId;
     if (workspaceId == null || workspaceId.isEmpty) {

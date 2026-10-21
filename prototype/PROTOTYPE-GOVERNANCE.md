@@ -2,7 +2,7 @@
 
 **Purpose:** Define the repo-local rules for keeping `prototype/` high-fidelity editor surfaces discoverable, owned, and testable without adding downstream branch Rulesets.
 
-**Last updated:** 2026-07-26
+**Last updated:** 2026-10-02
 
 ## Surface Classes
 
@@ -29,4 +29,4 @@ npm run governance
 npm run selftest:editor
 ```
 
-`./scripts/checkpoint-health.sh` runs both commands as part of the repository checkpoint floor.
+`python3 scripts/vityo.py test` runs both commands as part of the canonical delivery pipeline.

@@ -2,12 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../ide/editor/editor_render_layers.dart';
 import '../../view_ide/language/language_contract.dart';
+import '../theme/vityo_theme.dart';
 
 class EditorFlutterTextStyleBinding {
-  const EditorFlutterTextStyleBinding({required this.semanticThemeBinding});
+  const EditorFlutterTextStyleBinding({
+    required this.semanticThemeBinding,
+    this.brightness = Brightness.light,
+  });
 
-  factory EditorFlutterTextStyleBinding.foundation() {
+  factory EditorFlutterTextStyleBinding.foundation({
+    Brightness brightness = Brightness.light,
+  }) {
     return EditorFlutterTextStyleBinding(
+      brightness: brightness,
       semanticThemeBinding: EditorSemanticThemeBinding.fromTheme(
         EditorSemanticTheme.foundation(),
       ),
@@ -15,6 +22,7 @@ class EditorFlutterTextStyleBinding {
   }
 
   final EditorSemanticThemeBinding semanticThemeBinding;
+  final Brightness brightness;
 
   TextStyle styleForToken({
     required TextStyle baseStyle,
@@ -22,7 +30,8 @@ class EditorFlutterTextStyleBinding {
     required SemanticKind? semanticKind,
     required DiagnosticSeverity? diagnosticSeverity,
   }) {
-    var color = _tokenColor(tokenKind);
+    final dark = brightness == Brightness.dark;
+    var color = _tokenColor(tokenKind, dark: dark);
     var weight = tokenKind == TokenKind.whitespace
         ? FontWeight.w400
         : FontWeight.w500;
@@ -31,7 +40,15 @@ class EditorFlutterTextStyleBinding {
         ? null
         : semanticThemeBinding.styleForSemanticKind(semanticKind);
     if (semanticStyle != null) {
-      color = Color(semanticStyle.foregroundColor);
+      final colorIsFoundationLightDefault =
+          dark &&
+          _isFoundationSemanticColor(
+            semanticKind!,
+            semanticStyle.foregroundColor,
+          );
+      if (!colorIsFoundationLightDefault) {
+        color = Color(semanticStyle.foregroundColor);
+      }
       weight = _fontWeightFromWire(semanticStyle.fontWeight, fallback: weight);
     }
 
@@ -45,15 +62,24 @@ class EditorFlutterTextStyleBinding {
       );
       decoration = TextDecoration.underline;
       decorationStyle = TextDecorationStyle.wavy;
-      decorationColor = Color(
-        diagnosticStyle?.decorationColor ??
-            diagnosticStyle?.foregroundColor ??
-            _diagnosticColorValue(diagnosticSeverity),
-      );
+      Color? boundColor;
+      if (diagnosticStyle != null) {
+        final styleColor =
+            diagnosticStyle.decorationColor ?? diagnosticStyle.foregroundColor;
+        final colorIsFoundationLightDefault =
+            dark &&
+            _isFoundationDiagnosticColor(diagnosticSeverity, styleColor);
+        if (!colorIsFoundationLightDefault) {
+          boundColor = Color(styleColor);
+        }
+      }
+      decorationColor =
+          boundColor ??
+          Color(_diagnosticColorValue(diagnosticSeverity, dark: dark));
     }
 
     return baseStyle.copyWith(
-      fontFamily: 'monospace',
+      fontFamily: VityoTheme.monoFontFamily,
       color: color,
       fontWeight: weight,
       decoration: decoration,
@@ -63,7 +89,32 @@ class EditorFlutterTextStyleBinding {
   }
 }
 
-Color _tokenColor(TokenKind tokenKind) {
+final EditorSemanticTheme _foundationSemanticTheme =
+    EditorSemanticTheme.foundation();
+
+bool _isFoundationSemanticColor(SemanticKind kind, int color) {
+  return _foundationSemanticTheme.semanticColors[kind.name] == color;
+}
+
+bool _isFoundationDiagnosticColor(DiagnosticSeverity severity, int color) {
+  return _foundationSemanticTheme.diagnosticUnderlineColors[severity.name] ==
+      color;
+}
+
+Color _tokenColor(TokenKind tokenKind, {required bool dark}) {
+  if (dark) {
+    return switch (tokenKind) {
+      TokenKind.keyword => const Color(0xFFE0B46A),
+      TokenKind.identifier => const Color(0xFFD6DBE1),
+      TokenKind.number => const Color(0xFF93CBB8),
+      TokenKind.string => const Color(0xFFA7C69B),
+      TokenKind.comment => const Color(0xFF6E767F),
+      TokenKind.operator => const Color(0xFF91B3D9),
+      TokenKind.punctuation => const Color(0xFF8A929B),
+      TokenKind.whitespace => const Color(0xFFD6DBE1),
+      TokenKind.unknown => const Color(0xFFF2857A),
+    };
+  }
   return switch (tokenKind) {
     TokenKind.keyword => const Color(0xFF6450A7),
     TokenKind.identifier => const Color(0xFF2C2725),
@@ -77,7 +128,14 @@ Color _tokenColor(TokenKind tokenKind) {
   };
 }
 
-int _diagnosticColorValue(DiagnosticSeverity severity) {
+int _diagnosticColorValue(DiagnosticSeverity severity, {required bool dark}) {
+  if (dark) {
+    return switch (severity) {
+      DiagnosticSeverity.error => 0xFFF2857A,
+      DiagnosticSeverity.warning => 0xFFEFBE6A,
+      DiagnosticSeverity.hint => 0xFF82A6D8,
+    };
+  }
   return switch (severity) {
     DiagnosticSeverity.error => 0xFFCB4D45,
     DiagnosticSeverity.warning => 0xFFD5962A,

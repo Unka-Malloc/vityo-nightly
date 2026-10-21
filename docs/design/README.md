@@ -2,7 +2,7 @@
 
 **Purpose:** 定义 `docs/design/` 作为产品、系统架构、已交付设计基线和活跃缺口登记的 SSOT 范围；具体文件见 [INDEX.md](./INDEX.md)。
 
-**Last updated:** 2026-08-02
+**Last updated:** 2026-10-03
 
 ## Scope
 
@@ -28,6 +28,6 @@ Use:
 
 1. [Vityo-Delivered-Design-Baseline.md](./Vityo-Delivered-Design-Baseline.md) for completed design baseline.
 2. [Vityo-Implementation-Gaps.md](./Vityo-Implementation-Gaps.md) for unfinished implementation and integration gaps.
-3. [Vityo plan](../plan/vityo/Requirements.md) for IDE delivery-track state.
-4. [Vityo Coding Agent plan](../plan/vityo-coding-agent/Requirements.md) for companion-runtime delivery-track state.
+3. [Product requirements](./Vityo-Product-Spec.md) for maintained IDE and companion-runtime requirements.
+4. [Execution runbook](../plan/EXECUTION-RUNBOOK.md) for work sequencing and external task records.
 5. [Vityo-Layer-Directory-Outline.md](./Vityo-Layer-Directory-Outline.md) for current architecture-layer directory ownership.

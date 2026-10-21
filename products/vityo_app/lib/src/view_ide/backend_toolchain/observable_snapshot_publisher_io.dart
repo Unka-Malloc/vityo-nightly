@@ -5,9 +5,12 @@ import '../services/observable_topology/observable_delta_model.dart';
 import '../services/observable_topology/observable_snapshot_model.dart';
 import 'execution_adapter.dart';
 import 'pafio_cli_support.dart';
+import '../environment/system_compatibility/process/process_manager.dart';
 
-ObservableSnapshotPublisher createObservableSnapshotPublisher() {
-  return IoObservableSnapshotPublisher();
+ObservableSnapshotPublisher createObservableSnapshotPublisher({
+  ProcessManager? processManager,
+}) {
+  return IoObservableSnapshotPublisher(processManager: processManager);
 }
 
 List<String> observablePublishArgumentList(
@@ -35,78 +38,104 @@ List<String> observablePublishArgumentList(
 }
 
 class IoObservableSnapshotPublisher implements ObservableSnapshotPublisher {
-  Process? _process;
-  bool _cancelled = false;
+  IoObservableSnapshotPublisher({this.processManager});
+
+  final ProcessManager? processManager;
+  final Set<Process> _processes = <Process>{};
+  final Set<String> _handles = <String>{};
+  int _cancellation = 0;
 
   @override
   Future<ObservableSnapshotPublishResult> publish(
     ObservableSnapshotPublishRequest request,
   ) async {
-    _cancelled = false;
-    _process?.kill();
-    _process = null;
-
+    final generation = _cancellation;
     final args = observablePublishArgumentList(request);
-
+    Process? child;
+    String? handle;
     try {
-      final process = await Process.start(
-        request.pafioBinary,
-        args,
-        workingDirectory: request.workspaceRoot,
-      );
-      if (_cancelled) {
-        process.kill();
-        return ObservableSnapshotPublishResult.cancelled();
+      final String output;
+      final String errors;
+      final int? exitCode;
+      final manager = processManager;
+      if (manager != null) {
+        final result = await manager.run(
+          ProcessCommandRequest(
+            executablePath: request.pafioBinary,
+            arguments: args,
+            workingDirectory: request.workspaceRoot,
+            serviceKind: ProcessServiceKind.pafio,
+            onStarted: (started) {
+              handle = started.processHandleId;
+              _handles.add(handle!);
+              if (generation != _cancellation &&
+                  manager is CancellableProcessManager) {
+                (manager as CancellableProcessManager).cancelProcess(handle!);
+              }
+            },
+          ),
+        );
+        output = result.stdout;
+        errors = result.stderr;
+        exitCode = result.exitCode;
+      } else {
+        child = await Process.start(
+          request.pafioBinary,
+          args,
+          workingDirectory: request.workspaceRoot,
+        );
+        _processes.add(child);
+        if (generation != _cancellation) child.kill();
+        final stdout = child.stdout.transform(utf8.decoder).join();
+        final stderr = child.stderr.transform(utf8.decoder).join();
+        exitCode = await child.exitCode;
+        output = await stdout;
+        errors = await stderr;
       }
-      _process = process;
-      final stdoutFuture = process.stdout.transform(utf8.decoder).join();
-      final stderrFuture = process.stderr.transform(utf8.decoder).join();
-      final exitCode = await process.exitCode;
-      final stdout = await stdoutFuture;
-      final stderr = await stderrFuture;
-      if (_cancelled) {
+      if (generation != _cancellation) {
         return ObservableSnapshotPublishResult.cancelled();
       }
       if (exitCode != 0) {
         final payload =
-            parseJsonObjectPayload(stderr) ?? parseJsonObjectPayload(stdout);
-        final message = payload?['message'] as String? ??
+            parseJsonObjectPayload(errors) ?? parseJsonObjectPayload(output);
+        final message =
+            payload?['message'] as String? ??
             'Pafio check failed while publishing the observable snapshot.';
-        final category = payload?['category'] as String?;
         final parent = request.parentSnapshotPath?.trim() ?? '';
-        if (parent.isNotEmpty &&
-            category == kObservablePafioUsageErrorCategory) {
-          return ObservableSnapshotPublishResult.failed(
-            reason: ObservableReasonCode.deltaTransportUnavailable,
-            detail: sanitizeObservablePublishDetail(message),
-          );
-        }
         return ObservableSnapshotPublishResult.failed(
+          reason:
+              parent.isNotEmpty &&
+                  payload?['category'] == kObservablePafioUsageErrorCategory
+              ? ObservableReasonCode.deltaTransportUnavailable
+              : ObservableReasonCode.publicationFailed,
           detail: sanitizeObservablePublishDetail(message),
         );
       }
-      return _readArtifact(
-        stdout: stdout,
-        request: request,
-      );
-    } on ProcessException catch (error) {
-      if (_cancelled) {
-        return ObservableSnapshotPublishResult.cancelled();
-      }
+      final result = await _readArtifact(stdout: output, request: request);
+      return generation == _cancellation
+          ? result
+          : ObservableSnapshotPublishResult.cancelled();
+    } on Object {
       return ObservableSnapshotPublishResult.failed(
-        detail: 'Failed to execute pafio: ${error.message}',
+        detail: 'Snapshot process or artifact unavailable.',
       );
     } finally {
-      _process = null;
+      if (child != null) _processes.remove(child);
+      if (handle != null) _handles.remove(handle);
     }
   }
 
   @override
   void cancel() {
-    _cancelled = true;
-    final process = _process;
-    if (process != null) {
-      process.kill();
+    _cancellation++;
+    for (final child in _processes) {
+      child.kill();
+    }
+    final manager = processManager;
+    if (manager is CancellableProcessManager) {
+      for (final handle in _handles) {
+        (manager as CancellableProcessManager).cancelProcess(handle);
+      }
     }
   }
 
@@ -122,7 +151,8 @@ class IoObservableSnapshotPublisher implements ObservableSnapshotPublisher {
     final payload = parseJsonObjectPayload(stdout);
     if (payload == null || payload['status'] != 'succeeded') {
       return ObservableSnapshotPublishResult.failed(
-        detail: 'Pafio did not emit a succeeded workflow payload for the snapshot.',
+        detail:
+            'Pafio did not emit a succeeded workflow payload for the snapshot.',
       );
     }
     final plan = payload['plan'];
@@ -139,9 +169,7 @@ class IoObservableSnapshotPublisher implements ObservableSnapshotPublisher {
         detail: 'Workflow build root is outside the allowed tree.',
       );
     }
-    final receiptFile = File(
-      '$buildRoot${Platform.pathSeparator}receipt.json',
-    );
+    final receiptFile = File('$buildRoot${Platform.pathSeparator}receipt.json');
     if (!await receiptFile.exists()) {
       return ObservableSnapshotPublishResult.failed(
         detail: 'Workflow receipt was not found under the build root.',
@@ -154,19 +182,18 @@ class IoObservableSnapshotPublisher implements ObservableSnapshotPublisher {
     );
     if (receipt == null) {
       return ObservableSnapshotPublishResult.failed(
-        detail: 'Workflow receipt rejected: only receipt schema version 1 is supported.',
+        detail:
+            'Workflow receipt rejected: only receipt schema version 1 is supported.',
       );
     }
     final artifactPath = _selectSnapshotArtifact(receipt.artifacts);
     if (artifactPath == null) {
       return ObservableSnapshotPublishResult.failed(
-        detail: 'Workflow receipt did not name an observable static snapshot artifact.',
+        detail:
+            'Workflow receipt did not name an observable static snapshot artifact.',
       );
     }
-    if (!_isContained(
-          artifactPath,
-          request.workspaceRoot,
-        ) &&
+    if (!_isContained(artifactPath, request.workspaceRoot) &&
         (request.outputTree == null ||
             !_isContained(artifactPath, request.outputTree!))) {
       return ObservableSnapshotPublishResult.failed(

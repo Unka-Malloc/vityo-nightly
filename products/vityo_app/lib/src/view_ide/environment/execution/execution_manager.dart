@@ -20,6 +20,7 @@ class ExecutionRequest {
     this.operation = 'execution.run',
     this.requiresWorkspaceWrite = false,
     this.requiresNetwork = false,
+    this.onProcessStarted,
   });
 
   final String executablePath;
@@ -32,6 +33,7 @@ class ExecutionRequest {
   final String operation;
   final bool requiresWorkspaceWrite;
   final bool requiresNetwork;
+  final ProcessCommandStartedCallback? onProcessStarted;
 }
 
 class ExecutionResult {
@@ -197,6 +199,7 @@ class ExecutionManager {
         workingDirectory:
             sandboxDecision?.normalizedCwd ?? request.workingDirectory,
         timeout: sandboxDecision?.effectiveTimeout ?? request.timeout,
+        onStarted: request.onProcessStarted,
       ),
     );
     final processResult = sandbox == null

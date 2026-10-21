@@ -1,6 +1,10 @@
+import '../environment/system_compatibility/process/process_manager.dart';
+
 import '../services/observable_topology/observable_snapshot_model.dart';
 
-ObservableSnapshotPublisher createObservableSnapshotPublisher() {
+ObservableSnapshotPublisher createObservableSnapshotPublisher({
+  ProcessManager? processManager,
+}) {
   return const WebObservableSnapshotPublisher();
 }
 
@@ -12,7 +16,8 @@ class WebObservableSnapshotPublisher implements ObservableSnapshotPublisher {
     ObservableSnapshotPublishRequest request,
   ) async {
     return ObservableSnapshotPublishResult.unsupported(
-      detail: 'Observable snapshot publication is unavailable on this platform.',
+      detail:
+          'Observable snapshot publication is unavailable on this platform.',
     );
   }
 

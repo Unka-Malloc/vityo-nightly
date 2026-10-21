@@ -1,10 +1,12 @@
 export 'configuration_store.dart';
 export 'credential_data_store.dart';
 export 'environment_variable_configuration.dart';
+export 'forwarded_host_environment.dart';
 export 'host_environment.dart';
 export 'language_service_configuration.dart';
 export 'language_service_configuration_store.dart';
 export 'log_redactor.dart';
+export 'platform_secure_credential_storage.dart';
 export 'secret_store.dart';
 export 'shell_configuration.dart';
 export 'shell_configuration_store.dart';

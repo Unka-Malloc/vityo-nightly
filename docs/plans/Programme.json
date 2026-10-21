@@ -1,0 +1,198 @@
+{
+  "schema": "better-plan.programme",
+  "id": "PROGRAMME-VITYO",
+  "title": "Vityo usable language ecosystem",
+  "goal": "Deliver complete usable improvements; research supports concrete implementation and does not create a parallel delivery programme.",
+  "success": [
+    "Each activated milestone preserves supported product functionality and has current engineering evidence.",
+    "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data."
+  ],
+  "deliveries": [
+    {
+      "id": "DELIVERY-VITYO-TASK-RESOURCE",
+      "title": "Usable task resources through the current toolchain",
+      "tree": "task-resource-delivery/Tree.json",
+      "requires": []
+    },
+    {
+      "id": "DELIVERY-VITYO-LANGUAGE-CONSUMER",
+      "title": "Version-correct cross-file navigation",
+      "requires": [],
+      "goal": "Consume authoritative package and source facts without a second local semantic model.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Consume authoritative package and source facts without a second local semantic model.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-LANGUAGE-CONSUMER"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "DELIVERY-VITYO-WORKSPACE-EDITS",
+      "title": "Previewable, applicable and undoable workspace edits",
+      "requires": [
+        "DELIVERY-VITYO-LANGUAGE-CONSUMER"
+      ],
+      "goal": "Deliver a complete version-checked edit operation with failure recovery and undo.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Deliver a complete version-checked edit operation with failure recovery and undo.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-WORKSPACE-EDITS"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "DELIVERY-VITYO-OBSERVE",
+      "title": "Useful read-only program flow views",
+      "requires": [],
+      "goal": "Consume authoritative facts, source anchors, lineage and optional run coverage with explicit stale/missing states.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Consume authoritative facts, source anchors, lineage and optional run coverage with explicit stale/missing states.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-OBSERVE"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "DELIVERY-VITYO-AGENT",
+      "title": "Reviewable development changes",
+      "requires": [
+        "DELIVERY-VITYO-WORKSPACE-EDITS"
+      ],
+      "goal": "Integrate the independent Agent protocol with permissions, proposals and reversible edits; deterministic verification precedes separately assigned live tasks.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Integrate the independent Agent protocol with permissions, proposals and reversible edits; deterministic verification precedes separately assigned live tasks.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-AGENT"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "DELIVERY-VITYO-DESKTOP",
+      "title": "Supported desktop release candidate",
+      "requires": [],
+      "goal": "Prepare complete platform candidates, upgrade recovery and data preservation; packaging/installation/publication require their own assigned operation.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Prepare complete platform candidates, upgrade recovery and data preservation; packaging/installation/publication require their own assigned operation.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-DESKTOP"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "DELIVERY-VITYO-HOSTED",
+      "title": "One justified remote or additional-platform scenario",
+      "requires": [
+        "DELIVERY-VITYO-DESKTOP"
+      ],
+      "goal": "Choose one demonstrated use case after the desktop product works; do not assume platform feature parity.",
+      "success": [
+        "One bounded usable capability is independently reviewed, integrated and verified without removing supported functionality."
+      ],
+      "requirements": [
+        {
+          "statement": "Choose one demonstrated use case after the desktop product works; do not assume platform feature parity.",
+          "source_ids": [
+            "REQ-VITYO-FUTURE-HOSTED"
+          ]
+        },
+        {
+          "statement": "Each delivered milestone leaves the integrated product buildable and usable, preserves every previously supported capability in the declared support scope, and delivers the selected new behavior end to end. Complete all affected producers, consumers, entrypoints, contracts and tests together. A partial migration, disabled existing feature, temporary broken interface or deferred required wiring is not a delivered milestone. Preserve independently retained assets and user data.",
+          "source_ids": [
+            "REQ-VITYO-INTEGRITY"
+          ]
+        }
+      ],
+      "open_decisions": [
+        {
+          "title": "Select the next concrete capability and its measured acceptance before elaboration.",
+          "status": "open"
+        }
+      ]
+    }
+  ]
+}

@@ -37,11 +37,13 @@ void main() {
     final applied = await fixture.controller.renameAtSelection('mix');
 
     expect(applied, isFalse);
-    expect(fixture.editor.document, fixture.main);
-    expect(
-      await fixture.store.loadDocument(fixture.runtime.documentId),
-      beforeRuntime,
+    expect(fixture.editor.document.text, fixture.main.text);
+    expect(fixture.editor.document.revision, fixture.main.revision);
+    final afterRuntime = await fixture.store.loadDocument(
+      fixture.runtime.documentId,
     );
+    expect(afterRuntime.text, beforeRuntime.text);
+    expect(afterRuntime.revision, beforeRuntime.revision);
     expect(fixture.state.dirtyDocumentPaths, isEmpty);
     expect(fixture.safetyEvents.single.safe, isFalse);
     expect(fixture.safetyEvents.single.metadata['conflict'], isNotNull);

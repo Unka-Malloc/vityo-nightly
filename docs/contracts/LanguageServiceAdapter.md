@@ -2,7 +2,7 @@
 
 **Purpose:** 冻结 `Vityo` 需要的语言层结果；任何上游实现只要满足本合同，就能驱动当前编辑器语义。
 
-**Last updated:** 2026-05-10
+**Last updated:** 2026-10-12
 
 ## 1. Responsibilities
 
@@ -74,3 +74,20 @@
 3. `Cloud Adapter`
 
 只要 snapshot shape 一致，`Vityo` 不关心实现方式。
+
+## 5. Local Document Lifecycle
+
+The production Flow Hero composition opens the selected `styio_lspd` through
+the shared vityod LSP gateway. Open/change/save notifications refer to the
+actual source document revision. Only diagnostics bound to that revision and
+source text may become authoritative for that document revision; an older asynchronous completion must
+not replace current diagnostics. Revision authority does not establish compiler acceptance: the LSP publishes syntax first, then merged semantic diagnostics through its existing request-driven bridge. The consumer takes the latest matching publication after its foreground queries. Persistence remains committed if a later LSP
+notification fails. Save notification must never relabel saved text with a
+newer unsaved buffer revision.
+
+Healthy LSP and daemon work has no implicit elapsed-time or silence deadline.
+Explicit cancellation and transport/process failure settle pending requests.
+Daemon EOF/error marks the client disconnected and rejects pending requests; an
+explicit reconnect negotiates a new connection without replaying those requests.
+The local control envelope uses `deadlineUnixMillis: 0` for no requested
+deadline; positive explicitly supplied deadlines retain their existing meaning.

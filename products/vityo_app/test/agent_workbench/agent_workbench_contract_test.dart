@@ -5,6 +5,14 @@ import 'package:vityo_app/src/ide/workspace/workspace_revision_service.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_transaction_service.dart';
 import 'package:test/test.dart';
 
+const _allowPermissionOptions = <AgentPermissionOption>[
+  AgentPermissionOption(
+    optionId: 'allow-id',
+    name: 'Allow once',
+    kind: AgentPermissionOptionKind.allowOnce,
+  ),
+];
+
 void main() {
   test(
     'session reductions are isolated bounded and revision ordered',
@@ -49,19 +57,33 @@ void main() {
     );
     await store.apply(_snapshot('one', 1, const <String>[]));
     await store.addPermission(
-      const AgentPermissionRequest(
+      AgentPermissionRequest(
         id: 'permission',
         agentId: 'agent',
         sessionId: 'one',
         toolCallId: 'tool-permission',
-        options: <String>{'allow_once'},
+        options: _allowPermissionOptions,
       ),
     );
     await expectLater(
       store.resolvePermission(
         sessionId: 'one',
         permissionId: 'permission',
-        decision: AgentPermissionDecision.allowOnce,
+        optionId: 'not-offered',
+      ),
+      throwsA(
+        isA<CollaborationFailure>().having(
+          (failure) => failure.code,
+          'code',
+          'permission_option_unavailable',
+        ),
+      ),
+    );
+    await expectLater(
+      store.resolvePermission(
+        sessionId: 'one',
+        permissionId: 'permission',
+        optionId: 'allow-id',
       ),
       throwsStateError,
     );
@@ -74,9 +96,10 @@ void main() {
     await store.resolvePermission(
       sessionId: 'one',
       permissionId: 'permission',
-      decision: AgentPermissionDecision.allowOnce,
+      optionId: 'allow-id',
     );
     expect(store.projection.session('one').pendingPermissions, isEmpty);
+    expect(commands.resolvedOptionId, 'allow-id');
     await store.close();
   });
 
@@ -88,12 +111,12 @@ void main() {
     );
     await store.apply(_snapshot('one', 1, const <String>[]));
     await store.addPermission(
-      const AgentPermissionRequest(
+      AgentPermissionRequest(
         id: 'pending',
         agentId: 'agent',
         sessionId: 'one',
         toolCallId: 'tool-pending',
-        options: <String>{'allow_once'},
+        options: _allowPermissionOptions,
       ),
     );
     await store.apply(
@@ -110,12 +133,12 @@ void main() {
       ),
     );
     await store.addPermission(
-      const AgentPermissionRequest(
+      AgentPermissionRequest(
         id: 'late',
         agentId: 'agent',
         sessionId: 'one',
         toolCallId: 'tool-late',
-        options: <String>{'allow_once'},
+        options: _allowPermissionOptions,
       ),
     );
 
@@ -363,6 +386,7 @@ AgentSessionSnapshot _snapshot(
 
 final class _Commands implements AgentWorkbenchCommandPort {
   bool failPermission = false;
+  String? resolvedOptionId;
 
   @override
   Future<void> cancel(String sessionId) async {}
@@ -374,11 +398,12 @@ final class _Commands implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
     if (failPermission) {
       throw StateError('fixture denial');
     }
+    resolvedOptionId = optionId;
   }
 
   @override

@@ -10,6 +10,7 @@ import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 
@@ -832,10 +833,18 @@ def resolve_listen_address() -> tuple[str, int]:
     return host, port
 
 
+class LocalDevServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        # The local HTTP service needs its bound address, not a reverse DNS name.
+        # HTTPServer.server_bind performs a blocking getfqdn lookup on macOS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main() -> None:
     current_workspace().mkdir(parents=True, exist_ok=True)
     host, port = resolve_listen_address()
-    server = ThreadingHTTPServer((host, port), PrototypeHandler)
+    server = LocalDevServer((host, port), PrototypeHandler)
     print(f"Vityo dev server listening on http://{host}:{port}", flush=True)
     if mutation_enabled():
         print("workspace mutation APIs enabled for this local dev session", flush=True)

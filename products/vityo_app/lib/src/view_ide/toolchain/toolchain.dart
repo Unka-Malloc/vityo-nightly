@@ -16,6 +16,7 @@ export 'toolchain_install_executor.dart';
 export 'toolchain_install_policy.dart';
 export 'toolchain_managed_download_config.dart';
 export 'toolchain_provenance_verifier.dart';
+export 'toolchain_project_validation.dart';
 export 'toolchain_manager.dart';
 export 'toolchain_runtime.dart';
 export 'terminal_runtime_registry.dart';

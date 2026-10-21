@@ -24,9 +24,17 @@ void main() {
     addTearDown(workspace.dispose);
     var revealedPath = '';
     var reloadCount = 0;
-    final controller = WorkspaceFileCommandController(
+    var suppressedOperationCount = 0;
+    final explorer = WorkspaceFileExplorerController(
       workspaceController: workspace,
-      documentStore: store,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspace,
+        documentStore: store,
+      ),
+    );
+    addTearDown(explorer.dispose);
+    final controller = WorkspaceFileCommandController(
+      explorerController: explorer,
       openWorkspaceFile: (path) async {
         revealedPath = path;
         workspace.openFile(path);
@@ -35,6 +43,11 @@ void main() {
       reloadActiveDocument: () async {
         reloadCount += 1;
       },
+      runWithoutWorkspaceReload: (action) {
+        suppressedOperationCount += 1;
+        return action();
+      },
+      isWorkspaceFileDirty: (_) => false,
     );
 
     final created = await controller.execute(
@@ -45,13 +58,26 @@ void main() {
       commandId: AppCommandId.revealWorkspaceFile,
       input: originalPath,
     );
+    explorer.applyDiscoveryResult(
+      const WorkspaceFileExplorerDiscoveryResult(
+        source: 'fixture',
+        filePaths: <String>[originalPath, createdPath, 'src/discovered.styio'],
+      ),
+    );
+    final discovered = await controller.execute(
+      commandId: AppCommandId.revealWorkspaceFile,
+      input: 'src/discovered.styio',
+    );
 
     expect(created.applied, isTrue);
     expect(await store.documentExists(createdPath), isTrue);
     expect(workspace.files, contains(createdPath));
     expect(revealed.applied, isTrue);
-    expect(revealedPath, originalPath);
+    expect(discovered.applied, isTrue);
+    expect(revealedPath, 'src/discovered.styio');
+    expect(workspace.files, contains('src/discovered.styio'));
     expect(reloadCount, 1);
+    expect(suppressedOperationCount, 2);
   });
 
   test('destructive delete stays fail-closed until confirmed', () async {
@@ -65,11 +91,20 @@ void main() {
       projectSnapshot: _projectGraph(<String>[path]),
     );
     addTearDown(workspace.dispose);
-    final controller = WorkspaceFileCommandController(
+    final explorer = WorkspaceFileExplorerController(
       workspaceController: workspace,
-      documentStore: store,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspace,
+        documentStore: store,
+      ),
+    );
+    addTearDown(explorer.dispose);
+    final controller = WorkspaceFileCommandController(
+      explorerController: explorer,
       openWorkspaceFile: (_) async => false,
       reloadActiveDocument: () async {},
+      runWithoutWorkspaceReload: (action) => action(),
+      isWorkspaceFileDirty: (_) => false,
     );
 
     final staged = await controller.execute(
@@ -95,6 +130,48 @@ void main() {
     expect(controller.pendingConfirmation, isNull);
     expect(await store.documentExists(path), isFalse);
     expect(workspace.files, isNot(contains(path)));
+  });
+
+  test('rename refuses to discard unsaved editor content', () async {
+    const path = 'src/main.styio';
+    final store = InMemoryWorkspaceDocumentStore(
+      seededDocuments: const <String, DocumentState>{
+        path: DocumentState(documentId: path, text: 'saved\n', revision: 1),
+      },
+    );
+    final workspace = WorkspaceController(
+      projectSnapshot: _projectGraph(<String>[path]),
+    );
+    addTearDown(workspace.dispose);
+    final explorer = WorkspaceFileExplorerController(
+      workspaceController: workspace,
+      operationService: WorkspaceFileOperationService(
+        workspaceController: workspace,
+        documentStore: store,
+      ),
+    );
+    addTearDown(explorer.dispose);
+    final controller = WorkspaceFileCommandController(
+      explorerController: explorer,
+      openWorkspaceFile: (_) async => false,
+      reloadActiveDocument: () async {},
+      runWithoutWorkspaceReload: (action) => action(),
+      isWorkspaceFileDirty: (candidate) => candidate == path,
+    );
+
+    final result = await controller.runExplorerAction(
+      const WorkspaceFileExplorerActionRequest(
+        kind: WorkspaceFileOperationKind.rename,
+        path: path,
+        nextPath: 'src/renamed.styio',
+      ),
+    );
+
+    expect(result.applied, isFalse);
+    expect(result.message, contains('unsaved changes'));
+    expect(await store.documentExists(path), isTrue);
+    expect(await store.documentExists('src/renamed.styio'), isFalse);
+    expect(workspace.files, <String>[path]);
   });
 }
 

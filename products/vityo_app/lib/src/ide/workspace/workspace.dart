@@ -35,6 +35,7 @@ export 'vfs.dart';
 export 'workspace_file_index.dart';
 export 'source_control_status.dart';
 export 'source_control_status_controller.dart';
+export 'source_control_merge_editor.dart';
 export 'source_control_commit_draft_store.dart';
 export 'source_control_diff_session_store.dart';
 export 'workspace_edit.dart';

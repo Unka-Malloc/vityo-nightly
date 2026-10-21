@@ -22,21 +22,26 @@ def fail(message: str) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
 
 
-def package_metadata(root: pathlib.Path) -> str:
+def dart_package_metadata(root: pathlib.Path) -> str:
     return (root / "pubspec.yaml").read_text(encoding="utf-8")
+
+
+def rust_package_metadata(root: pathlib.Path) -> str:
+    return (root / "Cargo.toml").read_text(encoding="utf-8")
 
 
 def main() -> int:
     errors = 0
-    for root in (IDE, AGENT, PROTOCOL):
+    for root in (IDE, PROTOCOL):
         if not (root / "pubspec.yaml").is_file():
             fail(f"missing package metadata: {root.relative_to(ROOT)}")
             errors += 1
+    if not (AGENT / "Cargo.toml").is_file():
+        fail(f"missing Rust package metadata: {AGENT.relative_to(ROOT)}")
+        errors += 1
 
     forbidden = (
         (IDE, re.compile(r"package:vityo_coding_agent/"), "IDE imports Coding Agent"),
-        (AGENT, re.compile(r"package:vityo_app/"), "Coding Agent imports IDE"),
-        (AGENT, re.compile(r"package:flutter/"), "Coding Agent imports Flutter"),
         (PROTOCOL, re.compile(r"package:(?:flutter|vityo_app|vityo_coding_agent)/"),
          "protocol imports a product or presentation framework"),
     )
@@ -48,7 +53,6 @@ def main() -> int:
 
     metadata_rules = (
         (IDE, re.compile(r"(?m)^\s+vityo_coding_agent\s*:"), "IDE depends on Coding Agent"),
-        (AGENT, re.compile(r"(?m)^\s+(?:flutter|vityo_app)\s*:"), "Coding Agent has a forbidden dependency"),
         (
             PROTOCOL,
             re.compile(r"(?m)^\s+(?:flutter|vityo_app|vityo_coding_agent)\s*:"),
@@ -56,15 +60,22 @@ def main() -> int:
         ),
     )
     for root, pattern, label in metadata_rules:
-        if pattern.search(package_metadata(root)):
+        if pattern.search(dart_package_metadata(root)):
             fail(f"{label}: {root.relative_to(ROOT) / 'pubspec.yaml'}")
             errors += 1
 
-    if "vityo_agent_protocol:" not in package_metadata(IDE):
-        fail("IDE does not consume the shared protocol package")
+    agent_cargo = (
+        rust_package_metadata(AGENT) if (AGENT / "Cargo.toml").is_file() else ""
+    )
+    if re.search(r"(?m)^\s*(?:flutter|vityo_app|vityo_agent_protocol)\s*=", agent_cargo):
+        fail("Coding Agent has a forbidden product or UI dependency")
         errors += 1
-    if "vityo_agent_protocol:" not in package_metadata(AGENT):
-        fail("Coding Agent does not consume the shared protocol package")
+    if 'agent-client-protocol = ' not in agent_cargo:
+        fail("Coding Agent does not consume the standard Rust ACP package")
+        errors += 1
+
+    if "vityo_agent_protocol:" not in dart_package_metadata(IDE):
+        fail("IDE does not consume the shared protocol package")
         errors += 1
 
     if errors:

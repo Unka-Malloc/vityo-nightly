@@ -51,7 +51,6 @@ class HostedBackendRetryActionExecutionResult {
       'successful': successful,
       'message': message,
       if (endpointPlan != null) 'endpointPlan': endpointPlan!.toJson(),
-      if (response != null) 'response': response,
     };
   }
 }
@@ -201,20 +200,22 @@ class HostedBackendRetryActionExecutor {
 
     try {
       final response = await _executeAction(action, workspace);
+      final status = _statusFromResponse(response);
       return HostedBackendRetryActionExecutionResult(
         actionId: action.id,
         kind: action.kind,
-        status: _statusFromResponse(response),
-        message: _messageFromResponse(response, fallback: action.message),
+        status: status,
+        message: _messageForStatus(status, kind: action.kind),
         endpointPlan: endpointPlan,
         response: response,
       );
-    } catch (error) {
+    } on Object {
       return HostedBackendRetryActionExecutionResult(
         actionId: action.id,
         kind: action.kind,
         status: HostedBackendRetryActionExecutionStatus.failed,
-        message: 'Hosted backend retry action failed: $error',
+        message:
+            'Hosted backend request failed. Review hosted settings and retry.',
         endpointPlan: endpointPlan,
       );
     }
@@ -262,14 +263,29 @@ class HostedBackendRetryActionExecutor {
     return HostedBackendRetryActionExecutionStatus.failed;
   }
 
-  String _messageFromResponse(
-    Map<String, dynamic> response, {
-    String? fallback,
+  String _messageForStatus(
+    HostedBackendRetryActionExecutionStatus status, {
+    required HostedBackendRetryActionKind kind,
   }) {
-    final message = response['message'];
-    if (message is String && message.trim().isNotEmpty) {
-      return message;
-    }
-    return fallback ?? 'Hosted backend retry action completed.';
+    return switch (status) {
+      HostedBackendRetryActionExecutionStatus.completed => switch (kind) {
+        HostedBackendRetryActionKind.retryConnect =>
+          'Hosted backend connection restored.',
+        HostedBackendRetryActionKind.refreshWorkspace =>
+          'Hosted workspace refreshed.',
+        HostedBackendRetryActionKind.openSettings =>
+          'Hosted backend settings opened.',
+        HostedBackendRetryActionKind.reopenWorkspace =>
+          'Hosted workspace reopened.',
+        HostedBackendRetryActionKind.exportCoreFiles =>
+          'Hosted core-file export requested.',
+      },
+      HostedBackendRetryActionExecutionStatus.unsupported =>
+        'This hosted backend action is not available yet.',
+      HostedBackendRetryActionExecutionStatus.blocked =>
+        'This hosted backend action is currently blocked.',
+      HostedBackendRetryActionExecutionStatus.failed =>
+        'Hosted backend request failed. Review hosted settings and retry.',
+    };
   }
 }

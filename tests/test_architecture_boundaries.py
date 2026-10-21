@@ -118,6 +118,22 @@ class ArchitectureBoundaryGateTest(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    def test_view_render_accepts_registered_shared_ide_contract_surface(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="arch-boundary-") as tmp_name:
+            with patched_architecture_roots(self.gate, Path(tmp_name)) as src_root:
+                write(
+                    src_root / "view_render" / "agent" / "surface.dart",
+                    "import '../../ide/agent_client/agent_client_registry.dart';\n",
+                )
+                write(
+                    src_root / "ide" / "agent_client" / "agent_client_registry.dart",
+                    "class AgentClientRegistry {}\n",
+                )
+
+                errors = self.gate.check_view_render_registered_view_ide_contracts()
+
+        self.assertEqual(errors, [])
+
     def test_view_render_rejects_unregistered_view_ide_implementation_import(self) -> None:
         with tempfile.TemporaryDirectory(prefix="arch-boundary-") as tmp_name:
             with patched_architecture_roots(self.gate, Path(tmp_name)) as src_root:
@@ -137,7 +153,7 @@ class ArchitectureBoundaryGateTest(unittest.TestCase):
                 errors = self.gate.check_view_render_registered_view_ide_contracts()
 
         self.assertTrue(
-            any("registered view_ide contract surfaces" in error for error in errors),
+            any("registered IDE contract surfaces" in error for error in errors),
             errors,
         )
 

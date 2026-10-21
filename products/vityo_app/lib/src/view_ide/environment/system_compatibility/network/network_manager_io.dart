@@ -318,7 +318,7 @@ class LocalNetworkManager
   @override
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   }) async {
     if (!compatibility.supportsHttpClient) {
       return NetworkBinaryResponse(
@@ -331,14 +331,15 @@ class LocalNetworkManager
     }
     final client = HttpClient();
     try {
-      final request = await client.getUrl(uri).timeout(timeout);
-      final response = await request.close().timeout(timeout);
-      final bytes = await response
-          .fold<List<int>>(<int>[], (buffer, chunk) {
-            buffer.addAll(chunk);
-            return buffer;
-          })
-          .timeout(timeout);
+      final request = await _withOptionalTimeout(client.getUrl(uri), timeout);
+      final response = await _withOptionalTimeout(request.close(), timeout);
+      final bytes = await _withOptionalTimeout(
+        response.fold<List<int>>(<int>[], (buffer, chunk) {
+          buffer.addAll(chunk);
+          return buffer;
+        }),
+        timeout,
+      );
       return NetworkBinaryResponse(
         status: response.statusCode >= 200 && response.statusCode < 400
             ? NetworkRequestStatus.succeeded
@@ -367,4 +368,8 @@ class LocalNetworkManager
       client.close(force: true);
     }
   }
+}
+
+Future<T> _withOptionalTimeout<T>(Future<T> future, Duration? timeout) {
+  return timeout == null ? future : future.timeout(timeout);
 }

@@ -1,0 +1,97 @@
+{
+  "id": "NODE-REPAIR",
+  "task": "TASK-001",
+  "title": "Repair production consumers and complete the scenario assertions",
+  "outcome": "Close confirmed component selection, document version, diagnostic, receipt, stale-result and cleanup defects. Extend local_product_workflow_test.dart through production services/vityod with the shared task-history project, good-to-bad-to-good and task-failure cases. Preserve all existing scenarios and Prototype.",
+  "after": [
+    "NODE-BASELINE"
+  ],
+  "status": "completed",
+  "role": "worker",
+  "executors": [],
+  "resources": [],
+  "contract": {
+    "write_scope": [
+      "Current repository implementation, contracts and focused tests required by this milestone; existing user changes are preserved."
+    ],
+    "external_inputs": [],
+    "automation_check_ids": [
+      "vityo-task-resource-focused"
+    ],
+    "execution": "Explicitly select these registered check IDs; an omitted list inherits all project checks and would run unrelated/full checks prematurely.",
+    "completion": "Check success is necessary but not sufficient. Verify the stated outcome and required external input; no fabricated result or silent skip."
+  },
+  "review": [],
+  "result": {
+    "summary": "Production consumer repairs retained; actual focused host follow-up passed. Subsequent independent review and corrected-candidate targeted evidence are recorded in NODE-INTEGRATION and HANDOFF.",
+    "requirements": [
+      "REQ-VITYO-REPAIR",
+      "REQ-VITYO-CONSUMER",
+      "REQ-VITYO-PRESERVE",
+      "REQ-VITYO-INTEGRITY"
+    ],
+    "artifacts": [
+      "docs/plans/task-resource-delivery/HANDOFF.md",
+      "toolchain/vityo-product-cases.json",
+      "products/vityo_app/test/local_product_workflow_test.dart",
+      "docs/plans/task-resource-delivery/focused.py"
+    ],
+    "observed_evidence": [
+      "Baseline host: seven executed commands exited 0, no skips.",
+      "Daemon incremental build and zero-deadline connection-handler test exited 0.",
+      "Targeted document attempts exited 1 on upstream editor-syntax diagnostics for the copied good fixture; invocation attempt exited 1 before execution on subsequently repaired compilation.",
+      "Five targeted dry-run/save/boundary cases, language/route lifecycle, delayed LSP request, seven delivery product-policy cases and 18 report-consumer tests passed in their recorded runs.",
+      "Interrupted and partial development suites are retained as non-passing; no complete E2E, host focused check or full regression claimed.",
+      "Final affected-source flutter analyze exited 0 with no issues; 13 merged-diagnostic/lifecycle tests exited 0.",
+      "Registered host focused steps analyze, daemon-no-deadline, static-anchors, report-contracts, report-consumers and report-admission exited 0. Behavior was interrupted at client widget-test disposal with exit -9; the outer check exited 137 and boundary did not execute. No behavior suite pass is inferred from its aggregate counter.",
+      "Coordinator isolated disposal under the fake clock as the deadlock and reported a successful real-zone cleanup probe. This repair applies tester.runAsync(client.dispose) in finally, preserving the existing request assertions; Worker did not duplicate the registered runtime follow-up.",
+      "Recovery static checks: Dart formatting and scoped git diff --check exited 0; plan JSON and text whitespace valid; repository privacy scanner found no matches in the three edited files. Runtime follow-up remains unrun by Worker.",
+      "Independent Reviewer consumed the actual focused follow-up: all eight recorded commands exit 0; earlier failure/recovery records retained."
+    ],
+    "private_evidence": [
+      "build/task-resource-baseline/latest-host.json",
+      "build/task-resource-repair/latest-documents.json",
+      "build/task-resource-repair/latest-ownership.json",
+      "build/task-resource-repair/revision-isolation.json",
+      "build/task-resource-repair/behavior-final-scope.json",
+      "build/task-resource-repair/privacy.json",
+      "build/task-resource-focused/host-dwqudd5d/evidence.json",
+      "build/task-resource-repair/focused-recovery.json"
+    ],
+    "upstream_dependency": {
+      "owner": "Styio / cross-repository coordinator",
+      "finding": "U3 task-resource editor Tree-sitter/semantic publication boundary",
+      "disposition": "Reviewed U3 correction accepted by coordinator. Reviewer targeted Vityo document/ownership evidence is recorded separately in NODE-INTEGRATION. didSave remains unadvertised/unhandled by Styio."
+    },
+    "host_check": {
+      "id": "vityo-task-resource-focused",
+      "run_id": "13f992cfe1c440adf1b5d7d0c08f21d5",
+      "result": "Observed host validation passed; all eight retained command steps exited 0. No per-file totals inferred from expanded aggregate output.",
+      "evidence": "build/task-resource-focused/host-xjq8c1ep/evidence.json"
+    },
+    "dependent_work": "Independent source review and host-only complete same-candidate E2E; see NODE-INTEGRATION. Source Task/Tree delivery remains unset."
+  },
+  "commit": null,
+  "checks": [
+    {
+      "id": "vityo-task-resource-focused",
+      "title": "Repair production consumers and complete the scenario assertions checks",
+      "commands": [
+        "bash docs/plans/task-resource-delivery/checks.sh focused"
+      ],
+      "coverage": {
+        "kind": "node"
+      },
+      "pending": false,
+      "running": false,
+      "run_id": "13f992cfe1c440adf1b5d7d0c08f21d5",
+      "dirty": false,
+      "result": {
+        "outcome": "passed",
+        "observed_date": "2026-10-12",
+        "source": "Assigned host plan validation and build/task-resource-focused/host-xjq8c1ep/evidence.json",
+        "scope": "Eight executed command steps exited 0 in the actual follow-up. Earlier interruption remains historical. Reviewer changes and full E2E are separate evidence."
+      }
+    }
+  ]
+}

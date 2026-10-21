@@ -2,7 +2,7 @@
 
 **Purpose:** 冻结 compile/run 会话与其机器输出；`Vityo` 的保存、运行、debug console 与 runtime surface 都围绕本合同消费结果。
 
-**Last updated:** 2026-04-21
+**Last updated:** 2026-10-11
 
 ## 1. Session Contract
 
@@ -51,3 +51,21 @@
 1. 主线先支持 `CLI Adapter`。
 2. `FFI Adapter` 是统一本地原生接入标识，不绑定某个专门的仓库名。
 3. `Cloud Adapter` 是移动端与 hosted workspace 的补充执行路径。
+
+## 4. Local Project Invocation Ownership
+
+The production route sends check/build/test/run through vityod to the selected
+Pafio and Styio executables. Its current outcome belongs to the originating
+workspace, component selection, document and source revision. Edits invalidate
+the current success projection; delayed results remain historical and are not
+relabelled as current. A failed invocation clears current success while prior
+artifact files remain available.
+
+Consume the returned plan/output references described in
+[Pafio Workflow Success Payloads](../external/for-pafio/Pafio-Workflow-Success-Payloads.md).
+Stable cache identity must not be used to reconstruct invocation paths. Dry
+runs preserve previous artifacts and do not consume an earlier receipt. The
+existing snapshot/runtime consumers use the same daemon process manager in
+production. Concurrent publications retain independent ownership; only explicit
+cancellation cancels active work. Observation-off execution remains supported
+after observed runs, and diagrams remain read-only.

@@ -1,0 +1,114 @@
+{
+  "after": [
+    "NODE-FINAL"
+  ],
+  "checks": [
+    {
+      "commands": [
+        "bash docs/plans/task-resource-delivery/checks.sh review"
+      ],
+      "coverage": {
+        "kind": "node"
+      },
+      "dirty": false,
+      "id": "vityo-task-resource-review",
+      "pending": false,
+      "result": {
+        "details": [
+          {
+            "command": "bash docs/plans/task-resource-delivery/checks.sh review",
+            "exit_code": 0,
+            "outcome": "passed",
+            "recorded_at": "2026-10-15T12:52:27Z"
+          }
+        ],
+        "status": "passed"
+      },
+      "run_id": null,
+      "running": false,
+      "title": "Vityo independent closing review patch hygiene"
+    }
+  ],
+  "commit": null,
+  "contract": {
+    "automation_check_ids": [
+      "vityo-task-resource-review"
+    ],
+    "completion": "Record this repository's independent findings and reconciled evidence in place. Privacy findings require a redacted per-item file/line/rule/category/basis/impact/disposition table. Coordinator alone joins three final results and closes source/hosted Tasks and Trees; no programme or later-milestone closure.",
+    "execution": "Select only vityo-task-resource-review. Its patch-hygiene command does not replace independent semantic, migration and full-log review. Revalidate genuinely invalidated inputs only; never repeat the full suite or valid E2E and never wait inside the Agent turn for sibling final nodes.",
+    "external_inputs": [],
+    "write_scope": [
+      "Exclusive Vityo scoped review corrections and evidence-record writes after NODE-FINAL releases ownership. Preserve existing dirty source, prototype/ and user data; no sibling writes/builds."
+    ]
+  },
+  "executors": [],
+  "id": "NODE-CLOSE",
+  "outcome": "Independently inspect final Vityo source, required migration completeness, registered final result and complete logs; close scoped findings with affected checks only. Reconcile BASELINE capabilities, actual results, skips and preserved behavior without overlapping totals. Amend local Node/check records and HANDOFF.md from actual evidence and report cross-repository impact. Stop at this repository's reviewed handoff for coordinator join; source TASK-001/Tree delivery remains unset and release/live acceptance remains unverified.",
+  "resources": [],
+  "result": {
+    "delivery": "Source TASK-001 and Tree delivery are recorded by the coordinator join on 2026-10-15.",
+    "evidence": [
+      "docs/plans/task-resource-delivery/HANDOFF.md",
+      "build/task-resource-final/close/evidence-review.json",
+      "build/task-resource-final/close/input-review.json",
+      "build/task-resource-final/close/migration-review.json",
+      "build/task-resource-final/close/capability-test-map.json"
+    ],
+    "executed_by_reviewer": "One-off retained-evidence/input/migration inspection, exit 0; no product test/full regression/E2E execution.",
+    "host_final_check": "4395813345ffcccbe8313a7b0ba63dc1",
+    "host_review_check": "Executed during the coordinator closure on 2026-10-15 as host (see the check record; git diff --check is patch hygiene, not independent semantic proof)",
+    "summary": "Independent Vityo source/migration/evidence reconciliation recorded. No additional scoped production defect found; CLOSE changed evidence/docs only. The registered CLOSE patch check executed during the coordinator closure on 2026-10-15.",
+    "unverified": [
+      "coverage threshold evaluation",
+      "Linux/Windows/Android/iOS/Web provider acceptance",
+      "Release/sanitizers",
+      "native installed-client UI",
+      "real Agent/provider conversations",
+      "unadvertised/unhandled LSP didSave semantics"
+    ]
+  },
+  "review": [
+    {
+      "date": "2026-10-12",
+      "findings": [
+        {
+          "disposition": "Reconciled actual seventh HOST pass, preserving all prior failure evidence.",
+          "finding": "FINAL retained its sixth failure as current result",
+          "id": "C1"
+        },
+        {
+          "disposition": "Reconciled to accepted check d5deb633e4fe8f39e9bad2a56c7ea1de without replay.",
+          "finding": "Active gap and integration summaries still described accepted E2E as unobserved",
+          "id": "C2"
+        },
+        {
+          "disposition": "Current final records match; no Vityo production input changed. Styio owner affected evidence and read-only launch-path inspection bound E2E reuse; reported to coordinator.",
+          "finding": "Selected CLI/daemon stats changed during authorized builds",
+          "id": "C3"
+        },
+        {
+          "disposition": "14 named Flutter skips retained; nested reports separated; unknown child skips preserved; no threshold/platform/live claim.",
+          "finding": "Skips and collection-only coverage limit acceptance claims",
+          "id": "C4"
+        }
+      ],
+      "role": "independent Reviewer",
+      "scope": "Vityo-only final source, producer/consumer/document migration, actual registered final result, complete logs and BASELINE capabilities"
+    },
+    {
+      "date": "2026-10-12",
+      "evidence": [
+        "build/task-resource-final/close/docs-process.json",
+        "build/task-resource-final/close/privacy.json",
+        "build/task-resource-final/close/record-checks.json"
+      ],
+      "role": "independent Reviewer",
+      "scope": "Closing documentation and scoped privacy",
+      "verification": "Documentation audit exit 0, including index/lifecycle/team checks. Existing privacy rules scanned 97 changed/unignored text files with no findings; subsequent result-only additions manually reviewed. No product suite executed."
+    }
+  ],
+  "role": "reviewer",
+  "status": "completed",
+  "task": "TASK-001",
+  "title": "Independently reconcile Vityo final code and evidence"
+}

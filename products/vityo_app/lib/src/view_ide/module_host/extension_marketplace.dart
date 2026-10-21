@@ -92,6 +92,23 @@ class ExtensionMarketplaceListing {
 
   bool get valid => manifest.valid && sourceUri.trim().isNotEmpty;
 
+  String get expectedSha256 {
+    final value = metadata['sha256'];
+    if (value is! String) {
+      return '';
+    }
+    final normalized = value.trim().toLowerCase();
+    return normalized.startsWith('sha256:')
+        ? normalized.substring('sha256:'.length)
+        : normalized;
+  }
+
+  bool get hasPackageIntegrity {
+    return RegExp(r'^[a-f0-9]{64}$').hasMatch(expectedSha256);
+  }
+
+  bool get installVerified => verified && hasPackageIntegrity;
+
   bool matchesQuery(String query) {
     final normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty) {
@@ -275,7 +292,7 @@ extension ExtensionInstallExecutionStatusX on ExtensionInstallExecutionStatus {
 
 enum ExtensionInstallExecutionStepKind {
   downloadPackage,
-  verifySignature,
+  verifyPackageIntegrity,
   registerManifest,
   applyLifecyclePolicy,
   planHostIsolation,
@@ -285,7 +302,8 @@ extension ExtensionInstallExecutionStepKindX
     on ExtensionInstallExecutionStepKind {
   String get wireValue => switch (this) {
     ExtensionInstallExecutionStepKind.downloadPackage => 'download-package',
-    ExtensionInstallExecutionStepKind.verifySignature => 'verify-signature',
+    ExtensionInstallExecutionStepKind.verifyPackageIntegrity =>
+      'verify-package-integrity',
     ExtensionInstallExecutionStepKind.registerManifest => 'register-manifest',
     ExtensionInstallExecutionStepKind.applyLifecyclePolicy =>
       'apply-lifecycle-policy',
@@ -446,23 +464,19 @@ class ExtensionMarketplaceInstaller {
     final listing = plan.listing!;
     final lifecycleDecision = lifecyclePolicy.decide(listing);
     final hostPlan = isolationPolicy.planFor(listing.manifest);
-    final signatureReady = !requireVerifiedPackage || listing.verified;
+    final integrityReady = !requireVerifiedPackage || listing.installVerified;
     final steps = <ExtensionInstallExecutionStep>[
       ExtensionInstallExecutionStep(
         kind: ExtensionInstallExecutionStepKind.downloadPackage,
         ready: true,
         message: 'Download ${listing.extensionId} from ${listing.sourceUri}.',
-        todo:
-            'TODO: replace this planning step with a real downloader and cache writer.',
       ),
       ExtensionInstallExecutionStep(
-        kind: ExtensionInstallExecutionStepKind.verifySignature,
-        ready: signatureReady,
-        message: signatureReady
-            ? 'Package verification policy is satisfied.'
-            : 'Package must be verified before installation.',
-        todo:
-            'TODO: replace listing.verified with checksum and detached signature verification.',
+        kind: ExtensionInstallExecutionStepKind.verifyPackageIntegrity,
+        ready: integrityReady,
+        message: integrityReady
+            ? 'Verified publisher and SHA-256 package integrity are declared.'
+            : 'A verified publisher and valid SHA-256 digest are required.',
       ),
       ExtensionInstallExecutionStep(
         kind: ExtensionInstallExecutionStepKind.registerManifest,
@@ -482,11 +496,12 @@ class ExtensionMarketplaceInstaller {
       ),
     ];
 
-    if (!signatureReady) {
+    if (!integrityReady) {
       return ExtensionInstallExecutionPlan(
         extensionId: plan.extensionId,
         status: ExtensionInstallExecutionStatus.blockedUnverifiedPackage,
-        message: 'Extension ${plan.extensionId} is blocked until verified.',
+        message:
+            'Extension ${plan.extensionId} is blocked until publisher and package integrity are verified.',
         installPlan: plan,
         steps: steps,
         hostExecutionPlan: hostPlan,
@@ -630,11 +645,31 @@ class ListingMetadataPackageVerifier implements ExtensionPackageVerifier {
             'Listing ${listing.extensionId} is not marked as marketplace verified.',
       );
     }
+    final expected = listing.expectedSha256;
+    if (!listing.hasPackageIntegrity) {
+      return ExtensionPackageVerificationReceipt(
+        verified: false,
+        checksum: artifact.checksum,
+        message:
+            'Listing ${listing.extensionId} does not declare a valid SHA-256 digest.',
+      );
+    }
+    final actual = artifact.checksum.startsWith('sha256:')
+        ? artifact.checksum.substring('sha256:'.length).toLowerCase()
+        : artifact.checksum.toLowerCase();
+    if (actual != expected) {
+      return ExtensionPackageVerificationReceipt(
+        verified: false,
+        checksum: artifact.checksum,
+        message:
+            'Package integrity verification failed for ${listing.extensionId}.',
+      );
+    }
     return ExtensionPackageVerificationReceipt(
       verified: true,
       checksum: artifact.checksum,
       message:
-          'Listing ${listing.extensionId} satisfies marketplace verification metadata.',
+          'Listing ${listing.extensionId} publisher and SHA-256 integrity are verified.',
     );
   }
 }
@@ -785,28 +820,34 @@ typedef ExtensionMarketplaceIoOperationHandler =
 class ExtensionMarketplaceIoOperationRequest {
   const ExtensionMarketplaceIoOperationRequest({
     required this.kind,
-    required this.listing,
     required this.timestamp,
+    this.listing,
+    this.indexUri,
+    this.workspaceId = '',
     this.updatePlan,
     this.lifecycleDecision,
     this.metadata = const <String, Object?>{},
   });
 
   final ExtensionMarketplaceIoOperationKind kind;
-  final ExtensionMarketplaceListing listing;
+  final ExtensionMarketplaceListing? listing;
+  final Uri? indexUri;
+  final String workspaceId;
   final DateTime timestamp;
   final ExtensionMarketplaceUpdatePlan? updatePlan;
   final ExtensionInstallLifecyclePolicyDecision? lifecycleDecision;
   final Map<String, Object?> metadata;
 
-  String get extensionId => listing.extensionId;
+  String get extensionId => listing?.extensionId ?? '';
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'kind': kind.wireValue,
       'extensionId': extensionId,
       'timestamp': timestamp.toIso8601String(),
-      'listing': listing.toJson(),
+      if (listing != null) 'listing': listing!.toJson(),
+      if (indexUri != null) 'indexUri': indexUri.toString(),
+      if (workspaceId.isNotEmpty) 'workspaceId': workspaceId,
       if (updatePlan != null) 'updatePlan': updatePlan!.toJson(),
       if (lifecycleDecision != null)
         'lifecycleDecision': lifecycleDecision!.toJson(),
@@ -860,7 +901,7 @@ class ExtensionMarketplaceIoOperationResult {
 
   factory ExtensionMarketplaceIoOperationResult.completed({
     required ExtensionMarketplaceIoOperationRequest request,
-    required ExtensionMarketplaceIoOperationRegistration handler,
+    ExtensionMarketplaceIoOperationRegistration? handler,
     required String message,
     String artifactUri = '',
     String cacheKey = '',
@@ -1074,16 +1115,6 @@ class ExtensionMarketplaceIoBridge {
             ExtensionMarketplaceIoOperationResult.blocked(
               request: ExtensionMarketplaceIoOperationRequest(
                 kind: ExtensionMarketplaceIoOperationKind.downloadUpdatePackage,
-                listing: const ExtensionMarketplaceListing(
-                  manifest: ExtensionManifest(
-                    extensionId: '',
-                    displayName: '',
-                    version: '',
-                    publisher: '',
-                    entrypoint: '',
-                  ),
-                  sourceUri: '',
-                ),
                 updatePlan: updatePlan,
                 timestamp: timestamp,
                 metadata: metadata,
@@ -1119,7 +1150,11 @@ class ExtensionMarketplaceIoBridge {
   ) async {
     final results = <ExtensionMarketplaceIoOperationResult>[];
     for (final request in requests) {
-      results.add(await registry.execute(request));
+      final result = await registry.execute(request);
+      results.add(result);
+      if (!result.completed) {
+        break;
+      }
     }
     return ExtensionMarketplaceIoBatchResult(results: results);
   }
@@ -1218,8 +1253,6 @@ class ExtensionMarketplaceIndex {
       status: ExtensionInstallPlanStatus.ready,
       message: 'Extension $normalizedId can be installed from marketplace.',
       listing: listing,
-      todo:
-          'TODO: execute this plan through ExtensionMarketplaceInstallExecutor with a concrete downloader.',
     );
   }
 
@@ -1232,6 +1265,8 @@ class ExtensionMarketplaceIndex {
       workspaceId: workspaceId ?? this.workspaceId,
       listings: listings ?? this.listings,
       updatedAt: updatedAt ?? this.updatedAt,
+      schemaVersion: schemaVersion,
+      extensions: extensions,
     );
   }
 

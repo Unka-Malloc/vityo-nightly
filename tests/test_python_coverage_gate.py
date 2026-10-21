@@ -4,7 +4,9 @@ from __future__ import annotations
 import importlib.util
 import io
 import runpy
+import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -67,23 +69,76 @@ class PythonCoverageGateTest(unittest.TestCase):
                 self.assertEqual(self.gate.run_gate(97), 0)
 
         self.assertEqual(commands[0], [sys.executable, "-m", "coverage", "erase"])
-        # coverage run command may include --omit flags for gate infrastructure scripts
-        run_cmd = commands[1]
-        self.assertEqual(run_cmd[0], sys.executable)
-        self.assertIn("-m", run_cmd)
-        self.assertIn("coverage", run_cmd)
-        self.assertIn("run", run_cmd)
-        self.assertIn("--source", run_cmd)
-        self.assertIn(self.gate.SOURCE_SCOPE, run_cmd)
-        self.assertIn("-m", run_cmd[run_cmd.index("--source") + 2:])  # -m unittest after source+scope
-        self.assertIn("unittest", run_cmd)
-        self.assertIn("tests.test_linux_host_readiness_gate", run_cmd)
-        self.assertIn("tests.test_linux_packaging_gate", run_cmd)
-        self.assertIn("tests.test_run_native_pty_matrix", run_cmd)
-        self.assertIn("tests.test_vityo_quality", run_cmd)
-        self.assertIn("tests.test_vityo_validation_receipt", run_cmd)
-        self.assertIn("prototype.test_dev_server_security", run_cmd)
-        self.assertEqual(commands[2][-2:], ["--fail-under", "97"])
+        self.assertEqual(
+            len(commands),
+            2
+            + len(self.gate.UNIT_TEST_DISCOVERY)
+            + len(self.gate.STANDALONE_TEST_SCRIPTS),
+        )
+        for index, (start_directory, pattern) in enumerate(self.gate.UNIT_TEST_DISCOVERY):
+            discovery = commands[index + 1]
+            self.assertIn("unittest", discovery)
+            self.assertEqual(
+                discovery[-7:],
+                [
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "--start-directory",
+                    start_directory,
+                    "--pattern",
+                    pattern,
+                ],
+            )
+            self.assertEqual("--append" in discovery, index > 0)
+        report = commands[-1]
+        self.assertEqual(report[-2:], ["--fail-under", "97"])
+        standalone_commands = commands[1 + len(self.gate.UNIT_TEST_DISCOVERY) : -1]
+        for script, command in zip(
+            self.gate.STANDALONE_TEST_SCRIPTS,
+            standalone_commands,
+            strict=True,
+        ):
+            self.assertEqual(command[-1], script)
+            self.assertIn("--append", command)
+
+    def test_standalone_acceptance_scripts_map_to_existing_files(self) -> None:
+        for script in self.gate.STANDALONE_TEST_SCRIPTS:
+            with self.subTest(script=script):
+                self.assertTrue((REPO_ROOT / script).is_file())
+
+    def test_unittest_discovery_executes_a_new_test_under_the_supported_root(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(prefix="vityo-test-discovery-") as tmp_name:
+            test_root = Path(tmp_name)
+            (test_root / "test_new_feature.py").write_text(
+                "import unittest\n"
+                "class NewFeatureTest(unittest.TestCase):\n"
+                "    def test_discovered(self):\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+            command = [
+                sys.executable,
+                "-m",
+                "unittest",
+                "discover",
+                "--start-directory",
+                str(test_root),
+                "--pattern",
+                self.gate.UNIT_TEST_DISCOVERY[0][1],
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 1 test", completed.stderr)
 
     def test_run_gate_stops_on_first_failing_command(self) -> None:
         with mock.patch.object(self.gate, "coverage_available", return_value=True):
@@ -96,7 +151,7 @@ class PythonCoverageGateTest(unittest.TestCase):
         with mock.patch.object(self.gate, "run_gate", return_value=0) as run_gate:
             self.assertEqual(self.gate.main(["--fail-under", "96"]), 0)
 
-        run_gate.assert_called_once_with(96)
+        run_gate.assert_called_once_with(96, collect=True, report=True)
 
     def test_script_entrypoint_exits_with_main_result(self) -> None:
         with mock.patch.object(sys, "argv", [str(GATE_PATH), "--fail-under", "99"]):

@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 
+import 'support/test_file_system_manager.dart';
+
 Future<ConfigurationStore> _configurationStore(Directory root) async {
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: root.path,
@@ -29,9 +31,10 @@ void main() {
   group('LogRedactor', () {
     test('redacts common log and prompt secret shapes', () {
       final redactor = LogRedactor();
+      final fakeApiKey = 'sk-' 'proj-' 'secretvalue123456';
       final redacted = redactor.redact(
         'Authorization: Bearer bearer-token-123456\n'
-        'OPENAI_API_KEY=sk-proj-secretvalue123456\n'
+        'OPENAI_API_KEY=$fakeApiKey\n'
         'https://example.test/callback?token=query-token-123&safe=1\n'
         'email ada@example.com\n'
         'path /home/alice/project/.env\n'
@@ -47,7 +50,7 @@ void main() {
       expect(redacted, contains('<redacted-path>'));
       expect(redacted, contains('<redacted-session-id>'));
       expect(redacted, isNot(contains('bearer-token-123456')));
-      expect(redacted, isNot(contains('sk-proj-secretvalue123456')));
+      expect(redacted, isNot(contains(fakeApiKey)));
       expect(redacted, isNot(contains('query-token-123')));
       expect(redacted, isNot(contains('ada@example.com')));
       expect(redacted, isNot(contains('/home/alice')));
