@@ -32,7 +32,7 @@ The quality-runner test compares every file under the app's standalone integrati
 
 ## Task-resource Production Route
 
-`docs/plans/task-resource-delivery/checks.sh focused` registers analysis, static
+The internal milestone check surface registers analysis, static
 anchors, report-admission counterexamples and deterministic behavior checks for
 execution ownership, document operations, language lifecycle, no implicit
 request deadline, actual socket EOF/error settlement without request replay, recreated service identities, snapshot publication and runtime

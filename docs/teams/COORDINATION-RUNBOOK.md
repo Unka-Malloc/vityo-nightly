@@ -75,7 +75,7 @@ flowchart TB
 3. 若改变了 owned surface、review 路由或 handoff 路径，同批更新对应 team runbook。
 4. 中断时必须把状态、下一步、阻塞项和回滚点写入按主题命名的 `docs/history/<topic>.md`，日期只写入正文元数据。
 5. 若改动了三仓共同里程碑、repo exit、checkpoint ID 或跨仓 cutover 语义，同批更新本镜像总纲、`Vityo-Implementation-Gaps.md` 和对应 handoff 文档。
-6. 若改动了 docs tree、索引规则、archive/rollup lifecycle、ignore-policy 或 fixture 反忽略策略，同批更新文件治理对齐镜像、本仓文档策略和受影响 team runbook。`docs/plans/` 是本仓当前交付计划的 Better Plan 工作区（Programme/Requirements 与里程碑 Tree/Node/Task 状态）；`docs/plan/` 保留执行指引与已完成规划材料，两者分工见 DOCUMENTATION-POLICY。
+6. 若改动了 docs tree、索引规则、archive/rollup lifecycle、ignore-policy 或 fixture 反忽略策略，同批更新文件治理对齐镜像、本仓文档策略和受影响 team runbook。`docs/plans/` 是本仓当前交付计划的内部 Better Plan 工作区（Programme/Requirements 与里程碑 Tree/Node/Task 状态，不进入发布树）；`docs/plan/` 保留执行指引与已完成规划材料，两者分工见 DOCUMENTATION-POLICY。
 7. The test catalog distinguishes current executable suites from future acceptance. A future requirement, test declaration, or registered command is not a test result; record the suite actually run for the candidate revision.
 
 ## Release / Cutover Gates

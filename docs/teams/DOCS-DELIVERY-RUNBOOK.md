@@ -319,14 +319,13 @@ composition and the injectable packaged Agent launch resolver. Registered the ex
 BSD-3-Clause workspace chooser in the dependency license gate. Keep unfinished repairs
 on the same Draft PR and validate architecture and governance before pushing.
 
-2026-10-15: Registered `docs/plans/` as a documentation collection. The active
-delivery programme (Programme/Requirements plus the task-resource-delivery
-milestone's Tree/Node/Task state, check surface, and evidence) is this
-repository's own workspace, not a mirror of the upstream canonical plan;
-`docs/plan/` retains execution guidance and completed planning material.
-DOCUMENTATION-POLICY, IMPLEMENTED-DECISIONS, and COORDINATION-RUNBOOK now name
-the split, the milestone directory has a README, `final.py` no longer loses
-the rlimit diagnostic on the error path, and generated indexes are refreshed.
+2026-10-15: Designated `docs/plans/` as the internal Better Plan workspace,
+kept out of the published tree. The active delivery programme
+(Programme/Requirements plus milestone Tree/Node/Task state, check surface,
+and evidence) is this repository's own internal workspace, not a mirror of the
+upstream canonical plan; `docs/plan/` retains execution guidance and completed
+planning material. DOCUMENTATION-POLICY, IMPLEMENTED-DECISIONS, and
+COORDINATION-RUNBOOK now name the split.
 
 2026-10-15: Recorded the coordinator join and delivery closure for the
 task-resource milestone. The current candidate reran the E2E gate through real
