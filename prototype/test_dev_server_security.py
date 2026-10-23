@@ -94,8 +94,12 @@ class DevServerPathUtilityTest(unittest.TestCase):
         self.assertTrue(dev_server.host_is_loopback("127.0.0.1"))
         self.assertTrue(dev_server.host_is_loopback("::1"))
         self.assertTrue(dev_server.host_is_loopback("localhost."))
+        # Resolver-shorthand loopback literals bind loopback for real.
+        self.assertTrue(dev_server.host_is_loopback("127.1"))
+        self.assertTrue(dev_server.host_is_loopback("0x7f000001"))
         self.assertFalse(dev_server.host_is_loopback("0.0.0.0"))
         self.assertFalse(dev_server.host_is_loopback("192.0.2.10"))
+        self.assertFalse(dev_server.host_is_loopback("8.8.8.8"))
         self.assertFalse(dev_server.host_is_loopback("devbox.lan"))
         self.assertEqual(dev_server.normalize_hostname("[::1]"), "::1")
 
