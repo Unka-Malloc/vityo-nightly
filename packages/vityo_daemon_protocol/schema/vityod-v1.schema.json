@@ -23,7 +23,7 @@
     "deadlineUnixMillis": {"type": "integer", "minimum": 0, "description": "Non-negative Unix-millisecond deadline; Dart and Rust codecs enforce the bound on encode and decode."},
     "cancellationId": {"type": "string"},
     "params": {"type": "object"},
-    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "Unique capability names; Dart and Rust codecs refuse duplicates on encode and decode."}
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "Unique capability names; both codecs validate on construction and decode, and the Dart envelope stores the validated list as an immutable snapshot so post-construction mutation cannot emit duplicates."}
   },
   "additionalProperties": true
 }
