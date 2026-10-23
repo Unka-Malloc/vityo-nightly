@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../ide/editor/document_state.dart';
+import '../environment/system_compatibility/file_system/file_system.dart';
+import '../environment/system_compatibility/platform_manager/platform_manager.dart';
+import '../environment/system_compatibility/process/process.dart';
 import '../language/language_contract.dart';
 import '../platform/platform_target.dart';
 import 'adapter_contracts.dart';
@@ -42,8 +45,17 @@ _iosLocalCliExecutionCapabilitySnapshot = AdapterCapabilitySnapshot(
 const String _missingLocalStyioBinaryMessage =
     'No local styio binary was resolved. Set VITYO_STYIO_BIN or install styio on PATH.';
 
+/// The platform manager bundle carries the filesystem, shell, process and PTY
+/// services the local execution route needs. Reporting a missing styio binary
+/// for an absent bundle sends readers to the wrong subsystem, so keep the two
+/// blocked states distinct.
+const String _missingPlatformServicesMessage =
+    'Local platform services are unavailable, so local execution cannot start. Connect the local service and retry.';
+
 const int _executionOverlaySnapshotMaxEntries = 20000;
 const int _executionOverlaySnapshotMaxBytes = 256 * 1024 * 1024;
+const String _workflowDiagnosticsFileName = 'diagnostics.jsonl';
+int _executionTempSequence = 0;
 
 const ExecutionSession _iosCloudOnlyExecutionSession = ExecutionSession(
   sessionId: 'ios-cloud-only',
@@ -74,6 +86,7 @@ ExecutionSession _blockedRunExecutionSession({
 Future<ExecutionAdapter> createPlatformExecutionAdapter({
   required PlatformTarget platformTarget,
   required ProjectGraphSnapshot projectGraph,
+  PlatformManagerBundle? platformManagers,
 }) async {
   final hostedClient = await createHostedControlPlaneClient(
     platformTarget: platformTarget,
@@ -90,6 +103,7 @@ Future<ExecutionAdapter> createPlatformExecutionAdapter({
     platformTarget: platformTarget,
     projectGraph: projectGraph,
     compiler: compiler,
+    platformManagers: platformManagers,
   );
 }
 
@@ -136,6 +150,7 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     final workspaceId = projectGraph.hostedWorkspace?.workspaceId;
     if (workspaceId == null || workspaceId.isEmpty) {
@@ -209,16 +224,21 @@ class _HostedExecutionAdapter implements ExecutionAdapter {
 }
 
 class _LocalCliExecutionAdapter
-    implements ExecutionAdapter, ObservedExecutionAdapter {
+    implements
+        ExecutionAdapter,
+        CancellableExecutionAdapter,
+        ObservedExecutionAdapter {
   const _LocalCliExecutionAdapter({
     required this.platformTarget,
     required this.projectGraph,
     required this.compiler,
+    required this.platformManagers,
   });
 
   final PlatformTarget platformTarget;
   final ProjectGraphSnapshot projectGraph;
   final CompilerHandshakeSnapshot? compiler;
+  final PlatformManagerBundle? platformManagers;
 
   @override
   AdapterCapabilitySnapshot get capabilitySnapshot => switch (platformTarget) {
@@ -235,6 +255,7 @@ class _LocalCliExecutionAdapter
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     switch (platformTarget) {
       case PlatformTarget.ios:
@@ -249,6 +270,13 @@ class _LocalCliExecutionAdapter
     }
 
     final resolvedCompiler = compiler;
+    final managers = platformManagers;
+    if (managers == null) {
+      return _blockedRunExecutionSession(
+        sessionId: 'missing-platform-services',
+        message: _missingPlatformServicesMessage,
+      );
+    }
     if (resolvedCompiler == null) {
       return _blockedRunExecutionSession(
         sessionId: 'missing-styio-binary',
@@ -269,6 +297,8 @@ class _LocalCliExecutionAdapter
         projectGraph: projectGraph,
         document: document,
         activeFilePath: activeFilePath,
+        platformManagers: managers,
+        onProcessStarted: onProcessStarted,
       );
     }
 
@@ -277,6 +307,7 @@ class _LocalCliExecutionAdapter
       preparedInput = await _prepareSingleFileExecutionInput(
         activeFilePath: activeFilePath,
         document: document,
+        platformManagers: managers,
       );
     } on _ExecutionOverlayException catch (error) {
       return _blockedRunExecutionSession(
@@ -285,21 +316,29 @@ class _LocalCliExecutionAdapter
       );
     }
     try {
-      final result = await Process.run(resolvedCompiler.binaryPath, <String>[
-        '--file',
-        preparedInput.filePath,
-        '--error-format=jsonl',
-      ]);
+      final result = await managers.process.run(
+        ProcessCommandRequest(
+          executablePath: resolvedCompiler.binaryPath,
+          arguments: <String>[
+            '--file',
+            preparedInput.filePath,
+            '--error-format=jsonl',
+          ],
+          workingDirectory: projectGraph.workspaceRoot,
+          serviceKind: ProcessServiceKind.styio,
+          onStarted: onProcessStarted,
+        ),
+      );
 
       final normalizedPath = preparedInput.pathOverlay?.normalize;
       final stdoutChannel = _parseOutputChannel(
-        '${result.stdout}',
+        result.stdout,
         documentText: document.text,
         activeFilePath: activeFilePath,
         normalizePath: normalizedPath,
       );
       final stderrChannel = _parseOutputChannel(
-        '${result.stderr}',
+        result.stderr,
         documentText: document.text,
         activeFilePath: activeFilePath,
         normalizePath: normalizedPath,
@@ -308,10 +347,10 @@ class _LocalCliExecutionAdapter
       return ExecutionSession(
         sessionId: DateTime.now().microsecondsSinceEpoch.toString(),
         kind: 'run',
-        status: result.exitCode == 0
+        status: result.succeeded
             ? ExecutionSessionStatus.succeeded
             : ExecutionSessionStatus.failed,
-        statusMessage: result.exitCode == 0
+        statusMessage: result.succeeded
             ? 'Single-file CLI run completed through styio.'
             : 'styio exited with code ${result.exitCode}.',
         diagnostics: <Diagnostic>[
@@ -321,10 +360,30 @@ class _LocalCliExecutionAdapter
         stdoutEvents: stdoutChannel.logEvents,
         stderrEvents: stderrChannel.logEvents,
         unitRange: SourceRange(start: 0, end: document.length),
+        metadata: result.metadata,
       );
     } finally {
-      await _cleanupPreparedExecutionInput(preparedInput);
+      await _cleanupPreparedExecutionInput(
+        preparedInput,
+        fileSystem: managers.fileSystem,
+      );
     }
+  }
+
+  @override
+  Future<ExecutionCancellationResult> cancelExecution(String processHandleId) {
+    final processManager = platformManagers?.process;
+    if (processManager is! CancellableProcessManager) {
+      return Future<ExecutionCancellationResult>.value(
+        const ExecutionCancellationResult.unsupported(
+          message:
+              'The active execution route does not expose process cancellation.',
+        ),
+      );
+    }
+    return (processManager as CancellableProcessManager).cancelProcess(
+      processHandleId,
+    );
   }
 
   @override
@@ -350,7 +409,18 @@ class _LocalCliExecutionAdapter
         break;
     }
 
-    if (compiler == null) {
+    final resolvedCompiler = compiler;
+    final managers = platformManagers;
+    if (managers == null) {
+      return ObservedExecutionRun(
+        session: _blockedRunExecutionSession(
+          sessionId: 'missing-platform-services',
+          message: _missingPlatformServicesMessage,
+        ),
+        unavailableReason: ObservableReasonCode.missingCapability,
+      );
+    }
+    if (resolvedCompiler == null) {
       return ObservedExecutionRun(
         session: _blockedRunExecutionSession(
           sessionId: 'missing-styio-binary',
@@ -370,7 +440,7 @@ class _LocalCliExecutionAdapter
       );
     }
 
-    if (!compiler!.supportsContract('compile_plan')) {
+    if (!resolvedCompiler.supportsContract('compile_plan')) {
       return ObservedExecutionRun(
         session: _blockedRunExecutionSession(
           sessionId: 'compile-plan-preview-only',
@@ -382,10 +452,11 @@ class _LocalCliExecutionAdapter
     }
 
     return _runProjectWorkflowObserved(
-      compiler: compiler!,
+      compiler: resolvedCompiler,
       projectGraph: projectGraph,
       document: document,
       activeFilePath: activeFilePath,
+      platformManagers: managers,
       observation: observation,
     );
   }
@@ -486,7 +557,7 @@ class _PreparedExecutionInput {
   });
 
   final String filePath;
-  final Directory? temporaryDirectory;
+  final String? temporaryDirectory;
   final _PathOverlayMapping? pathOverlay;
 }
 
@@ -500,7 +571,7 @@ class _PreparedProjectWorkflowInput {
 
   final String workspaceRoot;
   final String manifestPath;
-  final Directory? temporaryDirectory;
+  final String? temporaryDirectory;
   final _PathOverlayMapping? pathOverlay;
 }
 
@@ -547,10 +618,9 @@ class _OverlaySnapshotBudget {
     _accountEntry(path);
   }
 
-  Future<void> accountFile(File file) async {
+  void accountFile(FileSystemEntitySnapshot file) {
     _accountEntry(file.path);
-    final bytes = await file.length();
-    _bytes += bytes;
+    _bytes += file.size ?? 0;
     if (_bytes > _executionOverlaySnapshotMaxBytes) {
       throw _ExecutionOverlayException(
         'Execution overlay snapshot exceeded $_executionOverlaySnapshotMaxBytes bytes while copying ${file.path}.',
@@ -600,12 +670,16 @@ Future<ExecutionSession> _runProjectWorkflow({
   required ProjectGraphSnapshot projectGraph,
   required DocumentState document,
   required String activeFilePath,
+  required PlatformManagerBundle platformManagers,
+  ExecutionProcessStartedCallback? onProcessStarted,
 }) async {
   final outcome = await _executeProjectWorkflow(
     compiler: compiler,
     projectGraph: projectGraph,
     document: document,
     activeFilePath: activeFilePath,
+    platformManagers: platformManagers,
+    onProcessStarted: onProcessStarted,
   );
   return outcome.session;
 }
@@ -615,6 +689,7 @@ Future<ObservedExecutionRun> _runProjectWorkflowObserved({
   required ProjectGraphSnapshot projectGraph,
   required DocumentState document,
   required String activeFilePath,
+  required PlatformManagerBundle platformManagers,
   required RuntimeObservationRequest observation,
 }) async {
   return _executeProjectWorkflow(
@@ -622,6 +697,7 @@ Future<ObservedExecutionRun> _runProjectWorkflowObserved({
     projectGraph: projectGraph,
     document: document,
     activeFilePath: activeFilePath,
+    platformManagers: platformManagers,
     observation: observation,
   );
 }
@@ -631,7 +707,9 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
   required ProjectGraphSnapshot projectGraph,
   required DocumentState document,
   required String activeFilePath,
+  required PlatformManagerBundle platformManagers,
   RuntimeObservationRequest? observation,
+  ExecutionProcessStartedCallback? onProcessStarted,
 }) async {
   final manifestPath = projectGraph.manifestPath;
   if (manifestPath == null) {
@@ -644,7 +722,10 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     );
   }
 
-  final pafioBinary = await resolvePafioBinary();
+  final pafioBinary = await resolvePafioBinary(
+    platformManagers,
+    environment: Platform.environment,
+  );
   if (pafioBinary == null) {
     return ObservedExecutionRun(
       session: _blockedRunExecutionSession(
@@ -664,6 +745,7 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
       manifestPath: manifestPath,
       activeFilePath: activeFilePath,
       document: document,
+      platformManagers: platformManagers,
     );
   } on _ExecutionOverlayException catch (error) {
     return ObservedExecutionRun(
@@ -676,8 +758,10 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
   final normalizedPath = preparedInput.pathOverlay?.normalize;
   final deferCleanup = observation != null;
 
-  Future<void> releaseOverlay() =>
-      _cleanupPreparedProjectWorkflowInput(preparedInput);
+  Future<void> releaseOverlay() => _cleanupPreparedProjectWorkflowInput(
+    preparedInput,
+    fileSystem: platformManagers.fileSystem,
+  );
 
   try {
     final command = <String>[
@@ -698,21 +782,25 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
         command.add(name);
       }
     }
-    final result = await Process.run(
-      pafioBinary,
-      command,
-      workingDirectory: preparedInput.workspaceRoot,
+    final result = await platformManagers.process.run(
+      ProcessCommandRequest(
+        executablePath: pafioBinary,
+        arguments: command,
+        workingDirectory: preparedInput.workspaceRoot,
+        serviceKind: ProcessServiceKind.pafio,
+        onStarted: onProcessStarted,
+      ),
     );
 
-    final stdout = '${result.stdout}';
-    final stderr = '${result.stderr}';
+    final stdout = result.stdout;
+    final stderr = result.stderr;
     final artifactPath = _locateRuntimeEventsArtifact(
       stdout: stdout,
       stderr: stderr,
       workspaceRoot: preparedInput.workspaceRoot,
     );
     ExecutionSession? session;
-    if (result.exitCode == 0) {
+    if (result.succeeded) {
       session = await _sessionFromWorkflowSuccessPayload(
         stdout: stdout,
         stderr: stderr,
@@ -721,6 +809,8 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
         activeFilePath: activeFilePath,
         workspaceRoot: preparedInput.workspaceRoot,
         normalizePath: normalizedPath,
+        fileSystem: platformManagers.fileSystem,
+        processMetadata: result.metadata,
       );
     }
     session ??= _sessionFromWorkflowFailurePayload(
@@ -730,7 +820,9 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
       document: document,
       activeFilePath: activeFilePath,
       normalizePath: normalizedPath,
-      exitCode: result.exitCode,
+      // A null exit code means the managed process never reported a status
+      // (for example a cancelled or killed run), which is always a failure.
+      exitCode: result.exitCode ?? -1,
     );
     final runtimeEvents = await readRuntimeEventsV2ForSession(
       artifactPath: artifactPath,
@@ -744,14 +836,15 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     return ObservedExecutionRun(
       session: session,
       runtimeEventsPath: artifactPath,
+      temporaryDirectory: preparedInput.temporaryDirectory,
       release: deferCleanup ? releaseOverlay : null,
     );
-  } on ProcessException catch (error) {
+  } on Object catch (error) {
     final session = ExecutionSession(
       sessionId: 'pafio-process-error',
       kind: workflow.kind,
       status: ExecutionSessionStatus.failed,
-      statusMessage: 'Failed to execute pafio: ${error.message}',
+      statusMessage: 'Failed to execute pafio: $error',
       diagnostics: const <Diagnostic>[],
       stdoutEvents: const <ExecutionLogEvent>[],
       stderrEvents: const <ExecutionLogEvent>[],
@@ -759,11 +852,15 @@ Future<ObservedExecutionRun> _executeProjectWorkflow({
     );
     return ObservedExecutionRun(
       session: session,
+      temporaryDirectory: preparedInput.temporaryDirectory,
       release: deferCleanup ? releaseOverlay : null,
     );
   } finally {
     if (!deferCleanup) {
-      await releaseOverlay();
+      await _cleanupPreparedProjectWorkflowInput(
+        preparedInput,
+        fileSystem: platformManagers.fileSystem,
+      );
     }
   }
 }
@@ -775,95 +872,98 @@ Future<ExecutionSession?> _sessionFromWorkflowSuccessPayload({
   required DocumentState document,
   required String activeFilePath,
   required String workspaceRoot,
+  required FileSystemManager fileSystem,
+  required Map<String, Object?> processMetadata,
   String Function(String path)? normalizePath,
 }) async {
-  final trimmed = stdout.trim();
-  if (!trimmed.startsWith('{')) {
-    return null;
+  // Pafio prints exactly one success envelope on stdout:
+  // {action, command, intent, message, mode, plan, profile, status, styio,
+  //  sync, target}. The envelope carries path pointers only: the schema-v1
+  // receipt lives at <plan.build_root>/receipt.json and the JSONL diagnostics
+  // at <plan.diag_dir>/diagnostics.jsonl. There is no inline receipt,
+  // diagnostics, or child stdout/stderr in --json mode.
+  final decoded = parseJsonObjectPayload(stdout);
+  if (decoded == null) {
+    return _workflowEnvelopeFailureSession(
+      workflow: workflow,
+      document: document,
+      processMetadata: processMetadata,
+      message:
+          'Pafio ${workflow.command} exited successfully without a JSON workflow envelope.',
+    );
   }
 
-  try {
-    final decoded = jsonDecode(trimmed);
-    if (decoded is! Map<String, dynamic>) {
-      return null;
-    }
-    if (decoded['workflow_payload_version'] != 1) {
-      return null;
-    }
+  final plan = decoded['plan'];
+  final planMap = plan is Map
+      ? Map<String, dynamic>.from(plan)
+      : const <String, dynamic>{};
+  final reportedBuildRoot = _stringValue(planMap['build_root']);
+  final buildRoot = reportedBuildRoot == null
+      ? null
+      : _rebaseReportedWorkflowPath(reportedBuildRoot, workspaceRoot);
+  final reportedDiagDir = _stringValue(planMap['diag_dir']);
+  final diagDir = reportedDiagDir == null
+      ? null
+      : _rebaseReportedWorkflowPath(reportedDiagDir, workspaceRoot);
 
-    final sessionId =
-        _workflowSessionIdFromPayload(decoded) ??
-        DateTime.now().microsecondsSinceEpoch.toString();
-    final receiptPayload = decoded['receipt'];
-    final receipt = ExecutionReceiptSnapshot.decode(
-      receiptPayload,
-      fallbackSessionId: sessionId,
+  final fallbackSessionId = DateTime.now().microsecondsSinceEpoch.toString();
+  final receiptResult = await _readWorkflowReceipt(
+    buildRoot: buildRoot,
+    workspaceRoot: workspaceRoot,
+    fileSystem: fileSystem,
+    fallbackSessionId: fallbackSessionId,
+  );
+  if (receiptResult.error != null) {
+    return _workflowEnvelopeFailureSession(
+      workflow: workflow,
+      document: document,
+      processMetadata: processMetadata,
+      message: receiptResult.error!,
     );
-    if (receiptPayload != null && receipt == null) {
-      return ExecutionSession(
-        sessionId: sessionId,
-        kind: workflow.kind,
-        status: ExecutionSessionStatus.failed,
-        statusMessage:
-            'Workflow receipt rejected: only receipt schema version 1 is supported.',
-        diagnostics: const <Diagnostic>[],
-        stdoutEvents: const <ExecutionLogEvent>[],
-        stderrEvents: const <ExecutionLogEvent>[],
-        unitRange: SourceRange(start: 0, end: document.length),
-      );
-    }
-    final payloadStdout = decoded['stdout'] as String? ?? '';
-    final payloadStderr = decoded['stderr'] as String? ?? '';
-    final workflowDiagnostics = await _readWorkflowDiagnostics(
-      rawDiagnostics: decoded['diagnostics'],
-      diagnosticsPath: decoded['diagnostics_path'],
-      workspaceRoot: workspaceRoot,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-    final payloadStdoutChannel = _parseOutputChannel(
-      payloadStdout,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-    final payloadStderrChannel = _parseOutputChannel(
-      payloadStderr,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-    final stderrChannel = _parseOutputChannel(
-      stderr,
-      documentText: document.text,
-      activeFilePath: activeFilePath,
-      normalizePath: normalizePath,
-    );
-
-    return ExecutionSession(
-      sessionId: sessionId,
-      kind: workflow.kind,
-      status: ExecutionSessionStatus.succeeded,
-      statusMessage: decoded['message'] as String? ?? workflow.successMessage,
-      diagnostics: <Diagnostic>[
-        ...workflowDiagnostics.diagnostics,
-        ...payloadStdoutChannel.diagnostics,
-        ...payloadStderrChannel.diagnostics,
-        ...stderrChannel.diagnostics,
-      ],
-      stdoutEvents: payloadStdoutChannel.logEvents,
-      stderrEvents: <ExecutionLogEvent>[
-        ...workflowDiagnostics.logEvents,
-        ...payloadStderrChannel.logEvents,
-        ...stderrChannel.logEvents,
-      ],
-      receipt: receipt,
-      unitRange: SourceRange(start: 0, end: document.length),
-    );
-  } on FormatException {
-    return null;
   }
+  final receipt = receiptResult.receipt;
+  final receiptSessionId = receipt?.sessionId ?? '';
+  final sessionId = receiptSessionId.isNotEmpty
+      ? receiptSessionId
+      : fallbackSessionId;
+
+  final diagnosticsPath = diagDir == null
+      ? null
+      : _joinPath(diagDir, _workflowDiagnosticsFileName);
+  final workflowDiagnostics = await _readWorkflowDiagnostics(
+    rawDiagnostics: decoded['diagnostics'],
+    diagnosticsPath: diagnosticsPath,
+    workspaceRoot: workspaceRoot,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+    fileSystem: fileSystem,
+  );
+  final stderrChannel = _parseOutputChannel(
+    stderr,
+    documentText: document.text,
+    activeFilePath: activeFilePath,
+    normalizePath: normalizePath,
+  );
+
+  return ExecutionSession(
+    sessionId: sessionId,
+    kind: workflow.kind,
+    status: ExecutionSessionStatus.succeeded,
+    statusMessage: _stringValue(decoded['message']) ?? workflow.successMessage,
+    diagnostics: <Diagnostic>[
+      ...workflowDiagnostics.diagnostics,
+      ...stderrChannel.diagnostics,
+    ],
+    stdoutEvents: const <ExecutionLogEvent>[],
+    stderrEvents: <ExecutionLogEvent>[
+      ...workflowDiagnostics.logEvents,
+      ...stderrChannel.logEvents,
+    ],
+    receipt: receipt,
+    unitRange: SourceRange(start: 0, end: document.length),
+    metadata: processMetadata,
+  );
 }
 
 ExecutionSession _sessionFromWorkflowFailurePayload({
@@ -877,9 +977,7 @@ ExecutionSession _sessionFromWorkflowFailurePayload({
 }) {
   final failurePayload =
       parseJsonObjectPayload(stderr) ?? parseJsonObjectPayload(stdout);
-  final sessionId =
-      _workflowSessionIdFromPayload(failurePayload) ??
-      DateTime.now().microsecondsSinceEpoch.toString();
+  final sessionId = DateTime.now().microsecondsSinceEpoch.toString();
   final payloadDiagnostics = _parsePayloadDiagnostics(
     failurePayload?['diagnostics'],
     documentText: document.text,
@@ -922,12 +1020,77 @@ ExecutionSession _sessionFromWorkflowFailurePayload({
   );
 }
 
+ExecutionSession _workflowEnvelopeFailureSession({
+  required _ProjectWorkflowSelection workflow,
+  required DocumentState document,
+  required Map<String, Object?> processMetadata,
+  required String message,
+}) {
+  return ExecutionSession(
+    sessionId: DateTime.now().microsecondsSinceEpoch.toString(),
+    kind: workflow.kind,
+    status: ExecutionSessionStatus.failed,
+    statusMessage: message,
+    diagnostics: const <Diagnostic>[],
+    stdoutEvents: const <ExecutionLogEvent>[],
+    stderrEvents: const <ExecutionLogEvent>[],
+    unitRange: SourceRange(start: 0, end: document.length),
+    metadata: processMetadata,
+  );
+}
+
+class _WorkflowReceiptReadResult {
+  const _WorkflowReceiptReadResult({this.receipt, this.error});
+
+  final ExecutionReceiptSnapshot? receipt;
+  final String? error;
+}
+
+Future<_WorkflowReceiptReadResult> _readWorkflowReceipt({
+  required String? buildRoot,
+  required String workspaceRoot,
+  required FileSystemManager fileSystem,
+  required String fallbackSessionId,
+}) async {
+  if (buildRoot == null || buildRoot.isEmpty) {
+    return const _WorkflowReceiptReadResult();
+  }
+  if (!_runtimePathContained(buildRoot, workspaceRoot)) {
+    return const _WorkflowReceiptReadResult(
+      error: 'Pafio workflow build root is outside the workspace tree.',
+    );
+  }
+  final receiptPath = _joinPath(buildRoot, 'receipt.json');
+  try {
+    if (!await fileSystem.exists(receiptPath)) {
+      return const _WorkflowReceiptReadResult();
+    }
+    final raw = parseJsonObjectPayload(await fileSystem.readText(receiptPath));
+    final receipt = ExecutionReceiptSnapshot.decode(
+      raw,
+      fallbackSessionId: fallbackSessionId,
+    );
+    if (receipt == null) {
+      return const _WorkflowReceiptReadResult(
+        error:
+            'Workflow receipt rejected: only receipt schema version 1 is supported.',
+      );
+    }
+    return _WorkflowReceiptReadResult(receipt: receipt);
+  } on Object {
+    return const _WorkflowReceiptReadResult(
+      error: 'Workflow receipt could not be read from the build root.',
+    );
+  }
+}
+
 Future<_ParsedDiagnostics> _readWorkflowDiagnostics({
   required Object? rawDiagnostics,
   required Object? diagnosticsPath,
   required String workspaceRoot,
   required String documentText,
   required String activeFilePath,
+  required FileSystemManager fileSystem,
   String Function(String path)? normalizePath,
 }) async {
   final inlineDiagnostics = _parsePayloadDiagnostics(
@@ -948,19 +1111,18 @@ Future<_ParsedDiagnostics> _readWorkflowDiagnostics({
   }
 
   try {
-    final file = File(resolvedDiagnosticsPath);
-    if (!await file.exists()) {
+    if (!await fileSystem.exists(resolvedDiagnosticsPath)) {
       return _ParsedDiagnostics(diagnostics: diagnostics, logEvents: logEvents);
     }
     final fileDiagnostics = _parseOutputChannel(
-      await file.readAsString(),
+      await fileSystem.readText(resolvedDiagnosticsPath),
       documentText: documentText,
       activeFilePath: activeFilePath,
       normalizePath: normalizePath,
     );
     diagnostics.addAll(fileDiagnostics.diagnostics);
     logEvents.addAll(fileDiagnostics.logEvents);
-  } on FileSystemException {
+  } on Object {
     // Keep inline diagnostics when the artifact cannot be read.
   }
 
@@ -985,10 +1147,8 @@ String? _locateRuntimeEventsArtifact({
   if (buildRootRaw == null) {
     return null;
   }
-  final buildRoot = _isAbsolutePath(buildRootRaw)
-      ? buildRootRaw
-      : _joinPath(workspaceRoot, buildRootRaw);
-  if (!_runtimePathContained(buildRoot, workspaceRoot)) {
+  final buildRoot = _rebaseReportedWorkflowPath(buildRootRaw, workspaceRoot);
+  if (buildRoot == null || !_runtimePathContained(buildRoot, workspaceRoot)) {
     return null;
   }
   final receiptFile = File(_joinPath(buildRoot, 'receipt.json'));
@@ -1020,9 +1180,10 @@ String? _locateRuntimeEventsArtifact({
     return null;
   }
   final resolved = _isAbsolutePath(namedPath)
-      ? namedPath
+      ? _rebaseReportedWorkflowPath(namedPath, workspaceRoot)
       : _joinPath(buildRoot, namedPath);
-  if (!_runtimePathContained(resolved, workspaceRoot) ||
+  if (resolved == null ||
+      !_runtimePathContained(resolved, workspaceRoot) ||
       !_runtimePathContained(resolved, buildRoot)) {
     return null;
   }
@@ -1114,24 +1275,6 @@ _ParsedDiagnostics _parsePayloadDiagnostics(
   return _ParsedDiagnostics(diagnostics: diagnostics, logEvents: logEvents);
 }
 
-String? _workflowSessionIdFromPayload(Map<String, dynamic>? payload) {
-  if (payload == null) {
-    return null;
-  }
-
-  final runtimeSessionId = _stringValue(payload['runtime_session_id']);
-  if (runtimeSessionId != null) {
-    return runtimeSessionId;
-  }
-
-  final receipt = payload['receipt'];
-  if (receipt is Map<String, dynamic>) {
-    return _stringValue(receipt['session_id']) ??
-        _stringValue(receipt['sessionId']);
-  }
-  return null;
-}
-
 _ProjectWorkflowSelection _selectProjectWorkflow({
   required ProjectGraphSnapshot projectGraph,
   required String activeFilePath,
@@ -1208,20 +1351,28 @@ _ProjectWorkflowSelection _selectProjectWorkflow({
 Future<_PreparedExecutionInput> _prepareSingleFileExecutionInput({
   required String activeFilePath,
   required DocumentState document,
+  required PlatformManagerBundle platformManagers,
 }) async {
+  final fileSystem = platformManagers.fileSystem;
   if (_isAbsolutePath(activeFilePath)) {
     if (!await _shouldUseDocumentOverlay(
       activeFilePath: activeFilePath,
       document: document,
+      fileSystem: fileSystem,
     )) {
       return _PreparedExecutionInput(filePath: activeFilePath);
     }
 
-    final sourceRoot = await _singleFileOverlayRoot(activeFilePath);
+    final sourceRoot = await _singleFileOverlayRoot(
+      activeFilePath,
+      fileSystem: fileSystem,
+    );
     final overlay = await _createDocumentOverlay(
       sourceRoot: sourceRoot,
       activeFilePath: activeFilePath,
       document: document,
+      fileSystem: fileSystem,
+      temporaryRoot: platformManagers.resource.snapshot().systemTempPath,
     );
     return _PreparedExecutionInput(
       filePath:
@@ -1232,27 +1383,28 @@ Future<_PreparedExecutionInput> _prepareSingleFileExecutionInput({
     );
   }
 
-  final tempDirectory = await Directory.systemTemp.createTemp('Vityo-run-');
-  final tempFile = File(
-    '${tempDirectory.path}${Platform.pathSeparator}main.styio',
+  final tempDirectory = await _createTemporaryOverlayDirectory(
+    fileSystem: fileSystem,
+    temporaryRoot: platformManagers.resource.snapshot().systemTempPath,
+    label: 'single-file',
   );
-  await tempFile.writeAsString(document.text);
+  final tempFile = fileSystem.joinPath(<String>[tempDirectory, 'main.styio']);
+  await fileSystem.writeText(tempFile, document.text);
   return _PreparedExecutionInput(
-    filePath: tempFile.path,
+    filePath: tempFile,
     temporaryDirectory: tempDirectory,
   );
 }
 
 Future<void> _cleanupPreparedExecutionInput(
-  _PreparedExecutionInput input,
-) async {
+  _PreparedExecutionInput input, {
+  required FileSystemManager fileSystem,
+}) async {
   final temporaryDirectory = input.temporaryDirectory;
   if (temporaryDirectory == null) {
     return;
   }
-  if (await temporaryDirectory.exists()) {
-    await temporaryDirectory.delete(recursive: true);
-  }
+  await _deleteTemporaryOverlayRoot(temporaryDirectory, fileSystem: fileSystem);
 }
 
 Future<_PreparedProjectWorkflowInput> _prepareProjectWorkflowInput({
@@ -1260,7 +1412,9 @@ Future<_PreparedProjectWorkflowInput> _prepareProjectWorkflowInput({
   required String manifestPath,
   required String activeFilePath,
   required DocumentState document,
+  required PlatformManagerBundle platformManagers,
 }) async {
+  final fileSystem = platformManagers.fileSystem;
   if (!_isAbsolutePath(activeFilePath)) {
     return _PreparedProjectWorkflowInput(
       workspaceRoot: projectGraph.workspaceRoot,
@@ -1270,6 +1424,7 @@ Future<_PreparedProjectWorkflowInput> _prepareProjectWorkflowInput({
   final shouldUseOverlay = await _shouldUseDocumentOverlay(
     activeFilePath: activeFilePath,
     document: document,
+    fileSystem: fileSystem,
   );
   if (!_pathIsWithinRoot(activeFilePath, projectGraph.workspaceRoot)) {
     if (shouldUseOverlay) {
@@ -1293,6 +1448,8 @@ Future<_PreparedProjectWorkflowInput> _prepareProjectWorkflowInput({
     sourceRoot: projectGraph.workspaceRoot,
     activeFilePath: activeFilePath,
     document: document,
+    fileSystem: fileSystem,
+    temporaryRoot: platformManagers.resource.snapshot().systemTempPath,
   );
   return _PreparedProjectWorkflowInput(
     workspaceRoot: overlay.pathOverlay.overlayRoot,
@@ -1304,114 +1461,160 @@ Future<_PreparedProjectWorkflowInput> _prepareProjectWorkflowInput({
 }
 
 Future<void> _cleanupPreparedProjectWorkflowInput(
-  _PreparedProjectWorkflowInput input,
-) async {
+  _PreparedProjectWorkflowInput input, {
+  required FileSystemManager fileSystem,
+}) async {
   final temporaryDirectory = input.temporaryDirectory;
   if (temporaryDirectory == null) {
     return;
   }
-  if (await temporaryDirectory.exists()) {
-    await temporaryDirectory.delete(recursive: true);
-  }
+  await _deleteTemporaryOverlayRoot(temporaryDirectory, fileSystem: fileSystem);
 }
 
 Future<bool> _shouldUseDocumentOverlay({
   required String activeFilePath,
   required DocumentState document,
+  required FileSystemManager fileSystem,
 }) async {
   if (!_isAbsolutePath(activeFilePath)) {
     return false;
   }
   try {
-    final file = File(activeFilePath);
-    if (!await file.exists()) {
+    if (!await fileSystem.exists(activeFilePath)) {
       return true;
     }
-    return await file.readAsString() != document.text;
-  } on FileSystemException {
+    return await fileSystem.readText(activeFilePath) != document.text;
+  } on VityodFileSystemException catch (error) {
+    if (error.code == 'workspace_root_escape') {
+      throw _ExecutionOverlayException(
+        'Active file path $activeFilePath resolves outside workspace root.',
+      );
+    }
+    return true;
+  } on Object {
     return true;
   }
 }
 
-Future<String> _singleFileOverlayRoot(String activeFilePath) async {
-  var current = File(activeFilePath).parent.absolute;
+Future<String> _singleFileOverlayRoot(
+  String activeFilePath, {
+  required FileSystemManager fileSystem,
+}) async {
+  final activeParent = _pathParent(fileSystem.normalizePath(activeFilePath));
+  var current = activeParent;
   while (true) {
     final hasConfig =
-        await File(
-          '${current.path}${Platform.pathSeparator}styio.toml',
-        ).exists() ||
-        await File(
-          '${current.path}${Platform.pathSeparator}.styio.toml',
-        ).exists();
+        await fileSystem.exists(
+          fileSystem.joinPath(<String>[current, 'styio.toml']),
+        ) ||
+        await fileSystem.exists(
+          fileSystem.joinPath(<String>[current, '.styio.toml']),
+        );
     if (hasConfig) {
-      return current.path;
+      return current;
     }
-    final parent = current.parent;
-    if (parent.path == current.path) {
-      return File(activeFilePath).parent.absolute.path;
+    final parent = _pathParent(current);
+    if (_samePath(parent, current)) {
+      return activeParent;
     }
     current = parent;
   }
 }
 
-Future<({Directory temporaryDirectory, _PathOverlayMapping pathOverlay})>
+Future<({String temporaryDirectory, _PathOverlayMapping pathOverlay})>
 _createDocumentOverlay({
   required String sourceRoot,
   required String activeFilePath,
   required DocumentState document,
+  required FileSystemManager fileSystem,
+  required String temporaryRoot,
 }) async {
-  final resolvedSourceRoot = _canonicalPathForContainment(sourceRoot);
-  Directory? overlayRoot;
+  final resolvedSourceRoot = fileSystem.normalizePath(sourceRoot);
+  String? overlayRoot;
   try {
-    overlayRoot = await _createSiblingOverlayDirectory(resolvedSourceRoot);
+    overlayRoot = await _createTemporaryOverlayDirectory(
+      fileSystem: fileSystem,
+      temporaryRoot: temporaryRoot,
+      label: _pathBasename(resolvedSourceRoot),
+    );
     final snapshotBudget = _OverlaySnapshotBudget();
     await _expandOverlayPathChain(
       sourceRoot: resolvedSourceRoot,
-      overlayRoot: overlayRoot.path,
+      overlayRoot: overlayRoot,
       activeFilePath: activeFilePath,
       documentText: document.text,
       snapshotBudget: snapshotBudget,
+      fileSystem: fileSystem,
     );
     return (
       temporaryDirectory: overlayRoot,
       pathOverlay: _PathOverlayMapping(
         sourceRoot: resolvedSourceRoot,
-        overlayRoot: overlayRoot.path,
+        overlayRoot: overlayRoot,
       ),
     );
   } on _ExecutionOverlayException {
-    await _deleteTemporaryOverlayRoot(overlayRoot);
+    await _deleteTemporaryOverlayRoot(overlayRoot, fileSystem: fileSystem);
     rethrow;
-  } on FileSystemException catch (error) {
-    await _deleteTemporaryOverlayRoot(overlayRoot);
+  } on VityodFileSystemException catch (error) {
+    await _deleteTemporaryOverlayRoot(overlayRoot, fileSystem: fileSystem);
+    if (error.code == 'workspace_root_escape') {
+      throw _ExecutionOverlayException(
+        'Active file path $activeFilePath resolves outside workspace root $sourceRoot.',
+      );
+    }
     throw _ExecutionOverlayException(
-      'Execution overlay preparation failed: ${error.message}',
+      'Execution overlay preparation failed: $error',
+    );
+  } on Object catch (error) {
+    await _deleteTemporaryOverlayRoot(overlayRoot, fileSystem: fileSystem);
+    throw _ExecutionOverlayException(
+      'Execution overlay preparation failed: $error',
     );
   }
 }
 
-Future<void> _deleteTemporaryOverlayRoot(Directory? overlayRoot) async {
-  if (overlayRoot == null || !await overlayRoot.exists()) {
+Future<void> _deleteTemporaryOverlayRoot(
+  String? overlayRoot, {
+  required FileSystemManager fileSystem,
+}) async {
+  if (overlayRoot == null) {
     return;
   }
   try {
-    await overlayRoot.delete(recursive: true);
-  } on FileSystemException {
+    if (await fileSystem.exists(overlayRoot)) {
+      await fileSystem.delete(overlayRoot, recursive: true);
+    }
+  } on Object {
     // The overlay has already failed closed; cleanup failure should not mask it.
   }
 }
 
-Future<Directory> _createSiblingOverlayDirectory(String sourceRoot) async {
-  final parentDirectory = Directory(sourceRoot).absolute.parent;
-  final sourceName = Directory(sourceRoot).uri.pathSegments.lastWhere(
-    (segment) => segment.isNotEmpty,
-    orElse: () => 'workspace',
-  );
-  try {
-    return parentDirectory.createTemp('.Vityo-$sourceName-');
-  } on FileSystemException {
-    return Directory.systemTemp.createTemp('Vityo-run-');
+Future<String> _createTemporaryOverlayDirectory({
+  required FileSystemManager fileSystem,
+  required String temporaryRoot,
+  required String label,
+}) async {
+  final safeLabel = label.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '-');
+  for (var attempt = 0; attempt < 8; attempt += 1) {
+    final sequence = ++_executionTempSequence;
+    final candidate = fileSystem.joinPath(<String>[
+      temporaryRoot,
+      'Vityo-${safeLabel.isEmpty ? 'run' : safeLabel}-${DateTime.now().microsecondsSinceEpoch}-$sequence',
+    ]);
+    try {
+      if (await fileSystem.exists(candidate)) {
+        continue;
+      }
+      await fileSystem.createDirectory(candidate);
+      return candidate;
+    } on Object {
+      if (attempt == 7) rethrow;
+    }
   }
+  throw const _ExecutionOverlayException(
+    'Execution overlay could not allocate a temporary directory.',
+  );
 }
 
 Future<void> _expandOverlayPathChain({
@@ -1420,6 +1623,7 @@ Future<void> _expandOverlayPathChain({
   required String activeFilePath,
   required String documentText,
   required _OverlaySnapshotBudget snapshotBudget,
+  required FileSystemManager fileSystem,
 }) async {
   final relativePath = _relativePathWithinRoot(activeFilePath, sourceRoot);
   if (relativePath == null) {
@@ -1429,48 +1633,45 @@ Future<void> _expandOverlayPathChain({
   }
 
   await _copySnapshotChildrenIntoOverlay(
-    sourceDirectory: Directory(sourceRoot),
-    overlayDirectory: Directory(overlayRoot),
+    sourceDirectory: sourceRoot,
+    overlayDirectory: overlayRoot,
     snapshotBudget: snapshotBudget,
+    fileSystem: fileSystem,
   );
 
   final overlayFilePath = _appendRelativePath(overlayRoot, relativePath);
-  final overlayFile = File(overlayFilePath);
-  snapshotBudget.accountDocument(overlayFile.path, documentText);
-  await _deleteOverlayEntity(overlayFile.path);
-  await overlayFile.parent.create(recursive: true);
-  await overlayFile.writeAsString(documentText);
+  snapshotBudget.accountDocument(overlayFilePath, documentText);
+  await _deleteOverlayEntity(overlayFilePath, fileSystem: fileSystem);
+  await fileSystem.writeText(overlayFilePath, documentText);
 }
 
 Future<void> _copySnapshotChildrenIntoOverlay({
-  required Directory sourceDirectory,
-  required Directory overlayDirectory,
+  required String sourceDirectory,
+  required String overlayDirectory,
   required _OverlaySnapshotBudget snapshotBudget,
+  required FileSystemManager fileSystem,
 }) async {
-  if (!await sourceDirectory.exists()) {
-    await overlayDirectory.create(recursive: true);
+  if (!await fileSystem.exists(sourceDirectory)) {
+    await fileSystem.createDirectory(overlayDirectory);
     return;
   }
-  await overlayDirectory.create(recursive: true);
-  await for (final entity in sourceDirectory.list(followLinks: false)) {
-    final name = entity.uri.pathSegments.isEmpty
-        ? ''
-        : entity.uri.pathSegments.lastWhere(
-            (segment) => segment.isNotEmpty,
-            orElse: () => '',
-          );
+  await fileSystem.createDirectory(overlayDirectory);
+  final entries = await fileSystem.list(sourceDirectory);
+  for (final entity in entries) {
+    final name = _pathBasename(entity.path);
     if (name.isEmpty) {
       continue;
     }
-    final overlayPath = _appendRelativePath(overlayDirectory.path, name);
-    if (await FileSystemEntity.type(overlayPath, followLinks: false) !=
-        FileSystemEntityType.notFound) {
+    final overlayPath = _appendRelativePath(overlayDirectory, name);
+    if (await fileSystem.exists(overlayPath)) {
       continue;
     }
     await _copySnapshotEntity(
       sourcePath: entity.path,
       overlayPath: overlayPath,
       snapshotBudget: snapshotBudget,
+      fileSystem: fileSystem,
+      snapshot: entity,
     );
   }
 }
@@ -1479,80 +1680,89 @@ Future<void> _copySnapshotEntity({
   required String sourcePath,
   required String overlayPath,
   required _OverlaySnapshotBudget snapshotBudget,
+  required FileSystemManager fileSystem,
+  FileSystemEntitySnapshot? snapshot,
 }) async {
-  final entityType = await FileSystemEntity.type(
-    sourcePath,
-    followLinks: false,
-  );
-  switch (entityType) {
-    case FileSystemEntityType.directory:
+  final entity = snapshot ?? await fileSystem.stat(sourcePath);
+  switch (entity.type) {
+    case VityoFileSystemEntityType.directory:
       await _copySnapshotDirectory(
-        sourceDirectory: Directory(sourcePath),
-        destinationDirectory: Directory(overlayPath),
+        sourceDirectory: sourcePath,
+        destinationDirectory: overlayPath,
         snapshotBudget: snapshotBudget,
+        fileSystem: fileSystem,
       );
       return;
-    case FileSystemEntityType.file:
-      final sourceFile = File(sourcePath);
-      await snapshotBudget.accountFile(sourceFile);
-      await File(overlayPath).parent.create(recursive: true);
-      await sourceFile.copy(overlayPath);
+    case VityoFileSystemEntityType.file:
+      snapshotBudget.accountFile(entity);
+      await fileSystem.writeBytes(
+        overlayPath,
+        await fileSystem.readBytes(sourcePath),
+      );
       return;
-    case FileSystemEntityType.link:
-      return;
-    case FileSystemEntityType.pipe:
-    case FileSystemEntityType.unixDomainSock:
-    case FileSystemEntityType.notFound:
+    case VityoFileSystemEntityType.link:
+    case VityoFileSystemEntityType.notFound:
+    case VityoFileSystemEntityType.other:
       return;
   }
 }
 
 Future<void> _copySnapshotDirectory({
-  required Directory sourceDirectory,
-  required Directory destinationDirectory,
+  required String sourceDirectory,
+  required String destinationDirectory,
   required _OverlaySnapshotBudget snapshotBudget,
+  required FileSystemManager fileSystem,
 }) async {
-  snapshotBudget.accountDirectory(sourceDirectory.path);
-  await destinationDirectory.create(recursive: true);
-  await for (final entity in sourceDirectory.list(followLinks: false)) {
-    final name = entity.uri.pathSegments.isEmpty
-        ? ''
-        : entity.uri.pathSegments.lastWhere(
-            (segment) => segment.isNotEmpty,
-            orElse: () => '',
-          );
+  snapshotBudget.accountDirectory(sourceDirectory);
+  await fileSystem.createDirectory(destinationDirectory);
+  final entries = await fileSystem.list(sourceDirectory);
+  for (final entity in entries) {
+    final name = _pathBasename(entity.path);
     if (name.isEmpty) {
       continue;
     }
-    final destinationPath = _appendRelativePath(
-      destinationDirectory.path,
-      name,
-    );
+    final destinationPath = _appendRelativePath(destinationDirectory, name);
     await _copySnapshotEntity(
       sourcePath: entity.path,
       overlayPath: destinationPath,
       snapshotBudget: snapshotBudget,
+      fileSystem: fileSystem,
+      snapshot: entity,
     );
   }
 }
 
-Future<void> _deleteOverlayEntity(String path) async {
-  final entityType = await FileSystemEntity.type(path, followLinks: false);
-  switch (entityType) {
-    case FileSystemEntityType.directory:
-      await Directory(path).delete(recursive: true);
-      return;
-    case FileSystemEntityType.file:
-      await File(path).delete();
-      return;
-    case FileSystemEntityType.link:
-      await Link(path).delete();
-      return;
-    case FileSystemEntityType.pipe:
-    case FileSystemEntityType.unixDomainSock:
-    case FileSystemEntityType.notFound:
-      return;
+Future<void> _deleteOverlayEntity(
+  String path, {
+  required FileSystemManager fileSystem,
+}) async {
+  final entity = await fileSystem.stat(path);
+  if (!entity.exists) return;
+  await fileSystem.delete(path, recursive: entity.isDirectory);
+}
+
+String _pathParent(String path) {
+  final normalized = _normalizeAbsolutePath(path);
+  final separator = _pathSeparatorFor(normalized);
+  final rootLength = _portableRootLength(normalized);
+  var end = normalized.length;
+  while (end > rootLength && normalized.substring(end - 1, end) == separator) {
+    end -= 1;
   }
+  final index = normalized.lastIndexOf(separator, end - 1);
+  if (index < rootLength) return normalized.substring(0, rootLength);
+  if (index == 0) return separator;
+  return normalized.substring(0, index);
+}
+
+String _pathBasename(String path) {
+  final normalized = _normalizeAbsolutePath(path);
+  final separator = _pathSeparatorFor(normalized);
+  final trimmed = normalized.endsWith(separator) && normalized.length > 1
+      ? normalized.substring(0, normalized.length - 1)
+      : normalized;
+  final index = trimmed.lastIndexOf(separator);
+  return index < 0 ? trimmed : trimmed.substring(index + 1);
 }
 
 _ParsedDiagnostics _parseOutputChannel(
@@ -1616,8 +1826,8 @@ bool _pathIsWithinRoot(String path, String rootPath) {
   }
 
   return _pathHasRootPrefix(
-    _canonicalPathForContainment(path),
-    _canonicalPathForContainment(rootPath),
+    _normalizeAbsolutePath(path),
+    _normalizeAbsolutePath(rootPath),
   );
 }
 
@@ -1625,101 +1835,38 @@ String? _relativePathWithinRoot(String path, String rootPath) {
   if (!_isAbsolutePath(path) || !_isAbsolutePath(rootPath)) {
     return null;
   }
-  final absolutePath = _canonicalPathForContainment(path);
-  final absoluteRoot = _canonicalPathForContainment(rootPath);
+  final absolutePath = _normalizeAbsolutePath(path);
+  final absoluteRoot = _normalizeAbsolutePath(rootPath);
   if (!_pathHasRootPrefix(absolutePath, absoluteRoot)) {
     return null;
   }
   if (_samePath(absolutePath, absoluteRoot)) {
     return '';
   }
-  final rootPrefix = absoluteRoot.endsWith(Platform.pathSeparator)
+  final separator = _pathSeparatorFor(absoluteRoot);
+  final rootPrefix = absoluteRoot.endsWith(separator)
       ? absoluteRoot
-      : '$absoluteRoot${Platform.pathSeparator}';
+      : '$absoluteRoot$separator';
   return absolutePath.substring(rootPrefix.length);
 }
 
 String _canonicalPathForContainment(String path) {
-  final absolutePath = _normalizeAbsolutePath(path);
-  final existingPath = _nearestExistingPath(absolutePath);
-  if (existingPath == null) {
-    return absolutePath;
-  }
-
-  final resolvedExistingPath = _resolveExistingPath(existingPath);
-  final relativeRemainder = _relativeLexicalPath(
-    path: absolutePath,
-    rootPath: existingPath,
-  );
-  return _appendRelativePath(resolvedExistingPath, relativeRemainder);
-}
-
-String? _nearestExistingPath(String absolutePath) {
-  var cursor = absolutePath;
-  while (cursor.isNotEmpty) {
-    if (FileSystemEntity.typeSync(cursor, followLinks: false) !=
-        FileSystemEntityType.notFound) {
-      return cursor;
-    }
-    final parent = Directory(cursor).parent.path;
-    if (parent == cursor) {
-      return null;
-    }
-    cursor = parent;
-  }
-  return null;
-}
-
-String _resolveExistingPath(String path) {
-  try {
-    final entityType = FileSystemEntity.typeSync(path, followLinks: false);
-    return switch (entityType) {
-      FileSystemEntityType.directory => _normalizeAbsolutePath(
-        Directory(path).resolveSymbolicLinksSync(),
-      ),
-      FileSystemEntityType.file => _normalizeAbsolutePath(
-        File(path).resolveSymbolicLinksSync(),
-      ),
-      FileSystemEntityType.link => _normalizeAbsolutePath(
-        Link(path).resolveSymbolicLinksSync(),
-      ),
-      FileSystemEntityType.pipe ||
-      FileSystemEntityType.unixDomainSock ||
-      FileSystemEntityType.notFound ||
-      _ => _normalizeAbsolutePath(path),
-    };
-  } on FileSystemException {
-    return _normalizeAbsolutePath(path);
-  }
-}
-
-String _relativeLexicalPath({required String path, required String rootPath}) {
-  final absolutePath = _normalizeAbsolutePath(path);
-  final absoluteRoot = _normalizeAbsolutePath(rootPath);
-  if (_samePath(absolutePath, absoluteRoot)) {
-    return '';
-  }
-  final rootPrefix = absoluteRoot.endsWith(Platform.pathSeparator)
-      ? absoluteRoot
-      : '$absoluteRoot${Platform.pathSeparator}';
-  if (!_pathStartsWith(absolutePath, rootPrefix)) {
-    return '';
-  }
-  return absolutePath.substring(rootPrefix.length);
+  return _normalizeAbsolutePath(path);
 }
 
 bool _pathHasRootPrefix(String path, String rootPath) {
   if (_samePath(path, rootPath)) {
     return true;
   }
-  final rootPrefix = rootPath.endsWith(Platform.pathSeparator)
+  final separator = _pathSeparatorFor(rootPath);
+  final rootPrefix = rootPath.endsWith(separator)
       ? rootPath
-      : '$rootPath${Platform.pathSeparator}';
+      : '$rootPath$separator';
   return _pathStartsWith(path, rootPrefix);
 }
 
 bool _samePath(String left, String right) {
-  if (!Platform.isWindows) {
+  if (!_isWindowsPath(left) && !_isWindowsPath(right)) {
     return left == right;
   }
   return left.toLowerCase() == right.toLowerCase();
@@ -1736,28 +1883,66 @@ bool _sameDiagnosticFile(String left, String right) {
 }
 
 bool _pathStartsWith(String path, String prefix) {
-  if (!Platform.isWindows) {
+  if (!_isWindowsPath(path) && !_isWindowsPath(prefix)) {
     return path.startsWith(prefix);
   }
   return path.toLowerCase().startsWith(prefix.toLowerCase());
 }
 
 String _normalizeAbsolutePath(String path) {
-  final absolutePath = _isAbsolutePath(path) ? path : File(path).absolute.path;
-  return Uri.file(
-    absolutePath,
-    windows: Platform.isWindows,
-  ).normalizePath().toFilePath(windows: Platform.isWindows);
+  if (!_isAbsolutePath(path)) return path;
+  final windows = _isWindowsPath(path);
+  final separator = windows ? r'\' : '/';
+  var source = windows
+      ? path.replaceAll('/', r'\')
+      : path.replaceAll(r'\', '/');
+  final drive = windows && RegExp(r'^[A-Za-z]:').hasMatch(source)
+      ? source.substring(0, 2)
+      : '';
+  final unc = windows && source.startsWith(r'\\');
+  if (drive.isNotEmpty) source = source.substring(2);
+  final parts = <String>[];
+  for (final segment in source.split(separator)) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (parts.isNotEmpty) parts.removeLast();
+      continue;
+    }
+    parts.add(segment);
+  }
+  if (windows) {
+    final root = drive.isNotEmpty
+        ? '$drive$separator'
+        : (unc ? r'\\' : separator);
+    return parts.isEmpty ? root : '$root${parts.join(separator)}';
+  }
+  return parts.isEmpty ? '/' : '/${parts.join('/')}';
 }
 
 String _appendRelativePath(String rootPath, String relativePath) {
   if (relativePath.isEmpty) {
     return rootPath;
   }
-  if (rootPath.endsWith(Platform.pathSeparator)) {
-    return '$rootPath$relativePath';
+  final separator = _pathSeparatorFor(rootPath);
+  final normalizedRelative = relativePath.replaceAll(
+    separator == '/' ? r'\' : '/',
+    separator,
+  );
+  if (rootPath.endsWith(separator)) {
+    return '$rootPath$normalizedRelative';
   }
-  return '$rootPath${Platform.pathSeparator}$relativePath';
+  return '$rootPath$separator$normalizedRelative';
+}
+
+bool _isWindowsPath(String path) =>
+    RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path) || path.startsWith(r'\\');
+
+String _pathSeparatorFor(String path) => _isWindowsPath(path) ? r'\' : '/';
+
+int _portableRootLength(String path) {
+  if (RegExp(r'^[A-Za-z]:\\').hasMatch(path)) return 3;
+  if (path.startsWith(r'\\')) return 2;
+  return path.startsWith('/') ? 1 : 0;
 }
 
 _ParsedDiagnosticRecord? _parseDiagnosticLine(
@@ -2032,6 +2217,41 @@ String? _resolveWorkflowDiagnosticsPath(
     diagnosticsPath,
     workspaceRoot: workspaceRoot,
   );
+}
+
+/// Pafio reports artifact paths as the child process sees them, resolved through
+/// the process working directory. On macOS a temporary workspace can be reached
+/// through a symlinked prefix (`/var` -> `/private/var`), so a reported path can
+/// differ lexically from the workspace root the workbench holds. Resolve both
+/// sides before comparing, then re-express the reported path under the caller's
+/// workspace root so later scope checks and file-system reads accept it.
+String? _rebaseReportedWorkflowPath(String reportedPath, String workspaceRoot) {
+  final joined = _isAbsolutePath(reportedPath)
+      ? reportedPath
+      : _joinPath(workspaceRoot, reportedPath);
+  final resolvedPath = _resolveSymbolicPath(joined);
+  final resolvedRoot = _resolveSymbolicPath(workspaceRoot);
+  if (resolvedPath == null || resolvedRoot == null) {
+    return joined;
+  }
+  final relativePath = _relativePathWithinRoot(resolvedPath, resolvedRoot);
+  if (relativePath == null) {
+    return null;
+  }
+  return relativePath.isEmpty
+      ? workspaceRoot
+      : _joinPath(workspaceRoot, relativePath);
+}
+
+String? _resolveSymbolicPath(String path) {
+  try {
+    if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound) {
+      return null;
+    }
+    return File(path).resolveSymbolicLinksSync();
+  } on Object {
+    return null;
+  }
 }
 
 String? _stringValue(Object? value) {

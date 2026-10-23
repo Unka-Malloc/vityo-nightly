@@ -148,7 +148,7 @@ Review notes:
 | No reverse dependency | File System Manager must not depend on DataStore. |
 | No global business hub | DataStore stores state; it does not execute feature behavior. |
 
-Detailed design: [../../../foundation/data-store-owner/README.md](../../../foundation/data-store-owner/README.md)
+Detailed design: [../../foundation/data-store-owner/README.md](../../foundation/data-store-owner/README.md)
 
 ## 5. Registry Line
 

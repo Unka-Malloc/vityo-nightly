@@ -126,6 +126,7 @@ class _NoopExecutionAdapter implements ExecutionAdapter {
     required ProjectGraphSnapshot projectGraph,
     required DocumentState document,
     required String activeFilePath,
+    ExecutionProcessStartedCallback? onProcessStarted,
   }) async {
     return const ExecutionSession(
       sessionId: 'noop',
@@ -235,7 +236,6 @@ class _NoopDeploymentAdapter implements DeploymentAdapter {
     );
   }
 }
-
 
 class _NoopStyioLanguageService implements StyioLanguageService {
   const _NoopStyioLanguageService();

@@ -25,8 +25,10 @@ FORBIDDEN_VIEW_IDE_PRESENTATION_IMPORTS = {
 }
 
 # Registered public contract/model surfaces that view_render may consume from
-# view_ide. New view_render -> view_ide imports must be reviewed by updating
-# this list instead of importing arbitrary view_ide implementation modules.
+# view_ide and the shared IDE domain. New view_render -> domain imports must be
+# reviewed by updating this list instead of importing arbitrary implementation
+# modules. The IDE surfaces below are data/provider contracts consumed by
+# presentation; their presence does not grant ownership of runtime composition.
 VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "view_ide/backend_toolchain/adapter_contracts.dart",
     "view_ide/backend_toolchain/dependency_source_adapter.dart",
@@ -40,18 +42,33 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "view_ide/debugger/debug_adapter_launcher.dart",
     "view_ide/debugger/debug_launch_contract.dart",
     "view_ide/debugger/debug_launch_telemetry_store.dart",
+    "ide/editor/controllers/editor_session_facade.dart",
+    "ide/editor/document/document_state.dart",
+    "ide/editor/input/editor_composition.dart",
+    "ide/editor/input/unicode_boundary_index.dart",
+    "ide/editor/performance/rendered_input_performance_protocol.dart",
+    "ide/editor/selection/selection_state.dart",
+    "ide/local_service/vityod_client.dart",
     "ide/editor/document_state.dart",
     "ide/editor/editor_controller.dart",
     "ide/editor/editor_render_layers.dart",
     "ide/editor/render_plan/render_plan.dart",
     "ide/editor/selection_state.dart",
+    "ide/agent_client/agent_client_models.dart",
+    "ide/agent_client/agent_client_registry.dart",
+    "ide/agent_client/agent_client_operations.dart",
+    "ide/agent_client/agent_launch_paths.dart",
     "view_ide/environment/configuration/configuration.dart",
     "view_ide/environment/configuration/vityo_theme_override.dart",
     "view_ide/environment/environment.dart",
+    "view_ide/environment/system_compatibility/file_system/file_system_manager.dart",
     "view_ide/foundation/foundation.dart",
     "view_ide/interaction/interaction.dart",
+    "view_ide/flow_hero/flow_hero.dart",
+    "view_ide/language/contract/language_contract.dart",
     "view_ide/language/language_contract.dart",
     "view_ide/language/semantic_snapshot_panel.dart",
+    "view_ide/language/service/styio_language_service.dart",
     "view_ide/services/observable_topology/observable_topology.dart",
     "view_ide/module_host/module_definition.dart",
     "view_ide/module_host/module_host.dart",
@@ -68,8 +85,13 @@ VIEW_RENDER_ALLOWED_VIEW_IDE_IMPORTS = {
     "view_ide/toolchain/toolchain_catalog.dart",
     "view_ide/toolchain/toolchain_manager.dart",
     "ide/workspace/source_control_commit_draft_store.dart",
+    "ide/workspace/source_control_merge_editor.dart",
     "ide/workspace/source_control_status.dart",
+    "ide/workspace/workspace_search_service.dart",
     "ide/workspace/workspace.dart",
+    "ide/workspace/workspace_document_store_types.dart",
+    "ide/workspace/workspace_document_store.dart",
+    "view_ide/toolchain/toolchain_project_validation.dart",
 }
 
 DIRECTIVE_PATTERN = re.compile(r"^\s*(import|export)\s+['\"]([^'\"]+)['\"]")
@@ -197,7 +219,7 @@ def check_view_render_registered_view_ide_contracts() -> list[str]:
             errors.append(
                 format_violation(
                     directive,
-                    "view_render may only depend on registered view_ide contract surfaces",
+                    "view_render may only depend on registered IDE contract surfaces",
                 )
             )
     return errors

@@ -106,18 +106,19 @@ class WorkspaceFileExplorerDiscoveryResult {
     var truncated = false;
 
     void collectPath(String rawPath) {
-      if (filePaths.length >= maxFiles) {
-        truncated = true;
-        return;
-      }
       final normalizedPath = _normalizeWorkspaceFileExplorerPath(rawPath);
       if (_validateWorkspaceFileExplorerPath(normalizedPath) != null) {
         ignoredPaths.add(rawPath);
         return;
       }
-      if (seen.add(normalizedPath)) {
-        filePaths.add(normalizedPath);
+      if (!seen.add(normalizedPath)) {
+        return;
       }
+      if (filePaths.length >= maxFiles) {
+        truncated = true;
+        return;
+      }
+      filePaths.add(normalizedPath);
     }
 
     for (final seedPath in seedPaths) {
@@ -163,15 +164,19 @@ class WorkspaceFileExplorerIgnoreRules {
 
   final List<String> excludeGlobs;
 
-  bool ignores(String path) {
-    final normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
+  bool ignores(String path, {bool caseSensitive = true}) {
+    var normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
     if (normalizedPath.isEmpty) {
       return true;
     }
     for (final glob in excludeGlobs) {
-      final normalizedGlob = _normalizeWorkspaceFileExplorerPath(glob);
+      var normalizedGlob = _normalizeWorkspaceFileExplorerPath(glob);
       if (normalizedGlob.isEmpty) {
         continue;
+      }
+      if (!caseSensitive) {
+        normalizedPath = normalizedPath.toLowerCase();
+        normalizedGlob = normalizedGlob.toLowerCase();
       }
       if (normalizedGlob.endsWith('/**')) {
         final prefix = normalizedGlob.substring(0, normalizedGlob.length - 3);
@@ -224,6 +229,7 @@ class WorkspaceFileExplorerWatchPlan {
     this.recursive = true,
     this.includeGlobs = const <String>['**/*'],
     this.excludeGlobs = const <String>['.git/**', 'build/**'],
+    this.caseSensitivePaths = true,
     this.debouncePolicy = const WorkspaceFileExplorerWatchDebouncePolicy(),
     this.status = WorkspaceFileExplorerWatchStatus.pending,
     this.message = '',
@@ -234,6 +240,7 @@ class WorkspaceFileExplorerWatchPlan {
   final bool recursive;
   final List<String> includeGlobs;
   final List<String> excludeGlobs;
+  final bool caseSensitivePaths;
   final WorkspaceFileExplorerWatchDebouncePolicy debouncePolicy;
   final WorkspaceFileExplorerWatchStatus status;
   final String message;
@@ -267,6 +274,7 @@ class WorkspaceFileExplorerWatchPlan {
       recursive: recursive,
       includeGlobs: includeGlobs,
       excludeGlobs: excludeGlobs,
+      caseSensitivePaths: caseSensitivePaths,
       debouncePolicy: debouncePolicy,
       status: status ?? this.status,
       message: message ?? this.message,
@@ -280,6 +288,7 @@ class WorkspaceFileExplorerWatchPlan {
       'recursive': recursive,
       'includeGlobs': includeGlobs,
       'excludeGlobs': excludeGlobs,
+      'caseSensitivePaths': caseSensitivePaths,
       'debouncePolicy': debouncePolicy.toJson(),
       'status': status.wireValue,
       'active': active,
@@ -368,6 +377,76 @@ class WorkspaceFileExplorerWatchEventBatch {
   }
 }
 
+class WorkspaceFileExplorerWatchTelemetry {
+  const WorkspaceFileExplorerWatchTelemetry({
+    this.totalEventCount = 0,
+    this.batchCount = 0,
+    this.overflowCount = 0,
+    this.droppedEventCount = 0,
+    this.backpressurePauseCount = 0,
+    this.maxBatchEventCount = 0,
+    this.lastBatchLatency = Duration.zero,
+  });
+
+  final int totalEventCount;
+  final int batchCount;
+  final int overflowCount;
+  final int droppedEventCount;
+  final int backpressurePauseCount;
+  final int maxBatchEventCount;
+  final Duration lastBatchLatency;
+
+  bool get overflowed => overflowCount > 0;
+  bool get backpressureObserved => backpressurePauseCount > 0;
+
+  WorkspaceFileExplorerWatchTelemetry recordBatch(
+    WorkspaceFileExplorerWatchEventBatch batch, {
+    required int backpressurePauseCount,
+  }) {
+    return WorkspaceFileExplorerWatchTelemetry(
+      totalEventCount: totalEventCount + batch.eventCount,
+      batchCount: batchCount + 1,
+      overflowCount: overflowCount,
+      droppedEventCount: droppedEventCount,
+      backpressurePauseCount: backpressurePauseCount,
+      maxBatchEventCount: batch.eventCount > maxBatchEventCount
+          ? batch.eventCount
+          : maxBatchEventCount,
+      lastBatchLatency: batch.flushedAt.difference(batch.firstEventAt),
+    );
+  }
+
+  WorkspaceFileExplorerWatchTelemetry recordOverflow(
+    FileSystemWatchOverflowException overflow, {
+    required int backpressurePauseCount,
+  }) {
+    return WorkspaceFileExplorerWatchTelemetry(
+      totalEventCount: totalEventCount,
+      batchCount: batchCount,
+      overflowCount: overflowCount + 1,
+      droppedEventCount: droppedEventCount + (overflow.droppedEventCount ?? 0),
+      backpressurePauseCount: backpressurePauseCount,
+      maxBatchEventCount: maxBatchEventCount,
+      lastBatchLatency: lastBatchLatency,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'totalEventCount': totalEventCount,
+      'batchCount': batchCount,
+      'overflowCount': overflowCount,
+      'droppedEventCount': droppedEventCount,
+      'backpressurePauseCount': backpressurePauseCount,
+      'maxBatchEventCount': maxBatchEventCount,
+      'lastBatchLatencyMs': lastBatchLatency.inMilliseconds,
+      'overflowed': overflowed,
+      'backpressureObserved': backpressureObserved,
+      'historyMode': 'checkpointed-latest-batch',
+    };
+  }
+}
+
 class WorkspaceFileExplorerWatchEventBatcher {
   WorkspaceFileExplorerWatchEventBatcher({
     this.policy = const WorkspaceFileExplorerWatchDebouncePolicy(),
@@ -415,10 +494,12 @@ class WorkspaceFileExplorerWatchStreamBatcher {
   const WorkspaceFileExplorerWatchStreamBatcher({
     this.policy = const WorkspaceFileExplorerWatchDebouncePolicy(),
     DateTime Function()? clock,
+    this.onBackpressureChanged,
   }) : _clock = clock ?? _defaultWorkspaceFileExplorerWatchClock;
 
   final WorkspaceFileExplorerWatchDebouncePolicy policy;
   final DateTime Function() _clock;
+  final void Function(bool paused)? onBackpressureChanged;
 
   Stream<WorkspaceFileExplorerWatchEventBatch> bind(
     Stream<WorkspaceFileExplorerWatchEvent> events,
@@ -472,6 +553,14 @@ class WorkspaceFileExplorerWatchStreamBatcher {
         cancelTimer();
         await subscription?.cancel();
       },
+      onPause: () {
+        subscription?.pause();
+        onBackpressureChanged?.call(true);
+      },
+      onResume: () {
+        subscription?.resume();
+        onBackpressureChanged?.call(false);
+      },
     );
 
     return output.stream;
@@ -483,27 +572,53 @@ class WorkspaceFileExplorerWatchSnapshot {
     required this.plan,
     this.baseFilePaths = const <String>[],
     this.events = const <WorkspaceFileExplorerWatchEvent>[],
+    this.telemetry = const WorkspaceFileExplorerWatchTelemetry(),
   });
 
   final WorkspaceFileExplorerWatchPlan plan;
   final List<String> baseFilePaths;
   final List<WorkspaceFileExplorerWatchEvent> events;
+  final WorkspaceFileExplorerWatchTelemetry telemetry;
 
   List<String> get filePaths {
     final ignoreRules = plan.ignoreRules;
     final paths = <String>{};
     for (final basePath in baseFilePaths) {
       final normalizedPath = _normalizeWorkspaceFileExplorerPath(basePath);
-      if (_validateWorkspaceFileExplorerPath(normalizedPath) == null &&
-          !ignoreRules.ignores(normalizedPath)) {
+      final relativePath = _workspaceFileExplorerPathRelativeToRoot(
+        rootPath: plan.rootPath,
+        path: normalizedPath,
+        caseSensitive: plan.caseSensitivePaths,
+      );
+      if (_isWorkspaceFileExplorerWatchPathAllowed(
+            normalizedPath,
+            rootPath: plan.rootPath,
+            caseSensitive: plan.caseSensitivePaths,
+          ) &&
+          !ignoreRules.ignores(
+            relativePath,
+            caseSensitive: plan.caseSensitivePaths,
+          )) {
         paths.add(normalizedPath);
       }
     }
     for (final event in events) {
       final path = _normalizeWorkspaceFileExplorerPath(event.path);
       final nextPath = _normalizeWorkspaceFileExplorerPath(event.nextPath);
-      if (_validateWorkspaceFileExplorerPath(path) != null ||
-          ignoreRules.ignores(path)) {
+      final relativePath = _workspaceFileExplorerPathRelativeToRoot(
+        rootPath: plan.rootPath,
+        path: path,
+        caseSensitive: plan.caseSensitivePaths,
+      );
+      if (!_isWorkspaceFileExplorerWatchPathAllowed(
+            path,
+            rootPath: plan.rootPath,
+            caseSensitive: plan.caseSensitivePaths,
+          ) ||
+          ignoreRules.ignores(
+            relativePath,
+            caseSensitive: plan.caseSensitivePaths,
+          )) {
         continue;
       }
       switch (event.kind) {
@@ -515,8 +630,20 @@ class WorkspaceFileExplorerWatchSnapshot {
           paths.remove(path);
         case WorkspaceFileExplorerWatchEventKind.renamed:
           paths.remove(path);
-          if (_validateWorkspaceFileExplorerPath(nextPath) == null &&
-              !ignoreRules.ignores(nextPath)) {
+          final relativeNextPath = _workspaceFileExplorerPathRelativeToRoot(
+            rootPath: plan.rootPath,
+            path: nextPath,
+            caseSensitive: plan.caseSensitivePaths,
+          );
+          if (_isWorkspaceFileExplorerWatchPathAllowed(
+                nextPath,
+                rootPath: plan.rootPath,
+                caseSensitive: plan.caseSensitivePaths,
+              ) &&
+              !ignoreRules.ignores(
+                relativeNextPath,
+                caseSensitive: plan.caseSensitivePaths,
+              )) {
             paths.add(nextPath);
           }
       }
@@ -528,9 +655,9 @@ class WorkspaceFileExplorerWatchSnapshot {
   int get eventCount => events.length;
 
   WorkspaceFileExplorerDiscoveryResult toDiscoveryResult() {
-    return WorkspaceFileExplorerDiscoveryResult.fromPaths(
-      discoveredPaths: filePaths,
+    return WorkspaceFileExplorerDiscoveryResult(
       source: '${plan.source}.watch',
+      filePaths: filePaths,
     );
   }
 
@@ -541,7 +668,73 @@ class WorkspaceFileExplorerWatchSnapshot {
       'fileCount': filePaths.length,
       'filePaths': filePaths,
       'events': events.map((event) => event.toJson()).toList(growable: false),
+      'telemetry': telemetry.toJson(),
     };
+  }
+}
+
+class WorkspaceFileExplorerFileSystemDiscoveryBinding {
+  const WorkspaceFileExplorerFileSystemDiscoveryBinding({
+    required this.fileSystemManager,
+    required this.rootPath,
+    this.seedPaths = const <String>[],
+    this.ignoreRules = const WorkspaceFileExplorerIgnoreRules(
+      excludeGlobs: <String>['.git/**', 'build/**'],
+    ),
+    this.maxFiles = 5000,
+  });
+
+  final FileSystemManager fileSystemManager;
+  final String rootPath;
+  final List<String> seedPaths;
+  final WorkspaceFileExplorerIgnoreRules ignoreRules;
+  final int maxFiles;
+
+  Future<WorkspaceFileExplorerDiscoveryResult> discover() async {
+    final entities = await fileSystemManager.list(rootPath, recursive: true);
+    final candidates = <String>[
+      for (final seedPath in seedPaths)
+        _workspaceFileExplorerRelativePath(
+          rootPath: rootPath,
+          path: seedPath,
+          fileSystemManager: fileSystemManager,
+        ),
+      for (final entity in entities)
+        if (entity.isFile)
+          _workspaceFileExplorerRelativePath(
+            rootPath: rootPath,
+            path: entity.normalizedPath.isEmpty
+                ? entity.path
+                : entity.normalizedPath,
+            fileSystemManager: fileSystemManager,
+          ),
+    ];
+    final visibleCandidates = <String>[];
+    final ignoredPaths = <String>[];
+    for (final path in candidates) {
+      if (ignoreRules.ignores(
+        path,
+        caseSensitive: fileSystemManager.compatibility.caseSensitive,
+      )) {
+        ignoredPaths.add(path);
+      } else {
+        visibleCandidates.add(path);
+      }
+    }
+    final normalized = WorkspaceFileExplorerDiscoveryResult.fromPaths(
+      discoveredPaths: visibleCandidates,
+      source: 'file-system-manager.list',
+      maxFiles: maxFiles,
+    );
+    return WorkspaceFileExplorerDiscoveryResult(
+      source: normalized.source,
+      filePaths: normalized.filePaths,
+      ignoredPaths: List<String>.unmodifiable(<String>[
+        ...normalized.ignoredPaths,
+        ...ignoredPaths,
+      ]),
+      truncated: normalized.truncated,
+    );
   }
 }
 
@@ -562,29 +755,53 @@ class WorkspaceFileExplorerFileSystemWatcherBinding {
     final activePlan = plan.activate(
       message: 'File System Manager watch attached.',
     );
-    final events = <WorkspaceFileExplorerWatchEvent>[];
+    var checkpointPaths = List<String>.unmodifiable(baseFilePaths);
+    var telemetry = const WorkspaceFileExplorerWatchTelemetry();
+    var backpressurePauseCount = 0;
     yield WorkspaceFileExplorerWatchSnapshot(
       plan: activePlan,
-      baseFilePaths: baseFilePaths,
+      baseFilePaths: checkpointPaths,
+      telemetry: telemetry,
     );
     try {
       final batches = WorkspaceFileExplorerWatchStreamBatcher(
         policy: plan.debouncePolicy,
         clock: clock,
+        onBackpressureChanged: (paused) {
+          if (paused) {
+            backpressurePauseCount += 1;
+          }
+        },
       ).bind(_watchExplorerEvents(activePlan));
       await for (final batch in batches) {
-        events.addAll(batch.events);
-        yield WorkspaceFileExplorerWatchSnapshot(
-          plan: activePlan,
-          baseFilePaths: baseFilePaths,
-          events: List<WorkspaceFileExplorerWatchEvent>.unmodifiable(events),
+        telemetry = telemetry.recordBatch(
+          batch,
+          backpressurePauseCount: backpressurePauseCount,
         );
+        final snapshot = WorkspaceFileExplorerWatchSnapshot(
+          plan: activePlan,
+          baseFilePaths: checkpointPaths,
+          events: batch.events,
+          telemetry: telemetry,
+        );
+        checkpointPaths = snapshot.filePaths;
+        yield snapshot;
       }
     } on Object catch (error) {
+      if (error is FileSystemWatchOverflowException) {
+        telemetry = telemetry.recordOverflow(
+          error,
+          backpressurePauseCount: backpressurePauseCount,
+        );
+      }
       yield WorkspaceFileExplorerWatchSnapshot(
-        plan: plan.block('File System Manager watch failed: $error'),
-        baseFilePaths: baseFilePaths,
-        events: List<WorkspaceFileExplorerWatchEvent>.unmodifiable(events),
+        plan: plan.block(
+          error is FileSystemWatchOverflowException
+              ? 'File System Manager watch overflowed; refresh the explorer to rebuild its authoritative snapshot.'
+              : 'File System Manager watch failed; refresh the explorer to reconnect.',
+        ),
+        baseFilePaths: checkpointPaths,
+        telemetry: telemetry,
       );
     }
   }
@@ -592,6 +809,9 @@ class WorkspaceFileExplorerFileSystemWatcherBinding {
   Stream<WorkspaceFileExplorerWatchEvent> _watchExplorerEvents(
     WorkspaceFileExplorerWatchPlan activePlan,
   ) async* {
+    final preserveAbsolutePaths = baseFilePaths.any(
+      _isAbsoluteWorkspaceFileExplorerPath,
+    );
     await for (final event in fileSystemManager.watch(
       plan.rootPath,
       recursive: plan.recursive,
@@ -605,10 +825,38 @@ class WorkspaceFileExplorerFileSystemWatcherBinding {
       if (explorerEvent == null) {
         continue;
       }
-      if (activePlan.ignoreRules.ignores(explorerEvent.path)) {
+      if (!_isWorkspaceFileExplorerWatchPathAllowed(
+        explorerEvent.path,
+        rootPath: plan.rootPath,
+        caseSensitive: activePlan.caseSensitivePaths,
+      )) {
         continue;
       }
-      yield explorerEvent;
+      if (activePlan.ignoreRules.ignores(
+        explorerEvent.path,
+        caseSensitive: activePlan.caseSensitivePaths,
+      )) {
+        continue;
+      }
+      if (!preserveAbsolutePaths) {
+        yield explorerEvent;
+        continue;
+      }
+      yield WorkspaceFileExplorerWatchEvent(
+        kind: explorerEvent.kind,
+        path: _workspaceFileExplorerAbsolutePath(
+          rootPath: plan.rootPath,
+          path: explorerEvent.path,
+        ),
+        nextPath: explorerEvent.nextPath.isEmpty
+            ? ''
+            : _workspaceFileExplorerAbsolutePath(
+                rootPath: plan.rootPath,
+                path: explorerEvent.nextPath,
+              ),
+        source: explorerEvent.source,
+        timestamp: explorerEvent.timestamp,
+      );
     }
   }
 }
@@ -652,16 +900,23 @@ String _workspaceFileExplorerRelativePath({
   required String path,
   required FileSystemManager fileSystemManager,
 }) {
-  final normalizedRoot = _normalizeWorkspaceFileExplorerPath(
-    fileSystemManager.normalizePath(rootPath),
-  );
-  final normalizedPath = _normalizeWorkspaceFileExplorerPath(
-    fileSystemManager.normalizePath(path),
-  );
+  final managerRoot = fileSystemManager.normalizePath(rootPath);
+  final managerPath = fileSystemManager.normalizePath(path);
+  final normalizedRoot = _normalizeWorkspaceFileExplorerPath(managerRoot);
+  final normalizedPath = _normalizeWorkspaceFileExplorerPath(managerPath);
+  if (!fileSystemManager.compatibility.isAbsolutePath(managerPath)) {
+    return normalizedPath;
+  }
+  if (!fileSystemManager.isWithin(managerPath, managerRoot)) {
+    return normalizedPath;
+  }
   final prefix = normalizedRoot.endsWith('/')
       ? normalizedRoot
       : '$normalizedRoot/';
-  if (normalizedPath.startsWith(prefix)) {
+  final pathStartsWithRoot = fileSystemManager.compatibility.caseSensitive
+      ? normalizedPath.startsWith(prefix)
+      : normalizedPath.toLowerCase().startsWith(prefix.toLowerCase());
+  if (pathStartsWithRoot) {
     return normalizedPath.substring(prefix.length);
   }
   return normalizedPath;
@@ -671,11 +926,88 @@ String _normalizeWorkspaceFileExplorerPath(String path) {
   return path.trim().replaceAll('\\', '/');
 }
 
+bool _isAbsoluteWorkspaceFileExplorerPath(String path) {
+  final normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
+  return normalizedPath.startsWith('/') ||
+      RegExp(r'^[A-Za-z]:/').hasMatch(normalizedPath);
+}
+
+bool _workspaceFileExplorerPathsEqual(
+  String left,
+  String right, {
+  required bool caseSensitive,
+}) {
+  final normalizedLeft = _normalizeWorkspaceFileExplorerPath(left);
+  final normalizedRight = _normalizeWorkspaceFileExplorerPath(right);
+  return caseSensitive
+      ? normalizedLeft == normalizedRight
+      : normalizedLeft.toLowerCase() == normalizedRight.toLowerCase();
+}
+
+bool _usesCaseInsensitiveWorkspaceFileExplorerPaths(String rootPath) {
+  final normalizedRoot = _normalizeWorkspaceFileExplorerPath(rootPath);
+  return RegExp(r'^[A-Za-z]:/').hasMatch(normalizedRoot) ||
+      normalizedRoot.startsWith('//');
+}
+
+String _workspaceFileExplorerAbsolutePath({
+  required String rootPath,
+  required String path,
+}) {
+  final normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
+  if (_isAbsoluteWorkspaceFileExplorerPath(normalizedPath)) {
+    return normalizedPath;
+  }
+  final normalizedRoot = _normalizeWorkspaceFileExplorerPath(
+    rootPath,
+  ).replaceFirst(RegExp(r'/+$'), '');
+  return normalizedRoot.isEmpty
+      ? normalizedPath
+      : '$normalizedRoot/$normalizedPath';
+}
+
+String _workspaceFileExplorerPathRelativeToRoot({
+  required String rootPath,
+  required String path,
+  required bool caseSensitive,
+}) {
+  final normalizedRoot = _normalizeWorkspaceFileExplorerPath(
+    rootPath,
+  ).replaceFirst(RegExp(r'/+$'), '');
+  final normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
+  final rootPrefix = '$normalizedRoot/';
+  final pathStartsWithRoot = caseSensitive
+      ? normalizedPath.startsWith(rootPrefix)
+      : normalizedPath.toLowerCase().startsWith(rootPrefix.toLowerCase());
+  if (normalizedRoot.isNotEmpty && pathStartsWithRoot) {
+    return normalizedPath.substring(normalizedRoot.length + 1);
+  }
+  return normalizedPath;
+}
+
+bool _isWorkspaceFileExplorerWatchPathAllowed(
+  String path, {
+  required String rootPath,
+  required bool caseSensitive,
+}) {
+  if (!_isAbsoluteWorkspaceFileExplorerPath(path)) {
+    return _validateWorkspaceFileExplorerPath(path) == null;
+  }
+  final relativePath = _workspaceFileExplorerPathRelativeToRoot(
+    rootPath: rootPath,
+    path: path,
+    caseSensitive: caseSensitive,
+  );
+  return relativePath != path &&
+      _validateWorkspaceFileExplorerPath(relativePath) == null;
+}
+
 String? _validateWorkspaceFileExplorerPath(String path) {
   if (path.isEmpty) {
     return 'Workspace file path is empty.';
   }
-  if (path.startsWith('/') || path.contains('..')) {
+  if (_isAbsoluteWorkspaceFileExplorerPath(path) ||
+      path.split('/').contains('..')) {
     return 'Workspace file path must stay inside the workspace.';
   }
   return null;
@@ -893,21 +1225,42 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     required this.workspaceController,
     required this.operationService,
     this.stateStore,
+    this.fileSystemManager,
     String? stateWorkspaceId,
   }) {
+    final initialRoots = buildWorkspaceFileExplorerTree(
+      workspaceController.files,
+    );
     _state = WorkspaceFileExplorerState(
       workspaceId: stateWorkspaceId ?? workspaceController.activeProject.id,
+      expandedPaths: initialRoots
+          .where((node) => node.kind == WorkspaceFileExplorerNodeKind.directory)
+          .map((node) => node.path)
+          .toList(growable: false),
     );
+    _workspaceContextRootPath = _normalizeWorkspaceFileExplorerPath(
+      workspaceController.activeProject.workspaceRoot,
+    );
+    _workspaceContextId = workspaceController.activeProject.id;
     workspaceController.addListener(_handleWorkspaceChanged);
   }
 
   final WorkspaceController workspaceController;
   final WorkspaceFileOperationService operationService;
   final WorkspaceFileExplorerStateStore? stateStore;
+  final FileSystemManager? fileSystemManager;
 
   WorkspaceFileOperationResult? _lastResult;
   WorkspaceFileExplorerConfirmationPlan? _pendingConfirmationPlan;
   WorkspaceFileExplorerBatchActionPlan? _pendingBatchActionPlan;
+  WorkspaceFileExplorerDiscoveryResult? _discovery;
+  WorkspaceFileExplorerWatchSnapshot? _watchSnapshot;
+  StreamSubscription<WorkspaceFileExplorerWatchSnapshot>? _watchSubscription;
+  String _watchedRootPath = '';
+  String _workspaceContextId = '';
+  String _workspaceContextRootPath = '';
+  int _syncGeneration = 0;
+  bool _disposed = false;
   late WorkspaceFileExplorerState _state;
 
   WorkspaceFileOperationResult? get lastResult => _lastResult;
@@ -915,14 +1268,62 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
       _pendingConfirmationPlan;
   WorkspaceFileExplorerBatchActionPlan? get pendingBatchActionPlan =>
       _pendingBatchActionPlan;
+  WorkspaceFileExplorerDiscoveryResult? get discovery => _discovery;
+  WorkspaceFileExplorerWatchSnapshot? get watchSnapshot => _watchSnapshot;
   WorkspaceFileExplorerState get state => _state;
+  String get watchedRootPath => _watchedRootPath;
+
+  String resolveWorkspacePath(String path) =>
+      operationService.resolvePath(path);
+
+  bool containsWorkspacePath(String path) =>
+      operationService.containsPath(path);
+
+  bool observesWorkspacePath(String path) {
+    final observedPaths =
+        _watchSnapshot?.filePaths ??
+        _discovery?.filePaths ??
+        workspaceController.files;
+    final caseSensitive =
+        fileSystemManager?.compatibility.caseSensitive ??
+        !_usesCaseInsensitiveWorkspaceFileExplorerPaths(
+          workspaceController.activeProject.workspaceRoot,
+        );
+    return observedPaths.any(
+      (candidate) => _workspaceFileExplorerPathsEqual(
+        candidate,
+        path,
+        caseSensitive: caseSensitive,
+      ),
+    );
+  }
+
+  String? registerObservedWorkspacePath(String path) {
+    if (!observesWorkspacePath(path)) {
+      return null;
+    }
+    final resolvedPath = resolveWorkspacePath(path);
+    if (!containsWorkspacePath(resolvedPath)) {
+      workspaceController.registerFile(resolvedPath);
+    }
+    return resolvedPath;
+  }
 
   WorkspaceFileExplorerSnapshot get snapshot {
+    final filePaths =
+        _watchSnapshot?.filePaths ??
+        _discovery?.filePaths ??
+        workspaceController.files;
     return WorkspaceFileExplorerSnapshot(
-      roots: buildWorkspaceFileExplorerTree(workspaceController.files),
+      roots: buildWorkspaceFileExplorerTree(
+        filePaths,
+        sortMode: _state.sortMode,
+      ),
       activeFilePath: workspaceController.activeFilePath,
       openFilePaths: workspaceController.openFilePaths,
       state: _state,
+      discovery: _discovery,
+      watch: _watchSnapshot,
     );
   }
 
@@ -930,7 +1331,10 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     WorkspaceFileExplorerDiscoveryResult discovery,
   ) {
     return WorkspaceFileExplorerSnapshot(
-      roots: buildWorkspaceFileExplorerTree(discovery.filePaths),
+      roots: buildWorkspaceFileExplorerTree(
+        discovery.filePaths,
+        sortMode: _state.sortMode,
+      ),
       activeFilePath: workspaceController.activeFilePath,
       openFilePaths: workspaceController.openFilePaths,
       state: _state,
@@ -942,7 +1346,10 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     WorkspaceFileExplorerWatchSnapshot watch,
   ) {
     return WorkspaceFileExplorerSnapshot(
-      roots: buildWorkspaceFileExplorerTree(watch.filePaths),
+      roots: buildWorkspaceFileExplorerTree(
+        watch.filePaths,
+        sortMode: _state.sortMode,
+      ),
       activeFilePath: workspaceController.activeFilePath,
       openFilePaths: workspaceController.openFilePaths,
       state: _state,
@@ -956,9 +1363,95 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     if (store == null) {
       return _state;
     }
-    _state = await store.readState(workspaceId: _state.workspaceId);
-    notifyListeners();
+    final workspaceId = _state.workspaceId;
+    final restored = await store.readState(workspaceId: workspaceId);
+    if (_disposed || _state.workspaceId != workspaceId) {
+      return _state;
+    }
+    _state = restored;
+    _notifyListeners();
     return _state;
+  }
+
+  Future<void> startFileSystemSync({required String rootPath}) async {
+    await restoreState();
+    if (_disposed) {
+      return;
+    }
+    await refreshFileSystem(rootPath: rootPath);
+  }
+
+  Future<WorkspaceFileExplorerDiscoveryResult?> refreshFileSystem({
+    String? rootPath,
+  }) async {
+    final manager = fileSystemManager;
+    final resolvedRootPath = (rootPath ?? _watchedRootPath).trim();
+    _watchedRootPath = resolvedRootPath;
+    final generation = ++_syncGeneration;
+    final previousSubscription = _watchSubscription;
+    _watchSubscription = null;
+    await previousSubscription?.cancel();
+    if (!_isCurrentSync(generation, resolvedRootPath) ||
+        manager == null ||
+        resolvedRootPath.isEmpty) {
+      return null;
+    }
+    try {
+      final plan = WorkspaceFileExplorerWatchPlan(
+        rootPath: resolvedRootPath,
+        caseSensitivePaths: manager.compatibility.caseSensitive,
+      );
+      final discovered = await WorkspaceFileExplorerFileSystemDiscoveryBinding(
+        fileSystemManager: manager,
+        rootPath: resolvedRootPath,
+        seedPaths: workspaceController.files,
+        ignoreRules: plan.ignoreRules,
+      ).discover();
+      if (!_isCurrentSync(generation, resolvedRootPath)) {
+        return null;
+      }
+      applyDiscoveryResult(_canonicalizeDiscovery(discovered));
+      if (_state.updatedAt == null) {
+        await expandDirectories(
+          snapshot.roots
+              .where(
+                (node) => node.kind == WorkspaceFileExplorerNodeKind.directory,
+              )
+              .map((node) => node.path),
+        );
+      }
+      if (!_isCurrentSync(generation, resolvedRootPath)) {
+        return null;
+      }
+      _watchSubscription =
+          WorkspaceFileExplorerFileSystemWatcherBinding(
+            fileSystemManager: manager,
+            plan: plan,
+            baseFilePaths: _discovery!.filePaths,
+          ).watch().listen((watch) {
+            if (_isCurrentSync(generation, resolvedRootPath)) {
+              applyWatchSnapshot(watch);
+            }
+          });
+      return _discovery;
+    } on Object {
+      if (!_isCurrentSync(generation, resolvedRootPath)) {
+        return null;
+      }
+      applyWatchSnapshot(
+        WorkspaceFileExplorerWatchSnapshot(
+          plan:
+              WorkspaceFileExplorerWatchPlan(
+                rootPath: resolvedRootPath,
+                caseSensitivePaths: manager.compatibility.caseSensitive,
+              ).block(
+                'File System Manager discovery failed; refresh the explorer to retry.',
+              ),
+          baseFilePaths: workspaceController.files,
+        ),
+      );
+      return null;
+    }
   }
 
   Future<void> persistState() async {
@@ -968,48 +1461,107 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
   Future<void> toggleDirectory(String path) async {
     _state = _state.toggleExpanded(path);
     await persistState();
-    notifyListeners();
+    _notifyListeners();
+  }
+
+  Future<void> expandDirectories(Iterable<String> paths) async {
+    final expandedPaths = <String>{..._state.expandedPaths};
+    var changed = false;
+    for (final path in paths) {
+      final normalizedPath = _normalizeWorkspaceFileExplorerPath(path);
+      if (normalizedPath.isNotEmpty && expandedPaths.add(normalizedPath)) {
+        changed = true;
+      }
+    }
+    if (!changed) {
+      return;
+    }
+    _state = _state.copyWith(
+      expandedPaths: expandedPaths.toList(growable: false),
+      updatedAt: DateTime.now().toUtc(),
+    );
+    await persistState();
+    _notifyListeners();
   }
 
   Future<void> selectPath(String path) async {
     _state = _state.selectPath(path);
     await persistState();
-    notifyListeners();
+    _notifyListeners();
+  }
+
+  Future<void> revealPath(String path) async {
+    _state = _state.revealPath(path);
+    await persistState();
+    _notifyListeners();
+  }
+
+  void applyDiscoveryResult(WorkspaceFileExplorerDiscoveryResult discovery) {
+    if (_disposed) {
+      return;
+    }
+    _discovery = discovery;
+    _watchSnapshot = null;
+    _notifyListeners();
+  }
+
+  void applyWatchSnapshot(WorkspaceFileExplorerWatchSnapshot watch) {
+    if (_disposed) {
+      return;
+    }
+    _watchSnapshot = watch;
+    _discovery = watch.toDiscoveryResult();
+    _notifyListeners();
   }
 
   Future<void> setSortMode(WorkspaceFileExplorerSortMode sortMode) async {
     _state = _state.withSortMode(sortMode);
     await persistState();
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<WorkspaceFileOperationResult> run(
     WorkspaceFileExplorerActionRequest request,
   ) async {
-    final result = switch (request.kind) {
-      WorkspaceFileOperationKind.create => await operationService.createFile(
-        path: request.path,
-        text: request.text,
-        open: request.open,
-      ),
-      WorkspaceFileOperationKind.rename => await operationService.renameFile(
+    late final WorkspaceFileOperationResult result;
+    try {
+      result = switch (request.kind) {
+        WorkspaceFileOperationKind.create => await operationService.createFile(
+          path: request.path,
+          text: request.text,
+          open: request.open,
+        ),
+        WorkspaceFileOperationKind.rename => await operationService.renameFile(
+          path: request.path,
+          nextPath: request.nextPath,
+          open: request.open,
+        ),
+        WorkspaceFileOperationKind.delete => await operationService.deleteFile(
+          request.path,
+        ),
+        WorkspaceFileOperationKind.reveal => operationService.revealFile(
+          request.path,
+        ),
+      };
+    } on Object {
+      result = WorkspaceFileOperationResult(
+        kind: request.kind,
+        applied: false,
         path: request.path,
         nextPath: request.nextPath,
-        open: request.open,
-      ),
-      WorkspaceFileOperationKind.delete => await operationService.deleteFile(
-        request.path,
-      ),
-      WorkspaceFileOperationKind.reveal => operationService.revealFile(
-        request.path,
-      ),
-    };
+        message:
+            'Workspace file ${request.kind.wireValue} failed. Check the file provider and retry.',
+      );
+    }
     if (result.applied && request.kind == WorkspaceFileOperationKind.reveal) {
       _state = _state.revealPath(result.path);
       await persistState();
     }
+    if (result.applied && request.kind != WorkspaceFileOperationKind.reveal) {
+      _applyOperationToObservedPaths(result);
+    }
     _lastResult = result;
-    notifyListeners();
+    _notifyListeners();
     return result;
   }
 
@@ -1031,7 +1583,7 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     final plan = confirmationPlanFor(request);
     _pendingConfirmationPlan = plan;
     _pendingBatchActionPlan = null;
-    notifyListeners();
+    _notifyListeners();
     return plan;
   }
 
@@ -1041,7 +1593,7 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     final plan = batchPlanFor(requests);
     _pendingBatchActionPlan = plan;
     _pendingConfirmationPlan = null;
-    notifyListeners();
+    _notifyListeners();
     return plan;
   }
 
@@ -1051,7 +1603,7 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
     }
     _pendingConfirmationPlan = null;
     _pendingBatchActionPlan = null;
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<WorkspaceFileOperationResult?> runPendingAction({
@@ -1087,19 +1639,139 @@ class WorkspaceFileExplorerController extends ChangeNotifier {
   }
 
   void _handleWorkspaceChanged() {
-    notifyListeners();
+    final project = workspaceController.activeProject;
+    final nextRoot = _normalizeWorkspaceFileExplorerPath(project.workspaceRoot);
+    if (_workspaceContextId != project.id ||
+        _workspaceContextRootPath != nextRoot) {
+      _workspaceContextId = project.id;
+      _workspaceContextRootPath = nextRoot;
+      _syncGeneration += 1;
+      final previousSubscription = _watchSubscription;
+      _watchSubscription = null;
+      unawaited(previousSubscription?.cancel());
+      _discovery = null;
+      _watchSnapshot = null;
+      _pendingConfirmationPlan = null;
+      _pendingBatchActionPlan = null;
+      final roots = buildWorkspaceFileExplorerTree(workspaceController.files);
+      _state = WorkspaceFileExplorerState(
+        workspaceId: project.id,
+        expandedPaths: roots
+            .where(
+              (node) => node.kind == WorkspaceFileExplorerNodeKind.directory,
+            )
+            .map((node) => node.path)
+            .toList(growable: false),
+      );
+      _notifyListeners();
+      unawaited(startFileSystemSync(rootPath: project.workspaceRoot));
+      return;
+    }
+    _notifyListeners();
+  }
+
+  bool _isCurrentSync(int generation, String rootPath) {
+    return !_disposed &&
+        generation == _syncGeneration &&
+        rootPath == _watchedRootPath;
+  }
+
+  void _notifyListeners() {
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  WorkspaceFileExplorerDiscoveryResult _canonicalizeDiscovery(
+    WorkspaceFileExplorerDiscoveryResult discovery,
+  ) {
+    final usesAbsolutePaths = workspaceController.files.any(
+      (path) => _isAbsoluteWorkspaceFileExplorerPath(
+        _normalizeWorkspaceFileExplorerPath(path),
+      ),
+    );
+    if (!usesAbsolutePaths) {
+      return discovery;
+    }
+    final rootPath = workspaceController.activeProject.workspaceRoot;
+    final filePaths =
+        discovery.filePaths
+            .map(
+              (path) => _workspaceFileExplorerAbsolutePath(
+                rootPath: rootPath,
+                path: path,
+              ),
+            )
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return WorkspaceFileExplorerDiscoveryResult(
+      source: discovery.source,
+      filePaths: List<String>.unmodifiable(filePaths),
+      ignoredPaths: discovery.ignoredPaths,
+      truncated: discovery.truncated,
+    );
+  }
+
+  void _applyOperationToObservedPaths(WorkspaceFileOperationResult result) {
+    final paths = <String>{
+      for (final path
+          in _watchSnapshot?.filePaths ??
+              _discovery?.filePaths ??
+              workspaceController.files)
+        _normalizeWorkspaceFileExplorerPath(path),
+    };
+    final path = _normalizeWorkspaceFileExplorerPath(result.path);
+    final nextPath = _normalizeWorkspaceFileExplorerPath(result.nextPath);
+    switch (result.kind) {
+      case WorkspaceFileOperationKind.create:
+        paths.add(path);
+      case WorkspaceFileOperationKind.rename:
+        paths
+          ..remove(path)
+          ..add(nextPath);
+      case WorkspaceFileOperationKind.delete:
+        paths.remove(path);
+      case WorkspaceFileOperationKind.reveal:
+        break;
+    }
+    final sortedPaths = paths.toList(growable: false)..sort();
+    final watch = _watchSnapshot;
+    if (watch != null) {
+      _watchSnapshot = WorkspaceFileExplorerWatchSnapshot(
+        plan: watch.plan,
+        baseFilePaths: List<String>.unmodifiable(sortedPaths),
+        telemetry: watch.telemetry,
+      );
+      _discovery = _watchSnapshot!.toDiscoveryResult();
+      return;
+    }
+    if (_discovery != null) {
+      _discovery = WorkspaceFileExplorerDiscoveryResult(
+        source: _discovery!.source,
+        filePaths: List<String>.unmodifiable(sortedPaths),
+        ignoredPaths: _discovery!.ignoredPaths,
+        truncated: _discovery!.truncated,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _syncGeneration += 1;
+    unawaited(_watchSubscription?.cancel());
+    _watchSubscription = null;
     workspaceController.removeListener(_handleWorkspaceChanged);
     super.dispose();
   }
 }
 
 List<WorkspaceFileExplorerNode> buildWorkspaceFileExplorerTree(
-  Iterable<String> filePaths,
-) {
+  Iterable<String> filePaths, {
+  WorkspaceFileExplorerSortMode sortMode =
+      WorkspaceFileExplorerSortMode.foldersFirst,
+}) {
   final root = _MutableWorkspaceFileExplorerNode.directory('', '');
   final sortedPaths =
       filePaths
@@ -1108,19 +1780,25 @@ List<WorkspaceFileExplorerNode> buildWorkspaceFileExplorerTree(
           .toList(growable: false)
         ..sort();
 
+  final prefix = _workspaceFileExplorerCommonDirectoryPrefix(sortedPaths);
+
   for (final filePath in sortedPaths) {
-    final parts = filePath
+    final relativePath = prefix.isNotEmpty && filePath.startsWith('$prefix/')
+        ? filePath.substring(prefix.length + 1)
+        : filePath;
+    final parts = relativePath
         .split('/')
         .where((part) => part.isNotEmpty)
         .toList(growable: false);
     var cursor = root;
+    var currentPath = prefix;
     for (var index = 0; index < parts.length; index += 1) {
       final part = parts[index];
-      final path = parts.take(index + 1).join('/');
+      currentPath = currentPath.isEmpty ? part : '$currentPath/$part';
       final isFile = index == parts.length - 1;
       cursor = cursor.child(
         name: part,
-        path: path,
+        path: isFile ? filePath : currentPath,
         kind: isFile
             ? WorkspaceFileExplorerNodeKind.file
             : WorkspaceFileExplorerNodeKind.directory,
@@ -1128,7 +1806,40 @@ List<WorkspaceFileExplorerNode> buildWorkspaceFileExplorerTree(
     }
   }
 
-  return root.children.map((child) => child.freeze()).toList(growable: false);
+  return root.freeze(sortMode).children;
+}
+
+String _workspaceFileExplorerCommonDirectoryPrefix(List<String> filePaths) {
+  if (filePaths.isEmpty) {
+    return '';
+  }
+  final pathSegments = filePaths
+      .map(
+        (path) => path
+            .split('/')
+            .where((segment) => segment.isNotEmpty)
+            .toList(growable: false),
+      )
+      .toList(growable: false);
+  final first = pathSegments.first;
+  final prefix = <String>[];
+  for (var index = 0; index < first.length - 1; index += 1) {
+    final segment = first[index];
+    if (!pathSegments.every(
+      (segments) => segments.length > index + 1 && segments[index] == segment,
+    )) {
+      break;
+    }
+    prefix.add(segment);
+  }
+  if (prefix.isEmpty) {
+    return '';
+  }
+  final joined = prefix.join('/');
+  if (filePaths.first.startsWith('//')) {
+    return '//$joined';
+  }
+  return filePaths.first.startsWith('/') ? '/$joined' : joined;
 }
 
 class _MutableWorkspaceFileExplorerNode {
@@ -1152,40 +1863,37 @@ class _MutableWorkspaceFileExplorerNode {
   final String name;
   final String path;
   final WorkspaceFileExplorerNodeKind kind;
-  final List<_MutableWorkspaceFileExplorerNode> children =
-      <_MutableWorkspaceFileExplorerNode>[];
+  final Map<String, _MutableWorkspaceFileExplorerNode> _childrenByPath =
+      <String, _MutableWorkspaceFileExplorerNode>{};
 
   _MutableWorkspaceFileExplorerNode child({
     required String name,
     required String path,
     required WorkspaceFileExplorerNodeKind kind,
   }) {
-    for (final child in children) {
-      if (child.name == name && child.path == path) {
-        return child;
-      }
-    }
-    final next = _MutableWorkspaceFileExplorerNode(
-      name: name,
-      path: path,
-      kind: kind,
+    return _childrenByPath.putIfAbsent(
+      '${kind.wireValue}:$path',
+      () =>
+          _MutableWorkspaceFileExplorerNode(name: name, path: path, kind: kind),
     );
-    children.add(next);
-    children.sort((left, right) {
-      if (left.kind != right.kind) {
-        return left.kind == WorkspaceFileExplorerNodeKind.directory ? -1 : 1;
-      }
-      return left.name.compareTo(right.name);
-    });
-    return next;
   }
 
-  WorkspaceFileExplorerNode freeze() {
+  WorkspaceFileExplorerNode freeze(WorkspaceFileExplorerSortMode sortMode) {
+    final sortedChildren = _childrenByPath.values.toList(growable: false)
+      ..sort((left, right) {
+        if (sortMode == WorkspaceFileExplorerSortMode.foldersFirst &&
+            left.kind != right.kind) {
+          return left.kind == WorkspaceFileExplorerNodeKind.directory ? -1 : 1;
+        }
+        return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+      });
     return WorkspaceFileExplorerNode(
       name: name,
       path: path,
       kind: kind,
-      children: children.map((child) => child.freeze()).toList(growable: false),
+      children: sortedChildren
+          .map((child) => child.freeze(sortMode))
+          .toList(growable: false),
     );
   }
 }

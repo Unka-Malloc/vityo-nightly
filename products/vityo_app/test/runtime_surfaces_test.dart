@@ -731,7 +731,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('debug-control-stop')));
     await tester.pump();
     expect(debugCommands, <String>['start', 'stop']);
-    expect(find.text('breakpoints 1'), findsOneWidget);
+    expect(find.text('Breakpoints · 1'), findsOneWidget);
     expect(find.text('src/main.cc:1'), findsOneWidget);
     expect(find.text('Threads'), findsOneWidget);
     expect(find.text('1 · main thread'), findsOneWidget);
@@ -759,6 +759,19 @@ void main() {
       find.textContaining('[runtime #10] 00:00:01 run.finished'),
       findsWidgets,
     );
+    final debugConsoleScrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('debug-surface-desktop')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('window 00:00:00 -> 00:00:01', skipOffstage: false),
+      500,
+      scrollable: debugConsoleScrollable,
+      maxScrolls: 24,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('window 00:00:00 -> 00:00:01'), findsOneWidget);
     expect(
       find.text(
@@ -870,6 +883,105 @@ void main() {
     await tester.pump();
 
     expect(debugCommands, <String>['continue', 'step-over', 'stop']);
+  });
+
+  testWidgets('runtime surface runs and stops a managed execution session', (
+    tester,
+  ) async {
+    var runActive = false;
+    ExecutionSession? session;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => RuntimeSurface(
+            platformTarget: PlatformTarget.macos,
+            viewportProfile: const ViewportProfile(
+              family: ViewportFamily.desktop,
+              width: 1440,
+              height: 900,
+            ),
+            projectGraph: _projectGraph(),
+            toolchainStatus: ToolchainStatusSurface.fromProjectToolchain(
+              _projectGraph().toolchain,
+            ),
+            mountedModules: const [],
+            adapterCapabilities: const <AdapterCapabilitySnapshot>[
+              AdapterCapabilitySnapshot(
+                adapterKind: AdapterKind.cli,
+                languageService: AdapterEndpointCapability(
+                  level: AdapterCapabilityLevel.unavailable,
+                  detail: 'not used in lifecycle test',
+                ),
+                projectGraph: AdapterEndpointCapability(
+                  level: AdapterCapabilityLevel.available,
+                  detail: 'project graph ready',
+                ),
+                execution: AdapterEndpointCapability(
+                  level: AdapterCapabilityLevel.available,
+                  detail: 'managed execution ready',
+                ),
+                runtimeEvents: AdapterEndpointCapability(
+                  level: AdapterCapabilityLevel.available,
+                  detail: 'runtime events ready',
+                ),
+              ),
+            ],
+            executionSession: session,
+            executionRunActive: runActive,
+            executionCanCancel: runActive,
+            onRunExecution: () async {
+              setState(() {
+                runActive = true;
+                session = const ExecutionSession(
+                  sessionId: 'task-runtime-1',
+                  kind: 'run',
+                  status: ExecutionSessionStatus.running,
+                  statusMessage: 'Run target is active.',
+                  diagnostics: [],
+                  stdoutEvents: <ExecutionLogEvent>[],
+                  stderrEvents: <ExecutionLogEvent>[],
+                  metadata: <String, Object?>{
+                    'processHandleId': 'task-runtime-1',
+                    'pid': 5151,
+                  },
+                );
+              });
+            },
+            onCancelExecution: () async {
+              setState(() {
+                runActive = false;
+                session = session?.copyWith(
+                  status: ExecutionSessionStatus.cancelled,
+                  statusMessage: 'Run stopped by user.',
+                );
+              });
+            },
+            runtimeEvents: const <RuntimeEventEnvelope>[],
+          ),
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('runtime-run-execution')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('runtime-run-execution')));
+    await tester.pump();
+
+    expect(find.text('run · running'), findsOneWidget);
+    expect(find.text('handle task-runtime-1 · pid 5151'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('runtime-stop-execution')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('runtime-stop-execution')));
+    await tester.pump();
+
+    expect(find.text('run · cancelled'), findsOneWidget);
+    expect(find.text('Run stopped by user.'), findsOneWidget);
+    expect(find.text('Run again'), findsOneWidget);
   });
 
   testWidgets('runtime surface route text uses primary adapter detail', (

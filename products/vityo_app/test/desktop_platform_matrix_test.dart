@@ -4,7 +4,7 @@ import 'package:vityo_app/src/view_ide/workbench/ide_capability.dart';
 import 'package:vityo_app/src/view_ide/workbench/ide_capability_registry.dart';
 
 /// Validates the current desktop platform behavior that Vityo preserves
-/// through docs/plan/vityo/Requirements.md REQ-IDE-008.
+/// through docs/assets/workflow/TEST-CATALOG.md.
 void main() {
   const filter = PlatformCapabilityFilter();
 

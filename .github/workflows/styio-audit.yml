@@ -28,7 +28,9 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
         with:
           repository: SymPolicy/styio-audit
-          ref: stable
+          # The external policy executes in this runner, so it pins to the
+          # reviewed stable commit and moves only through a reviewed change.
+          ref: 9d3faa71e228f0bfd89327c6597b17a084864cc4
           path: styio-audit
 
       - name: Set up standardized Python

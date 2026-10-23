@@ -1,13 +1,17 @@
 import 'package:flutter/widgets.dart';
 
-import 'src/ide/platform/desktop_delivery_smoke.dart';
-import 'src/view_render/view_render.dart';
+import 'src/view_ide/flow_hero/runtime.dart';
+import 'src/app/platform/desktop_startup_probe.dart' as startup_probe;
+import 'src/view_render/flow_hero/flow_hero.dart';
 
-Future<void> main(List<String> arguments) async {
-  if (await tryRunDesktopDeliverySmoke(arguments)) {
-    return;
-  }
+/// Compose the Flow Hero feature runtime at the maintained app entry point.
+/// Store restoration runs after the first frame; startup-probe launches use
+/// the same composition as ordinary launches.
+void main(List<String> arguments) {
   WidgetsFlutterBinding.ensureInitialized();
-  final bootstrap = await AppBootstrap.load();
-  runApp(VityoApp(bootstrap: bootstrap));
+  final ProductionFlowHeroRuntime runtime = ProductionFlowHeroRuntime();
+  startup_probe.runDesktopStartupProbe(
+    arguments,
+    FlowHeroApp(runtime: runtime),
+  );
 }

@@ -9,6 +9,7 @@ mixin ShellRuntimeTestingFacade on ShellRuntimeFacadeHost {
       _testingController.failedRetryHistory;
   FailedTestDebugCancellationRoute? get failedDebugCancellationRoute =>
       _testingController.failedDebugCancellationRoute;
+  bool get testRunActive => _testingController.runActive;
   TestRunConfigurationSet get testRunConfigurationSet =>
       _testingController.configurationSet;
 

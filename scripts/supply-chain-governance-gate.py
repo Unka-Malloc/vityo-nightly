@@ -8,6 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from vityo_privacy import format_summary, scan_repository
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = Path(".github/workflows")
@@ -20,6 +22,8 @@ REQUIRED_POLICY_FILES = (
     Path("docs/specs/THIRD-PARTY.md"),
     Path("products/vityo_app/pubspec.lock"),
     Path("prototype/package-lock.json"),
+    Path("products/vityo_coding_agent/Cargo.toml"),
+    Path("products/vityo_app/native/vityod/Cargo.toml"),
 )
 
 REQUIRED_GATE_SCRIPTS = (
@@ -28,6 +32,13 @@ REQUIRED_GATE_SCRIPTS = (
     Path("scripts/dependency-policy-gate.py"),
     Path("scripts/github-actions-pin-gate.py"),
     Path("scripts/supply-chain-governance-gate.py"),
+    Path("scripts/vityo_privacy.py"),
+)
+
+REQUIRED_POLICY_SOURCES = (
+    Path("scripts/vityo_rust_notices.py"),
+    Path("toolchain/licenses/about.toml"),
+    Path("toolchain/licenses/third-party-notices.txt.hbs"),
 )
 
 REQUIRED_WORKFLOW_COMMANDS = {
@@ -51,6 +62,8 @@ REQUIRED_DEPENDABOT_UPDATES = (
     ("github-actions", "/"),
     ("pub", "/products/vityo_app"),
     ("npm", "/prototype"),
+    ("cargo", "/products/vityo_coding_agent"),
+    ("cargo", "/products/vityo_app/native/vityod"),
 )
 
 REQUIRED_SECRET_IGNORE_PATTERNS = (
@@ -81,35 +94,6 @@ GOVERNANCE_DOC_MARKERS = (
     "scripts/check_license_policy.py",
 )
 
-SECRET_SCAN_PATHS = (
-    Path(".github"),
-    Path("scripts"),
-    Path("docs/governance"),
-    Path("DEPENDENCY-USAGE.md"),
-    Path("LICENSE-POLICY.md"),
-)
-SECRET_SCAN_EXCLUDED_PARTS = {
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".dart_tool",
-    ".pytest_cache",
-}
-SECRET_SCAN_MAX_BYTES = 1024 * 1024
-SECRET_PATTERNS = (
-    (re.compile(r"\bghp_[A-Za-z0-9_]{30,}\b"), "GitHub classic token"),
-    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), "GitHub fine-grained token"),
-    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AWS access key id"),
-    (re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"), "OpenAI-style API key"),
-    (
-        re.compile(r"Authorization\s*:\s*(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}", re.I),
-        "literal authorization header",
-    ),
-    (
-        re.compile(r"-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"),
-        "private key material",
-    ),
-)
 FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -418,6 +402,15 @@ def check_policy_surfaces(root: Path) -> list[CheckResult]:
                 "present" if exists else "missing",
             )
         )
+    for path in REQUIRED_POLICY_SOURCES:
+        exists = (root / path).is_file()
+        results.append(
+            CheckResult(
+                f"policy source: {path}",
+                exists,
+                "present" if exists else "missing",
+            )
+        )
     usage_path = root / "DEPENDENCY-USAGE.md"
     if usage_path.is_file():
         text = usage_path.read_text(encoding="utf-8")
@@ -462,47 +455,9 @@ def check_secret_ignore_baseline(root: Path) -> list[CheckResult]:
     ]
 
 
-def is_scan_candidate(path: Path) -> bool:
-    if any(part in SECRET_SCAN_EXCLUDED_PARTS for part in path.parts):
-        return False
-    if not path.is_file():
-        return False
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return False
-    return len(data) <= SECRET_SCAN_MAX_BYTES and b"\0" not in data
-
-
-def iter_secret_scan_files(root: Path) -> list[Path]:
-    files: list[Path] = []
-    for scan_path in SECRET_SCAN_PATHS:
-        path = root / scan_path
-        if path.is_dir():
-            files.extend(candidate for candidate in path.rglob("*") if is_scan_candidate(candidate))
-        elif is_scan_candidate(path):
-            files.append(path)
-    return sorted(set(files))
-
-
 def check_secret_scan(root: Path) -> list[CheckResult]:
-    findings: list[str] = []
-    scanned = 0
-    for path in iter_secret_scan_files(root):
-        scanned += 1
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        rel = relative(root, path)
-        for pattern, label in SECRET_PATTERNS:
-            for match in pattern.finditer(text):
-                line = text.count("\n", 0, match.start()) + 1
-                findings.append(f"{rel}:{line}: {label}")
-    return [
-        CheckResult(
-            "high-signal secret scan",
-            not findings,
-            f"scanned {scanned} file(s)" if not findings else "; ".join(findings),
-        )
-    ]
+    report = scan_repository(root)
+    return [CheckResult("repository privacy scan", report.ok, format_summary(report))]
 
 
 def collect_checks(root: Path) -> list[CheckResult]:

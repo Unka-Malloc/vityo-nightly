@@ -6,6 +6,8 @@ import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/testing/testing.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   test(
     'testing provider registry resolves highest-priority active provider',
@@ -154,10 +156,7 @@ void main() {
     expect(health.hasActiveRunProvider, isFalse);
     expect(health.retryActions, hasLength(2));
     expect(retryPlan.ready, isFalse);
-    expect(
-      retryPlan.message,
-      contains('TODO: register an active testing provider'),
-    );
+    expect(retryPlan.message, contains('Register an active testing provider'));
     expect(
       retryPlan.actions.map((action) => action.toJson()['enabled']),
       everyElement(isFalse),
@@ -215,6 +214,9 @@ void main() {
     expect(configuration.ready, isTrue);
     expect(runRequest.toJson(), <String, Object?>{
       'workspaceRoot': '/workspace/vityo',
+      'configurationId': 'styio-parser',
+      'configurationLabel': 'Styio parser fixtures',
+      'providerId': 'styio',
       'targetId': 'parser',
       'filter': 'syntax',
       'debug': true,
@@ -813,7 +815,7 @@ Future<FoundationDataStore> _createDataStore() async {
     'vityo_test_run_history_test_',
   );
   addTearDown(() => tempRoot.delete(recursive: true));
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: tempRoot.path,

@@ -14,9 +14,10 @@ Returns 0 when all checks pass.
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
+
+from vityo_privacy import format_summary, scan_repository
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -193,96 +194,13 @@ def check_no_legacy_implementation() -> bool:
 
 
 def check_no_secrets_in_tracked() -> bool:
-    """No API keys, tokens, or absolute home paths in tracked files."""
-    secret_patterns = [
-        r"sk-[a-zA-Z0-9]{20,}",
-        r"OPENAI_API_KEY\s*=\s*[a-zA-Z0-9_-]{10,}",
-        r"ANTHROPIC_API_KEY\s*=\s*[a-zA-Z0-9_-]{10,}",
-    ]
-    # Only check specific shared config / doc directories
-    search_dirs = [
-        "docs/",
-        "scripts/",
-        "toolchain/",
-        "products/vityo_app/lib/src/view_ide/",
-    ]
-
-    all_ok = True
-    import re
-
-    for search_dir in search_dirs:
-        path = REPO_ROOT / search_dir
-        if not path.is_dir():
-            continue
-        for f in path.rglob("*"):
-            if not f.is_file():
-                continue
-            if f.suffix in {".dart_tool", ".gitkeep"}:
-                continue
-            try:
-                content = f.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for pattern in secret_patterns:
-                if re.search(pattern, content):
-                    fail(f"Secret pattern found in {f.relative_to(REPO_ROOT)}")
-                    all_ok = False
-
-    # Also check for platform-specific home paths in source code only
-    # (docs and scripts may intentionally document workspace paths)
-    home_patterns = [
-        r"/home/[a-zA-Z0-9_-]+/",  # Linux
-        r"/Users/[a-zA-Z0-9_-]+/",  # macOS
-        r"C:\\Users\\[a-zA-Z0-9_-]+\\",  # Windows
-    ]
-    exclude_dirs = {
-        ".git",
-        ".dart_tool",
-        "build",
-        "node_modules",
-        "coverage",
-        ".claude",
-    }
-    # Only check source code directories for home paths
-    source_search_dirs = [
-        "products/vityo_app/lib/src/view_ide/",
-        "products/vityo_app/lib/src/view_render/",
-    ]
-    for search_dir in source_search_dirs:
-        path = REPO_ROOT / search_dir
-        if not path.is_dir():
-            continue
-        for f in path.rglob("*"):
-            if not f.is_file():
-                continue
-            if any(ex in f.parts for ex in exclude_dirs):
-                continue
-            try:
-                content = f.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for pattern in home_patterns:
-                for match in re.finditer(pattern, content):
-                    matched = match.group()
-                    # Allow known toolchain paths
-                    if "linuxbrew" in matched or ".linuxbrew" in matched:
-                        continue
-                    if "brew" in matched.lower():
-                        continue
-                    # Allow intentional documentation examples
-                    ctx_start = max(0, match.start() - 20)
-                    ctx = content[ctx_start:match.end() + 5]
-                    if "example" in ctx.lower() or "placeholder" in ctx.lower():
-                        continue
-                    fail(
-                        f"Possible home path in {f.relative_to(REPO_ROOT)}: "
-                        f"{matched}"
-                    )
-                    all_ok = False
-
-    if all_ok:
-        ok("No secrets or personal paths in tracked files")
-    return all_ok
+    """Run the shared privacy rules over tracked and nonignored candidate text."""
+    report = scan_repository(REPO_ROOT)
+    if not report.ok:
+        fail(f"Privacy scan: {format_summary(report)}")
+        return False
+    ok(f"Privacy scan passed: {report.scanned_files} candidate text file(s)")
+    return True
 
 
 def check_no_tracked_build_output() -> bool:

@@ -9,7 +9,7 @@ void main() {
   }
 
   test('canonical fixture decodes identically on repeated runs', () {
-    final text = readObservableRuntimeFixture('canonical.jsonl');
+    final text = readObservableRuntimeFixture('canonical.ndjson');
     final first = decodeRuntimeStream(linesOf(text));
     final second = decodeRuntimeStream(linesOf(text));
     expect(first.isOk, isTrue);
@@ -24,7 +24,7 @@ void main() {
   });
 
   test('additive fields are ignored and repeated decode matches', () {
-    final text = readObservableRuntimeFixture('additive-fields.jsonl');
+    final text = readObservableRuntimeFixture('additive-fields.ndjson');
     final first = [
       for (final line in linesOf(text))
         if (line.trim().isNotEmpty) decodeRuntimeRecord(line),
@@ -47,18 +47,18 @@ void main() {
 
   test('stream-level negatives reject with named subcodes and no records', () {
     const cases = <String, RuntimeStreamSubcode>{
-      'unsupported-contract.jsonl': RuntimeStreamSubcode.unsupportedContract,
-      'unsupported-schema-version.jsonl':
+      'unsupported-contract.ndjson': RuntimeStreamSubcode.unsupportedContract,
+      'unsupported-schema-version.ndjson':
           RuntimeStreamSubcode.unsupportedSchemaVersion,
-      'unsupported-snapshot-schema.jsonl':
+      'unsupported-snapshot-schema.ndjson':
           RuntimeStreamSubcode.unsupportedSnapshotSchema,
-      'missing-capability-record.jsonl':
+      'missing-capability-record.ndjson':
           RuntimeStreamSubcode.missingCapabilityRecord,
-      'capability-not-first.jsonl':
+      'capability-not-first.ndjson':
           RuntimeStreamSubcode.capabilityRecordNotFirst,
-      'duplicate-capability-record.jsonl':
+      'duplicate-capability-record.ndjson':
           RuntimeStreamSubcode.duplicateCapabilityRecord,
-      'unknown-mode.jsonl': RuntimeStreamSubcode.unknownMode,
+      'unknown-mode.ndjson': RuntimeStreamSubcode.unknownMode,
     };
     for (final entry in cases.entries) {
       final result = decodeRuntimeStream(
@@ -72,7 +72,7 @@ void main() {
 
   test('record-level negatives count skipped records and keep the rest', () {
     final malformed = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('malformed-json-line.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('malformed-json-line.ndjson')),
     );
     expect(malformed.isOk, isTrue);
     expect(
@@ -84,7 +84,7 @@ void main() {
     expect(malformed.records.whereType<RuntimeDecodedEvent>(), isNotEmpty);
 
     final missing = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('missing-event-id.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('missing-event-id.ndjson')),
     );
     expect(
       missing.degradations.any(
@@ -95,7 +95,7 @@ void main() {
     expect(missing.records.whereType<RuntimeDecodedEvent>(), isNotEmpty);
 
     final identity = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('malformed-identity.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('malformed-identity.ndjson')),
     );
     expect(
       identity.degradations.any(
@@ -108,7 +108,7 @@ void main() {
 
   test('unknown event kinds decode as unknown and are counted', () {
     final result = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('unknown-event-kind.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('unknown-event-kind.ndjson')),
     );
     expect(result.isOk, isTrue);
     final unknown = result.records.whereType<RuntimeDecodedEvent>().where(
@@ -128,7 +128,7 @@ void main() {
     // which is every plain (non-observed) run. Rejecting that shape would
     // drop every controller event from existing execution sessions.
     final result = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('disabled-mode.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('disabled-mode.ndjson')),
     );
     expect(result.isOk, isTrue);
     expect(result.degradations, isEmpty);
@@ -160,7 +160,7 @@ void main() {
 
   test('a capability with a wrongly prefixed snapshot_id still rejects', () {
     final lines = linesOf(
-      readObservableRuntimeVityoFixture('disabled-mode.jsonl'),
+      readObservableRuntimeVityoFixture('disabled-mode.ndjson'),
     );
     final tampered = lines.first.replaceAll(
       '"snapshot_id":null',
@@ -174,7 +174,7 @@ void main() {
 
   test('additive canary strings never appear in decoded values', () {
     final result = decodeRuntimeStream(
-      linesOf(readObservableRuntimeVityoFixture('additive-canaries.jsonl')),
+      linesOf(readObservableRuntimeVityoFixture('additive-canaries.ndjson')),
     );
     expect(result.isOk, isTrue);
     final dump = result.records.toString();

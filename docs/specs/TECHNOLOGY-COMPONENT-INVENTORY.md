@@ -2,7 +2,7 @@
 
 **Purpose:** Define the required technology-stack, internal-component, open-source-component, and dependency-manifest inventory for `Vityo`.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-03
 
 This document is the repository-local maintenance rule for the manifest inventory audited by `styio-audit`. The canonical audit module must list the same surfaces in `for-vityo/module.json`; if this document and the audit manifest diverge, the change is not closed.
 
@@ -22,10 +22,12 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 ### Technology Stack
 
 - Flutter and Dart frontend workspace.
+- Rust/Cargo workspaces for the current independent Coding Agent runtime and the separately owned `vityod` daemon.
 - Android, iOS, macOS, Linux, Windows, and web platform runners.
 - CMake native runner integration for desktop platforms.
 - JavaScript, HTML, and CSS prototype with Playwright screenshot tooling.
 - Python and Bash repository, docs, and device/profile scripts.
+- A source-owned architecture model and generator for checked Markdown and HTML diagram views.
 - GitHub Actions workflow automation.
 
 ### Internal Components
@@ -40,15 +42,14 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 
 #### Security, Permission, And Audit Components
 
-- **Agent Client registry** (`ide/agent_client/agent_client_registry.dart`): bounded protocol
-  sessions, correlated one-shot permission requests, reconnect, and failure cleanup.
-- **Agent process supervisor** (`ide/agent_client/agent_process_supervisor.dart`): argv-based stdio
-  launch, bounded shutdown, timeout, and orphan cleanup.
-- **IDE MCP server and tool policy** (`ide/agent_client/mcp/`,
-  `ide/agent_client/tools/tool_security_policy.dart`): declared tools, capability grants,
-  workspace-root authorization, payload bounds, sanitization, and receipts.
-- **Context export** (`ide/agent_client/tools/context_export_service.dart`): bounded,
-  revision-bound, paginated, deduplicated, and sanitized IDE facts.
+- **Agent Client registry** (`ide/agent_client/agent_client_registry.dart`): thin typed gateway for
+  daemon-owned sessions, supplied ACP permission-option presentation and exact-ID response,
+  reconnect, and failure projection.
+- **Daemon ACP host** (`native/vityod/crates/vityod-agent-host/src/acp.rs`): argv-based stdio
+  launch, bounded frames, correlation, cancellation, capability enforcement, and orphan cleanup.
+- **Daemon MCP gateway** (`ide/agent_client/mcp/vityod_mcp_gateway.dart` plus native `vityod`
+  handlers): declared tools, capability grants, workspace-root authorization, payload bounds,
+  sanitization, revision binding, and receipts.
 - **Collaboration projection** (`ide/workbench/agent_collaboration/`): immutable task/session,
   permission, change-review, error, and verification state.
 - **Workspace transaction authority** (`ide/workspace/workspace_transaction_service.dart`):
@@ -56,6 +57,10 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 - **Execution sandbox** (`execution_sandbox.dart`): Local execution policy with workspace containment, path traversal/symlink detection, environment allowlisting, network policy, timeout, and output bounds.
 - **Log redactor** (`log_redactor.dart`): Pattern-based and field-based credential redaction for all log, diagnostic, runtime, and agent-context output.
 - **Secret store** (`secret_store.dart`): Credential reference lookup and local secret resolution.
+- **Rust Coding Agent** (`products/vityo_coding_agent/src/`): current independent ACP-stdio runtime with ReAct execution, provider, tool catalog/executor, policy, durable sessions, and the correlated host-operation adapter. The old Dart Agent runtime has been removed; the Dart shared-protocol client binding remains.
+- **Production MCP attachment boundary**: the Rust MCP client library/tool adapters are maintained, but ACP session creation/loading returns `-32003` for non-empty `mcpServers`; no first-party production attachment lifecycle is available.
+- **Rust dependency notices** (`scripts/vityo_rust_notices.py`, `toolchain/licenses/`): License evaluation and third-party notice generation for both Rust workspaces across the supported native desktop-target union.
+- **Rust coverage** (`scripts/rust-coverage-gate.py`): Locked workspace coverage collection for the Coding Agent and `vityod`, with separate report-only evaluation, current-platform source labels, and Coding Agent module-coverage evidence.
 - **Module manifest security** (`module_manifest_security.dart`): Module manifest trust validation — schema, signature, checksum, permission allowlist, engine compatibility, quarantine, and rollback.
 
 #### Governance And Security Scripts
@@ -63,6 +68,7 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 - `check_security_baseline.py`: Required file existence and forbidden-pattern scan.
 - `supply-chain-governance-gate.py`: CI/CD workflow permissions, Dependabot coverage, SBOM evidence, secret ignore baseline, high-signal secret scan.
 - `dependency-policy-gate.py`: Dependency registration enforcement in `DEPENDENCY-USAGE.md`.
+- `vityo_rust_notices.py`: Supported native-target locked Cargo graph license evaluation and third-party notice generation.
 - `github-actions-pin-gate.py`: GitHub Actions SHA-pinning audit and enforcement.
 - `check_license_policy.py`: Package license allowlist and forbidden license marker checks.
 - `release-readiness-gate.py`: End-to-end release readiness validation.
@@ -75,10 +81,16 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 ### Open-Source And External Components
 
 - Flutter SDK and Dart SDK.
+- Rust Agent and daemon direct dependencies, registered with exact manifest constraints, resolved
+  versions, SPDX expressions, and usage boundaries in [Dependency Usage](../../DEPENDENCY-USAGE.md):
+  ACP Rust SDK, RMCP, OpenAI-compatible chat SDK, `reqwest` with native TLS, native `keyring`,
+  `secrecy`, Tokio, Serde, SQLite (`rusqlite`), and `portable-pty`.
+- Rust/Cargo `1.88.0` in CI. The `vityo.py test` stage provisions matching `llvm-tools-preview` and `cargo-llvm-cov` `0.9.0` before coverage collection.
+- `cargo-about` `0.9.2` for locked dependency notice generation.
 - `cupertino_icons`.
 - `shared_preferences`.
 - `path_provider`.
-- `pty2` 0.5.2 (desktop ConPTY/forkpty transport; Windows use is fail-closed against pipe fallback).
+- `portable-pty` 0.9.0 in `vityod` (desktop ConPTY/forkpty transport with daemon-owned bounded streams and process cleanup).
 - `flutter_test`.
 - `flutter_lints`.
 - `crypto` (SHA-256/512 for module manifest checksums and signature verification).
@@ -91,6 +103,9 @@ Missing or stale lists are audit failures. They block license, commercial-risk, 
 ### Dependency Manifest Surfaces
 
 - `products/vityo_app/pubspec.yaml`.
+- `products/vityo_coding_agent/Cargo.toml` and `Cargo.lock`.
+- `products/vityo_app/native/vityod/Cargo.toml` and `Cargo.lock`.
+- `toolchain/licenses/about.toml` and `toolchain/licenses/third-party-notices.txt.hbs`.
 - `prototype/package.json`.
 - `products/vityo_app/linux/CMakeLists.txt`.
 - `products/vityo_app/linux/flutter/CMakeLists.txt`.

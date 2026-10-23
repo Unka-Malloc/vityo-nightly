@@ -130,14 +130,137 @@ void main() {
     expect(missingReveal.applied, isFalse);
     expect(missingReveal.message, contains('not part of the project'));
   });
+
+  test(
+    'absolute workspace projects keep one canonical path convention',
+    () async {
+      const activePath = '/workspace/fixture/src/main.styio';
+      final store = InMemoryWorkspaceDocumentStore(
+        seededDocuments: const <String, DocumentState>{
+          activePath: DocumentState(
+            documentId: activePath,
+            text: 'main := 1\n',
+            revision: 1,
+          ),
+        },
+      );
+      final controller = WorkspaceController(
+        projectSnapshot: _projectGraph(editorFiles: const <String>[activePath]),
+      );
+      final service = WorkspaceFileOperationService(
+        workspaceController: controller,
+        documentStore: store,
+      );
+
+      final created = await service.createFile(
+        path: 'src/generated.styio',
+        open: true,
+      );
+      final renamed = await service.renameFile(
+        path: 'src/generated.styio',
+        nextPath: 'src/renamed.styio',
+      );
+      final outside = await service.deleteFile('/tmp/outside.styio');
+
+      expect(created.path, '/workspace/fixture/src/generated.styio');
+      expect(renamed.nextPath, '/workspace/fixture/src/renamed.styio');
+      expect(controller.files, <String>[
+        activePath,
+        '/workspace/fixture/src/renamed.styio',
+      ]);
+      expect(outside.applied, isFalse);
+      expect(outside.message, contains('inside the workspace'));
+    },
+  );
+
+  test(
+    'relative workspace projects canonicalize contained absolute input',
+    () async {
+      const relativePath = 'src/main.styio';
+      final store = InMemoryWorkspaceDocumentStore(
+        seededDocuments: const <String, DocumentState>{
+          relativePath: DocumentState(
+            documentId: relativePath,
+            text: 'main := 1\n',
+            revision: 1,
+          ),
+        },
+      );
+      final controller = WorkspaceController(
+        projectSnapshot: _projectGraph(
+          editorFiles: const <String>[relativePath],
+        ),
+      );
+      final service = WorkspaceFileOperationService(
+        workspaceController: controller,
+        documentStore: store,
+      );
+
+      final revealed = service.revealFile('/workspace/fixture/src/main.styio');
+
+      expect(revealed.applied, isTrue);
+      expect(revealed.path, relativePath);
+      expect(controller.files, <String>[relativePath]);
+    },
+  );
+
+  test(
+    'Windows projects preserve native storage paths behind the tree',
+    () async {
+      const root = r'C:\workspace\fixture';
+      const activePath = r'C:\workspace\fixture\src\main.styio';
+      const generatedPath = r'C:\workspace\fixture\src\generated.styio';
+      const renamedPath = r'C:\workspace\fixture\src\renamed.styio';
+      final store = InMemoryWorkspaceDocumentStore(
+        seededDocuments: const <String, DocumentState>{
+          activePath: DocumentState(
+            documentId: activePath,
+            text: 'main := 1\n',
+            revision: 1,
+          ),
+        },
+      );
+      final controller = WorkspaceController(
+        projectSnapshot: _projectGraph(
+          workspaceRoot: root,
+          editorFiles: const <String>[activePath],
+        ),
+      );
+      final service = WorkspaceFileOperationService(
+        workspaceController: controller,
+        documentStore: store,
+      );
+
+      final revealed = service.revealFile(
+        'c:/WORKSPACE/FIXTURE/src/main.styio',
+      );
+      final created = await service.createFile(path: 'src/generated.styio');
+      final renamed = await service.renameFile(
+        path: 'C:/workspace/fixture/src/generated.styio',
+        nextPath: 'src/renamed.styio',
+      );
+      final outside = await service.createFile(path: r'D:\outside.styio');
+
+      expect(revealed.path, activePath);
+      expect(created.path, generatedPath);
+      expect(renamed.nextPath, renamedPath);
+      expect(controller.files, <String>[activePath, renamedPath]);
+      expect(await store.documentExists(generatedPath), isFalse);
+      expect(await store.documentExists(renamedPath), isTrue);
+      expect(outside.applied, isFalse);
+    },
+  );
 }
 
-ProjectGraphSnapshot _projectGraph({required List<String> editorFiles}) {
+ProjectGraphSnapshot _projectGraph({
+  required List<String> editorFiles,
+  String workspaceRoot = '/workspace/fixture',
+}) {
   return ProjectGraphSnapshot(
     id: 'fixture://project',
     title: 'fixture',
     kind: ProjectKind.package,
-    workspaceRoot: '/workspace/fixture',
+    workspaceRoot: workspaceRoot,
     workspaceMembers: const <String>[],
     packages: const <ProjectPackageSnapshot>[],
     dependencies: const <ProjectDependencySnapshot>[],

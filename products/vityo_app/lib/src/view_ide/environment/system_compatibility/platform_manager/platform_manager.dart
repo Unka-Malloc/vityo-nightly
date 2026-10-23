@@ -10,6 +10,7 @@ import '../process/process.dart';
 import '../pty/pty.dart';
 import '../resource/resource.dart';
 import '../shell/shell.dart';
+import '../../../../ide/local_service/vityod_client.dart';
 
 enum PlatformManagerHealthProbeKind { factReadiness, managerLiveOperation }
 
@@ -71,7 +72,9 @@ class PlatformManagerBundle {
       ),
       PlatformManagerComponentHealth(
         managerKey: 'shell',
-        ready: _isSupportedCompatibilityTarget(context.shell.compatibilityTarget),
+        ready: _isSupportedCompatibilityTarget(
+          context.shell.compatibilityTarget,
+        ),
         message: 'Shell manager compatibility is available.',
       ),
       PlatformManagerComponentHealth(
@@ -126,8 +129,6 @@ class PlatformManagerBundle {
       targetId: context.targetId,
       ready: components.every((component) => component.ready),
       components: components,
-      todo:
-          'TODO: connect fact-level readiness to safe live operation probes where managers expose runtime health.',
     );
   }
 
@@ -144,16 +145,14 @@ class PlatformManagerBundle {
       ready: components.every((component) => component.ready),
       components: components,
       probeSource: 'platform-manager-probes',
-      todo:
-          'TODO: connect manager live-operation probe callbacks to platform-specific smoke operations where available.',
     );
   }
 
   Future<PlatformManagerHealthSnapshot> probeLiveOperationHealthSnapshot({
-    PlatformManagerLiveOperationProbeRegistry registry =
-        const PlatformManagerLiveOperationProbeRegistry(),
+    PlatformManagerLiveOperationProbeRegistry? registry,
   }) {
-    return registry.probe(this);
+    return (registry ?? PlatformManagerLiveOperationProbeRegistry.defaults())
+        .probe(this);
   }
 }
 
@@ -192,6 +191,7 @@ class PlatformManagerComponentHealth {
     this.operationId = '',
     this.description = '',
     this.recoveryActions = const <PlatformManagerRecoveryAction>[],
+    this.metadata = const <String, Object?>{},
   });
 
   final String managerKey;
@@ -201,6 +201,7 @@ class PlatformManagerComponentHealth {
   final String operationId;
   final String description;
   final List<PlatformManagerRecoveryAction> recoveryActions;
+  final Map<String, Object?> metadata;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -214,6 +215,7 @@ class PlatformManagerComponentHealth {
         'recoveryActions': recoveryActions
             .map((action) => action.toJson())
             .toList(growable: false),
+      if (metadata.isNotEmpty) 'metadata': metadata,
     };
   }
 }
@@ -479,6 +481,7 @@ class PlatformManagerLiveOperationProbeResult {
       recoveryActions: ready
           ? const <PlatformManagerRecoveryAction>[]
           : recoveryActions,
+      metadata: metadata,
     );
   }
 
@@ -553,33 +556,382 @@ class PlatformManagerLiveOperationProbeRegistry {
 
   final List<PlatformManagerLiveOperationProbeRegistration> registrations;
 
+  factory PlatformManagerLiveOperationProbeRegistry.defaults() {
+    return PlatformManagerLiveOperationProbeRegistry(
+      registrations: <PlatformManagerLiveOperationProbeRegistration>[
+        _liveRegistration(
+          managerKey: 'fileSystem',
+          description: 'Read the native temporary-directory entry.',
+          probe: _probeFileSystemManager,
+        ),
+        _liveRegistration(
+          managerKey: 'shell',
+          description: 'Run a no-output command through the selected shell.',
+          probe: _probeShellManager,
+        ),
+        _liveRegistration(
+          managerKey: 'process',
+          description: 'Run a no-output child process through vityod.',
+          probe: _probeProcessManager,
+        ),
+        _liveRegistration(
+          managerKey: 'resource',
+          description: 'Read the current native resource snapshot.',
+          probe: _probeResourceManager,
+        ),
+        _liveRegistration(
+          managerKey: 'network',
+          description: 'Read a disposable loopback HTTP endpoint.',
+          probe: _probeNetworkManager,
+        ),
+        _liveRegistration(
+          managerKey: 'clipboard',
+          description: 'Read clipboard text without replacing its contents.',
+          probe: _probeClipboardManager,
+        ),
+        _liveRegistration(
+          managerKey: 'notification',
+          description: 'Dispatch a silent in-app notification probe.',
+          probe: _probeNotificationManager,
+        ),
+        _liveRegistration(
+          managerKey: 'localService',
+          description: 'Bind and close a disposable loopback service.',
+          probe: _probeLocalServiceManager,
+        ),
+        _liveRegistration(
+          managerKey: 'pty',
+          description: 'Open, resize, and close a disposable PTY session.',
+          probe: _probePtyManager,
+        ),
+      ],
+    );
+  }
+
   bool get isEmpty => registrations.isEmpty;
   bool get isNotEmpty => registrations.isNotEmpty;
+
+  bool get coversAllManagers {
+    return registrations
+        .map((registration) => registration.managerKey)
+        .toSet()
+        .containsAll(_platformManagerKeys);
+  }
 
   Future<PlatformManagerHealthSnapshot> probe(
     PlatformManagerBundle bundle,
   ) async {
-    final components = <PlatformManagerComponentHealth>[];
-    for (final registration in registrations) {
-      components.add(await registration.run(bundle));
-    }
+    final components = await Future.wait(
+      registrations.map((registration) => registration.run(bundle)),
+    );
     return PlatformManagerHealthSnapshot(
       targetId: bundle.context.targetId,
       ready: components.every((component) => component.ready),
       components: List<PlatformManagerComponentHealth>.unmodifiable(components),
       probeSource: 'platform-live-operation-registry',
-      todo:
-          'TODO: register platform-specific smoke operation callbacks for FileSystem, Shell, Process, Resource, Network, Clipboard, Notification, LocalService, and PTY managers.',
     );
   }
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'registrationCount': registrations.length,
+      'coversAllManagers': coversAllManagers,
       'registrations': registrations
           .map((registration) => registration.toJson())
           .toList(growable: false),
     };
+  }
+}
+
+const _platformManagerKeys = <String>{
+  'fileSystem',
+  'shell',
+  'process',
+  'resource',
+  'network',
+  'clipboard',
+  'notification',
+  'localService',
+  'pty',
+};
+
+PlatformManagerLiveOperationProbeRegistration _liveRegistration({
+  required String managerKey,
+  required String description,
+  required PlatformManagerLiveOperationProbeCallback probe,
+}) {
+  return PlatformManagerLiveOperationProbeRegistration(
+    managerKey: managerKey,
+    operationId: 'platform.$managerKey.live-operation',
+    description: description,
+    recoveryActions: _platformRecoveryActions(managerKey),
+    probe: probe,
+  );
+}
+
+List<PlatformManagerRecoveryAction> _platformRecoveryActions(
+  String managerKey,
+) {
+  return <PlatformManagerRecoveryAction>[
+    PlatformManagerRecoveryAction(
+      id: 'platform.$managerKey.open-settings',
+      label: 'Review ${_managerTitle(managerKey)} settings',
+      managerKey: managerKey,
+      message: 'Review ${_managerTitle(managerKey)} availability and retry.',
+      metadata: <String, Object?>{'settingsSectionId': managerKey},
+    ),
+  ];
+}
+
+String _managerTitle(String managerKey) {
+  return switch (managerKey) {
+    'fileSystem' => 'File System',
+    'localService' => 'Local Service',
+    'pty' => 'PTY',
+    _ => '${managerKey[0].toUpperCase()}${managerKey.substring(1)}',
+  };
+}
+
+PlatformManagerLiveOperationProbeResult _liveResult({
+  required String managerKey,
+  required bool ready,
+  required String message,
+  Map<String, Object?> metadata = const <String, Object?>{},
+}) {
+  final operationId = 'platform.$managerKey.live-operation';
+  if (ready) {
+    return PlatformManagerLiveOperationProbeResult.ready(
+      managerKey: managerKey,
+      operationId: operationId,
+      message: message,
+      metadata: metadata,
+    );
+  }
+  return PlatformManagerLiveOperationProbeResult.blocked(
+    managerKey: managerKey,
+    operationId: operationId,
+    message: message,
+    recoveryActions: _platformRecoveryActions(managerKey),
+    metadata: metadata,
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeFileSystemManager(
+  PlatformManagerBundle bundle,
+) async {
+  final snapshot = await bundle.fileSystem.stat(
+    bundle.resource.snapshot().systemTempPath,
+  );
+  return _liveResult(
+    managerKey: 'fileSystem',
+    ready: snapshot.isDirectory,
+    message: snapshot.isDirectory
+        ? 'File System live read succeeded.'
+        : 'The configured temporary directory is not readable.',
+    metadata: <String, Object?>{'entityType': snapshot.type.name},
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeShellManager(
+  PlatformManagerBundle bundle,
+) async {
+  final result = await bundle.shell.run(
+    const ShellCommandRequest(command: ':', loginShell: false),
+  );
+  return _liveResult(
+    managerKey: 'shell',
+    ready: result.succeeded,
+    message: result.succeeded
+        ? 'Shell live command succeeded.'
+        : (result.message ?? 'Shell live command failed.'),
+    metadata: <String, Object?>{
+      'status': result.status.name,
+      if (result.exitCode != null) 'exitCode': result.exitCode,
+    },
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeProcessManager(
+  PlatformManagerBundle bundle,
+) async {
+  final shell = bundle.context.shell.defaultShell;
+  if (shell == null) {
+    return _liveResult(
+      managerKey: 'process',
+      ready: false,
+      message: 'No executable is available for the process live check.',
+    );
+  }
+  final result = await bundle.process.run(
+    ProcessCommandRequest(
+      executablePath: shell.path,
+      arguments: switch (shell.family) {
+        ShellFamily.powershell => const <String>[
+          '-NoLogo',
+          '-NoProfile',
+          '-Command',
+          'exit 0',
+        ],
+        ShellFamily.cmd => const <String>['/D', '/C', 'exit 0'],
+        _ => const <String>['-c', ':'],
+      },
+    ),
+  );
+  return _liveResult(
+    managerKey: 'process',
+    ready: result.succeeded,
+    message: result.succeeded
+        ? 'Process live command succeeded.'
+        : (result.message ?? 'Process live command failed.'),
+    metadata: <String, Object?>{
+      'status': result.status.name,
+      if (result.exitCode != null) 'exitCode': result.exitCode,
+      if (result.metadata['processHandleId'] is String)
+        'processHandleId': result.metadata['processHandleId']!,
+    },
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeResourceManager(
+  PlatformManagerBundle bundle,
+) async {
+  final snapshot = bundle.resource.snapshot();
+  final ready =
+      snapshot.processorCount > 0 && snapshot.systemTempPath.trim().isNotEmpty;
+  return _liveResult(
+    managerKey: 'resource',
+    ready: ready,
+    message: ready
+        ? 'Resource snapshot is available.'
+        : 'Resource snapshot is incomplete.',
+    metadata: <String, Object?>{'processorCount': snapshot.processorCount},
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeNetworkManager(
+  PlatformManagerBundle bundle,
+) async {
+  LocalServiceHandle? service;
+  try {
+    service = await bundle.localService.startHttpTextService(
+      const LocalHttpServiceRequest(
+        path: '/vityo-platform-network-health',
+        responseText: 'vityo-platform-network-ok',
+      ),
+    );
+    final response = await bundle.network.getText(service.uri);
+    final ready =
+        response.succeeded && response.body == 'vityo-platform-network-ok';
+    return _liveResult(
+      managerKey: 'network',
+      ready: ready,
+      message: ready
+          ? 'Network loopback request succeeded.'
+          : (response.message ?? 'Network loopback request failed.'),
+      metadata: <String, Object?>{
+        'status': response.status.name,
+        if (response.statusCode != null) 'statusCode': response.statusCode,
+      },
+    );
+  } finally {
+    await service?.close();
+  }
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeClipboardManager(
+  PlatformManagerBundle bundle,
+) async {
+  final result = await bundle.clipboard.readText();
+  return _liveResult(
+    managerKey: 'clipboard',
+    ready: result.succeeded,
+    message: result.succeeded
+        ? 'Clipboard text read succeeded without changing its contents.'
+        : (result.message ?? 'Clipboard text read failed.'),
+    metadata: <String, Object?>{'status': result.status.name},
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeNotificationManager(
+  PlatformManagerBundle bundle,
+) async {
+  final result = await bundle.notification.notify(
+    const NotificationRequest(
+      title: 'Vityo platform health',
+      body: 'Silent in-app delivery check.',
+    ),
+  );
+  return _liveResult(
+    managerKey: 'notification',
+    ready: result.delivered,
+    message: result.delivered
+        ? 'Notification delivery route is available.'
+        : (result.message ?? 'Notification delivery route is blocked.'),
+    metadata: <String, Object?>{'status': result.status.name},
+  );
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probeLocalServiceManager(
+  PlatformManagerBundle bundle,
+) async {
+  LocalServiceHandle? service;
+  try {
+    service = await bundle.localService.startHttpTextService(
+      const LocalHttpServiceRequest(
+        path: '/vityo-platform-local-service-health',
+        responseText: 'ok',
+      ),
+    );
+    return _liveResult(
+      managerKey: 'localService',
+      ready: service.uri.isScheme('http'),
+      message: service.uri.isScheme('http')
+          ? 'Local Service loopback bind succeeded.'
+          : 'Local Service returned an invalid endpoint.',
+    );
+  } finally {
+    await service?.close();
+  }
+}
+
+Future<PlatformManagerLiveOperationProbeResult> _probePtyManager(
+  PlatformManagerBundle bundle,
+) async {
+  final shell = bundle.context.shell.defaultShell;
+  if (shell == null) {
+    return _liveResult(
+      managerKey: 'pty',
+      ready: false,
+      message: 'No executable shell is available for the PTY live check.',
+    );
+  }
+  PtySession? session;
+  try {
+    session = await bundle.pty.start(
+      PtySessionRequest(executablePath: shell.path, rows: 4, cols: 20),
+    );
+    if (session.state != PtySessionState.running) {
+      return _liveResult(
+        managerKey: 'pty',
+        ready: false,
+        message: 'PTY session did not enter the running state.',
+        metadata: <String, Object?>{'state': session.state.name},
+      );
+    }
+    final resize = await session.resize(rows: 6, cols: 24);
+    return _liveResult(
+      managerKey: 'pty',
+      ready: resize.applied,
+      message: resize.applied
+          ? 'PTY open and resize operations succeeded.'
+          : (resize.message ?? 'PTY resize operation failed.'),
+      metadata: <String, Object?>{
+        'state': session.state.name,
+        'resizeStatus': resize.status.name,
+      },
+    );
+  } finally {
+    await session?.close(force: true);
   }
 }
 
@@ -674,19 +1026,35 @@ bool _isSupportedCompatibilityTarget(String compatibilityTarget) {
 
 Future<PlatformManagerBundle> createPlatformManagerBundle({
   required PlatformContextSnapshot platformContext,
+  VityodClient? vityodClient,
+  String? workspaceRoot,
 }) async {
+  final process = await createPlatformProcessManager(
+    platformContext: platformContext,
+    vityodClient: vityodClient,
+  );
+  final fileSystem = await createPlatformFileSystemManager(
+    platformContext: platformContext,
+    vityodClient: vityodClient,
+    allowedRoots: <String>[
+      if (workspaceRoot != null) workspaceRoot,
+      if (platformContext.resource.homePath != null)
+        platformContext.resource.homePath!,
+      platformContext.resource.systemTempPath,
+    ],
+  );
   return PlatformManagerBundle(
     context: platformContext,
     compatibility: PlatformAdapter(platformContext).adapt(),
-    fileSystem: await createPlatformFileSystemManager(
+    fileSystem: fileSystem,
+    shell: await createPlatformShellManager(
       platformContext: platformContext,
+      processManager: process,
     ),
-    shell: await createPlatformShellManager(platformContext: platformContext),
-    process: await createPlatformProcessManager(
-      platformContext: platformContext,
-    ),
+    process: process,
     resource: await createPlatformResourceManager(
       platformContext: platformContext,
+      fileSystemManager: fileSystem,
     ),
     network: await createPlatformNetworkManager(
       platformContext: platformContext,
@@ -700,13 +1068,18 @@ Future<PlatformManagerBundle> createPlatformManagerBundle({
     localService: await createPlatformLocalServiceManager(
       platformContext: platformContext,
     ),
-    pty: await createPlatformPtyManager(platformContext: platformContext),
+    pty: await createPlatformPtyManager(
+      platformContext: platformContext,
+      vityodClient: vityodClient,
+    ),
   );
 }
 
 Future<PlatformManagerBundle> createDetectedPlatformManagerBundle({
   String targetId = 'local',
   PlatformDetector? detector,
+  VityodClient? vityodClient,
+  String? workspaceRoot,
 }) async {
   final platformDetector =
       detector ??
@@ -722,5 +1095,9 @@ Future<PlatformManagerBundle> createDetectedPlatformManagerBundle({
         ptyProber: LocalPtyProber(),
       );
   final context = await platformDetector.detect(targetId: targetId);
-  return createPlatformManagerBundle(platformContext: context);
+  return createPlatformManagerBundle(
+    platformContext: context,
+    vityodClient: vityodClient,
+    workspaceRoot: workspaceRoot,
+  );
 }

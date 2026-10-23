@@ -54,7 +54,10 @@ class ToolchainArchiveExtractor {
       final name = _readNullTerminated(header, 0, 100);
       final size = _readOctal(header, 124, 12);
       final typeFlag = header[156];
-      final validationError = _validateRelativePath(name);
+      // Tar names use '/', but a crafted entry can carry '\', which Windows
+      // resolves as a separator — normalize before any segment check.
+      final normalizedName = name.replaceAll(r'\', '/');
+      final validationError = _validateRelativePath(normalizedName);
       if (validationError != null) {
         return ToolchainArchiveExtractionResult(
           succeeded: false,
@@ -73,8 +76,17 @@ class ToolchainArchiveExtractor {
       }
 
       final targetPath = _fileSystemManager.joinPath(
-        <String>[destinationDirectory, name],
+        <String>[destinationDirectory, normalizedName],
       );
+      if (!_fileSystemManager.isWithin(targetPath, destinationDirectory)) {
+        return ToolchainArchiveExtractionResult(
+          succeeded: false,
+          extractionDirectory: destinationDirectory,
+          extractedEntryCount: extractedEntries,
+          message:
+              'Tar archive entry $name escapes the extraction directory.',
+        );
+      }
       if (typeFlag == 53) {
         await _fileSystemManager.createDirectory(targetPath, recursive: true);
         extractedEntries += 1;
@@ -131,10 +143,15 @@ class ToolchainArchiveExtractor {
     if (path.isEmpty) {
       return 'Tar archive entry path is empty.';
     }
+    // `path` is '/'-normalized already: a leading '/' covers POSIX absolute
+    // and UNC roots alike, and a `C:`-style first segment is a drive path.
     if (path.startsWith('/')) {
       return 'Tar archive entry $path is absolute.';
     }
     final segments = path.split('/');
+    if (RegExp(r'^[A-Za-z]:$').hasMatch(segments.first)) {
+      return 'Tar archive entry $path is a drive-qualified path.';
+    }
     for (final segment in segments) {
       if (segment == '..') {
         return 'Tar archive entry $path escapes the extraction directory.';
