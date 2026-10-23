@@ -291,10 +291,13 @@ final class VityodControlEnvelope {
     this.workspaceRevision,
     this.cancellationId,
     this.params = const <String, Object?>{},
-    this.capabilities = const <String>[],
+    List<String> capabilities = const <String>[],
     this.unknownFields = const <String, Object?>{},
     this.protocolVersion = vityodProtocolVersion,
-  }) {
+  }) : // The caller retains its list reference, so copy and freeze the
+        // validated snapshot: a caller-side mutation after construction must
+        // not let encode emit duplicate capabilities the schema forbids.
+        capabilities = List.unmodifiable(capabilities) {
     // The published v1 schema constrains revision/deadline to non-negative
     // integers and capabilities to unique items; enforce both here so every
     // encode/decode path shares the contract.

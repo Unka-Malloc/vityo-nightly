@@ -212,6 +212,23 @@ void main() {
     );
   });
 
+  test('caller-side capability mutation cannot emit duplicates on encode', () {
+    final callerList = <String>['workspace.read'];
+    final envelope = VityodControlEnvelope(
+      method: 'workspace.snapshot',
+      clientInstanceId: 'client-1',
+      idempotencyKey: 'operation-1',
+      deadlineUnixMillis: 4102444800000,
+      capabilities: callerList,
+    );
+    callerList.add('workspace.read');
+    expect(
+      (envelope.toJson()['capabilities'] as List).toSet().length,
+      (envelope.toJson()['capabilities'] as List).length,
+    );
+    expect(() => envelope.capabilities.add('x'), throwsUnsupportedError);
+  });
+
   test('Dart and Rust method catalogs stay canonical and legacy-free', () {
     expect(
       vityodCoreCapabilities.toSet().length,
