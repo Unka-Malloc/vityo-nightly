@@ -162,6 +162,7 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
   final TextEditingController _model = TextEditingController();
   final TextEditingController _apiKey = TextEditingController();
   final TextEditingController _contextTokens = TextEditingController();
+  final TextEditingController _outputTokens = TextEditingController();
 
   FlowHeroModelProvider _provider = FlowHeroModelProvider.custom;
   FlowHeroModelAuthMode _authMode = FlowHeroModelAuthMode.bearerToken;
@@ -185,6 +186,7 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
     _model.dispose();
     _apiKey.dispose();
     _contextTokens.dispose();
+    _outputTokens.dispose();
     super.dispose();
   }
 
@@ -202,7 +204,8 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
       config.model == _model.text &&
       config.authMode == _authMode &&
       config.provider == _provider &&
-      '${config.contextTokens}' == _contextTokens.text;
+      '${config.contextTokens}' == _contextTokens.text &&
+      '${config.outputTokens}' == _outputTokens.text;
 
   void _seed(FlowHeroModelConfig? config) {
     final FlowHeroModelConfig value = config ?? const FlowHeroModelConfig();
@@ -214,6 +217,7 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
         ? value.model
         : value.provider.defaultModel;
     _contextTokens.text = '${value.contextTokens}';
+    _outputTokens.text = '${value.outputTokens}';
     _authMode = value.authMode;
     _provider = value.provider;
     _apiKey.clear();
@@ -225,6 +229,7 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
       endpointBase: _endpoint.text.trim(),
       model: _model.text.trim(),
       contextTokens: int.tryParse(_contextTokens.text.trim()) ?? 0,
+      outputTokens: int.tryParse(_outputTokens.text.trim()) ?? 0,
       supportsTools: current?.supportsTools ?? true,
       maxConcurrency: current?.maxConcurrency ?? 2,
       authMode: _authMode,
@@ -419,16 +424,19 @@ class _ModelConfigSectionState extends State<_ModelConfigSection> {
             onChanged: (String _) => _onEdited(),
           ),
           const SizedBox(height: 10),
-          // The two remaining bounds are not configurable: a missing bound in
-          // `provider.json` means the runtime applies no cap at all.
-          Text(
-            '输出上限 · 无限（沿用服务商默认）',
-            key: const ValueKey<String>('flow-hero-model-output-limit'),
-            style: P.monoStyle(color: P.silkDim, size: 10.5),
+          _Field(
+            fieldKey: const ValueKey<String>('flow-hero-model-output-tokens'),
+            label: '输出上限 tokens（单次生成）',
+            controller: _outputTokens,
+            hint: '$kFlowHeroProviderOutputTokens',
+            error: _errors['outputTokens'],
+            onChanged: (String _) => _onEdited(),
           ),
           const SizedBox(height: 4),
+          // The output cap bounds each routed generation; nothing meters the
+          // session total, so the row stays honest about what is uncapped.
           Text(
-            '会话 token · 无上限',
+            '会话总计 · 无上限',
             key: const ValueKey<String>('flow-hero-model-session-limit'),
             style: P.monoStyle(color: P.silkDim, size: 10.5),
           ),

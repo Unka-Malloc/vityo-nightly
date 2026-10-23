@@ -35,6 +35,7 @@ FlowHeroModelConfig _valid({
   String endpoint = 'https://api.example.com/v1',
   String model = 'model-name',
   int contextTokens = 128000,
+  int outputTokens = kFlowHeroProviderOutputTokens,
   int maxConcurrency = 2,
   FlowHeroModelAuthMode authMode = FlowHeroModelAuthMode.bearerToken,
   FlowHeroModelProvider provider = FlowHeroModelProvider.custom,
@@ -42,6 +43,7 @@ FlowHeroModelConfig _valid({
   endpointBase: endpoint,
   model: model,
   contextTokens: contextTokens,
+  outputTokens: outputTokens,
   maxConcurrency: maxConcurrency,
   authMode: authMode,
   provider: provider,
@@ -119,16 +121,21 @@ void main() {
       expect(_valid(contextTokens: 0).validate()['contextTokens'], isNotNull);
       expect(_valid(contextTokens: -1).validate()['contextTokens'], isNotNull);
       expect(_valid(maxConcurrency: 0).validate()['maxConcurrency'], isNotNull);
-      expect(_valid(contextTokens: 1).validate(), isEmpty);
+      expect(_valid(contextTokens: 1, outputTokens: 1).validate(), isEmpty);
     });
 
-    test('output and session bounds are no longer part of the rules', () {
-      // Both bounds left the shape, so there is no rule left for them to
-      // report — and no stored value left to conflict with the context one.
-      final Map<String, String> errors = _valid().validate();
-      expect(errors.containsKey('outputTokens'), isFalse);
-      expect(errors.containsKey('maxTotalTokens'), isFalse);
-      expect(_valid(contextTokens: 64000).validate(), isEmpty);
+    test('the output bound mirrors the runtime contract', () {
+      expect(_valid(outputTokens: 0).validate()['outputTokens'], isNotNull);
+      expect(_valid(outputTokens: -4).validate()['outputTokens'], isNotNull);
+      expect(
+        _valid(contextTokens: 8192, outputTokens: 8192).validate(),
+        isEmpty,
+      );
+      expect(
+        _valid(contextTokens: 8192).validate()['outputTokens'],
+        '输出上限不能超过上下文窗口',
+      );
+      expect(_valid().validate().containsKey('maxTotalTokens'), isFalse);
     });
 
     test('a bearer route needs a resolvable key; auth none never does', () {
@@ -318,6 +325,21 @@ void main() {
       expect(limits.containsKey('maxCostMicros'), isFalse);
     });
 
+    test('a small context window still launches under its own output cap', () {
+      final Map<String, Object?> json = _valid(
+        contextTokens: 8192,
+        outputTokens: 8192,
+      ).toProviderConfigJson();
+      final Map<String, Object?> capabilities =
+          json['capabilities']! as Map<String, Object?>;
+      expect(capabilities['contextTokens'], 8192);
+      expect(capabilities['outputTokens'], 8192);
+      expect(
+        (json['limits']! as Map<String, Object?>)['maxTotalTokens'],
+        16384,
+      );
+    });
+
     test('the provider choice stays out of the launch contract', () {
       final Map<String, Object?> json = _valid(
         provider: FlowHeroModelProvider.deepSeek,
@@ -429,6 +451,7 @@ void main() {
       expect(loaded!.endpointBase, config.endpointBase);
       expect(loaded.model, config.model);
       expect(loaded.contextTokens, config.contextTokens);
+      expect(loaded.outputTokens, kFlowHeroProviderOutputTokens);
       expect(loaded.supportsTools, isFalse);
       expect(loaded.maxConcurrency, 3);
       expect(loaded.authMode, FlowHeroModelAuthMode.none);
@@ -441,13 +464,13 @@ void main() {
       );
       expect(
         stored,
-        isNot(contains('outputTokens')),
-        reason: 'the removed bounds are not written back either',
+        contains('outputTokens'),
+        reason: 'the user-configured output bound persists',
       );
       expect(
         stored,
         isNot(contains('maxTotalTokens')),
-        reason: 'the removed bounds are not written back either',
+        reason: 'the cumulative bound stays derived, never persisted',
       );
     });
 
@@ -482,10 +505,11 @@ void main() {
         expect(loaded, isNotNull, reason: 'the old shape is not rejected');
         expect(loaded!.contextTokens, 64000);
         expect(loaded.provider, FlowHeroModelProvider.custom);
+        expect(loaded.outputTokens, 4096);
         expect(
           loaded.toProviderConfigJson().toString(),
-          isNot(contains('4096')),
-          reason: 'the stored output bound is dropped, not carried forward',
+          contains('4096'),
+          reason: 'the stored output bound is honored as configured',
         );
       },
     );

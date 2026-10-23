@@ -39,6 +39,7 @@ use crate::{
         EffectState, ToolAdapter, ToolAdapterError, ToolCall, ToolCatalog, ToolDescriptor,
         ToolExecutionContext, ToolExecutionLimits, ToolExecutor, ToolPathDomain, ToolPathRequest,
         ToolPathResolution, ToolPathResolver, ToolPreflight, ToolRisk, ToolSourceKind,
+        redact_output,
     },
 };
 
@@ -383,31 +384,35 @@ impl AcpToolRuntime {
         cancellation: &AgentCancellationToken,
     ) -> Result<PermissionDecision, RuntimeToolError> {
         let (title, kind) = permission_presentation(&call.name);
-        let options = vec![
+        // A session grant on a process tool would cover arbitrary later
+        // commands the user never saw, so process approvals only offer a
+        // per-call decision. Other tools keep the session option because the
+        // grant stays scoped to the same tool, risk, and root.
+        let process_call = call.name.starts_with("terminal/");
+        let mut options = vec![
             PermissionOption::new(
                 PermissionOptionId::new("allow-once"),
                 "Allow once",
                 PermissionOptionKind::AllowOnce,
             ),
-            PermissionOption::new(
+        ];
+        if !process_call {
+            options.push(PermissionOption::new(
                 PermissionOptionId::new("allow-always"),
                 "Allow for this session",
                 PermissionOptionKind::AllowAlways,
-            ),
-            PermissionOption::new(
-                PermissionOptionId::new("reject-once"),
-                "Reject",
-                PermissionOptionKind::RejectOnce,
-            ),
-        ];
-        let path = call.arguments.get("path").and_then(Value::as_str);
-        let mut fields = ToolCallUpdateFields::new()
+            ));
+        }
+        options.push(PermissionOption::new(
+            PermissionOptionId::new("reject-once"),
+            "Reject",
+            PermissionOptionKind::RejectOnce,
+        ));
+        let fields = ToolCallUpdateFields::new()
             .title(title)
             .name(call.name.clone())
-            .kind(kind);
-        if let Some(path) = path {
-            fields = fields.raw_input(json!({"path":path}));
-        }
+            .kind(kind)
+            .raw_input(approval_display_arguments(&call.arguments));
         let request = RequestPermissionRequest::new(
             self.operations.session_id.clone(),
             ToolCallUpdate::new(call.id.clone(), fields),
@@ -427,7 +432,10 @@ impl AcpToolRuntime {
             RequestPermissionOutcome::Cancelled => Ok(PermissionDecision::Cancelled),
             RequestPermissionOutcome::Selected(selected) => match selected.option_id.0.as_ref() {
                 "allow-once" => Ok(PermissionDecision::AllowOnce),
-                "allow-always" => Ok(PermissionDecision::AllowAlways),
+                // A client answering with a scope that was never offered is
+                // out of contract; a process call must not turn that into a
+                // blanket session grant.
+                "allow-always" if !process_call => Ok(PermissionDecision::AllowAlways),
                 "reject-once" => Ok(PermissionDecision::Reject),
                 _ => Err(RuntimeToolError::PermissionDenied),
             },
@@ -530,6 +538,21 @@ enum PermissionDecision {
     AllowAlways,
     Reject,
     Cancelled,
+}
+
+/// What the approval UI may show for one call: environment entries collapse
+/// to names (their values never leave the process), and the rest passes
+/// through the same secret-shape redaction applied to tool output.
+fn approval_display_arguments(arguments: &JsonObject) -> Value {
+    let mut shown = arguments.clone();
+    if let Some(env) = shown.get_mut("env").and_then(Value::as_array_mut) {
+        for entry in env.iter_mut() {
+            if let Value::Object(variable) = entry {
+                variable.insert("value".to_owned(), Value::String("[redacted]".to_owned()));
+            }
+        }
+    }
+    redact_output(&Value::Object(shown), &[])
 }
 
 fn permission_presentation(tool_name: &str) -> (&'static str, ToolKind) {
@@ -1100,6 +1123,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn approval_display_arguments_redacts_env_values_and_secret_shapes() {
+        let shown = approval_display_arguments(&output(json!({
+            "command":"deploy",
+            "args":["--force","Bearer abcdef"],
+            "cwd":"/tmp/work",
+            "env":[{"name":"API_KEY","value":"super-secret"}]
+        })));
+        assert_eq!(shown["command"], json!("deploy"));
+        assert_eq!(shown["cwd"], json!("/tmp/work"));
+        assert_eq!(shown["env"][0]["name"], json!("API_KEY"));
+        assert_eq!(shown["env"][0]["value"], json!("[redacted]"));
+        assert_eq!(shown["args"][1], json!("[redacted]"));
+        assert_eq!(shown["args"][0], json!("--force"));
+    }
+
     #[tokio::test]
     async fn runtime_terminal_creation_uses_session_cwd_and_authorizes_workspace_root() {
         use agent_client_protocol::schema::v1::{
@@ -1136,6 +1175,40 @@ mod tests {
             .on_receive_request(
                 async |request: RequestPermissionRequest, responder, _| {
                     assert_eq!(request.tool_call.fields.kind, Some(ToolKind::Execute));
+                    let raw = request
+                        .tool_call
+                        .fields
+                        .raw_input
+                        .as_ref()
+                        .expect("the approval surface shows what will execute");
+                    assert_eq!(
+                        raw.get("command").and_then(Value::as_str),
+                        Some("fixture-command")
+                    );
+                    assert_eq!(
+                        raw.pointer("/env/0/name").and_then(Value::as_str),
+                        Some("FIXTURE_TOKEN")
+                    );
+                    assert_eq!(
+                        raw.pointer("/env/0/value").and_then(Value::as_str),
+                        Some("[redacted]")
+                    );
+                    let raw_text = raw.to_string();
+                    assert!(
+                        !raw_text.contains("env-secret-value"),
+                        "environment values never reach the approval surface"
+                    );
+                    let kinds: Vec<PermissionOptionKind> = request
+                        .options
+                        .iter()
+                        .map(|option| option.kind)
+                        .collect();
+                    assert!(
+                        !kinds.contains(&PermissionOptionKind::AllowAlways),
+                        "a process call never offers a blanket session grant"
+                    );
+                    assert!(kinds.contains(&PermissionOptionKind::AllowOnce));
+                    assert!(kinds.contains(&PermissionOptionKind::RejectOnce));
                     responder.respond(RequestPermissionResponse::new(
                         RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
                             "allow-once",
@@ -1178,7 +1251,11 @@ mod tests {
                     ("root", Some(workspace.clone())),
                     ("nested", Some(workspace.join("src"))),
                 ] {
-                    let mut arguments = output(json!({"command":"fixture-command"}));
+                    let mut arguments = output(json!({
+                        "command":"fixture-command",
+                        "args":["--check"],
+                        "env":[{"name":"FIXTURE_TOKEN","value":"env-secret-value"}]
+                    }));
                     if let Some(cwd) = cwd {
                         arguments.insert("cwd".to_owned(), json!(cwd));
                     }

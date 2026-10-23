@@ -75,6 +75,54 @@ void main() {
     expect(parentEscape.message, contains('escapes'));
   });
 
+  test('archive extractor rejects backslash traversal on Windows paths', () async {
+    final tempRoot = await Directory.systemTemp.createTemp(
+      'vityo_toolchain_archive_windows_test_',
+    );
+    addTearDown(() => tempRoot.delete(recursive: true));
+    final extractor = ToolchainArchiveExtractor(
+      fileSystemManager: TestFileSystemManager.windowsX64(),
+    );
+    final destination = tempRoot.path;
+
+    for (final name in <String>[
+      '..\\..\\outside-file',
+      'nested\\..\\..\\outside-file',
+      r'\\server\share\outside-file',
+      r'C:\outside-file',
+      'C:\\outside-file',
+      '..\\outside-file',
+    ]) {
+      final result = await extractor.extractTar(
+        archiveBytes: _tarArchive(<_TarEntry>[
+          _TarEntry.file(name, const <int>[]),
+        ]),
+        destinationDirectory: destination,
+      );
+      expect(result.succeeded, isFalse, reason: name);
+    }
+
+    // The windows fixture rewrites '/' to '\', which a POSIX host would
+    // materialize as one literal filename outside the destination; the
+    // success case therefore runs under posix facts where a backslash
+    // entry normalizes to a real nested path inside it.
+    final posixExtractor = ToolchainArchiveExtractor(
+      fileSystemManager: TestFileSystemManager.linuxDebianArm(),
+    );
+    final safe = await posixExtractor.extractTar(
+      archiveBytes: _tarArchive(<_TarEntry>[
+        _TarEntry.file('dir\\nested\\file.txt', utf8.encode('payload')),
+      ]),
+      destinationDirectory: destination,
+    );
+    expect(safe.succeeded, isTrue, reason: safe.message);
+    final extracted = File(
+      '${tempRoot.path}/dir/nested/file.txt',
+    );
+    expect(await extracted.exists(), isTrue);
+    expect(await extracted.readAsString(), 'payload');
+  });
+
   test('archive extractor reports truncated and unterminated tar archives', () async {
     final tempRoot = await Directory.systemTemp.createTemp(
       'vityo_toolchain_archive_invalid_test_',

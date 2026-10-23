@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hmac
+import ipaddress
 import os
 import secrets
 import shutil
@@ -69,6 +70,28 @@ def is_allowed_local_netloc(raw_host: str | None, *, expected_port: int) -> bool
         return False
 
     return port == expected_port
+
+
+def normalize_hostname(raw: str) -> str:
+    candidate = raw.strip().rstrip(".").casefold()
+    try:
+        return str(ipaddress.ip_address(candidate.strip("[]")))
+    except ValueError:
+        return candidate
+
+
+def host_is_loopback(host: str) -> bool:
+    """True only for a literal loopback address or a localhost name."""
+    candidate = host.strip()
+    try:
+        return ipaddress.ip_address(candidate.strip("[]")).is_loopback
+    except ValueError:
+        return normalize_hostname(candidate) == "localhost"
+
+
+def remote_bind_permitted(host: str) -> bool:
+    """A non-loopback bind is only safe with an explicitly configured token."""
+    return host_is_loopback(host) or bool(os.environ.get(SESSION_TOKEN_ENV))
 
 
 def parse_cookie_header(raw_cookie: str | None) -> dict[str, str]:
@@ -394,8 +417,19 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
 
         self.send_error(status, message)
 
+    def trusted_netloc(self, raw_host: str | None) -> bool:
+        parsed = split_host_port(raw_host)
+        if parsed is None:
+            return False
+
+        hostname, port = parsed
+        if port != self.server.server_port:
+            return False
+
+        return normalize_hostname(hostname) in self.server.trusted_hostnames
+
     def host_is_allowed(self) -> bool:
-        return is_allowed_local_netloc(self.headers.get("Host"), expected_port=self.server.server_port)
+        return self.trusted_netloc(self.headers.get("Host"))
 
     def origin_is_allowed(self) -> bool:
         origin = self.headers.get("Origin")
@@ -406,7 +440,7 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
         if parsed.scheme != "http":
             return False
 
-        return is_allowed_local_netloc(parsed.netloc, expected_port=self.server.server_port)
+        return self.trusted_netloc(parsed.netloc)
 
     def has_valid_session_credential(self) -> bool:
         if token_matches(self.headers.get(SESSION_TOKEN_HEADER)):
@@ -459,7 +493,9 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
-        self._issue_session_cookie = not self.is_api_request()
+        self._issue_session_cookie = (
+            not self.is_api_request() and self.server.issues_session_cookies
+        )
         if parsed.path == "/":
             self.redirect_to_editor()
             return
@@ -481,7 +517,9 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/") and not self.enforce_api_boundary():
             return
 
-        self._issue_session_cookie = not parsed.path.startswith("/api/")
+        self._issue_session_cookie = (
+            not parsed.path.startswith("/api/") and self.server.issues_session_cookies
+        )
         if parsed.path == "/":
             self.redirect_to_editor()
             return
@@ -834,6 +872,11 @@ def resolve_listen_address() -> tuple[str, int]:
 
 
 class LocalDevServer(ThreadingHTTPServer):
+    # Loopback defaults; main() overrides both for an explicitly credentialed
+    # remote bind.
+    trusted_hostnames = frozenset(normalize_hostname(name) for name in LOCAL_HOSTNAMES)
+    issues_session_cookies = True
+
     def server_bind(self) -> None:
         # The local HTTP service needs its bound address, not a reverse DNS name.
         # HTTPServer.server_bind performs a blocking getfqdn lookup on macOS.
@@ -844,7 +887,17 @@ class LocalDevServer(ThreadingHTTPServer):
 def main() -> None:
     current_workspace().mkdir(parents=True, exist_ok=True)
     host, port = resolve_listen_address()
+    if not remote_bind_permitted(host):
+        raise SystemExit(
+            f"refusing to bind {host}: the dev server only listens on loopback; "
+            f"set {SESSION_TOKEN_ENV} to a shared secret to opt into remote access"
+        )
     server = LocalDevServer((host, port), PrototypeHandler)
+    loopback = host_is_loopback(host)
+    server.issues_session_cookies = loopback
+    server.trusted_hostnames = frozenset(
+        {normalize_hostname(name) for name in LOCAL_HOSTNAMES} | {normalize_hostname(host)}
+    )
     print(f"Vityo dev server listening on http://{host}:{port}", flush=True)
     if mutation_enabled():
         print("workspace mutation APIs enabled for this local dev session", flush=True)

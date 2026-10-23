@@ -41,7 +41,8 @@ export 'model_config.dart'
         kFlowHeroDeepSeekDefaultModel,
         kFlowHeroDeepSeekEndpointBase,
         kFlowHeroDeepSeekModels,
-        kFlowHeroProviderAdapter;
+        kFlowHeroProviderAdapter,
+        kFlowHeroProviderOutputTokens;
 export 'runtime_contract.dart' show FlowHeroFeatureRuntime;
 export 'local_service_contract.dart' show FlowHeroLocalServiceOwner;
 export 'theme_store.dart' show FlowHeroThemeStore;

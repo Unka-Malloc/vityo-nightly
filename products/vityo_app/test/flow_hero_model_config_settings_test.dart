@@ -229,7 +229,7 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('the advanced section keeps only the context window', (
+  testWidgets('the advanced section carries the token bounds', (
     WidgetTester tester,
   ) async {
     final store = _FakeModelConfigStore(config: _storedConfig);
@@ -262,19 +262,14 @@ void main() {
     expect(_textOf(tester, 'flow-hero-model-context-tokens'), '128000');
     expect(
       find.byKey(const ValueKey<String>('flow-hero-model-output-tokens')),
-      findsNothing,
-      reason: 'the output bound is gone, not just hidden',
+      findsOneWidget,
     );
+    expect(_textOf(tester, 'flow-hero-model-output-tokens'), '32768');
     expect(
       find.byKey(const ValueKey<String>('flow-hero-model-max-total-tokens')),
       findsNothing,
     );
-    expect(
-      find.byKey(const ValueKey<String>('flow-hero-model-output-limit')),
-      findsOneWidget,
-    );
-    expect(find.text('输出上限 · 无限（沿用服务商默认）'), findsOneWidget);
-    expect(find.text('会话 token · 无上限'), findsOneWidget);
+    expect(find.text('会话总计 · 无上限'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('flow-hero-model-context-tokens')),
@@ -284,6 +279,19 @@ void main() {
     expect(find.text('上下文窗口必须是大于 0 的整数'), findsOneWidget);
     expect(writer.writes, 0);
 
+    // An output cap above the context window is rejected before launch.
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('flow-hero-model-context-tokens')),
+      '8192',
+    );
+    await _tapSave(tester);
+    expect(find.text('输出上限不能超过上下文窗口'), findsOneWidget);
+    expect(writer.writes, 0);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('flow-hero-model-output-tokens')),
+      '4096',
+    );
     await tester.enterText(
       find.byKey(const ValueKey<String>('flow-hero-model-context-tokens')),
       '64000',
@@ -291,9 +299,10 @@ void main() {
     await _tapSave(tester);
     expect(writer.writes, 1);
     expect(writer.written!.contextTokens, 64000);
+    expect(writer.written!.outputTokens, 4096);
     expect(
       writer.written!.toProviderConfigJson()['capabilities'],
-      containsPair('outputTokens', kFlowHeroProviderOutputTokens),
+      containsPair('outputTokens', 4096),
     );
 
     await tester.pump(const Duration(seconds: 5));

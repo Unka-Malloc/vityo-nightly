@@ -96,6 +96,14 @@ class ModuleManifestSecurityPolicy {
   final String currentEngineVersion;
 }
 
+/// Authenticates a module manifest signature against a pinned trust store.
+///
+/// Implementations must resolve `keyId` against keys already pinned in the
+/// trust store and verify `signature` over `canonicalManifestJson`; fetching
+/// or trusting keys dynamically would move the authentication boundary back
+/// to the manifest itself. When `ModuleManifestSecurityPolicy.requireSignature`
+/// is set, a manifest carrying a signature that cannot reach this verifier
+/// fails closed instead of passing as trusted.
 typedef ModuleManifestSignatureVerifier = bool Function({
   required String canonicalManifestJson,
   required String signature,
@@ -417,7 +425,21 @@ class ModuleManifestSecurityValidator {
           message: 'Module manifest must declare a signature.',
         ),
       );
-    } else if (signature != null && signatureVerifier != null) {
+    } else if (signature != null && signatureVerifier == null) {
+      // A required signature that nothing can authenticate is
+      // indistinguishable from a forged one, so the manifest fails closed
+      // rather than passing as trusted.
+      if (policy.requireSignature) {
+        issues.add(
+          const ModuleManifestSecurityIssue(
+            code: ModuleManifestSecurityCode.signatureInvalid,
+            field: 'signature',
+            message: 'Module manifest signature cannot be verified because '
+                'no trusted signature verifier is configured.',
+          ),
+        );
+      }
+    } else if (signature != null) {
       final verified = _verifySignature(
         signature: signature,
         canonicalManifestJson:

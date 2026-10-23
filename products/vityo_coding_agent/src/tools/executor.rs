@@ -1213,7 +1213,7 @@ fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, S
         .any(|(key, value)| scan(value, Some(key), declared))
 }
 
-fn redact_output(value: &Value, secrets: &[String]) -> Value {
+pub(crate) fn redact_output(value: &Value, secrets: &[String]) -> Value {
     fn sensitive_name(name: &str) -> bool {
         let name = name.to_ascii_lowercase();
         [

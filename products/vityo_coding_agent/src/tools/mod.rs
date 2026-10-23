@@ -9,7 +9,7 @@ pub use catalog::{
     ToolCatalog, ToolDescriptor, ToolPathDomain, ToolRisk, ToolSchema, ToolSchemaError,
     ToolSourceKind,
 };
-pub(crate) use executor::ToolOneShotApproval;
+pub(crate) use executor::{ToolOneShotApproval, redact_output};
 pub use executor::{
     EffectState, ExecutionHook, SecretResolver, ToolAdapter, ToolAdapterError, ToolCall,
     ToolExecutionContext, ToolExecutionLimits, ToolExecutionReceipt, ToolExecutor, ToolFailure,

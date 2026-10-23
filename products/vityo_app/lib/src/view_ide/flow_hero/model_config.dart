@@ -59,10 +59,11 @@ const String kFlowHeroDeepSeekDefaultModel = 'deepseek-flash';
 /// Both official models carry a 1M-token context window.
 const int kFlowHeroDeepSeekContextTokens = 1000000;
 
-/// Per-attempt output ceiling written into every generated provider.json.
-/// A coding agent may emit large edits, but a runaway single response must
-/// still stop: 32K output tokens is generous for a completion while keeping
-/// every paid attempt bounded.
+/// The default per-attempt output ceiling. A coding agent may emit large
+/// edits, but a runaway single response must still stop: 32K output tokens is
+/// generous for a completion while keeping every paid attempt bounded. The
+/// user can adjust it per route; it is a per-generation bound, not a
+/// session-wide spend limit.
 const int kFlowHeroProviderOutputTokens = 32768;
 
 /// The provider the user picked. It only drives the panel's defaults and
@@ -141,6 +142,7 @@ class FlowHeroModelConfig {
     this.endpointBase = '',
     this.model = '',
     this.contextTokens = 128000,
+    this.outputTokens = kFlowHeroProviderOutputTokens,
     this.supportsTools = true,
     this.maxConcurrency = 2,
     this.authMode = FlowHeroModelAuthMode.bearerToken,
@@ -151,6 +153,10 @@ class FlowHeroModelConfig {
   final String endpointBase;
   final String model;
   final int contextTokens;
+
+  /// Per-generation output cap the user configures; see
+  /// [kFlowHeroProviderOutputTokens] for the default.
+  final int outputTokens;
   final bool supportsTools;
   final int maxConcurrency;
   final FlowHeroModelAuthMode authMode;
@@ -163,6 +169,7 @@ class FlowHeroModelConfig {
     String? endpointBase,
     String? model,
     int? contextTokens,
+    int? outputTokens,
     bool? supportsTools,
     int? maxConcurrency,
     FlowHeroModelAuthMode? authMode,
@@ -171,6 +178,7 @@ class FlowHeroModelConfig {
     endpointBase: endpointBase ?? this.endpointBase,
     model: model ?? this.model,
     contextTokens: contextTokens ?? this.contextTokens,
+    outputTokens: outputTokens ?? this.outputTokens,
     supportsTools: supportsTools ?? this.supportsTools,
     maxConcurrency: maxConcurrency ?? this.maxConcurrency,
     authMode: authMode ?? this.authMode,
@@ -194,6 +202,11 @@ class FlowHeroModelConfig {
     if (contextTokens <= 0) {
       errors['contextTokens'] = '上下文窗口必须是大于 0 的整数';
     }
+    if (outputTokens <= 0) {
+      errors['outputTokens'] = '输出上限必须是大于 0 的整数';
+    } else if (outputTokens > contextTokens) {
+      errors['outputTokens'] = '输出上限不能超过上下文窗口';
+    }
     if (maxConcurrency <= 0) {
       errors['maxConcurrency'] = '并发上限必须是大于 0 的整数';
     }
@@ -216,6 +229,7 @@ class FlowHeroModelConfig {
     'endpointBase': endpointBase,
     'model': model,
     'contextTokens': contextTokens,
+    'outputTokens': outputTokens,
     'supportsTools': supportsTools,
     'maxConcurrency': maxConcurrency,
     'authMode': authMode.wireValue,
@@ -224,9 +238,9 @@ class FlowHeroModelConfig {
 
   /// Returns null when the stored shape is not one this version wrote.
   ///
-  /// `outputTokens` and `maxTotalTokens` are no longer part of the shape; a
-  /// configuration that still carries them reads normally and the two keys are
-  /// ignored, which is what makes the removal backward compatible.
+  /// `outputTokens` is optional: a stored object without it falls back to the
+  /// documented default. `maxTotalTokens` is never persisted — it is derived
+  /// at materialization and a stored key is ignored.
   static FlowHeroModelConfig? fromJson(Map<String, dynamic> json) {
     final Object? endpoint = json['endpointBase'];
     final Object? model = json['model'];
@@ -256,6 +270,9 @@ class FlowHeroModelConfig {
       // the panel's selector always has a matching option.
       model: provider.offersModel(model) ? model : provider.defaultModel,
       contextTokens: context,
+      outputTokens: json['outputTokens'] is int
+          ? json['outputTokens'] as int
+          : kFlowHeroProviderOutputTokens,
       supportsTools: supportsTools,
       maxConcurrency: concurrency,
       authMode: mode,
@@ -267,10 +284,10 @@ class FlowHeroModelConfig {
   /// camelCase, `deny_unknown_fields`, and only the limits the schema does not
   /// default. `auth.secretRef` is present only for a bearer-token route.
   ///
-  /// `capabilities.outputTokens` caps a single provider attempt and
-  /// `limits.maxTotalTokens` caps the cumulative input+output of one routed
-  /// generation at context + output — the same shape as the runtime's own
-  /// default budget. `limits.maxCostMicros` stays absent on purpose: the
+  /// `capabilities.outputTokens` caps a single provider attempt at the
+  /// configured per-generation bound and `limits.maxTotalTokens` caps the
+  /// cumulative input+output of one routed generation at context + output —
+  /// the same shape as the runtime's own default budget. `limits.maxCostMicros` stays absent on purpose: the
   /// OpenAI-compatible usage payload reports `cost_micros` as null, so a
   /// monetary bound could never be enforced by this adapter; the token
   /// ceilings are the enforceable bound.
@@ -280,12 +297,12 @@ class FlowHeroModelConfig {
     'model': model.trim(),
     'capabilities': <String, Object?>{
       'contextTokens': contextTokens,
-      'outputTokens': kFlowHeroProviderOutputTokens,
+      'outputTokens': outputTokens,
       'supportsTools': supportsTools,
       'maxConcurrency': maxConcurrency,
     },
     'limits': <String, Object?>{
-      'maxTotalTokens': contextTokens + kFlowHeroProviderOutputTokens,
+      'maxTotalTokens': contextTokens + outputTokens,
     },
     'auth': switch (authMode) {
       FlowHeroModelAuthMode.none => <String, Object?>{'mode': 'none'},
