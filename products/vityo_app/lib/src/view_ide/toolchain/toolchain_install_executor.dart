@@ -343,6 +343,7 @@ class ToolchainInstallRuntimeExecutionAdapter {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final dispatchResult = _registry.dispatchToLiveBuffer(
       plan.binding,
@@ -382,6 +383,7 @@ class ToolchainInstallRuntimeExecutionAdapter {
       environmentOverlays: environmentOverlays,
       workingDirectory: workingDirectory,
       timeout: timeout,
+      onProcessStarted: onProcessStarted,
     );
     final outputEvents = _eventsForExecution(
       binding: plan.binding,
@@ -493,6 +495,7 @@ class ToolchainInstallExecutor {
         const <EnvironmentVariableOverlay>[],
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     if (!plan.actionable) {
       return ToolchainInstallExecutionResult(
@@ -526,6 +529,7 @@ class ToolchainInstallExecutor {
         environmentOverlays: environmentOverlays,
         workingDirectory: workingDirectory,
         timeout: timeout,
+        onProcessStarted: onProcessStarted,
       ),
     };
   }
@@ -547,7 +551,7 @@ class ToolchainInstallExecutor {
     try {
       final response = await _platformManagers.network.getBytes(
         uri,
-        timeout: timeout ?? const Duration(seconds: 30),
+        timeout: timeout,
       );
       if (!response.succeeded) {
         return ToolchainInstallExecutionResult(
@@ -833,6 +837,7 @@ class ToolchainInstallExecutor {
     required Iterable<EnvironmentVariableOverlay> environmentOverlays,
     String? workingDirectory,
     Duration? timeout,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final executablePath = plan.externalCommand;
     if (executablePath == null || executablePath.isEmpty) {
@@ -854,6 +859,7 @@ class ToolchainInstallExecutor {
         ),
         workingDirectory: workingDirectory,
         timeout: timeout,
+        onStarted: onProcessStarted,
       ),
     );
 

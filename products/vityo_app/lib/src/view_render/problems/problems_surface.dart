@@ -6,6 +6,7 @@ import '../../view_ide/language/semantic_snapshot_panel.dart';
 import '../../view_ide/interaction/interaction.dart';
 import '../../ide/workspace/workspace.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 class ProblemsSurface extends StatefulWidget {
   const ProblemsSurface({
@@ -227,7 +228,7 @@ class _ProblemsSurfaceState extends State<ProblemsSurface> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Diagnostics surface backed by active document diagnostics or a workspace diagnostics snapshot, with grouping, filters, quick-fix confirmation, and keyboard navigation. TODO: add persisted problem state.',
+                  'Diagnostics surface backed by active document diagnostics or a workspace diagnostics snapshot, with grouping, filters, quick-fix confirmation, keyboard navigation, and DataStore-persisted selection/filter state restored across sessions.',
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
@@ -364,7 +365,10 @@ class _ProblemsSurfaceState extends State<ProblemsSurface> {
                                   theme.colorScheme.primaryContainer,
                               leading: Icon(
                                 _diagnosticIcon(diagnostic.severity),
-                                color: _diagnosticColor(diagnostic.severity),
+                                color: _diagnosticColor(
+                                  context,
+                                  diagnostic.severity,
+                                ),
                               ),
                               title: Text(diagnostic.message),
                               subtitle: Text(
@@ -884,7 +888,10 @@ class _WorkspaceQuickFixTelemetryCard extends StatelessWidget {
               ),
           if (telemetry.outcomes.length > 6)
             Text(
-              'TODO: virtualize older quick-fix outcome rows.',
+              'Showing the 6 most recent of ${telemetry.outcomes.length} recorded '
+              'outcomes. Older rows stay in WorkspaceQuickFixTelemetryStore and '
+              'are summarized here rather than rendered as an unbounded list.',
+              key: const ValueKey('problems-quick-fix-outcomes-truncated'),
               style: theme.textTheme.bodySmall,
             ),
         ],
@@ -1161,10 +1168,11 @@ IconData _diagnosticIcon(DiagnosticSeverity severity) {
   };
 }
 
-Color _diagnosticColor(DiagnosticSeverity severity) {
+Color _diagnosticColor(BuildContext context, DiagnosticSeverity severity) {
+  final tokens = VityoWorkbenchTokens.of(context);
   return switch (severity) {
-    DiagnosticSeverity.error => const Color(0xFFC8473A),
-    DiagnosticSeverity.warning => const Color(0xFFB7791F),
-    DiagnosticSeverity.hint => const Color(0xFF2F6F87),
+    DiagnosticSeverity.error => tokens.error,
+    DiagnosticSeverity.warning => tokens.warning,
+    DiagnosticSeverity.hint => tokens.muted,
   };
 }

@@ -1,4 +1,5 @@
 import '../../configuration/shell_configuration.dart';
+import '../process/process_manager.dart';
 import 'shell_adapter.dart';
 import 'shell_facts.dart';
 
@@ -22,6 +23,7 @@ class ShellCommandRequest {
     this.timeout,
     this.profile,
     this.loginShell,
+    this.onStarted,
   });
 
   final String command;
@@ -31,6 +33,7 @@ class ShellCommandRequest {
   final Duration? timeout;
   final ShellProfileConfiguration? profile;
   final bool? loginShell;
+  final ProcessCommandStartedCallback? onStarted;
 }
 
 class ShellOperationFailure {
@@ -145,7 +148,13 @@ abstract class ShellManager {
   });
 }
 
-class UnsupportedShellManager implements ShellManager {
+abstract interface class CancellableShellManager {
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  );
+}
+
+class UnsupportedShellManager implements ShellManager, CancellableShellManager {
   UnsupportedShellManager({required this.facts})
     : compatibility = ShellAdapter(facts).adapt();
 
@@ -172,6 +181,13 @@ class UnsupportedShellManager implements ShellManager {
       message: 'Shell execution is not available on this platform.',
     );
   }
+
+  @override
+  Future<ProcessCommandCancellationResult> cancelProcess(
+    String processHandleId,
+  ) async => const ProcessCommandCancellationResult.unsupported(
+    message: 'Shell process cancellation is not available on this platform.',
+  );
 
   @override
   ShellOperationFailure? failureFor(

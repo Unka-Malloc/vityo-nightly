@@ -2,7 +2,7 @@
 
 **Purpose:** Define the current evidence-based improvement sequence for Vityo by comparing its implemented product boundaries with recurring practices in mainstream open-source editor, IDE, coding-agent, protocol, security, and observability projects.
 
-**Last updated:** 2026-08-02
+**Last updated:** 2026-08-31
 
 **Status:** Proposed product-improvement source. This document prioritizes future closures; it does not authorize implementation or replace Better Plan execution state.
 
@@ -215,7 +215,7 @@ and independently auditable.
 
 **Closure:**
 
-1. Classify trusted built-ins, same-process declarative assets, sandboxed code, separate-process
+1. Classify trusted built-ins, in-process declarative assets, sandboxed code, local-process
    adapters, and hosted extensions as different trust products.
 2. Restrict installable code to a versioned, capability-scoped RPC surface; prefer a portable
    sandbox such as WASM where the required Dart/Flutter host support is mature enough.

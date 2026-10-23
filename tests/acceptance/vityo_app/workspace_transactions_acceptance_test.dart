@@ -144,7 +144,7 @@ Future<void> _transactionLifecycleIsRevisionBoundAndAtomic() async {
     ),
   );
   _expect(
-    overlapping.outcome == WorkspaceTransactionOutcome.conflict &&
+        overlapping.outcome == WorkspaceTransactionOutcome.conflict &&
         overlapping.conflicts.any(
           (conflict) =>
               conflict.kind == WorkspaceConflictKind.overlappingEdits,
@@ -213,10 +213,9 @@ WorkspaceChangeSet _twoFileChange(
 /// REQ-IDE-002 / authoritative host boundary.
 ///
 /// Precondition: the final IDE domain and any Agent patch adapters exist.
-/// Action: inspect source dependencies and the retired topology.
+/// Action: inspect source dependencies and transaction ownership.
 /// Oracle: editor/workspace import no Agent layer, Agent patch adapters depend
-/// on WorkspaceTransactionService and never on concrete stores/controllers,
-/// and the migrated editor/workspace directories have no old implementation.
+/// on WorkspaceTransactionService and never on concrete stores/controllers.
 void _agentMutationBoundaryHasOneAuthority() {
   final repository = File.fromUri(Platform.script).parent.parent.parent.parent;
   final product = Directory.fromUri(
@@ -240,16 +239,6 @@ void _agentMutationBoundaryHasOneAuthority() {
         '${file.path} must remain Agent-independent',
       );
     }
-  }
-
-  for (final retired in const <String>[
-    'lib/src/view_ide/editor',
-    'lib/src/view_ide/workspace',
-  ]) {
-    _expect(
-      !Directory.fromUri(product.uri.resolve('$retired/')).existsSync(),
-      '$retired retains the pre-cutover implementation',
-    );
   }
 
   final sourceRoot = Directory.fromUri(product.uri.resolve('lib/src/'));

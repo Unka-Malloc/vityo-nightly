@@ -194,7 +194,8 @@ class RuntimeOutputProducerRegistry {
             RuntimeOutputChannelKind.stdout,
             RuntimeOutputChannelKind.stderr,
           ],
-          todo: 'TODO: bind this producer to concrete ShellManager streams.',
+          todo:
+              'TODO: ShellManager execution is request-driven; no standing shell output stream exists in the shell runtime yet.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'terminal-runtime',
@@ -206,7 +207,8 @@ class RuntimeOutputProducerRegistry {
           outputKinds: <RuntimeOutputChannelKind>[
             RuntimeOutputChannelKind.runtimeEvents,
           ],
-          todo: 'TODO: bind this producer to concrete PTY terminal streams.',
+          todo:
+              'TODO: the production shell does not create a TerminalRuntime session, so no standing PTY output stream exists to bind.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'toolchain-manager',
@@ -218,7 +220,8 @@ class RuntimeOutputProducerRegistry {
           outputKinds: <RuntimeOutputChannelKind>[
             RuntimeOutputChannelKind.nativeTools,
           ],
-          todo: 'TODO: bind this producer to concrete toolchain process IO.',
+          todo:
+              'TODO: ToolchainRuntime publishes per-command results into the live buffer and exposes no standing stdout/stderr stream.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'hosted-executor',
@@ -231,7 +234,7 @@ class RuntimeOutputProducerRegistry {
             RuntimeOutputChannelKind.runtimeEvents,
           ],
           todo:
-              'TODO: bind this producer to hosted backend event streams and retry telemetry.',
+              'TODO: hosted control-plane events are delivered through the hosted backend controller, not a standing output stream.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'language-service',
@@ -243,8 +246,6 @@ class RuntimeOutputProducerRegistry {
           outputKinds: <RuntimeOutputChannelKind>[
             RuntimeOutputChannelKind.languageService,
           ],
-          todo:
-              'TODO: bind this producer to StyioService diagnostics, semantic snapshot, and provider health streams.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'debug-adapter',
@@ -256,8 +257,6 @@ class RuntimeOutputProducerRegistry {
           outputKinds: <RuntimeOutputChannelKind>[
             RuntimeOutputChannelKind.debug,
           ],
-          todo:
-              'TODO: bind this producer to concrete DAP adapter lifecycle and debug console streams.',
         ),
         RuntimeOutputProducerDescriptor(
           producerId: 'agent',
@@ -269,8 +268,6 @@ class RuntimeOutputProducerRegistry {
           outputKinds: <RuntimeOutputChannelKind>[
             RuntimeOutputChannelKind.agent,
           ],
-          todo:
-              'TODO: bind this producer to coding-agent provider streams, recovery events, and patch application telemetry.',
         ),
       ],
     );
@@ -617,6 +614,24 @@ class RuntimeOutputProducerBindingController {
     );
     _states[producerId] = active;
     return active;
+  }
+
+  RuntimeOutputProducerBindingState markUnavailable({
+    required String producerId,
+    required String reason,
+  }) {
+    final adapter = _adapters.lookup(producerId);
+    final blocked = RuntimeOutputProducerBindingState(
+      producerId: producerId,
+      status: RuntimeOutputSubscriptionStatus.blocked,
+      managerId: adapter?.descriptor.managerId ?? '',
+      routeKind: adapter?.descriptor.routeKind ?? '',
+      defaultChannelId: adapter?.defaultChannelId ?? '',
+      message: reason,
+      todo: adapter?.descriptor.todo ?? '',
+    );
+    _states[producerId] = blocked;
+    return blocked;
   }
 
   Future<bool> unbindProducer(String producerId) async {

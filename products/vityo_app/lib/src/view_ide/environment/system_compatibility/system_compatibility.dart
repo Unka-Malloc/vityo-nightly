@@ -3,6 +3,7 @@ export 'shell/shell.dart';
 export 'platform_adapter/platform_adapter.dart';
 export 'platform_detector/platform_detector.dart';
 export 'platform_manager/platform_manager.dart';
+export 'platform_manager/platform_manager_settings.dart';
 export 'platform_context/platform_context.dart';
 export 'process/process.dart';
 export 'resource/resource.dart';

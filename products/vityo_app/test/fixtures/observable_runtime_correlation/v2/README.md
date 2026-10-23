@@ -16,9 +16,9 @@ corpus head identity and node ids.
 
 | Path | Provenance |
 | --- | --- |
-| `canonical.jsonl` | copied verbatim from styio `tests/fixtures/observable-runtime-correlation/v2/` |
-| `additive-fields.jsonl` | copied verbatim from styio |
+| `canonical.ndjson` | copied verbatim from styio `tests/fixtures/observable-runtime-correlation/v2/` |
+| `additive-fields.ndjson` | copied verbatim from styio |
 | `privacy-canaries.styio` | copied verbatim from styio |
-| `vityo/*.jsonl` | vityo-authored negatives and scenarios |
-| `vityo/additive-canaries.jsonl` | vityo-authored; marker strings `vityo-additive-canary-<n>` only inside unknown additive fields |
-| `vityo/disabled-mode.jsonl` | vityo-authored; mirrors the producer's disabled-mode shape (`snapshot_id: null`, empty `active_capabilities`, controller-only records, `partial/disabled` summary) written on every non-observed compile-plan run |
+| `vityo/*.ndjson` | vityo-authored negatives and scenarios |
+| `vityo/additive-canaries.ndjson` | vityo-authored; marker strings `vityo-additive-canary-<n>` only inside unknown additive fields |
+| `vityo/disabled-mode.ndjson` | vityo-authored; mirrors the producer's disabled-mode shape (`snapshot_id: null`, empty `active_capabilities`, controller-only records, `partial/disabled` summary) written on every non-observed compile-plan run |

@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: "3.13.5"
 
+      - name: Set up Rust 1.88 toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0, community-maintained
+        with:
+          toolchain: "1.88.0"
+
       - name: Supply chain governance gate
         run: python3 scripts/supply-chain-governance-gate.py
 

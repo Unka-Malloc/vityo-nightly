@@ -7,6 +7,30 @@ mixin ShellRuntimeSettingsFacade on ShellRuntimeFacadeHost {
   get commandPalettePreferenceController =>
       _settingsController.commandPalettePreferenceController;
 
+  PlatformManagerHealthSnapshot? get platformManagerHealth =>
+      _settingsController.platformManagerHealth;
+
+  PlatformManagerSettingsSurface? get platformManagerSettingsSurface =>
+      _settingsController.platformManagerSettingsSurface;
+
+  CredentialStorageSettingsSurface? get credentialStorageSettingsSurface =>
+      _settingsController.credentialStorageSettings;
+
+  PlatformManagerRecoveryActionRoute? get lastPlatformRecoveryRoute =>
+      _settingsController.lastPlatformRecoveryRoute;
+
+  bool get platformManagerProbeRunning =>
+      _settingsController.platformManagerProbeRunning;
+
+  Future<PlatformManagerHealthSnapshot?> refreshPlatformManagerHealth() =>
+      _settingsController.refreshPlatformManagerHealth();
+
+  void handlePlatformRecoveryRoute(PlatformManagerRecoveryActionRoute route) =>
+      _settingsController.handlePlatformRecoveryRoute(route);
+
+  void selectPlatformSettingsSection(String sectionId) =>
+      _settingsController.selectPlatformSettingsSection(sectionId);
+
   Future<void> loadThemeOverride({String key = 'default'}) =>
       _settingsController.loadThemeOverride(key: key);
 

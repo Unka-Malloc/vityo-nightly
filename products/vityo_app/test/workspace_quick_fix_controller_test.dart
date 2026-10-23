@@ -44,8 +44,11 @@ void main() {
     expect(fixture.controller.lastPreview, isNotNull);
     expect(fixture.controller.lastApplyResult?.successful, isFalse);
     expect(fixture.controller.lastApplyResult?.message, contains('stale'));
-    expect(fixture.editor.document, beforeMain);
-    expect(await fixture.store.loadDocument(_helperPath), beforeHelper);
+    expect(fixture.editor.document.text, beforeMain.text);
+    expect(fixture.editor.document.revision, beforeMain.revision);
+    final afterHelper = await fixture.store.loadDocument(_helperPath);
+    expect(afterHelper.text, beforeHelper.text);
+    expect(afterHelper.revision, beforeHelper.revision);
     expect(fixture.state.dirtyDocumentPaths, isEmpty);
   });
 }

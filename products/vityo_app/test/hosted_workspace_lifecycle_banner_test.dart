@@ -58,7 +58,9 @@ void main() {
           body: HostedWorkspaceLifecycleBanner(
             plan: plan,
             connectorReport: report,
-            onRetryAction: tappedActions.add,
+            onRetryAction: (action) async {
+              tappedActions.add(action);
+            },
           ),
         ),
       ),

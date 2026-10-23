@@ -121,6 +121,7 @@ install_system_packages() {
     git
     libblkid-dev
     libgtk-3-dev
+    libsecret-1-dev
     liblzma-dev
     mesa-utils
     ninja-build

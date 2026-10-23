@@ -152,7 +152,7 @@ function Install-WingetPackages {
     winget install --id Git.Git --silent --accept-package-agreements --accept-source-agreements
     winget install --id LLVM.LLVM --silent --accept-package-agreements --accept-source-agreements
     winget install --id Microsoft.OpenJDK.21 --silent --accept-package-agreements --accept-source-agreements
-    winget install --id Microsoft.VisualStudio.2022.BuildTools --silent --accept-package-agreements --accept-source-agreements --override "--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+    winget install --id Microsoft.VisualStudio.2022.BuildTools --silent --accept-package-agreements --accept-source-agreements --override "--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended"
 }
 
 function Install-Node {

@@ -2,7 +2,7 @@
 
 **Purpose:** Freeze Vityo's product category, product hierarchy, and protocol-only Agent ownership boundary.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-10-03
 
 **Status:** Accepted
 
@@ -95,6 +95,6 @@ without an Agent.
 
 1. [Vityo Product Spec](../design/Vityo-Product-Spec.md)
 2. [Vityo Agent-Native IDE Architecture](../design/Vityo-Agent-Native-IDE-Architecture.md)
-3. [Vityo IDE Requirements](../plan/vityo/Requirements.md)
-4. [Vityo Coding Agent Requirements](../plan/vityo-coding-agent/Requirements.md)
+3. [Vityo System Architecture](../design/Vityo-System-Architecture.md)
+4. [Coding Agent Architecture](./ADR-0021-react-agent-runtime-loop.md)
 5. [Vityo Domain Glossary](../../CONTEXT.md)

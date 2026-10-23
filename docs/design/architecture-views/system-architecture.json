@@ -1,0 +1,712 @@
+{
+  "schemaVersion": 1,
+  "title": "Vityo System Architecture",
+  "subtitle": "A source-authoritative Flutter IDE, independent Agent processes, and the local vityod service.",
+  "lanes": [
+    {
+      "id": "agents",
+      "title": "Agent processes",
+      "description": "First-party and compatible Agents run independently."
+    },
+    {
+      "id": "protocol",
+      "title": "Protocol and local daemon",
+      "description": "ACP and Vityo process boundaries with separate vityod services."
+    },
+    {
+      "id": "client",
+      "title": "Flutter IDE",
+      "description": "Agent-neutral operations, editable buffers, workspace transactions, and user-facing projections."
+    },
+    {
+      "id": "authorities",
+      "title": "Language and project authorities",
+      "description": "Styio owns program meaning; Pafio owns project metadata."
+    },
+    {
+      "id": "delivery",
+      "title": "Build and verification",
+      "description": "One Python stage path reuses focused engines and deterministic tests."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "rust_agent",
+      "lane": "agents",
+      "label": "Rust Coding Agent",
+      "status": "current",
+      "summary": "Independent Rust ACP runtime with ReAct, provider, authorized tools, and durable session state.",
+      "detail": "The production executable composes AgentApplication::from_paths with AcpHost::run_stdio and ReActRuntime::run_turn. It includes the pinned async-openai 0.42.1 OpenAI-compatible streaming provider with HTTPS-only production transport and native credential references, host-authorized ACP file and terminal operations, the revision-bound proposal extension, cancellation, and durable session/effect journaling. Explicit absolute --provider-config and --session-dir arguments configure provider state and Agent-owned persistence separately. The single --stdio-agent ACP v1 process is also the GUI-independent control surface. Empty mcpServers is supported; nonempty attachment is explicitly rejected with -32003 because production server attachment is not implemented. The selected client launches this Rust binary through vityod; deterministic process acceptance reaches initialize and session/new without a provider prompt. Remote provider conversations and real development tasks remain separate live acceptance.",
+      "sources": [
+        "rust_agent_manifest",
+        "rust_agent_entry",
+        "rust_agent_loop",
+        "rust_agent_provider",
+        "rust_agent_journal",
+        "rust_agent_operations",
+        "rust_agent_terminals",
+        "agent_loop_adr"
+      ]
+    },
+    {
+      "id": "compatible_agents",
+      "lane": "agents",
+      "label": "Compatible Agents",
+      "status": "target",
+      "summary": "Any compatible Agent consumes the same advertised operations and permissions.",
+      "detail": "The first-party Agent receives no special authority. Each connected Agent uses its negotiated capabilities, explicit workspace scope, user permission outcomes, and the same revision/transaction contracts.",
+      "sources": [
+        "agent_neutral_adr",
+        "agent_client_registry"
+      ]
+    },
+    {
+      "id": "agent_protocol",
+      "lane": "protocol",
+      "label": "ACP v1 + Vityo proposal extension",
+      "status": "current",
+      "summary": "One negotiated process/session boundary; revision-bound Vityo proposals remain an extension.",
+      "detail": "Use ACP v1 filesystem and terminal methods for compatible operations where their client-managed semantics fit. Use the existing namespaced Vityo workspace-change-proposal contract for reviewable atomic, revision-bound edits. Do not create a parallel Agent protocol or treat standard filesystem writes as a bypass around workspace review.",
+      "sources": [
+        "protocol_schema",
+        "agent_neutral_adr"
+      ]
+    },
+    {
+      "id": "acp_operations_gateway",
+      "lane": "protocol",
+      "label": "ACP operations gateway",
+      "status": "current",
+      "summary": "Negotiated ACP file and terminal requests reach the real IDE and daemon owners.",
+      "detail": "The vityod ACP host correlates client operations through the session poll and response path. The IDE dispatcher serves active path-bound Flow Hero buffers, persists through the workspace document read and atomic transaction contract, and uses vityod PTY for terminal work. Permission outcomes return the selected option ID; a source-aware proposal has one explicit correlated Apply/Reject decision. Pathless demo buffers remain unavailable. This does not imply production MCP server attachment.",
+      "sources": [
+        "acp_host",
+        "agent_neutral_adr",
+        "flow_hero_agent_bridge",
+        "flow_hero_agent_operations"
+      ]
+    },
+    {
+      "id": "vityod",
+      "lane": "protocol",
+      "label": "vityod daemon",
+      "status": "current",
+      "summary": "Independent Rust daemon for durable workspace documents, transactions, and supervised processes.",
+      "detail": "vityod remains distinct from both Flutter and the Coding Agent. Its current services own workspace revisions and atomic document transactions, process supervision, PTY lifecycle, and the ACP session poll/correlated client-operation response bridge.",
+      "sources": [
+        "vityod_entry",
+        "workspace_service",
+        "durable_state",
+        "acp_host"
+      ]
+    },
+    {
+      "id": "workbench_projection",
+      "lane": "client",
+      "label": "Workbench projection",
+      "status": "current",
+      "summary": "Client/session state and bounded event projections feed the frontend.",
+      "detail": "The client registry, session reducer, and collaboration store project correlated sessions, exact permission outcomes, proposals, transactions, and ordered operation/status events into the Workbench. The projection does not become the authoritative Agent journal or hidden reasoning trace.",
+      "sources": [
+        "agent_client_registry",
+        "session_reducer",
+        "collaboration_projection",
+        "flow_hero_agent_operations"
+      ]
+    },
+    {
+      "id": "flutter_ide",
+      "lane": "client",
+      "label": "Flutter IDE",
+      "status": "current",
+      "summary": "Flutter / Dart application and shared IDE composition.",
+      "detail": "The client remains useful without an Agent. It owns the user-facing IDE, source/workspace revisions, permission decisions, transaction review, and presentation. Widgets project service state; they are not remote-control APIs for an Agent.",
+      "sources": [
+        "app_entry",
+        "app_composition"
+      ]
+    },
+    {
+      "id": "local_daemon_client",
+      "lane": "client",
+      "label": "vityod client",
+      "status": "current",
+      "summary": "The client uses the local daemon protocol for supervised workspace and process services.",
+      "detail": "The daemon boundary is independent of the Coding Agent process. The client sends typed service requests and projects returned state; Agent operations must use the same owner services and authorization rather than bypassing the IDE workspace authority.",
+      "sources": [
+        "vityod_client",
+        "daemon_protocol"
+      ]
+    },
+    {
+      "id": "neutral_operation_dispatcher",
+      "lane": "client",
+      "label": "IDE operation dispatcher",
+      "status": "current",
+      "summary": "The typed dispatcher connects ACP operations to active buffers and daemon service owners.",
+      "detail": "Requests travel through agent.session.poll and correlated agent.acp.client_operation.respond handling. Implemented operations include fs/read_text_file, fs/write_text_file, terminal/create, terminal/output, terminal/wait_for_exit, terminal/kill, and terminal/release. The Flow Hero port uses the actual path-bound WorkbenchController buffer and workspace document store/CAS; terminal calls use vityod PTY. A negotiated source-aware proposal is separately reviewed and committed with observed workspace/document revisions. Pathless demo buffers stay unavailable.",
+      "sources": [
+        "agent_client_registry",
+        "agent_operation_port",
+        "agent_neutral_adr",
+        "flow_hero_agent_operations",
+        "acp_host"
+      ]
+    },
+    {
+      "id": "flow_hero_buffers",
+      "lane": "client",
+      "label": "Flow Hero path-bound buffer",
+      "status": "current",
+      "summary": "The live route binds path-bound BufferFile state to workspace revisions and transactions; pathless demos are excluded.",
+      "detail": "The current Agent operation bridge reads the active unsaved BufferFile and its separate live source revision, while persisted workspace/document observations govern atomic writes and proposal base revisions. The selected WorkbenchController buffer is notified after transaction results. Built-in pathless demonstration buffers have no workspace file authority and are unavailable to ACP operations.",
+      "sources": [
+        "flow_hero_buffers",
+        "flow_hero_agent_bridge",
+        "flow_hero_agent_operations",
+        "agent_neutral_adr"
+      ]
+    },
+    {
+      "id": "flow_hero",
+      "lane": "client",
+      "label": "Flow Hero live file route",
+      "status": "current",
+      "summary": "Path-bound file operations and proposal review are live; the sample canvas is not a Styio semantic editor.",
+      "detail": "The direct FlowHeroApp route now launches the packaged Rust Agent for an explicitly selected workspace and binds standard ACP file/terminal operations and revision-bound proposal review to the active WorkbenchController and vityod owners. The visible sample graph and restricted parser remain demonstration presentation. Full-editor/source-dock synchronization, semantic node movement, Styio graph facts, source rewires, and runtime mapping are not implemented by this operation route.",
+      "sources": [
+        "flow_hero_entry",
+        "flow_hero_route",
+        "flow_hero_agent_bridge",
+        "flow_hero_agent_operations",
+        "agent_neutral_adr"
+      ]
+    },
+    {
+      "id": "styio",
+      "lane": "authorities",
+      "label": "Styio language service",
+      "status": "current",
+      "summary": "Authoritative language syntax, semantic facts, validation, and legal rewrites.",
+      "detail": "Vityo calls the language-service boundary and displays its revision-bound results. The client or Agent must not infer Styio graph semantics from canvas gestures, regex parsing, project metadata, or UI state.",
+      "sources": [
+        "styio_connector"
+      ]
+    },
+    {
+      "id": "flow_semantics_gap",
+      "lane": "authorities",
+      "label": "Styio graph / rewire",
+      "status": "gap",
+      "summary": "Styio does not yet expose the complete source-bound graph and supported-rewire facts required by the canvas.",
+      "detail": "The full source/graph editing feature remains deferred. Keep this capability unavailable until Styio supplies semantic identity, direction, source locations, supported rewrites, and diagnostics for a specific document revision.",
+      "sources": [
+        "styio_connector",
+        "flow_hero_adr"
+      ]
+    },
+    {
+      "id": "pafio",
+      "lane": "authorities",
+      "label": "Pafio project metadata",
+      "status": "current",
+      "summary": "Project, package, dependency, and target metadata remain Pafio-owned.",
+      "detail": "Pafio project metadata is not program-flow or language-semantic authority.",
+      "sources": [
+        "pafio_adapter"
+      ]
+    },
+    {
+      "id": "python_delivery",
+      "lane": "delivery",
+      "label": "Python delivery pipeline",
+      "status": "current",
+      "summary": "One Python stage command coordinates privacy, architecture, tests, coverage, build, install, and launch.",
+      "detail": "The maintained command is python3 scripts/vityo.py deliver, with independently callable privacy, architecture, test, coverage, build, install, and launch stages. It reuses focused validators and packaging engines, resolves the pinned real Styio executable for language fixtures, and keeps local build/install/launch distinct from live Agent acceptance.",
+      "sources": [
+        "delivery_orchestrator",
+        "delivery_adr",
+        "quality_runner"
+      ]
+    },
+    {
+      "id": "quality_engines",
+      "lane": "delivery",
+      "label": "Test and package engines",
+      "status": "current",
+      "summary": "Focused validators, tests, and packaging remain independently runnable.",
+      "detail": "The Python quality runner executes the locked Rust Coding Agent workspace suite once and can collect its Rust coverage from that same run. Nine maintained runtime requirements map to actual Rust source roots and executed suite outcomes. The architecture stage validates model source anchors, dependency boundaries, and generated-output drift; CI uses the same non-mutating checks.",
+      "sources": [
+        "quality_runner",
+        "architecture_generator",
+        "rust_agent_test_runner"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "client_to_local_gateway",
+      "from": "flutter_ide",
+      "to": "local_daemon_client",
+      "label": "route typed local requests",
+      "status": "current"
+    },
+    {
+      "id": "gateway_to_daemon",
+      "from": "local_daemon_client",
+      "to": "vityod",
+      "label": "local daemon IPC",
+      "status": "current"
+    },
+    {
+      "id": "daemon_to_projection",
+      "from": "vityod",
+      "to": "workbench_projection",
+      "label": "workspace and process facts",
+      "status": "current"
+    },
+    {
+      "id": "projection_to_frontend",
+      "from": "workbench_projection",
+      "to": "flutter_ide",
+      "label": "ordered state and event projection",
+      "status": "current"
+    },
+    {
+      "id": "rust_agent_to_protocol",
+      "from": "rust_agent",
+      "to": "agent_protocol",
+      "label": "independent ACP session",
+      "status": "current"
+    },
+    {
+      "id": "compatible_agent_to_protocol",
+      "from": "compatible_agents",
+      "to": "agent_protocol",
+      "label": "same authorized capabilities",
+      "status": "target"
+    },
+    {
+      "id": "protocol_to_operation_gateway",
+      "from": "agent_protocol",
+      "to": "acp_operations_gateway",
+      "label": "negotiated file and terminal operations",
+      "status": "current"
+    },
+    {
+      "id": "operation_gateway_to_workspace",
+      "from": "acp_operations_gateway",
+      "to": "neutral_operation_dispatcher",
+      "label": "session poll and correlated result",
+      "status": "current"
+    },
+    {
+      "id": "dispatcher_to_buffer",
+      "from": "neutral_operation_dispatcher",
+      "to": "flow_hero_buffers",
+      "label": "read or edit the active path-bound file",
+      "status": "current"
+    },
+    {
+      "id": "buffers_to_flow_hero",
+      "from": "flow_hero_buffers",
+      "to": "flow_hero",
+      "label": "live path-bound source and proposal projection",
+      "status": "current"
+    },
+    {
+      "id": "dispatcher_to_daemon",
+      "from": "neutral_operation_dispatcher",
+      "to": "vityod",
+      "label": "workspace CAS transaction and PTY",
+      "status": "current"
+    },
+    {
+      "id": "agent_proposal_to_ide",
+      "from": "rust_agent",
+      "to": "flutter_ide",
+      "label": "revision-bound proposal; IDE reviews and commits",
+      "status": "current",
+      "overview": false
+    },
+    {
+      "id": "ide_to_styio",
+      "from": "flutter_ide",
+      "to": "styio",
+      "label": "analyze current document revision",
+      "status": "current"
+    },
+    {
+      "id": "styio_to_flow_semantics",
+      "from": "styio",
+      "to": "flow_semantics_gap",
+      "label": "typed flow and supported rewrites",
+      "status": "gap"
+    },
+    {
+      "id": "pafio_to_ide",
+      "from": "pafio",
+      "to": "flutter_ide",
+      "label": "project/package/target metadata",
+      "status": "current",
+      "overview": false
+    },
+    {
+      "id": "delivery_to_quality",
+      "from": "python_delivery",
+      "to": "quality_engines",
+      "label": "run deterministic validation",
+      "status": "current"
+    },
+    {
+      "id": "quality_to_products",
+      "from": "quality_engines",
+      "to": "flutter_ide",
+      "label": "deterministic product checks",
+      "status": "current",
+      "overview": false
+    },
+    {
+      "id": "quality_to_agent",
+      "from": "quality_engines",
+      "to": "rust_agent",
+      "label": "deterministic Agent/protocol fixtures",
+      "status": "current",
+      "overview": false
+    }
+  ],
+  "sourceAnchors": [
+    {
+      "id": "app_entry",
+      "path": "products/vityo_app/lib/main.dart",
+      "contains": [
+        "ProductionFlowHeroRuntime runtime = ProductionFlowHeroRuntime()",
+        "startup_probe.runDesktopStartupProbe(",
+        "FlowHeroApp(runtime: runtime)"
+      ]
+    },
+    {
+      "id": "app_composition",
+      "path": "products/vityo_app/lib/src/app/app_bootstrap.dart",
+      "contains": [
+        "class AppBootstrap"
+      ]
+    },
+    {
+      "id": "flow_hero_entry",
+      "path": "products/vityo_app/lib/src/view_render/flow_hero/flow_hero.dart",
+      "contains": [
+        "class FlowHeroApp"
+      ]
+    },
+    {
+      "id": "flow_hero_buffers",
+      "path": "products/vityo_app/lib/src/view_render/flow_hero/engine/machine.dart",
+      "contains": [
+        "class BufferFile",
+        "class WorkbenchController",
+        "Future<bool> openPath(String path)"
+      ]
+    },
+    {
+      "id": "flow_hero_route",
+      "path": "products/vityo_app/lib/src/view_render/flow_hero/agent_bridge.dart",
+      "contains": [
+        "AgentClientRegistry"
+      ]
+    },
+    {
+      "id": "agent_client_registry",
+      "path": "products/vityo_app/lib/src/ide/agent_client/agent_client_registry.dart",
+      "contains": [
+        "final class AgentClientRegistry"
+      ]
+    },
+    {
+      "id": "agent_operation_port",
+      "path": "products/vityo_app/lib/src/ide/agent_client/agent_client_operations.dart",
+      "contains": [
+        "abstract interface class AgentClientOperationPort",
+        "fs/read_text_file"
+      ]
+    },
+    {
+      "id": "session_reducer",
+      "path": "products/vityo_app/lib/src/ide/agent_client/agent_session_reducer.dart",
+      "contains": [
+        "final class AgentSessionReducer"
+      ]
+    },
+    {
+      "id": "collaboration_projection",
+      "path": "products/vityo_app/lib/src/ide/workbench/agent_collaboration/collaboration_store.dart",
+      "contains": [
+        "final class CollaborationSessionProjection"
+      ]
+    },
+    {
+      "id": "vityod_client",
+      "path": "products/vityo_app/lib/src/ide/local_service/vityod_client.dart",
+      "contains": [
+        "final class VityodClient"
+      ]
+    },
+    {
+      "id": "daemon_protocol",
+      "path": "products/vityo_app/native/vityod/crates/vityod-protocol/src/lib.rs",
+      "contains": [
+        "pub enum FrameKind"
+      ]
+    },
+    {
+      "id": "acp_host",
+      "path": "products/vityo_app/native/vityod/crates/vityod-agent-host/src/acp.rs",
+      "contains": [
+        "pub struct AcpRuntime",
+        "pub struct AcpClientOperation",
+        "pub fn respond_client_operation("
+      ]
+    },
+    {
+      "id": "rust_agent_manifest",
+      "path": "products/vityo_coding_agent/Cargo.toml",
+      "contains": [
+        "name = \"vityo-coding-agent\"",
+        "name = \"vityo_coding_agent\""
+      ]
+    },
+    {
+      "id": "agent_loop_adr",
+      "path": "docs/adr/ADR-0021-react-agent-runtime-loop.md",
+      "contains": [
+        "Use one ReAct-style action/observation loop"
+      ]
+    },
+    {
+      "id": "agent_neutral_adr",
+      "path": "docs/adr/ADR-0022-agent-neutral-operation-boundary.md",
+      "contains": [
+        "same advertised capabilities and authorization"
+      ]
+    },
+    {
+      "id": "flow_hero_adr",
+      "path": "docs/adr/ADR-0020-source-authoritative-flow-hero.md",
+      "contains": [
+        "The graph is derived"
+      ]
+    },
+    {
+      "id": "protocol_schema",
+      "path": "packages/vityo_agent_protocol/schema/acp-v1.schema.json",
+      "contains": [
+        "\"title\": \"Vityo ACP v1 JSON-RPC Message\""
+      ]
+    },
+    {
+      "id": "styio_connector",
+      "path": "products/vityo_app/lib/src/view_ide/language/service/styio_service_connector.dart",
+      "contains": [
+        "abstract class StyioServiceConnector"
+      ]
+    },
+    {
+      "id": "pafio_adapter",
+      "path": "products/vityo_app/lib/owner_adapters/pafio_metadata_adapter.dart",
+      "contains": [
+        "class PafioMetadataAdapter"
+      ]
+    },
+    {
+      "id": "vityod_entry",
+      "path": "products/vityo_app/native/vityod/crates/vityod/src/main.rs",
+      "contains": [
+        "fn main()",
+        "WorkspaceFileService"
+      ]
+    },
+    {
+      "id": "workspace_service",
+      "path": "products/vityo_app/native/vityod/crates/vityod-workspace/src/lib.rs",
+      "contains": [
+        "pub struct WorkspaceFileService"
+      ]
+    },
+    {
+      "id": "durable_state",
+      "path": "products/vityo_app/native/vityod/crates/vityod-kernel/src/lib.rs",
+      "contains": [
+        "pub struct DurableStateStore",
+        "commit_documents_with_receipt_and_fs_transaction"
+      ]
+    },
+    {
+      "id": "quality_runner",
+      "path": "scripts/vityo_quality.py",
+      "contains": [
+        "argparse"
+      ]
+    },
+    {
+      "id": "architecture_generator",
+      "path": "scripts/vityo_architecture.py",
+      "contains": [
+        "def main("
+      ]
+    },
+    {
+      "id": "delivery_adr",
+      "path": "docs/design/Vityo-System-Architecture.md",
+      "contains": [
+        "python3 scripts/vityo.py deliver"
+      ]
+    },
+    {
+      "id": "rust_agent_entry",
+      "path": "products/vityo_coding_agent/src/main.rs",
+      "contains": [
+        "fn parse_command(",
+        "AgentApplication::from_paths",
+        "AcpHost::new(application).run_stdio().await"
+      ]
+    },
+    {
+      "id": "rust_agent_loop",
+      "path": "products/vityo_coding_agent/src/orchestration/mod.rs",
+      "contains": [
+        "pub struct ReActRuntime",
+        "pub async fn run_turn("
+      ]
+    },
+    {
+      "id": "rust_agent_provider",
+      "path": "products/vityo_coding_agent/src/providers/openai_compatible.rs",
+      "contains": [
+        "pub struct OpenAiCompatibleProvider"
+      ]
+    },
+    {
+      "id": "rust_agent_journal",
+      "path": "products/vityo_coding_agent/src/sessions/store.rs",
+      "contains": [
+        "pub struct FileSessionEventStore",
+        "impl SessionEventStore for FileSessionEventStore"
+      ]
+    },
+    {
+      "id": "rust_agent_operations",
+      "path": "products/vityo_coding_agent/src/hosts/operations.rs",
+      "contains": [
+        "const READ_FILE: &str = \"fs/read_text_file\";",
+        "const CHANGE_PROPOSAL: &str = \"_vityo.dev/workspace-change-proposal\";"
+      ]
+    },
+    {
+      "id": "rust_agent_terminals",
+      "path": "products/vityo_coding_agent/src/hosts/terminal.rs",
+      "contains": [
+        "\"terminal/create\",",
+        "\"terminal/wait_for_exit\","
+      ]
+    },
+    {
+      "id": "agent_launch_descriptor",
+      "path": "products/vityo_app/lib/src/ide/agent_client/agent_launch_paths_contract.dart",
+      "contains": [
+        "const String firstPartyCodingAgentId = 'vityo-coding-agent';",
+        "'--stdio-agent'",
+        "'--session-dir'"
+      ]
+    },
+    {
+      "id": "agent_process_test",
+      "path": "products/vityo_app/test/agent_client/vityod_agent_process_test.dart",
+      "contains": [
+        "vityod supervises the packaged Rust Coding Agent ACP handshake"
+      ]
+    },
+    {
+      "id": "flow_hero_agent_bridge",
+      "path": "products/vityo_app/lib/src/view_render/flow_hero/agent_bridge.dart",
+      "contains": [
+        "launchResolver ?? resolvePackagedCodingAgentLaunch",
+        "FlowHeroAgentOperationPort("
+      ]
+    },
+    {
+      "id": "flow_hero_agent_operations",
+      "path": "products/vityo_app/lib/src/view_render/flow_hero/agent_operations.dart",
+      "contains": [
+        "final class FlowHeroAgentOperationPort",
+        "'terminal/create' =>",
+        "'terminal/wait_for_exit' =>"
+      ]
+    },
+    {
+      "id": "delivery_orchestrator",
+      "path": "scripts/vityo.py",
+      "contains": [
+        "DELIVERY_STAGES = (",
+        "for name in (*DELIVERY_STAGES, \"deliver\")"
+      ]
+    },
+    {
+      "id": "rust_agent_test_runner",
+      "path": "scripts/vityo_quality.py",
+      "contains": [
+        "def coding_agent_full(",
+        "\"cargo llvm-cov --collect-only\""
+      ]
+    }
+  ],
+  "dependencyBoundaries": [
+    {
+      "id": "ide-does-not-import-agent-runtime",
+      "kind": "dart-imports",
+      "roots": [
+        "products/vityo_app/lib"
+      ],
+      "forbiddenPackages": [
+        "vityo_coding_agent"
+      ],
+      "forbiddenRelativeRoots": [
+        "products/vityo_coding_agent"
+      ]
+    },
+    {
+      "id": "ide-does-not-depend-on-agent-product",
+      "kind": "pub-dependencies",
+      "manifests": [
+        "products/vityo_app/pubspec.yaml"
+      ],
+      "forbiddenPackages": [
+        "vityo_coding_agent"
+      ]
+    },
+    {
+      "id": "protocol-is-runtime-neutral",
+      "kind": "pub-dependencies",
+      "manifests": [
+        "packages/vityo_agent_protocol/pubspec.yaml"
+      ],
+      "forbiddenPackages": [
+        "vityo_app",
+        "vityo_coding_agent",
+        "flutter",
+        "flutter_test"
+      ]
+    },
+    {
+      "id": "rust-agent-does-not-depend-on-flutter-client",
+      "kind": "cargo-dependencies",
+      "manifests": [
+        "products/vityo_coding_agent/Cargo.toml"
+      ],
+      "forbiddenPackages": [
+        "vityo_app",
+        "vityo_app_core",
+        "flutter"
+      ]
+    }
+  ]
+}

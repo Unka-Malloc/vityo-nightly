@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'source_control_diff_session_store.dart';
+import 'source_control_merge_editor.dart';
 import 'source_control_status.dart';
 
 class SourceControlStatusController extends ChangeNotifier {
@@ -16,7 +17,12 @@ class SourceControlStatusController extends ChangeNotifier {
     this.branchActionProvider,
     this.historyProvider,
     this.diffSessionStore,
-  });
+    this.mergeEditorProvider,
+    SourceControlConflictResolutionProviderRegistry?
+    conflictResolutionProviderRegistry,
+  }) : conflictResolutionProviderRegistry =
+           conflictResolutionProviderRegistry ??
+           SourceControlConflictResolutionProviderRegistry();
 
   final SourceControlStatusProvider provider;
   final SourceControlDiffProvider? diffProvider;
@@ -26,6 +32,9 @@ class SourceControlStatusController extends ChangeNotifier {
   final SourceControlBranchActionProvider? branchActionProvider;
   final SourceControlHistoryProvider? historyProvider;
   final SourceControlDiffSessionStore? diffSessionStore;
+  final SourceControlMergeEditorProvider? mergeEditorProvider;
+  final SourceControlConflictResolutionProviderRegistry
+  conflictResolutionProviderRegistry;
   final String workspaceRoot;
 
   SourceControlStatusSnapshot? _snapshot;
@@ -40,6 +49,8 @@ class SourceControlStatusController extends ChangeNotifier {
   SourceControlHistorySnapshot? _historySnapshot;
   SourceControlActionPlan? _pendingActionPlan;
   SourceControlDiffSessionState? _diffSessionState;
+  SourceControlMergeEditorSnapshot? _mergeEditorSnapshot;
+  SourceControlConflictResolutionResult? _lastConflictResolutionResult;
   int _generation = 0;
   int _diffGeneration = 0;
   int _actionGeneration = 0;
@@ -47,6 +58,8 @@ class SourceControlStatusController extends ChangeNotifier {
   int _branchGeneration = 0;
   int _branchSwitchGeneration = 0;
   int _historyGeneration = 0;
+  int _mergeEditorGeneration = 0;
+  int _conflictResolutionGeneration = 0;
 
   SourceControlStatusSnapshot? get snapshot => _snapshot;
   SourceControlDiffSnapshot? get diffPreview => _diffPreview;
@@ -65,6 +78,22 @@ class SourceControlStatusController extends ChangeNotifier {
   SourceControlHistorySnapshot? get historySnapshot => _historySnapshot;
   SourceControlActionPlan? get pendingActionPlan => _pendingActionPlan;
   SourceControlDiffSessionState? get diffSessionState => _diffSessionState;
+  SourceControlMergeWorkflowPlan get mergeWorkflowPlan {
+    return SourceControlMergeWorkflowPlan.fromStatus(
+      _snapshot ??
+          SourceControlStatusSnapshot(
+            providerKind: provider.providerKind,
+            available: false,
+            changes: const <SourceControlFileChange>[],
+            message: 'Source control status has not been loaded.',
+          ),
+    );
+  }
+
+  SourceControlMergeEditorSnapshot? get mergeEditorSnapshot =>
+      _mergeEditorSnapshot;
+  SourceControlConflictResolutionResult? get lastConflictResolutionResult =>
+      _lastConflictResolutionResult;
   bool get hasSnapshot => _snapshot != null;
   bool get hasDiffPreview => _diffPreview != null;
 
@@ -116,6 +145,7 @@ class SourceControlStatusController extends ChangeNotifier {
     final nextSnapshot = await provider.status(workspaceRoot: workspaceRoot);
     if (generation == _generation) {
       _snapshot = nextSnapshot;
+      _clearCompletedMergeEditor(nextSnapshot);
       notifyListeners();
     }
     return nextSnapshot;
@@ -412,9 +442,79 @@ class SourceControlStatusController extends ChangeNotifier {
     return nextSnapshot;
   }
 
+  Future<SourceControlMergeEditorSnapshot> openMergeEditor(
+    SourceControlConflictResolutionPlan conflictPlan,
+  ) async {
+    final workflowPlan = mergeWorkflowPlan;
+    final request = SourceControlConflictResolutionRequest.fromPlan(
+      workflowPlan: workflowPlan,
+      conflictPlan: conflictPlan,
+      kind: SourceControlConflictResolutionKind.openMergeEditor,
+    );
+    final activeProvider = mergeEditorProvider;
+    final generation = ++_mergeEditorGeneration;
+    final snapshot = !request.canRun
+        ? SourceControlMergeEditorSnapshot.unavailable(
+            providerKind: workflowPlan.providerKind,
+            path: conflictPlan.path,
+            message: request.blockedReason,
+          )
+        : activeProvider == null ||
+              activeProvider.providerKind != workflowPlan.providerKind
+        ? SourceControlMergeEditorSnapshot.unavailable(
+            providerKind: workflowPlan.providerKind,
+            path: conflictPlan.path,
+            message:
+                'No merge editor provider is configured for ${workflowPlan.providerKind.wireValue}.',
+          )
+        : await activeProvider.openMergeEditor(
+            workspaceRoot: workspaceRoot,
+            path: conflictPlan.path,
+          );
+    if (generation == _mergeEditorGeneration) {
+      _mergeEditorSnapshot = snapshot;
+      notifyListeners();
+    }
+    return snapshot;
+  }
+
+  Future<SourceControlConflictResolutionResult> resolveConflict({
+    required SourceControlConflictResolutionPlan conflictPlan,
+    required SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
+  }) async {
+    final request = SourceControlConflictResolutionRequest.fromPlan(
+      workflowPlan: mergeWorkflowPlan,
+      conflictPlan: conflictPlan,
+      kind: kind,
+      resultText: resultText,
+      expectedWorkingRevision: expectedWorkingRevision,
+    );
+    final generation = ++_conflictResolutionGeneration;
+    final result = await conflictResolutionProviderRegistry.resolve(request);
+    if (generation == _conflictResolutionGeneration) {
+      _lastConflictResolutionResult = result;
+      if (result.accepted) {
+        await refresh();
+      } else {
+        notifyListeners();
+      }
+    }
+    return result;
+  }
+
+  void closeMergeEditor() {
+    if (_mergeEditorSnapshot == null) return;
+    _mergeEditorGeneration++;
+    _mergeEditorSnapshot = null;
+    notifyListeners();
+  }
+
   void recordStatus(SourceControlStatusSnapshot snapshot) {
     _generation++;
     _snapshot = snapshot;
+    _clearCompletedMergeEditor(snapshot);
     notifyListeners();
   }
 
@@ -461,6 +561,8 @@ class SourceControlStatusController extends ChangeNotifier {
     _branchGeneration++;
     _branchSwitchGeneration++;
     _historyGeneration++;
+    _mergeEditorGeneration++;
+    _conflictResolutionGeneration++;
     _snapshot = null;
     _diffPreview = null;
     _lastActionResult = null;
@@ -473,6 +575,8 @@ class SourceControlStatusController extends ChangeNotifier {
     _historySnapshot = null;
     _pendingActionPlan = null;
     _diffSessionState = null;
+    _mergeEditorSnapshot = null;
+    _lastConflictResolutionResult = null;
     unawaited(
       diffSessionStore
               ?.deleteSession(workspaceId: workspaceRoot)
@@ -480,6 +584,17 @@ class SourceControlStatusController extends ChangeNotifier {
           Future<void>.value(),
     );
     notifyListeners();
+  }
+
+  void _clearCompletedMergeEditor(SourceControlStatusSnapshot snapshot) {
+    final activePath = _mergeEditorSnapshot?.path;
+    if (activePath == null || !snapshot.available) return;
+    final stillConflicted = snapshot.changes.any(
+      (change) => change.path == activePath && change.conflicted,
+    );
+    if (!stillConflicted) {
+      _mergeEditorSnapshot = null;
+    }
   }
 
   void _restoreHunkSelectionFromSession(SourceControlDiffSessionState session) {

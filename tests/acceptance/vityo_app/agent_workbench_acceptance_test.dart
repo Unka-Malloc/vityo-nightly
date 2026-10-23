@@ -11,6 +11,14 @@ import 'package:vityo_app/src/presentation/agent_workbench/change_review_view.da
 import 'package:vityo_app/src/presentation/agent_workbench/session_view.dart';
 import 'package:vityo_app/src/presentation/agent_workbench/task_center.dart';
 
+const _allowPermissionOptions = <AgentPermissionOption>[
+  AgentPermissionOption(
+    optionId: 'allow-once-id',
+    name: 'Allow once',
+    kind: AgentPermissionOptionKind.allowOnce,
+  ),
+];
+
 void main() {
   /// REQ-IDE-004 / criterion 1 / concurrent normalized projections, bounded
   /// hot windows, reconnect replay, persistent attention, and routed controls.
@@ -60,12 +68,23 @@ void main() {
         store.apply(beta),
       ]);
       await store.addPermission(
-        const AgentPermissionRequest(
+        AgentPermissionRequest(
           id: 'permission-beta',
           agentId: 'fixture-agent',
           sessionId: 'beta',
           toolCallId: 'tool-permission-beta',
-          options: <String>{'allow_once', 'reject_once'},
+          options: const <AgentPermissionOption>[
+            AgentPermissionOption(
+              optionId: 'allow-beta-once',
+              name: 'Allow once',
+              kind: AgentPermissionOptionKind.allowOnce,
+            ),
+            AgentPermissionOption(
+              optionId: 'reject-beta-once',
+              name: 'Reject',
+              kind: AgentPermissionOptionKind.rejectOnce,
+            ),
+          ],
         ),
       );
       final beforeReplay = store.projection;
@@ -141,14 +160,16 @@ void main() {
       expect(find.text('Permission required'), findsOneWidget);
       await tester.tap(
         find.byKey(
-          const ValueKey<String>('permission-permission-beta-allow_once'),
+          const ValueKey<String>('permission-permission-beta-allow-beta-once'),
         ),
       );
       await tester.pump();
 
       expect(commands.steers, <String>['alpha:focus tests']);
       expect(commands.cancellations, <String>['alpha']);
-      expect(commands.permissions, <String>['beta:permission-beta:allowOnce']);
+      expect(commands.permissions, <String>[
+        'beta:permission-beta:allow-beta-once',
+      ]);
       expect(store.projection.attentionCount, 0);
       expect(store.projection.session('beta').pendingPermissions, isEmpty);
       await store.close();
@@ -306,12 +327,12 @@ void main() {
       ),
     );
     await store.addPermission(
-      const AgentPermissionRequest(
+      AgentPermissionRequest(
         id: 'permission-alpha',
         agentId: 'fixture-agent',
         sessionId: 'alpha',
         toolCallId: 'tool-permission-alpha',
-        options: <String>{'allow_once'},
+        options: _allowPermissionOptions,
       ),
     );
 
@@ -319,7 +340,7 @@ void main() {
       store.resolvePermission(
         sessionId: 'beta',
         permissionId: 'permission-alpha',
-        decision: AgentPermissionDecision.allowOnce,
+        optionId: 'allow-once-id',
       ),
       throwsA(
         isA<CollaborationFailure>().having(
@@ -332,13 +353,13 @@ void main() {
     await store.resolvePermission(
       sessionId: 'alpha',
       permissionId: 'permission-alpha',
-      decision: AgentPermissionDecision.allowOnce,
+      optionId: 'allow-once-id',
     );
     await expectLater(
       store.resolvePermission(
         sessionId: 'alpha',
         permissionId: 'permission-alpha',
-        decision: AgentPermissionDecision.allowOnce,
+        optionId: 'allow-once-id',
       ),
       throwsA(
         isA<CollaborationFailure>().having(
@@ -348,7 +369,9 @@ void main() {
         ),
       ),
     );
-    expect(commands.permissions, <String>['alpha:permission-alpha:allowOnce']);
+    expect(commands.permissions, <String>[
+      'alpha:permission-alpha:allow-once-id',
+    ]);
     await store.close();
   });
 }
@@ -407,9 +430,9 @@ final class _RecordingCommandPort implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
-    permissions.add('$sessionId:$permissionId:${decision.name}');
+    permissions.add('$sessionId:$permissionId:$optionId');
   }
 
   @override

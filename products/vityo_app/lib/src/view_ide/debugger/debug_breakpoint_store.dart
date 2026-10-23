@@ -58,7 +58,7 @@ class DebugBreakpointSet {
 
   DebugBreakpointSet upsertBreakpoint(DebugLaunchBreakpoint breakpoint) {
     final normalizedPath = breakpoint.filePath.trim();
-    if (normalizedPath.isEmpty || breakpoint.line <= 0) {
+    if (normalizedPath.isEmpty || breakpoint.line < 0) {
       return this;
     }
     final nextBreakpoints = breakpoints
@@ -86,7 +86,7 @@ class DebugBreakpointSet {
     required int line,
   }) {
     final normalizedPath = filePath.trim();
-    if (normalizedPath.isEmpty || line <= 0) {
+    if (normalizedPath.isEmpty || line < 0) {
       return this;
     }
     return copyWith(
@@ -237,7 +237,7 @@ List<DebugLaunchBreakpoint> _normalizeBreakpoints(
   final byLocation = <String, DebugLaunchBreakpoint>{};
   for (final breakpoint in breakpoints) {
     final filePath = breakpoint.filePath.trim();
-    if (filePath.isEmpty || breakpoint.line <= 0) {
+    if (filePath.isEmpty || breakpoint.line < 0) {
       continue;
     }
     byLocation['$filePath:${breakpoint.line}'] = DebugLaunchBreakpoint(

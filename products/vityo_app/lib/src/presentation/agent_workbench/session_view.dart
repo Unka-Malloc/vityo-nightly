@@ -163,24 +163,22 @@ final class _PermissionCard extends StatelessWidget {
             spacing: 8,
             children: <Widget>[
               const Text('Permission required'),
-              if (permission.options.contains('allow_once'))
-                FilledButton(
-                  key: ValueKey<String>(
-                    'permission-${permission.id}-allow_once',
-                  ),
-                  onPressed: () =>
-                      permission.resolve(AgentPermissionDecision.allowOnce),
-                  child: const Text('Allow once'),
-                ),
-              if (permission.options.contains('reject_once'))
-                OutlinedButton(
-                  key: ValueKey<String>(
-                    'permission-${permission.id}-reject_once',
-                  ),
-                  onPressed: () =>
-                      permission.resolve(AgentPermissionDecision.rejectOnce),
-                  child: const Text('Reject'),
-                ),
+              for (final option in permission.options)
+                option.kind.isAllow
+                    ? FilledButton(
+                        key: ValueKey<String>(
+                          'permission-${permission.id}-${option.optionId}',
+                        ),
+                        onPressed: () => permission.resolve(option.optionId),
+                        child: Text(option.name),
+                      )
+                    : OutlinedButton(
+                        key: ValueKey<String>(
+                          'permission-${permission.id}-${option.optionId}',
+                        ),
+                        onPressed: () => permission.resolve(option.optionId),
+                        child: Text(option.name),
+                      ),
             ],
           ),
         ),

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VITYO — Flow Hero 流动主角</title>
+<style>
+:root{
+  --room:#0B0B0B; --panel:#1A1A1A; --panel-hi:#212121; --recess:#121212; --well:#0E0E0E;
+  --seam-hi:#2D2D2D; --seam-lo:#000;
+  --red:#FF3B30; --red-b:#FF5A4D; --red-d:#E02820;
+  --org:#FF9A00; --org-b:#FFAB33; --org-d:#E68A00;
+  --yel:#FFE100; --yel-b:#FFE94D; --yel-d:#E6CA00;
+  --paper:#F2F2F2; --paper-lo:#DCDCDC; --bone:#E9E7E1;
+  --silk:#8D8D8D; --silk-hi:#C9C9C9; --silk-dim:#6F6F6F;
+  --led-off:#2A2A2A; --ring:#3A3A3A; --key:#2B2B2B; --key-lo:#1E1E1E;
+  --mono:'IBM Plex Mono','Azeret Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'Plus Jakarta Sans','IBM Plex Sans',-apple-system,'Helvetica Neue',sans-serif;
+  --cond:'IBM Plex Sans Condensed','Plus Jakarta Sans',var(--sans);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--room);color:var(--bone);font-family:var(--mono);font-size:12px;overflow:hidden;-webkit-font-smoothing:antialiased}
+.silk{font:600 11px/14px var(--sans);letter-spacing:1.32px;text-transform:uppercase;color:var(--silk)}
+.silk-hi{color:var(--silk-hi)} .silk-dim{color:var(--silk-dim)}
+.milled{background:var(--panel);border-top:1px solid var(--seam-hi);border-bottom:1px solid var(--seam-lo)}
+
+.machine{display:grid;height:100vh;grid-template-columns:56px 1fr 300px;grid-template-rows:1fr;grid-template-areas:"rail stage chat"}
+
+/* ── rail (left, icons only) ── */
+.rail{grid-area:rail;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:6px;border-right:1px solid var(--seam-lo)}
+.rail .brand-mark{display:grid;place-items:center;width:30px;height:30px;background:var(--red);color:#0B0B0B;font:800 14px var(--cond);border-radius:4px;margin-bottom:10px}
+.rbtn{width:38px;height:38px;display:grid;place-items:center;border-radius:4px;color:var(--silk-dim);cursor:pointer;border:1px solid transparent;position:relative}
+.rbtn:hover{background:var(--panel-hi);color:var(--silk-hi)}
+.rbtn.active{color:var(--org-b);border-color:var(--ring);background:var(--well)}
+.rbtn.active::before{content:'';position:absolute;left:-9px;top:25%;bottom:25%;width:2px;background:var(--red)}
+.rbtn svg{width:17px;height:17px}
+.rail .foot{margin-top:auto;display:flex;flex-direction:column;gap:6px}
+
+/* ── stage (canvas hero) ── */
+.stage{grid-area:stage;position:relative;overflow:hidden;
+  background:
+    radial-gradient(circle at 1px 1px, #1c1c1c 1px, transparent 1.6px) 0 0/26px 26px,
+    linear-gradient(180deg,#0d0d0d,#0a0a0a);}
+.stage-top{position:absolute;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:14px;padding:10px 16px;
+  background:linear-gradient(180deg,rgba(11,11,11,.92),rgba(11,11,11,0));}
+.badge-live{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--red-d);border-radius:2px;color:var(--red-b);background:rgba(11,11,11,.6)}
+.badge-live i{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 5px var(--red);animation:breathe 1.6s infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* run strip: compressed transport, top-right of canvas */
+.runstrip{display:flex;align-items:center;gap:10px;margin-left:auto;background:rgba(14,14,14,.85);border:1px solid var(--ring);border-radius:4px;padding:6px 10px}
+.leds{display:flex;gap:4px}
+.led{width:14px;height:5px;border-radius:2px;background:var(--led-off)}
+.led.on{background:var(--stage-c);box-shadow:0 0 5px var(--stage-c)}
+.led.play{outline:1px solid var(--paper-lo)}
+.q1{--stage-c:var(--red)} .q2{--stage-c:var(--org)} .q3{--stage-c:var(--yel)} .q4{--stage-c:var(--paper)}
+.rate{font-size:13px;color:var(--paper);min-width:74px;text-align:right}
+.rate small{font-size:9px;color:var(--silk-dim)}
+.keybtn{background:var(--key);border-top:1px solid var(--seam-hi);border-bottom:1px solid var(--seam-lo);border-radius:3px;padding:5px 10px;color:var(--paper-lo);cursor:pointer;font:600 10px var(--sans);letter-spacing:1.32px}
+.keybtn.run{color:var(--red-b)}
+
+svg.cables{position:absolute;inset:0;width:100%;height:100%}
+.cable{fill:none;stroke:#2e2e2e;stroke-width:2.5}
+.cable.hot{stroke:var(--org);stroke-dasharray:7 9;animation:flow 1.1s linear infinite;filter:drop-shadow(0 0 4px rgba(255,154,0,.55))}
+@keyframes flow{to{stroke-dashoffset:-16}}
+
+.node{position:absolute;width:188px;background:rgba(26,26,26,.94);border:1px solid var(--seam-lo);border-top:1px solid var(--seam-hi);border-radius:5px;box-shadow:0 6px 22px rgba(0,0,0,.55);backdrop-filter:blur(2px);cursor:pointer;transition:box-shadow .18s ease-out}
+.node:hover{box-shadow:0 6px 22px rgba(0,0,0,.55),0 0 0 1px var(--ring)}
+.node.sel{box-shadow:0 0 0 1px var(--red),0 0 24px rgba(255,59,48,.3)}
+.node-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--seam-lo);background:var(--panel-hi);border-radius:5px 5px 0 0}
+.node-led{width:7px;height:7px;border-radius:50%;background:var(--led-off)}
+.node.running .node-led{background:var(--org);box-shadow:0 0 6px var(--org)}
+.node.done .node-led{background:var(--yel);box-shadow:0 0 6px var(--yel)}
+.node-body{padding:10px 12px;font-size:12px}
+.node-sig{color:var(--silk);font-size:10.5px;margin-top:4px}
+.port{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--well);border:2px solid var(--ring);top:50%;transform:translateY(-50%)}
+.port.in{left:-7px}.port.out{right:-7px}
+.node.new{animation:nodeIn .28s ease-out both}
+@keyframes nodeIn{from{opacity:0;transform:scale(.92) translateY(8px)}to{opacity:1;transform:none}}
+
+/* floating source dock, anchored to selection */
+.srcdock{position:absolute;z-index:6;width:420px;right:18px;bottom:18px;background:rgba(18,18,18,.97);border:1px solid var(--seam-lo);border-top:1px solid var(--seam-hi);border-radius:5px;box-shadow:0 10px 34px rgba(0,0,0,.65);overflow:hidden;transition:transform .24s ease-out,opacity .24s ease-out}
+.srcdock.hidden{transform:translateY(14px);opacity:0;pointer-events:none}
+.srcdock-head{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--seam-lo);background:var(--panel)}
+.srcdock-head .x{margin-left:auto;color:var(--silk-dim);cursor:pointer;padding:0 4px}
+.srcdock-head .x:hover{color:var(--paper)}
+.srcdock-body{max-height:220px;overflow:auto;padding:8px 0;font-size:11.5px;line-height:1.65}
+.srcline{display:flex;padding:0 12px;white-space:pre}
+.srcline .ln{width:30px;flex:none;text-align:right;padding-right:12px;color:var(--silk-dim);user-select:none}
+.srcline.hot{background:rgba(255,59,48,.09);box-shadow:inset 2px 0 var(--red)}
+.kw{color:var(--red-b)} .nm{color:var(--org-b)} .lit{color:var(--yel)} .op{color:var(--silk-hi)} .cm{color:var(--silk-dim)} .pl{color:var(--paper-lo)}
+
+/* chat (right, slim) */
+.chat{grid-area:chat;display:flex;flex-direction:column;border-left:1px solid var(--seam-lo)}
+.chat-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--seam-lo)}
+.chat-log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:94%;animation:msgIn .22s ease-out both}
+@keyframes msgIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.msg .who{margin-bottom:4px}
+.msg-agent .bubble{background:var(--panel-hi);border:1px solid var(--seam-lo);border-radius:3px;padding:8px 10px;color:var(--paper-lo);line-height:1.6}
+.msg-user{align-self:flex-end}
+.msg-user .bubble{background:var(--well);border:1px solid var(--ring);border-radius:3px;padding:8px 10px}
+.receipt{border:1px solid var(--seam-lo);border-left:2px solid var(--org);background:var(--well);padding:7px 10px;font-size:11px;color:var(--silk)}
+.receipt b{color:var(--org-b);font-weight:600}
+.chat-input{border-top:1px solid var(--seam-hi);padding:10px 12px;display:flex;gap:8px}
+.chat-input .field{flex:1;background:var(--well);border:1px solid var(--ring);border-radius:2px;padding:8px 10px;color:var(--silk-dim)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="machine">
+
+  <!-- ═══ RAIL — 导航（图标轨：工作区/图/源码/测试/设置） ═══ -->
+  <nav class="rail milled">
+    <span class="brand-mark">V</span>
+    <div class="rbtn active" title="工作区"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h4l1.5 2H14v8H2z"/></svg></div>
+    <div class="rbtn" title="FLOW"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3" cy="8" r="1.6"/><circle cx="13" cy="4" r="1.6"/><circle cx="13" cy="12" r="1.6"/><path d="M4.6 7.3 11.4 4.6M4.6 8.7l6.8 2.7"/></svg></div>
+    <div class="rbtn" title="SOURCE"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 5 2 8l3 3M11 5l3 3-3 3"/></svg></div>
+    <div class="rbtn" title="TESTS"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 8.5 6.5 12 13 4.5"/></svg></div>
+    <div class="foot">
+      <div class="rbtn" title="设置"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2 3.4 12.6"/></svg></div>
+    </div>
+  </nav>
+
+  <!-- ═══ STAGE — FLOW 画布即主屏 ═══ -->
+  <main class="stage" id="stage">
+    <div class="stage-top">
+      <span class="silk silk-hi">USER_SYNC</span>
+      <span class="badge-live silk"><i></i>LIVE 投影</span>
+      <span class="silk silk-dim">点节点看源码 · 画布即主屏</span>
+      <div class="runstrip">
+        <span class="silk">RUN</span>
+        <div class="leds" id="leds"></div>
+        <span class="rate" id="rate">0<small> EVT/S</small></span>
+        <button class="keybtn run" id="btnRun">RUN</button>
+        <button class="keybtn" id="btnClear">CLR</button>
+      </div>
+    </div>
+    <svg class="cables" id="cables"></svg>
+
+    <!-- 浮动源码舱：吸附当前选中节点 -->
+    <div class="srcdock" id="srcdock">
+      <div class="srcdock-head">
+        <span class="silk silk-hi" id="docktitle">fetch_users</span>
+        <span class="silk silk-dim">user_sync.sty</span>
+        <span class="x silk" id="dockclose">✕</span>
+      </div>
+      <div class="srcdock-body" id="dockbody"></div>
+    </div>
+  </main>
+
+  <!-- ═══ AGENT — 对话（窄侧栏） ═══ -->
+  <aside class="chat milled">
+    <div class="chat-head"><span class="silk silk-hi">AGENT</span><span class="silk silk-dim" style="margin-left:auto">KIMI · 已连接</span></div>
+    <div class="chat-log" id="chatlog">
+      <div class="msg msg-user"><div class="who silk silk-dim">你</div><div class="bubble">给 user_sync 加 enrich 阶段。</div></div>
+      <div class="msg msg-agent"><div class="who silk silk-dim">AGENT</div><div class="bubble">收到，写入中 —— 看画布。</div></div>
+    </div>
+    <div class="chat-input"><div class="field silk silk-dim">给 AGENT 下指令…</div><button class="keybtn">SEND</button></div>
+  </aside>
+</div>
+
+<script>
+const stage=document.getElementById('stage'), cables=document.getElementById('cables');
+const NODES=[
+  {id:'fetch', x:70,  y:110, name:'fetch_users', sig:'api: Endpoint → List[User]', cls:'done'},
+  {id:'valid', x:340, y:70,  name:'validate',    sig:'s: Schema → Rule',           cls:'done'},
+  {id:'dedup', x:340, y:230, name:'dedupe',      sig:'key: Str → Rule',            cls:'running'},
+  {id:'emit',  x:620, y:150, name:'emit',        sig:'to: warehouse',              cls:'running'},
+  {id:'state', x:620, y:310, name:'sync',        sig:'state · idle → running',     cls:''},
+];
+const EDGES=[['fetch','valid',1],['valid','dedup',1],['dedup','emit',1],['state','emit',0]];
+const SRCMAP={
+  fetch:[['kw','fn'],['pl',' '],['nm','fetch_users'],['pl','(api: Endpoint) '],['op','->'],['pl',' List[User] {']],
+  valid:[['kw','fn'],['pl',' '],['nm','validate'],['pl','(s: Schema) '],['op','->'],['pl',' Rule {']],
+  dedup:[['kw','fn'],['pl',' '],['nm','dedupe'],['pl','(key: Str) '],['op','->'],['pl',' Rule {']],
+  emit:[['pl','  '],['op','|>'],['pl',' '],['kw','emit'],['pl','(to: warehouse)']],
+  state:[['kw','state'],['pl',' sync = '],['lit','idle']],
+  enrich:[['kw','fn'],['pl',' '],['nm','enrich'],['pl','(u: User) '],['op','->'],['pl',' User+Profile {']],
+};
+const el={};
+const dock=document.getElementById('srcdock'), dockbody=document.getElementById('dockbody'), docktitle=document.getElementById('docktitle');
+function openDock(id){
+  docktitle.textContent=id;
+  dockbody.innerHTML='';
+  const rows=[SRCMAP[id]||[['pl','// no source']], [['cm','  …']], [['pl','}']]];
+  rows.forEach((spans,i)=>{
+    const d=document.createElement('div');d.className='srcline'+(i===0?' hot':'');
+    d.innerHTML=`<span class="ln">${i+1}</span><span>`+spans.map(([c,t])=>`<span class="${c}">${t}</span>`.replace(/ /g,'&nbsp;')).join('')+'</span>';
+    dockbody.appendChild(d);
+  });
+  dock.classList.remove('hidden');
+}
+document.getElementById('dockclose').addEventListener('click',()=>dock.classList.add('hidden'));
+function drawNode(n){
+  const d=document.createElement('div');
+  d.className='node '+n.cls; d.style.left=n.x+'px'; d.style.top=n.y+'px'; d.id='n-'+n.id;
+  d.innerHTML=`<div class="node-head"><span class="node-led"></span><span class="silk silk-hi">${n.name}</span></div>
+    <div class="node-body">${n.name}()<div class="node-sig">${n.sig}</div></div>
+    <span class="port in"></span><span class="port out"></span>`;
+  d.addEventListener('click',()=>{
+    document.querySelectorAll('.node').forEach(x=>x.classList.remove('sel'));
+    d.classList.add('sel'); openDock(n.id==='state'?'state':n.id);
+  });
+  stage.appendChild(d); el[n.id]=d;
+}
+function drawCables(){
+  cables.innerHTML='';
+  EDGES.forEach(([a,b,hot])=>{
+    const A=el[a],B=el[b]; if(!A||!B)return;
+    const r=stage.getBoundingClientRect(), ar=A.getBoundingClientRect(), br=B.getBoundingClientRect();
+    const x1=ar.right-r.left, y1=ar.top-r.top+ar.height/2, x2=br.left-r.left, y2=br.top-r.top+br.height/2;
+    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    const sag=Math.max(40,(x2-x1)*.32);
+    p.setAttribute('d',`M${x1},${y1} C${x1+sag},${y1+sag*.4} ${x2-sag},${y2-sag*.4} ${x2},${y2}`);
+    p.setAttribute('class','cable'+(hot?' hot':'')); cables.appendChild(p);
+  });
+}
+NODES.forEach(drawNode); requestAnimationFrame(drawCables);
+window.addEventListener('resize',drawCables);
+
+/* run strip */
+const leds=document.getElementById('leds');
+for(let i=0;i<16;i++){const l=document.createElement('div');l.className='led q'+(Math.floor(i/4)+1);leds.appendChild(l);}
+let play=-1,timer=null;
+document.getElementById('btnRun').addEventListener('click',()=>{
+  if(timer){clearInterval(timer);timer=null;document.getElementById('rate').innerHTML='0<small> EVT/S</small>';return;}
+  document.getElementById('rate').innerHTML='42<small> EVT/S</small>';
+  timer=setInterval(()=>{play=(play+1)%16;
+    document.querySelectorAll('.led').forEach((s,i)=>{s.classList.toggle('play',i===play);if(i===play)s.classList.add('on');});},300);
+});
+document.getElementById('btnClear').addEventListener('click',()=>{document.querySelectorAll('.led').forEach(s=>s.classList.remove('on','play'));play=-1;});
+
+/* live growth */
+const chatlog=document.getElementById('chatlog');
+setTimeout(()=>{
+  const m=document.createElement('div');m.className='msg msg-agent';
+  m.innerHTML=`<div class="who silk silk-dim">AGENT</div><div class="bubble">已写入 <b style="color:var(--org-b)">fn enrich</b>，接入 dedupe → emit 之间。</div>`;
+  chatlog.appendChild(m);chatlog.scrollTop=chatlog.scrollHeight;
+  drawNode({id:'enrich',x:470,y:330,name:'enrich',sig:'u: User → User+Profile',cls:'running new sel'});
+  EDGES.push(['dedup','enrich',1],['enrich','emit',1]); requestAnimationFrame(drawCables);
+  openDock('enrich');
+},2600);
+setTimeout(()=>{
+  const m=document.createElement('div');m.className='msg msg-agent';
+  m.innerHTML=`<div class="receipt">回执 · <b>+9 行</b> user_sync.sty · 测试通过</div>`;
+  chatlog.appendChild(m);chatlog.scrollTop=chatlog.scrollHeight;
+},4200);
+</script>
+</body>
+</html>

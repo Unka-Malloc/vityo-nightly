@@ -41,15 +41,16 @@ class LocalNetworkManager implements NetworkManager {
     String operation = 'network.getText',
     String? recoveryHint,
   }) {
-    return const NetworkFailureClassifier(sourceManager: 'WebNetworkManager')
-        .classify(
-          status: response.status,
-          uri: response.uri,
-          statusCode: response.statusCode,
-          message: response.message,
-          operation: operation,
-          recoveryHint: recoveryHint,
-        );
+    return const NetworkFailureClassifier(
+      sourceManager: 'WebNetworkManager',
+    ).classify(
+      status: response.status,
+      uri: response.uri,
+      statusCode: response.statusCode,
+      message: response.message,
+      operation: operation,
+      recoveryHint: recoveryHint,
+    );
   }
 
   @override
@@ -58,15 +59,16 @@ class LocalNetworkManager implements NetworkManager {
     String operation = 'network.getBytes',
     String? recoveryHint,
   }) {
-    return const NetworkFailureClassifier(sourceManager: 'WebNetworkManager')
-        .classify(
-          status: response.status,
-          uri: response.uri,
-          statusCode: response.statusCode,
-          message: response.message,
-          operation: operation,
-          recoveryHint: recoveryHint,
-        );
+    return const NetworkFailureClassifier(
+      sourceManager: 'WebNetworkManager',
+    ).classify(
+      status: response.status,
+      uri: response.uri,
+      statusCode: response.statusCode,
+      message: response.message,
+      operation: operation,
+      recoveryHint: recoveryHint,
+    );
   }
 
   @override
@@ -87,10 +89,7 @@ class LocalNetworkManager implements NetworkManager {
     return _requestText(
       uri,
       method: 'POST',
-      headers: <String, String>{
-        'Content-Type': 'application/json',
-        ...headers,
-      },
+      headers: <String, String>{'Content-Type': 'application/json', ...headers},
       body: jsonEncode(body),
       timeout: timeout,
     );
@@ -99,9 +98,9 @@ class LocalNetworkManager implements NetworkManager {
   @override
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   }) async {
-    final response = await getText(uri, timeout: timeout);
+    final response = await _requestText(uri, method: 'GET', timeout: timeout);
     return NetworkBinaryResponse(
       status: response.status,
       uri: response.uri,
@@ -116,7 +115,7 @@ class LocalNetworkManager implements NetworkManager {
     required String method,
     Map<String, String> headers = const <String, String>{},
     String? body,
-    required Duration timeout,
+    required Duration? timeout,
   }) async {
     if (!compatibility.supportsHttpClient) {
       return NetworkTextResponse(
@@ -128,7 +127,7 @@ class LocalNetworkManager implements NetworkManager {
       );
     }
     try {
-      final response = await web.window
+      final fetch = web.window
           .fetch(
             uri.toString().toJS,
             web.RequestInit(
@@ -137,9 +136,16 @@ class LocalNetworkManager implements NetworkManager {
               body: body?.toJS,
             ),
           )
-          .toDart
-          .timeout(timeout);
-      final responseText = (await response.text().toDart).toDart;
+          .toDart;
+      final response = timeout == null
+          ? await fetch
+          : await fetch.timeout(timeout);
+      final responseBody = response.text().toDart;
+      final responseText =
+          (timeout == null
+                  ? await responseBody
+                  : await responseBody.timeout(timeout))
+              .toDart;
       return NetworkTextResponse(
         status: response.ok
             ? NetworkRequestStatus.succeeded

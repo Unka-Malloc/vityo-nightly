@@ -955,11 +955,13 @@ class WorkspaceDiagnosticsSnapshot {
     required this.providerId,
     required this.diagnostics,
     this.message = '',
+    this.producerProcessHandle,
   });
 
   final String providerId;
   final List<WorkspaceDiagnostic> diagnostics;
   final String message;
+  final RuntimeProcessHandleIdentity? producerProcessHandle;
 
   bool get hasErrors {
     return diagnostics.any(
@@ -1051,6 +1053,8 @@ class WorkspaceDiagnosticsSnapshot {
       'severityCounts': severityCounts,
       'hasErrors': hasErrors,
       if (message.isNotEmpty) 'message': message,
+      if (producerProcessHandle != null)
+        'producerProcessHandle': producerProcessHandle!.toJson(),
       'diagnostics': diagnostics
           .map((diagnostic) => diagnostic.toJson())
           .toList(growable: false),
@@ -1196,6 +1200,12 @@ class WorkspaceDiagnosticsRuntimeOutputBinding {
           'diagnosticCount': snapshot.totalCount,
           'hasErrors': snapshot.hasErrors,
           'quickFixReadyCount': snapshot.streamSnapshot.quickFixReadyCount,
+          if (snapshot.producerProcessHandle case final handle?) ...{
+            if (handle.processHandleId.isNotEmpty)
+              'processHandleId': handle.processHandleId,
+            if (handle.pid != null) 'pid': handle.pid,
+            if (handle.source.isNotEmpty) 'processHandleSource': handle.source,
+          },
         },
       ),
       for (final diagnostic in snapshot.diagnostics)

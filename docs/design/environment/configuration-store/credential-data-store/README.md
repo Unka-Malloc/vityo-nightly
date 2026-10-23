@@ -1,7 +1,7 @@
 # Credential DataStore
 
 **Purpose:** Document the `docs/design/environment/configuration-store/credential-data-store/` collection scope, ownership, and maintenance rules.
-**Last updated:** 2026-05-17
+**Last updated:** 2026-08-31
 
 `Credential DataStore` belongs to Configuration. It is the storage boundary for tokens, registry credentials, remote-service credentials, and other secret values that must not be mixed into ordinary configuration files.
 
@@ -23,7 +23,7 @@ Configuration / ordinary settings
 | Secret value ownership | Own token and credential values. |
 | Credential reference | Provide stable keys that ordinary settings can reference. |
 | Redacted metadata | Expose display-safe metadata without leaking secret values. |
-| Backend replacement | Allow future OS keychain, encrypted store, remote vault, or hosted secret backend. |
+| Backend selection | Select and verify the operating system's secure credential backend. |
 | Scope separation | Separate user, workspace, toolchain, and service credentials. |
 
 ## 3. Non-Responsibilities
@@ -34,7 +34,7 @@ Configuration / ordinary settings
 | Registry protocol | Toolchain or package manager. |
 | Plain product settings | Configuration store. |
 | UI for credential editing | Interaction / Appearance. |
-| OS keychain compatibility | Future Platform Manager credential backend, if direct OS integration is needed. |
+| Hosted or remote vaults | A future provider-neutral service adapter. |
 
 ## 4. Data Rule
 
@@ -71,36 +71,50 @@ CredentialDataStore
 
 `snapshot()` must return redacted metadata only. It must be safe to show in logs, settings pages, and diagnostics panels.
 
-## 6. Current Implementation
+## 6. Production Implementation
 
-Current implementations:
-
-```text
-InMemoryCredentialDataStore
-FoundationCredentialDataStore
-```
-
-`InMemoryCredentialDataStore` is for runtime wiring and tests.
-
-`FoundationCredentialDataStore` persists credential records through Foundation DataStore as a dedicated credential state family. It is not ordinary Configuration Store data, and ordinary settings still store only `CredentialReference`.
-
-Current persistence path:
+The production path is:
 
 ```text
-FoundationCredentialDataStore
-  -> FoundationDataStoreOwner
-    -> namespace: configuration.credentials
-    -> FoundationDataStore
+ConfigurationStore
+  -> CredentialStoragePolicyEnforcingDataStore
+    -> PlatformSecureCredentialDataStore
+      -> PlatformSecureJsonCredentialStorageAdapter
+        -> FlutterSecureStorageKeyValueBackend
+          -> operating-system secure storage
 ```
 
-The owner boundary prevents credential persistence from writing arbitrary Foundation DataStore namespaces. This keeps credential records inside Configuration ownership while still reusing Foundation persistence mechanics.
+`PlatformSecureJsonCredentialStorageAdapter` stores one versioned JSON envelope per credential. Stable credential ids are encoded into storage-safe keys. Raw envelopes are passed directly to the secure-storage plugin and never enter Foundation DataStore, shared preferences, logs, diagnostics, or configuration snapshots.
 
-Credential writes and deletes use Foundation's transaction-backed `editJson`
-path so multiple credential updates do not reimplement load-modify-save behavior
-outside the DataStore owner boundary. The explicit `keep` decision prevents
-missing-credential deletes from rewriting persisted state. Snapshots expose
-`CredentialMetadata` only and must never include `secretValue`.
+`PlatformSecureCredentialStorageAdapterRegistry` owns backend selection:
 
-This backend is a local Vityo credential backend, not a system keychain. Future OS keychain, encrypted store, remote vault, or hosted secret backend can replace it behind the same `CredentialDataStore` contract.
+| Target | Backend | Production route |
+|---|---|---|
+| macOS | Keychain | Enabled after live write/read/delete verification |
+| iOS | Keychain | Enabled after live write/read/delete verification |
+| Android | RSA OAEP + AES-GCM encrypted storage | Enabled after live write/read/delete verification |
+| Windows | AES-GCM storage with its key protected by Windows Credential Manager | Enabled after live write/read/delete verification |
+| Linux | libsecret | Enabled after live write/read/delete verification |
+| Web | WebCrypto-backed browser storage | Not approved for persistent production credentials |
 
-Do not implement credential persistence as a normal plaintext configuration setting.
+App bootstrap performs an isolated probe and removes the probe value before selecting a backend. If the native route is unavailable, the active store is session memory wrapped by `CredentialStoragePolicyEnforcingDataStore`; long-lived credentials are rejected, while explicitly short-lived credentials may remain in memory for the current process.
+
+`InMemoryCredentialDataStore` and `InMemoryPlatformSecureCredentialStorageAdapter` are non-production test fixtures. They are not persistence alternatives.
+
+## 7. Security Invariants
+
+1. Ordinary settings store only `CredentialReference` values.
+2. No plaintext credential implementation may use Foundation DataStore or shared preferences.
+3. `snapshot()` and Settings expose `CredentialMetadata` or health facts only; neither may contain `secretValue`.
+4. A native backend is production-ready only after the live probe succeeds.
+5. Failure messages never include plugin exceptions, paths, usernames, or secret material.
+6. Web and unavailable native backends cannot accept long-lived secrets.
+
+## 8. Platform Build Requirements
+
+- macOS uses the standard application Keychain without shared access groups so ad-hoc local development builds remain runnable; iOS enables Keychain Sharing entitlements for its signed runner.
+- Android uses API 23 or newer and disables application backup for encrypted credential state.
+- Linux development and CI images install `libsecret-1-dev`; deployed desktop environments also need a compatible keyring service.
+- Windows build tools include ATL for the native plugin.
+
+Do not reintroduce plaintext credential persistence as an ordinary configuration setting or Foundation DataStore namespace.

@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import json
 import hmac
+import ipaddress
 import os
 import secrets
 import shutil
+import socket
 import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 
@@ -68,6 +71,32 @@ def is_allowed_local_netloc(raw_host: str | None, *, expected_port: int) -> bool
         return False
 
     return port == expected_port
+
+
+def normalize_hostname(raw: str) -> str:
+    candidate = raw.strip().rstrip(".").casefold()
+    try:
+        return str(ipaddress.ip_address(candidate.strip("[]")))
+    except ValueError:
+        return candidate
+
+
+def host_is_loopback(host: str) -> bool:
+    """True only for a literal loopback address or a localhost name."""
+    candidate = host.strip()
+    try:
+        return ipaddress.ip_address(candidate.strip("[]")).is_loopback
+    except ValueError:
+        pass
+    if normalize_hostname(candidate) == "localhost":
+        return True
+    # inet_aton accepts the shorthand forms the resolver binds (127.1,
+    # 0x7f000001, …); a dotted name that never parses stays untrusted.
+    try:
+        packed = socket.inet_aton(candidate)
+    except (OSError, ValueError):
+        return False
+    return packed[0] == 127
 
 
 def parse_cookie_header(raw_cookie: str | None) -> dict[str, str]:
@@ -393,8 +422,19 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
 
         self.send_error(status, message)
 
+    def trusted_netloc(self, raw_host: str | None) -> bool:
+        parsed = split_host_port(raw_host)
+        if parsed is None:
+            return False
+
+        hostname, port = parsed
+        if port != self.server.server_port:
+            return False
+
+        return normalize_hostname(hostname) in self.server.trusted_hostnames
+
     def host_is_allowed(self) -> bool:
-        return is_allowed_local_netloc(self.headers.get("Host"), expected_port=self.server.server_port)
+        return self.trusted_netloc(self.headers.get("Host"))
 
     def origin_is_allowed(self) -> bool:
         origin = self.headers.get("Origin")
@@ -405,7 +445,7 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
         if parsed.scheme != "http":
             return False
 
-        return is_allowed_local_netloc(parsed.netloc, expected_port=self.server.server_port)
+        return self.trusted_netloc(parsed.netloc)
 
     def has_valid_session_credential(self) -> bool:
         if token_matches(self.headers.get(SESSION_TOKEN_HEADER)):
@@ -832,10 +872,27 @@ def resolve_listen_address() -> tuple[str, int]:
     return host, port
 
 
+class LocalDevServer(ThreadingHTTPServer):
+    trusted_hostnames = frozenset(normalize_hostname(name) for name in LOCAL_HOSTNAMES)
+
+    def server_bind(self) -> None:
+        # The local HTTP service needs its bound address, not a reverse DNS name.
+        # HTTPServer.server_bind performs a blocking getfqdn lookup on macOS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main() -> None:
     current_workspace().mkdir(parents=True, exist_ok=True)
     host, port = resolve_listen_address()
-    server = ThreadingHTTPServer((host, port), PrototypeHandler)
+    if not host_is_loopback(host):
+        raise SystemExit(
+            f"refusing to bind {host}: the dev server only listens on loopback"
+        )
+    server = LocalDevServer((host, port), PrototypeHandler)
+    server.trusted_hostnames = frozenset(
+        normalize_hostname(name) for name in LOCAL_HOSTNAMES
+    )
     print(f"Vityo dev server listening on http://{host}:{port}", flush=True)
     if mutation_enabled():
         print("workspace mutation APIs enabled for this local dev session", flush=True)

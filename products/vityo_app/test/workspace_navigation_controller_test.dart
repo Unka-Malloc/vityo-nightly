@@ -34,14 +34,17 @@ void main() {
     final documents = await fixture.controller.loadDocuments();
 
     expect(documents, hasLength(2));
-    expect(
-      documents.singleWhere((document) => document.documentId == activePath),
-      unsavedActive,
+    final loadedActive = documents.singleWhere(
+      (document) => document.documentId == activePath,
     );
-    expect(
-      documents.singleWhere((document) => document.documentId == helperPath),
-      helper,
+    final loadedHelper = documents.singleWhere(
+      (document) => document.documentId == helperPath,
     );
+    // The unsaved editor buffer is reused as-is, while a persisted document is
+    // read back with the workspace snapshot the store observed for it.
+    expect(loadedActive, same(unsavedActive));
+    expect(loadedHelper.text, helper.text);
+    expect(loadedHelper.revision, helper.revision);
   });
 
   test(
