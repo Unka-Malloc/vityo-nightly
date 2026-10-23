@@ -35,6 +35,22 @@
     }
   ],
   "invalidControlVersions": [0, 2],
+  "invalidControlEnvelopePatches": [
+    {
+      "name": "negative-deadline",
+      "patch": { "deadlineUnixMillis": -1 }
+    },
+    {
+      "name": "negative-revision",
+      "patch": { "workspaceRevision": -1 }
+    },
+    {
+      "name": "duplicate-capabilities",
+      "patch": {
+        "capabilities": ["workspace.snapshot", "workspace.snapshot"]
+      }
+    }
+  ],
   "malformedControl": "{\"protocolVersion\":",
   "capabilityNegotiation": {
     "offered": [

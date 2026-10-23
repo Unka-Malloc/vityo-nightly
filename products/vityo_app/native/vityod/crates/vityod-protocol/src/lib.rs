@@ -449,6 +449,18 @@ mod tests {
                 Err(ProtocolError::UnsupportedVersion(_))
             ));
         }
+        for case in fixture["invalidControlEnvelopePatches"].as_array().unwrap() {
+            let mut invalid = source.clone();
+            let patch = case["patch"].as_object().unwrap();
+            for (key, value) in patch {
+                invalid[key] = value.clone();
+            }
+            assert!(
+                ControlEnvelope::decode(&serde_json::to_vec(&invalid).unwrap()).is_err(),
+                "conformance case {} must refuse",
+                case["name"]
+            );
+        }
         assert!(matches!(
             ControlEnvelope::decode(fixture["malformedControl"].as_str().unwrap().as_bytes()),
             Err(ProtocolError::InvalidJson(_))

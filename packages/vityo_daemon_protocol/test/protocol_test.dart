@@ -156,13 +156,10 @@ void main() {
               ).readAsStringSync(),
             )
             as Map<String, Object?>;
-    for (final mutation in <Map<String, Object?>>[
-      {'deadlineUnixMillis': -1},
-      {'workspaceRevision': -1},
-      {
-        'capabilities': <String>['workspace.snapshot', 'workspace.snapshot'],
-      },
-    ]) {
+    for (final fixture
+        in (conformance['invalidControlEnvelopePatches'] as List<Object?>)
+            .cast<Map<String, Object?>>()) {
+      final mutation = fixture['patch']! as Map<String, Object?>;
       expect(
         () => VityodControlEnvelope.fromJson(<String, Object?>{
           ...source,
@@ -175,7 +172,7 @@ void main() {
             'invalid_envelope',
           ),
         ),
-        reason: jsonEncode(mutation),
+        reason: fixture['name'] as String,
       );
       expect(
         () => VityodControlCodec.decode(
@@ -190,7 +187,7 @@ void main() {
             'invalid_envelope',
           ),
         ),
-        reason: jsonEncode(mutation),
+        reason: fixture['name'] as String,
       );
     }
     // Encode path: a directly-constructed envelope shares the same contract.
