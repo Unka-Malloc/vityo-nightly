@@ -89,11 +89,6 @@ def host_is_loopback(host: str) -> bool:
         return normalize_hostname(candidate) == "localhost"
 
 
-def remote_bind_permitted(host: str) -> bool:
-    """A non-loopback bind is only safe with an explicitly configured token."""
-    return host_is_loopback(host) or bool(os.environ.get(SESSION_TOKEN_ENV))
-
-
 def parse_cookie_header(raw_cookie: str | None) -> dict[str, str]:
     cookies: dict[str, str] = {}
     if not raw_cookie:
@@ -493,9 +488,7 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
-        self._issue_session_cookie = (
-            not self.is_api_request() and self.server.issues_session_cookies
-        )
+        self._issue_session_cookie = not self.is_api_request()
         if parsed.path == "/":
             self.redirect_to_editor()
             return
@@ -517,9 +510,7 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/") and not self.enforce_api_boundary():
             return
 
-        self._issue_session_cookie = (
-            not parsed.path.startswith("/api/") and self.server.issues_session_cookies
-        )
+        self._issue_session_cookie = not parsed.path.startswith("/api/")
         if parsed.path == "/":
             self.redirect_to_editor()
             return
@@ -872,10 +863,7 @@ def resolve_listen_address() -> tuple[str, int]:
 
 
 class LocalDevServer(ThreadingHTTPServer):
-    # Loopback defaults; main() overrides both for an explicitly credentialed
-    # remote bind.
     trusted_hostnames = frozenset(normalize_hostname(name) for name in LOCAL_HOSTNAMES)
-    issues_session_cookies = True
 
     def server_bind(self) -> None:
         # The local HTTP service needs its bound address, not a reverse DNS name.
@@ -887,16 +875,13 @@ class LocalDevServer(ThreadingHTTPServer):
 def main() -> None:
     current_workspace().mkdir(parents=True, exist_ok=True)
     host, port = resolve_listen_address()
-    if not remote_bind_permitted(host):
+    if not host_is_loopback(host):
         raise SystemExit(
-            f"refusing to bind {host}: the dev server only listens on loopback; "
-            f"set {SESSION_TOKEN_ENV} to a shared secret to opt into remote access"
+            f"refusing to bind {host}: the dev server only listens on loopback"
         )
     server = LocalDevServer((host, port), PrototypeHandler)
-    loopback = host_is_loopback(host)
-    server.issues_session_cookies = loopback
     server.trusted_hostnames = frozenset(
-        {normalize_hostname(name) for name in LOCAL_HOSTNAMES} | {normalize_hostname(host)}
+        normalize_hostname(name) for name in LOCAL_HOSTNAMES
     )
     print(f"Vityo dev server listening on http://{host}:{port}", flush=True)
     if mutation_enabled():

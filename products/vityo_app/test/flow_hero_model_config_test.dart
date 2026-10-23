@@ -138,6 +138,33 @@ void main() {
       expect(_valid().validate().containsKey('maxTotalTokens'), isFalse);
     });
 
+    test('token bounds stay inside the runtime u32 wire fields', () {
+      // `capabilities.contextTokens`, `outputTokens`, and
+      // `limits.maxTotalTokens` deserialize as u32 on the agent side.
+      expect(
+        _valid(contextTokens: 0x100000000).validate()['contextTokens'],
+        isNotNull,
+      );
+      expect(
+        _valid(
+          contextTokens: 0xFFFFFFFF,
+          outputTokens: 0xFFFFFFFF,
+        ).validate()['outputTokens'],
+        isNotNull,
+      );
+      expect(
+        _valid(contextTokens: 0xFFFFFFFF, outputTokens: 1).validate(),
+        isNot(isEmpty),
+      );
+      expect(
+        _valid(
+          contextTokens: 0xFFFFFFFE,
+          outputTokens: 1,
+        ).validate(),
+        isEmpty,
+      );
+    });
+
     test('a bearer route needs a resolvable key; auth none never does', () {
       expect(
         _valid().validateForSave(hasStoredApiKey: false)['apiKey'],

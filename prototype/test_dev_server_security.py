@@ -99,18 +99,7 @@ class DevServerPathUtilityTest(unittest.TestCase):
         self.assertFalse(dev_server.host_is_loopback("devbox.lan"))
         self.assertEqual(dev_server.normalize_hostname("[::1]"), "::1")
 
-        previous_token_env = os.environ.get(dev_server.SESSION_TOKEN_ENV)
-        os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
-        try:
-            self.assertTrue(dev_server.remote_bind_permitted("127.0.0.1"))
-            self.assertFalse(dev_server.remote_bind_permitted("0.0.0.0"))
-            os.environ[dev_server.SESSION_TOKEN_ENV] = "shared-secret"
-            self.assertTrue(dev_server.remote_bind_permitted("0.0.0.0"))
-        finally:
-            if previous_token_env is None:
-                os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
-            else:
-                os.environ[dev_server.SESSION_TOKEN_ENV] = previous_token_env
+        self.assertFalse(hasattr(dev_server, "remote_bind_permitted"))
 
     def test_workspace_loading_setting_and_path_resolution(self) -> None:
         relative_workspace = self.root / "relative"
@@ -251,7 +240,9 @@ class DevServerPathUtilityTest(unittest.TestCase):
             else:
                 os.environ[dev_server.SESSION_TOKEN_ENV] = previous_token_env
 
-    def test_main_remote_bind_uses_configured_token_and_no_cookie_grant(self) -> None:
+    def test_main_refuses_remote_bind_even_with_configured_token(self) -> None:
+        # A configured session token authenticates local API callers; it is
+        # not a license to expose the prototype tree over plain HTTP.
         instances: list[object] = []
 
         class FakeServer:
@@ -270,19 +261,15 @@ class DevServerPathUtilityTest(unittest.TestCase):
             with mock.patch.object(
                 dev_server, "resolve_listen_address", return_value=("192.0.2.10", 4180)
             ), mock.patch.object(dev_server, "LocalDevServer", FakeServer):
-                dev_server.main()
+                with self.assertRaises(SystemExit):
+                    dev_server.main()
         finally:
             if previous_token_env is None:
                 os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
             else:
                 os.environ[dev_server.SESSION_TOKEN_ENV] = previous_token_env
 
-        # The remote-bind shape main() installs: the bound interface joins the
-        # trusted origin set, and no static GET can mint the session credential.
-        self.assertEqual(len(instances), 1)
-        server = instances[0]
-        self.assertFalse(server.issues_session_cookies)
-        self.assertIn("192.0.2.10", server.trusted_hostnames)
+        self.assertEqual(instances, [])
 
 
 class DevServerSecurityBoundaryTest(unittest.TestCase):
@@ -646,47 +633,6 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
         )
         self.assertEqual(status, 403)
         self.assertIn(b"host must be localhost", body)
-
-    def test_remote_bind_shape_issues_no_cookie_and_trusts_bound_origin(self) -> None:
-        # The shape main() installs for an explicitly credentialed remote bind.
-        self.server.issues_session_cookies = False
-        self.server.trusted_hostnames = frozenset(
-            set(self.server.trusted_hostnames) | {"devbox.lan"}
-        )
-
-        # The bound interface is a trusted netloc, but a static GET there
-        # never mints a session credential.
-        status, headers, _ = self.request(
-            "GET",
-            "/editor",
-            headers={"Host": f"devbox.lan:{self.server.server_port}"},
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(self.header_value(headers, "set-cookie"), "")
-
-        # A forged loopback Host no longer buys the credential either.
-        status, headers, _ = self.request("GET", "/editor")
-        self.assertEqual(status, 200)
-        self.assertEqual(self.header_value(headers, "set-cookie"), "")
-
-        # Without a separately configured token the workspace API stays closed.
-        status, _, _ = self.request(
-            "GET",
-            "/api/workspace",
-            headers={"Host": f"devbox.lan:{self.server.server_port}"},
-        )
-        self.assertEqual(status, 403)
-
-        # The explicit token authenticates on the bound origin.
-        status, _, _ = self.request(
-            "GET",
-            "/api/workspace",
-            headers={
-                "Host": f"devbox.lan:{self.server.server_port}",
-                dev_server.SESSION_TOKEN_HEADER: dev_server.SESSION_TOKEN,
-            },
-        )
-        self.assertEqual(status, 200)
 
     def test_mutation_requires_same_origin(self) -> None:
         status, _, body = self.request(

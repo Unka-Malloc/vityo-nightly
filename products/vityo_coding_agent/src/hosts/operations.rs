@@ -1127,7 +1127,7 @@ mod tests {
     fn approval_display_arguments_redacts_env_values_and_secret_shapes() {
         let shown = approval_display_arguments(&output(json!({
             "command":"deploy",
-            "args":["--force","Bearer abcdef"],
+            "args":["--force","Bearer abcdef","Authorization: Basic dXNlcjpwYXNz","--api-key=abcdef123456"],
             "cwd":"/tmp/work",
             "env":[{"name":"API_KEY","value":"super-secret"}]
         })));
@@ -1137,6 +1137,8 @@ mod tests {
         assert_eq!(shown["env"][0]["value"], json!("[redacted]"));
         assert_eq!(shown["args"][1], json!("[redacted]"));
         assert_eq!(shown["args"][0], json!("--force"));
+        assert_eq!(shown["args"][2], json!("[redacted]"));
+        assert_eq!(shown["args"][3], json!("[redacted]"));
     }
 
     #[tokio::test]

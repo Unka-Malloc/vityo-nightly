@@ -199,13 +199,18 @@ class FlowHeroModelConfig {
     if (model.trim().isEmpty) {
       errors['model'] = '模型名不能为空';
     }
-    if (contextTokens <= 0) {
-      errors['contextTokens'] = '上下文窗口必须是大于 0 的整数';
+    // The runtime contract stores token bounds in u32 fields, so values that
+    // cannot be represented would fail deserialization at launch.
+    if (contextTokens <= 0 || contextTokens > 0xFFFFFFFF) {
+      errors['contextTokens'] = '上下文窗口必须是 1 到 4294967295 的整数';
     }
     if (outputTokens <= 0) {
       errors['outputTokens'] = '输出上限必须是大于 0 的整数';
     } else if (outputTokens > contextTokens) {
       errors['outputTokens'] = '输出上限不能超过上下文窗口';
+    } else if (contextTokens + outputTokens > 0xFFFFFFFF) {
+      // `limits.maxTotalTokens` is u32 as well and must hold context+output.
+      errors['outputTokens'] = '上下文窗口与输出上限之和不能超过 4294967295';
     }
     if (maxConcurrency <= 0) {
       errors['maxConcurrency'] = '并发上限必须是大于 0 的整数';

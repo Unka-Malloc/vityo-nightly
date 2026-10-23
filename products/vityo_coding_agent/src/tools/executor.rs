@@ -1179,10 +1179,13 @@ fn parse_secret_reference(value: &str) -> Option<SecretReference> {
     })
 }
 
-fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, String>) -> bool {
-    fn sensitive_name(name: &str) -> bool {
-        let name = name.to_ascii_lowercase();
-        [
+/// Field names whose values carry credentials in tool arguments, output,
+/// and approval surfaces. "authorization" is matched exactly rather than as
+/// a substring so "author"/"oauth"-style names are not misclassified.
+fn credential_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name == "authorization"
+        || [
             "token",
             "password",
             "secret",
@@ -1192,7 +1195,28 @@ fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, S
         ]
         .iter()
         .any(|part| name.contains(part))
+}
+
+/// String values that are or embed a credential: Authorization schemes and
+/// `name=value`/`name: value` forms whose key is credential-shaped once
+/// flag/header punctuation is normalized to separators.
+fn credential_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if lower.starts_with("bearer ") || lower.starts_with("basic ") {
+        return true;
     }
+    let Some(split) = lower.find(|ch: char| ch == ':' || ch == '=') else {
+        return false;
+    };
+    let normalized: String = lower[..split]
+        .trim_start_matches('-')
+        .chars()
+        .map(|ch| if matches!(ch, '-' | ' ' | '.') { '_' } else { ch })
+        .collect();
+    normalized.contains("authorization") || credential_name(&normalized)
+}
+
+fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, String>) -> bool {
     fn scan(value: &Value, key: Option<&str>, declared: &BTreeMap<String, String>) -> bool {
         match value {
             Value::Object(object) => object
@@ -1203,9 +1227,9 @@ fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, S
                 if text.starts_with("secret://") {
                     return key.is_none_or(|key| !declared.contains_key(key));
                 }
-                key.is_some_and(sensitive_name) || text.to_ascii_lowercase().starts_with("bearer ")
+                key.is_some_and(credential_name) || credential_text(text)
             }
-            _ => key.is_some_and(sensitive_name),
+            _ => key.is_some_and(credential_name),
         }
     }
     arguments
@@ -1214,21 +1238,8 @@ fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, S
 }
 
 pub(crate) fn redact_output(value: &Value, secrets: &[String]) -> Value {
-    fn sensitive_name(name: &str) -> bool {
-        let name = name.to_ascii_lowercase();
-        [
-            "token",
-            "password",
-            "secret",
-            "credential",
-            "api_key",
-            "apikey",
-        ]
-        .iter()
-        .any(|part| name.contains(part))
-    }
     fn redact(value: &Value, key: Option<&str>, secrets: &[String]) -> Value {
-        if key.is_some_and(sensitive_name) {
+        if key.is_some_and(credential_name) {
             return Value::String("[redacted]".to_owned());
         }
         match value {
@@ -1245,7 +1256,7 @@ pub(crate) fn redact_output(value: &Value, secrets: &[String]) -> Value {
                     .collect(),
             ),
             Value::String(text)
-                if text.to_ascii_lowercase().starts_with("bearer ")
+                if credential_text(text)
                     || secrets
                         .iter()
                         .any(|secret| !secret.is_empty() && text.contains(secret)) =>
