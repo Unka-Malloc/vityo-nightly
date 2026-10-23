@@ -19,11 +19,11 @@
     "clientInstanceId": {"type": "string", "minLength": 1},
     "idempotencyKey": {"type": "string", "minLength": 1},
     "workspaceId": {"type": "string"},
-    "workspaceRevision": {"type": "integer", "minimum": 0},
-    "deadlineUnixMillis": {"type": "integer", "minimum": 0},
+    "workspaceRevision": {"type": "integer", "minimum": 0, "description": "Non-negative revision; Dart and Rust codecs enforce the bound on encode and decode."},
+    "deadlineUnixMillis": {"type": "integer", "minimum": 0, "description": "Non-negative Unix-millisecond deadline; Dart and Rust codecs enforce the bound on encode and decode."},
     "cancellationId": {"type": "string"},
     "params": {"type": "object"},
-    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+    "capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "Unique capability names; Dart and Rust codecs refuse duplicates on encode and decode."}
   },
   "additionalProperties": true
 }
