@@ -83,4 +83,7 @@ docs/audit/defects/
 !products/vityo_app/test/**/*.log
 
 # Better Plan runtime lock state is host-local; never commit it.
-docs/plans/**/.better-plan.lock
+**/.better-plan.lock
+
+# Ephemeral browser-tool captures are host-local state.
+products/vityo_app/.playwright-cli/

@@ -294,7 +294,30 @@ final class VityodControlEnvelope {
     this.capabilities = const <String>[],
     this.unknownFields = const <String, Object?>{},
     this.protocolVersion = vityodProtocolVersion,
-  });
+  }) {
+    // The published v1 schema constrains revision/deadline to non-negative
+    // integers and capabilities to unique items; enforce both here so every
+    // encode/decode path shares the contract.
+    if (deadlineUnixMillis < 0) {
+      throw const VityodProtocolException(
+        'invalid_envelope',
+        'deadlineUnixMillis must be non-negative',
+      );
+    }
+    final revision = workspaceRevision;
+    if (revision != null && revision < 0) {
+      throw const VityodProtocolException(
+        'invalid_envelope',
+        'workspaceRevision must be non-negative',
+      );
+    }
+    if (capabilities.toSet().length != capabilities.length) {
+      throw const VityodProtocolException(
+        'invalid_envelope',
+        'capabilities must be unique',
+      );
+    }
+  }
 
   final int protocolVersion;
   final String method;

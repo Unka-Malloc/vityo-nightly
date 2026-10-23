@@ -59,6 +59,12 @@ const String kFlowHeroDeepSeekDefaultModel = 'deepseek-flash';
 /// Both official models carry a 1M-token context window.
 const int kFlowHeroDeepSeekContextTokens = 1000000;
 
+/// Per-attempt output ceiling written into every generated provider.json.
+/// A coding agent may emit large edits, but a runaway single response must
+/// still stop: 32K output tokens is generous for a completion while keeping
+/// every paid attempt bounded.
+const int kFlowHeroProviderOutputTokens = 32768;
+
 /// The provider the user picked. It only drives the panel's defaults and
 /// candidates — every route still materializes as `openai_compatible_chat`,
 /// and the choice never reaches `provider.json`.
@@ -261,21 +267,26 @@ class FlowHeroModelConfig {
   /// camelCase, `deny_unknown_fields`, and only the limits the schema does not
   /// default. `auth.secretRef` is present only for a bearer-token route.
   ///
-  /// `capabilities.outputTokens` and `limits.maxTotalTokens` are deliberately
-  /// absent: both are optional in the runtime schema and a missing bound means
-  /// "uncapped", so a configuration written here never caps output or the
-  /// session. The `limits` key itself stays — the runtime requires the object —
-  /// with nothing in it, since every field inside defaults.
+  /// `capabilities.outputTokens` caps a single provider attempt and
+  /// `limits.maxTotalTokens` caps the cumulative input+output of one routed
+  /// generation at context + output — the same shape as the runtime's own
+  /// default budget. `limits.maxCostMicros` stays absent on purpose: the
+  /// OpenAI-compatible usage payload reports `cost_micros` as null, so a
+  /// monetary bound could never be enforced by this adapter; the token
+  /// ceilings are the enforceable bound.
   Map<String, Object?> toProviderConfigJson() => <String, Object?>{
     'adapter': kFlowHeroProviderAdapter,
     'endpointBase': endpointBase.trim(),
     'model': model.trim(),
     'capabilities': <String, Object?>{
       'contextTokens': contextTokens,
+      'outputTokens': kFlowHeroProviderOutputTokens,
       'supportsTools': supportsTools,
       'maxConcurrency': maxConcurrency,
     },
-    'limits': const <String, Object?>{},
+    'limits': <String, Object?>{
+      'maxTotalTokens': contextTokens + kFlowHeroProviderOutputTokens,
+    },
     'auth': switch (authMode) {
       FlowHeroModelAuthMode.none => <String, Object?>{'mode': 'none'},
       FlowHeroModelAuthMode.bearerToken => <String, Object?>{

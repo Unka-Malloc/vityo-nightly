@@ -260,6 +260,7 @@ void main() {
           json['capabilities']! as Map<String, Object?>;
       expect(capabilities.keys.toSet(), <String>{
         'contextTokens',
+        'outputTokens',
         'supportsTools',
         'maxConcurrency',
       });
@@ -268,14 +269,21 @@ void main() {
         128000,
         reason: 'the context window is the one bound the panel configures',
       );
+      expect(
+        capabilities['outputTokens'],
+        kFlowHeroProviderOutputTokens,
+        reason: 'a single provider attempt stays bounded',
+      );
       final Map<String, Object?> limits =
           json['limits']! as Map<String, Object?>;
       expect(
         limits,
-        isEmpty,
+        <String, Object?>{
+          'maxTotalTokens': 128000 + kFlowHeroProviderOutputTokens,
+        },
         reason:
-            'every limits field has a serde default; a missing total '
-            'means the runtime applies no session cap',
+            'one routed generation is capped at context + output, the '
+            'same shape as the runtime default budget',
       );
       final Map<String, Object?> auth = json['auth']! as Map<String, Object?>;
       expect(auth.keys.toSet(), <String>{'mode', 'secretRef'});
@@ -296,17 +304,18 @@ void main() {
       expect(jsonEncode(json), isNot(contains('secretRef')));
     });
 
-    test('the two unbounded limits are omitted, not defaulted', () {
+    test('every generated route is capped in output and cumulative tokens', () {
       final Map<String, Object?> json = _valid().toProviderConfigJson();
       final Map<String, Object?> capabilities =
           json['capabilities']! as Map<String, Object?>;
-      expect(capabilities.containsKey('outputTokens'), isFalse);
+      expect(capabilities['outputTokens'], kFlowHeroProviderOutputTokens);
       final Map<String, Object?> limits =
           json['limits']! as Map<String, Object?>;
-      expect(limits.containsKey('maxTotalTokens'), isFalse);
-      final String body = jsonEncode(json);
-      expect(body, isNot(contains('outputTokens')));
-      expect(body, isNot(contains('maxTotalTokens')));
+      expect(
+        limits['maxTotalTokens'],
+        128000 + kFlowHeroProviderOutputTokens,
+      );
+      expect(limits.containsKey('maxCostMicros'), isFalse);
     });
 
     test('the provider choice stays out of the launch contract', () {
@@ -357,8 +366,8 @@ void main() {
             jsonDecode(body) as Map<String, Object?>;
         expect(decoded, _valid().toProviderConfigJson());
         expect(decoded.length, 6, reason: 'no unknown fields are written');
-        expect(body, isNot(contains('outputTokens')));
-        expect(body, isNot(contains('maxTotalTokens')));
+        expect(body, contains('"outputTokens"'));
+        expect(body, contains('"maxTotalTokens"'));
       },
     );
 

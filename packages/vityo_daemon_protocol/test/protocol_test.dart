@@ -148,6 +148,73 @@ void main() {
     },
   );
 
+  test('schema bounds: negative numerics and duplicate capabilities refuse', () {
+    final source =
+        jsonDecode(
+              File(
+                'test/fixtures/control_roundtrip.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, Object?>;
+    for (final mutation in <Map<String, Object?>>[
+      {'deadlineUnixMillis': -1},
+      {'workspaceRevision': -1},
+      {
+        'capabilities': <String>['workspace.snapshot', 'workspace.snapshot'],
+      },
+    ]) {
+      expect(
+        () => VityodControlEnvelope.fromJson(<String, Object?>{
+          ...source,
+          ...mutation,
+        }),
+        throwsA(
+          isA<VityodProtocolException>().having(
+            (error) => error.code,
+            'code',
+            'invalid_envelope',
+          ),
+        ),
+        reason: jsonEncode(mutation),
+      );
+      expect(
+        () => VityodControlCodec.decode(
+          utf8.encode(
+            jsonEncode(<String, Object?>{...source, ...mutation}),
+          ),
+        ),
+        throwsA(
+          isA<VityodProtocolException>().having(
+            (error) => error.code,
+            'code',
+            'invalid_envelope',
+          ),
+        ),
+        reason: jsonEncode(mutation),
+      );
+    }
+    // Encode path: a directly-constructed envelope shares the same contract.
+    expect(
+      () => VityodControlEnvelope(
+        method: 'workspace.snapshot',
+        clientInstanceId: 'client-1',
+        idempotencyKey: 'operation-1',
+        deadlineUnixMillis: -1,
+      ).toJson(),
+      throwsA(isA<VityodProtocolException>()),
+    );
+    expect(
+      () => VityodControlEnvelope(
+        method: 'workspace.snapshot',
+        clientInstanceId: 'client-1',
+        idempotencyKey: 'operation-1',
+        deadlineUnixMillis: 4102444800000,
+        capabilities: const <String>['a', 'a'],
+      ).toJson(),
+      throwsA(isA<VityodProtocolException>()),
+    );
+  });
+
   test('Dart and Rust method catalogs stay canonical and legacy-free', () {
     expect(
       vityodCoreCapabilities.toSet().length,

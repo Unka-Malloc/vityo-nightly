@@ -292,8 +292,8 @@ void main() {
     expect(writer.writes, 1);
     expect(writer.written!.contextTokens, 64000);
     expect(
-      writer.written!.toProviderConfigJson().toString(),
-      isNot(contains('outputTokens')),
+      writer.written!.toProviderConfigJson()['capabilities'],
+      containsPair('outputTokens', kFlowHeroProviderOutputTokens),
     );
 
     await tester.pump(const Duration(seconds: 5));

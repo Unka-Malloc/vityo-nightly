@@ -9,7 +9,7 @@
     "id": "challenger-step-row",
     "sourceId": "signals-instruments-drum-machine-step-row",
     "verdictAtDeal": "declined",
-    "adoption": "user chose Adopt Anyway on the decision page (http://127.0.0.1:58064/, key e4012fa2), 2026-09-30"
+    "adoption": "user chose Adopt Anyway on the local decision page, 2026-09-30"
   },
   "telemetry": "pinged via concept-seed --kind challenger --chosen signals-instruments-drum-machine-step-row",
   "buildPath": "code-led (no image generation available in this harness)",

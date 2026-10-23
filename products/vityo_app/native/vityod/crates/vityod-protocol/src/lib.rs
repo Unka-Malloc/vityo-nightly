@@ -288,6 +288,17 @@ impl ControlEnvelope {
                 "method, clientInstanceId, and idempotencyKey are required",
             ));
         }
+        if self
+            .capabilities
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != self.capabilities.len()
+        {
+            return Err(ProtocolError::InvalidEnvelope(
+                "capabilities must be unique",
+            ));
+        }
         Ok(())
     }
 }
@@ -343,6 +354,30 @@ mod tests {
         assert!(envelope.unknown_fields.contains_key("futureField"));
         let round_trip = ControlEnvelope::decode(&envelope.encode().unwrap()).unwrap();
         assert_eq!(round_trip, envelope);
+    }
+
+    #[test]
+    fn duplicate_capabilities_are_refused_on_both_paths() {
+        let mut envelope = ControlEnvelope::decode(
+            include_bytes!(
+                "../../../../../../../packages/vityo_daemon_protocol/test/fixtures/control_roundtrip.json"
+            ),
+        )
+        .unwrap();
+        envelope.capabilities = vec!["a".to_string(), "a".to_string()];
+        assert!(matches!(
+            envelope.encode(),
+            Err(ProtocolError::InvalidEnvelope(_))
+        ));
+        let mut document: Value = serde_json::from_slice(include_bytes!(
+            "../../../../../../../packages/vityo_daemon_protocol/test/fixtures/control_roundtrip.json"
+        ))
+        .unwrap();
+        document["capabilities"] = serde_json::json!(["a", "a"]);
+        assert!(matches!(
+            ControlEnvelope::decode(serde_json::to_string(&document).unwrap().as_bytes()),
+            Err(ProtocolError::InvalidEnvelope(_))
+        ));
     }
 
     #[test]
