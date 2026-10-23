@@ -16,6 +16,7 @@ class WorkspaceSearchSurface extends StatefulWidget {
     this.lastReplacePreview,
     this.lastReplacePreviewWindow,
     this.searchIndex,
+    this.watcherSnapshot,
     this.searchHistory,
     this.searchFilters,
     this.replaceExpansionState,
@@ -26,6 +27,7 @@ class WorkspaceSearchSurface extends StatefulWidget {
     this.onToggleReplaceDocumentExpansion,
     this.onOpenMatch,
     this.onOpenSymbolMatch,
+    this.onRecoverWatcher,
   });
 
   final ViewportProfile viewportProfile;
@@ -38,6 +40,7 @@ class WorkspaceSearchSurface extends StatefulWidget {
   final WorkspaceReplacePreview? lastReplacePreview;
   final WorkspaceReplacePreviewWindow? lastReplacePreviewWindow;
   final WorkspaceSearchIndex? searchIndex;
+  final WorkspaceSearchIndexWatcherSnapshot? watcherSnapshot;
   final WorkspaceSearchHistory? searchHistory;
   final WorkspaceSearchFilterState? searchFilters;
   final WorkspaceReplacePreviewExpansionState? replaceExpansionState;
@@ -51,6 +54,7 @@ class WorkspaceSearchSurface extends StatefulWidget {
   onToggleReplaceDocumentExpansion;
   final Future<void> Function(WorkspaceSearchMatch match)? onOpenMatch;
   final Future<void> Function(WorkspaceSymbolMatch match)? onOpenSymbolMatch;
+  final Future<void> Function()? onRecoverWatcher;
 
   @override
   State<WorkspaceSearchSurface> createState() => _WorkspaceSearchSurfaceState();
@@ -303,6 +307,13 @@ class _WorkspaceSearchSurfaceState extends State<WorkspaceSearchSurface> {
                 ),
               ],
             ),
+            if (widget.watcherSnapshot != null) ...[
+              const SizedBox(height: 12),
+              _WorkspaceSearchWatcherStatus(
+                snapshot: widget.watcherSnapshot!,
+                onRecover: widget.onRecoverWatcher,
+              ),
+            ],
             if (widget.lastReplacePreview != null) ...[
               const SizedBox(height: 10),
               _WorkspaceReplacePreviewView(
@@ -403,6 +414,108 @@ class _WorkspaceSearchSurfaceState extends State<WorkspaceSearchSurface> {
       ),
     );
   }
+}
+
+class _WorkspaceSearchWatcherStatus extends StatelessWidget {
+  const _WorkspaceSearchWatcherStatus({required this.snapshot, this.onRecover});
+
+  final WorkspaceSearchIndexWatcherSnapshot snapshot;
+  final Future<void> Function()? onRecover;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final telemetry = snapshot.backpressure;
+    final recoveryPlan = snapshot.recoveryPlan;
+    final retryable =
+        snapshot.status == WorkspaceSearchIndexWatcherStatus.failed ||
+        snapshot.status == WorkspaceSearchIndexWatcherStatus.stopped;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          key: const ValueKey('workspace-search-watcher-status'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  snapshot.status == WorkspaceSearchIndexWatcherStatus.failed
+                      ? Icons.sync_problem_rounded
+                      : Icons.sync_rounded,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Search index watcher',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                Chip(label: Text(snapshot.status.name)),
+                if (retryable && onRecover != null) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    key: const ValueKey('workspace-search-watcher-recover'),
+                    onPressed: onRecover,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Recover'),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(snapshot.message, style: theme.textTheme.bodySmall),
+            if (telemetry != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Chip(label: Text('watch ${telemetry.operatingSystem}')),
+                  Chip(label: Text('batches ${telemetry.batchCount}')),
+                  Chip(label: Text('events ${telemetry.receivedEventCount}')),
+                  Chip(label: Text('dropped ${telemetry.droppedEventCount}')),
+                  Chip(
+                    label: Text('overflows ${telemetry.providerOverflowCount}'),
+                  ),
+                  if (telemetry.hasBackpressure)
+                    Chip(
+                      label: Text(
+                        _workspaceSearchBackpressureLabel(telemetry.state),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (recoveryPlan?.overflowStrategy != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Recovery: ${recoveryPlan!.overflowStrategy!.wireValue}',
+                style: theme.textTheme.labelSmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _workspaceSearchBackpressureLabel(
+  WorkspaceSearchWatcherBackpressureState state,
+) {
+  return switch (state) {
+    WorkspaceSearchWatcherBackpressureState.nominal => 'healthy',
+    WorkspaceSearchWatcherBackpressureState.batchLimitReached => 'batch limit',
+    WorkspaceSearchWatcherBackpressureState.queueOverflow => 'queue overflow',
+    WorkspaceSearchWatcherBackpressureState.providerOverflow =>
+      'provider overflow',
+  };
 }
 
 class _WorkspaceSearchHistoryView extends StatelessWidget {
@@ -559,15 +672,18 @@ class _WorkspaceReplacePreviewView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
               child: Text(
                 'Apply uses this preview only if document revisions still match.',
                 style: theme.textTheme.bodySmall,
               ),
             ),
-            const SizedBox(width: 10),
             FilledButton.icon(
               key: const ValueKey('workspace-replace-apply-submit'),
               onPressed:

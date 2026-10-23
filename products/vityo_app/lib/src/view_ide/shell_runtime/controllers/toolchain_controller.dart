@@ -27,6 +27,7 @@ final class ToolchainController extends ChangeNotifier {
   ToolchainInstallExecutionResult? _lastInstallExecutionResult;
   ToolchainManagerBootstrapSummary? _bootstrapSummary;
   ToolchainBootstrapActionDispatchResult? _lastBootstrapActionDispatch;
+  ToolchainBootstrapExecutionResult? _lastBootstrapExecution;
   bool _disposed = false;
 
   ClangCppVersionPreference? get clangCppVersionPreference =>
@@ -38,6 +39,8 @@ final class ToolchainController extends ChangeNotifier {
   ToolchainManagerBootstrapSummary? get bootstrapSummary => _bootstrapSummary;
   ToolchainBootstrapActionDispatchResult? get lastBootstrapActionDispatch =>
       _lastBootstrapActionDispatch;
+  ToolchainBootstrapExecutionResult? get lastBootstrapExecution =>
+      _lastBootstrapExecution;
   ToolchainInstallPlanSurface? get installPlanSurface {
     final plan = _lastInstallPlan;
     return plan == null ? null : ToolchainInstallPlanSurface.fromPlan(plan);
@@ -185,6 +188,16 @@ final class ToolchainController extends ChangeNotifier {
     ToolchainKind kind = ToolchainKind.languageService,
     ToolchainInstallPolicy policy = const ToolchainInstallPolicy(),
   }) {
+    return planInstallation(
+      ToolchainInstallRequest(requirement: ToolchainRequirement(kind: kind)),
+      policy: policy,
+    );
+  }
+
+  ToolchainInstallPlan? planInstallation(
+    ToolchainInstallRequest request, {
+    ToolchainInstallPolicy policy = const ToolchainInstallPolicy(),
+  }) {
     final activeManager = manager;
     if (activeManager == null) {
       log(
@@ -193,10 +206,7 @@ final class ToolchainController extends ChangeNotifier {
       notifyListeners();
       return null;
     }
-    final plan = activeManager.planInstallation(
-      ToolchainInstallRequest(requirement: ToolchainRequirement(kind: kind)),
-      policy: policy,
-    );
+    final plan = activeManager.planInstallation(request, policy: policy);
     _lastInstallPlan = plan;
     log(
       'Toolchain install plan ${plan.status.name}: ${plan.mode.name}'
@@ -206,7 +216,9 @@ final class ToolchainController extends ChangeNotifier {
     return plan;
   }
 
-  Future<ToolchainInstallExecutionResult?> executeLastInstallPlan() async {
+  Future<ToolchainInstallExecutionResult?> executeLastInstallPlan({
+    bool confirmed = false,
+  }) async {
     final activeManager = manager;
     final plan = _lastInstallPlan;
     if (activeManager == null) {
@@ -223,9 +235,11 @@ final class ToolchainController extends ChangeNotifier {
       notifyListeners();
       return null;
     }
-    if (plan.mode != ToolchainInstallMode.manualSelection) {
+    if ((plan.mode == ToolchainInstallMode.managedDownload ||
+            plan.mode == ToolchainInstallMode.externalCommand) &&
+        !confirmed) {
       log(
-        'Toolchain install execution blocked: ${plan.mode.name} requires an explicit confirmation flow.',
+        'Toolchain install execution awaits explicit confirmation for ${plan.mode.name}.',
       );
       notifyListeners();
       return null;
@@ -253,7 +267,14 @@ final class ToolchainController extends ChangeNotifier {
       return null;
     }
     try {
-      final summary = await activeManager.bootstrapSummary();
+      final graph = projectGraph();
+      final requirement = statusReport?.value.requirement;
+      final summary = await activeManager.bootstrapSummary(
+        kind: requirement?.kind ?? ToolchainKind.languageService,
+        requirement: requirement,
+        projectId: graph.id,
+        workspaceRoot: graph.workspaceRoot,
+      );
       if (_disposed) {
         return summary;
       }
@@ -283,8 +304,8 @@ final class ToolchainController extends ChangeNotifier {
         actionId: actionId,
         message:
             'Toolchain bootstrap action blocked: no bootstrap summary is available.',
-        todo:
-            'TODO: provide a ToolchainManager before routing bootstrap actions.',
+        recoveryHint:
+            'Connect a ToolchainManager before routing bootstrap actions.',
       );
       _lastBootstrapActionDispatch = result;
       notifyListeners();
@@ -299,7 +320,14 @@ final class ToolchainController extends ChangeNotifier {
       ),
       onProjectAction: _dispatchBootstrapProjectAction,
     );
-    final result = await router.dispatch(summary.executionPlan(), actionId);
+    final execution = await ToolchainBootstrapExecutionBridge(router: router)
+        .execute(
+          summary.executionPlan(),
+          requiredOnly: false,
+          actionIds: <String>[actionId],
+        );
+    _lastBootstrapExecution = execution;
+    final result = execution.dispatches.first;
     _lastBootstrapActionDispatch = result;
     log(
       'Toolchain bootstrap action ${result.status.wireValue}: '
@@ -319,12 +347,16 @@ final class ToolchainController extends ChangeNotifier {
       );
     }
     if (step.actionId == 'install-managed-toolchain') {
-      final plan = planManagedInstallation();
+      final plan = await _prepareBootstrapInstallation(
+        _bootstrapSummary?.managerReport.requirement.kind ??
+            ToolchainKind.languageService,
+      );
       if (plan == null) {
         return ToolchainBootstrapActionDispatchResult.blocked(
           step,
           message: 'No managed install plan could be prepared.',
-          todo: 'TODO: bind the generic install action to the installer flow.',
+          recoveryHint:
+              'Select an existing executable or review install policy.',
         );
       }
       return ToolchainBootstrapActionDispatchResult.dispatched(
@@ -338,10 +370,38 @@ final class ToolchainController extends ChangeNotifier {
         message: 'Toolchain settings route requested.',
       );
     }
+    if (step.actionId == 'retry-toolchain-health-check') {
+      return _validateProjectToolchain(step);
+    }
+    if (step.actionId == 'retry-install-toolchain') {
+      final plan = await _prepareBootstrapInstallation(
+        _bootstrapSummary?.managerReport.requirement.kind ??
+            ToolchainKind.languageService,
+      );
+      if (plan == null) {
+        return ToolchainBootstrapActionDispatchResult.blocked(
+          step,
+          message: 'No retry plan could be prepared.',
+          recoveryHint:
+              'Select an existing executable or review install policy.',
+        );
+      }
+      return ToolchainBootstrapActionDispatchResult.dispatched(
+        step,
+        message: 'Toolchain retry plan is ready for review.',
+      );
+    }
+    if (step.actionId == 'use-degraded-mode') {
+      log('Toolchain degraded mode requested from bootstrap settings.');
+      return ToolchainBootstrapActionDispatchResult.dispatched(
+        step,
+        message: 'Degraded mode route requested.',
+      );
+    }
     return ToolchainBootstrapActionDispatchResult.blocked(
       step,
-      message: 'Settings bootstrap action is not implemented.',
-      todo: 'TODO: bind ${step.actionId} to the concrete Settings UI action.',
+      message: 'Unsupported settings bootstrap action.',
+      recoveryHint: 'Choose one of the available toolchain settings actions.',
     );
   }
 
@@ -351,12 +411,13 @@ final class ToolchainController extends ChangeNotifier {
     required ToolchainKind fallbackInstallKind,
   }) async {
     if (step.actionId == 'plan-managed-toolchain-installation') {
-      final plan = planManagedInstallation(kind: fallbackInstallKind);
+      final plan = await _prepareBootstrapInstallation(fallbackInstallKind);
       if (plan == null) {
         return ToolchainBootstrapActionDispatchResult.blocked(
           step,
           message: 'No managed install plan could be prepared.',
-          todo: 'TODO: bind the managed installer to production installer UX.',
+          recoveryHint:
+              'Select an existing executable or review install policy.',
         );
       }
       return ToolchainBootstrapActionDispatchResult.dispatched(
@@ -366,16 +427,27 @@ final class ToolchainController extends ChangeNotifier {
       );
     }
     if (step.actionId == 'verify-toolchain') {
-      await refreshBootstrapSummary(reason: 'verify action');
+      return _validateProjectToolchain(step);
+    }
+    if (step.actionId == 'retry-toolchain-action') {
+      final plan = await _prepareBootstrapInstallation(fallbackInstallKind);
+      if (plan == null) {
+        return ToolchainBootstrapActionDispatchResult.blocked(
+          step,
+          message: 'No retry plan could be prepared.',
+          recoveryHint:
+              'Select an existing executable or review install policy.',
+        );
+      }
       return ToolchainBootstrapActionDispatchResult.dispatched(
         step,
-        message: 'Toolchain verification refreshed.',
+        message: 'Toolchain retry plan is ready for review.',
       );
     }
     return ToolchainBootstrapActionDispatchResult.blocked(
       step,
-      message: 'Installer bootstrap action is not implemented.',
-      todo: 'TODO: bind ${step.actionId} to the concrete installer executor.',
+      message: 'Unsupported installer bootstrap action.',
+      recoveryHint: 'Choose one of the available installer actions.',
     );
   }
 
@@ -388,17 +460,76 @@ final class ToolchainController extends ChangeNotifier {
       );
     }
     if (step.actionId == 'validate-project-toolchain') {
-      await refreshBootstrapSummary(reason: step.actionId);
-      return ToolchainBootstrapActionDispatchResult.dispatched(
-        step,
-        message: 'Project toolchain bootstrap facts refreshed.',
-      );
+      return _validateProjectToolchain(step);
     }
     return ToolchainBootstrapActionDispatchResult.blocked(
       step,
-      message: 'Project bootstrap action is not implemented.',
-      todo:
-          'TODO: bind ${step.actionId} to the concrete project bootstrap runner.',
+      message: 'Unsupported project bootstrap action.',
+      recoveryHint: 'Choose one of the available project bootstrap actions.',
+    );
+  }
+
+  Future<ToolchainInstallPlan?> _prepareBootstrapInstallation(
+    ToolchainKind kind,
+  ) async {
+    final activeManager = manager;
+    if (activeManager == null) {
+      return null;
+    }
+    final plan = await activeManager.planBootstrapInstallation(
+      ToolchainRequirement(kind: kind),
+    );
+    _lastInstallPlan = plan;
+    log(
+      'Toolchain bootstrap install plan ${plan.status.name}: ${plan.mode.name}.',
+    );
+    return plan;
+  }
+
+  Future<ToolchainBootstrapActionDispatchResult> _validateProjectToolchain(
+    ToolchainBootstrapActionStep step,
+  ) async {
+    final activeManager = manager;
+    if (activeManager == null) {
+      return ToolchainBootstrapActionDispatchResult.blocked(
+        step,
+        message: 'Project toolchain validation requires a ToolchainManager.',
+        recoveryHint: 'Connect the project to a local toolchain manager.',
+      );
+    }
+    final graph = projectGraph();
+    final requirement =
+        _bootstrapSummary?.managerReport.requirement ??
+        statusReport?.value.requirement ??
+        const ToolchainRequirement(kind: ToolchainKind.languageService);
+    final validation = await activeManager.validateProjectToolchain(
+      projectId: graph.id,
+      workspaceRoot: graph.workspaceRoot,
+      requirement: requirement,
+    );
+    final report = await activeManager.statusReport(
+      kind: requirement.kind,
+      requirement: requirement,
+    );
+    final notifier = statusReport;
+    if (notifier is ValueNotifier<ToolchainManagerStatusReport>) {
+      notifier.value = report;
+    }
+    _bootstrapSummary = ToolchainManagerBootstrapSummary.fromReport(
+      managerReport: report,
+      projectValidation: validation,
+    );
+    if (!validation.ready) {
+      return ToolchainBootstrapActionDispatchResult.blocked(
+        step,
+        message: validation.message,
+        recoveryHint:
+            'Review the resolved executable or choose another registered toolchain.',
+      );
+    }
+    return ToolchainBootstrapActionDispatchResult.dispatched(
+      step,
+      message: validation.message,
     );
   }
 

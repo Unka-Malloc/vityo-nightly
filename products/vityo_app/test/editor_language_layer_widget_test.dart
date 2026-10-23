@@ -3,10 +3,54 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/ide/editor/editor.dart';
 import 'package:vityo_app/src/view_ide/language/language_contract.dart';
 import 'package:vityo_app/src/view_ide/language/service/local_styio_language_service.dart';
+import 'package:vityo_app/src/view_ide/language/simple_styio_language_service.dart';
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
 void main() {
+  testWidgets('editor lightbulb appears only for real caret code actions', (
+    tester,
+  ) async {
+    const text = 'let stream\n';
+    final controller = EditorSessionController(
+      initialDocument: const DocumentState(
+        documentId: 'lightbulb.styio',
+        text: text,
+        revision: 0,
+      ),
+      languageService: const SimpleStyioLanguageService(),
+    )..selectCollapsed(text.indexOf('stream') + 2);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_editorHarness(controller));
+    await tester.pump();
+
+    expect(controller.contextActionsAtSelection, isNotEmpty);
+    final bulb = find.byKey(
+      const ValueKey('source-code-action-bulb-0'),
+      skipOffstage: false,
+    );
+    expect(bulb, findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('source-code-action-bulb-1'),
+        skipOffstage: false,
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(bulb, warnIfMissed: false);
+    await tester.pump();
+
+    expect(
+      find.byKey(
+        const ValueKey('source-quick-fix-lookup'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+  });
+
   test('mergeCompletionItems keeps primary order and dedupes fallback', () {
     const localMain = CompletionItem(
       label: 'main',
@@ -88,8 +132,14 @@ void main() {
 
     await tester.pumpWidget(_editorHarness(controller));
 
-    expect(controller.analysis.tokenSpans.map((token) => token.lexeme), contains('#'));
-    expect(controller.analysis.tokenSpans.map((token) => token.lexeme), contains('main'));
+    expect(
+      controller.analysis.tokenSpans.map((token) => token.lexeme),
+      contains('#'),
+    );
+    expect(
+      controller.analysis.tokenSpans.map((token) => token.lexeme),
+      contains('main'),
+    );
     expect(controller.analysis.semanticSpans, isNotEmpty);
     expect(
       _stylesForText(tester, lineIndex: 0, text: '#').single.color,
@@ -109,8 +159,7 @@ void main() {
 Widget _editorHarness(
   EditorSessionController controller, {
   HoverPayload? projectHoverAtSelection,
-  List<CompletionItem> projectCompletionsAtSelection =
-      const <CompletionItem>[],
+  List<CompletionItem> projectCompletionsAtSelection = const <CompletionItem>[],
 }) {
   return MaterialApp(
     home: Scaffold(

@@ -13,6 +13,8 @@ import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   test(
     'DAP debug adapter launcher sends launch plan through transport',
@@ -260,6 +262,15 @@ void main() {
         RuntimeExecutionDispatchStatus.dispatched,
       );
       expect(result.handle, isNotNull);
+      expect(result.processHandle?.processHandleId, 'fixture-dap-process');
+      expect(
+        result.toJson()['processHandle'],
+        containsPair('processHandleId', 'fixture-dap-process'),
+      );
+      expect(
+        result.telemetry.records.single.metadata['processHandleId'],
+        'fixture-dap-process',
+      );
       expect(
         result.telemetry.records.single.status,
         DebugLaunchTelemetryStatus.launched,
@@ -382,7 +393,7 @@ Future<FoundationDataStore> _createDataStore() async {
     'vityo_debug_launch_telemetry_test_',
   );
   addTearDown(() => tempRoot.delete(recursive: true));
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: tempRoot.path,
@@ -398,10 +409,19 @@ Future<FoundationDataStore> _createDataStore() async {
   );
 }
 
-class _FakeDapByteTransport implements DapByteTransport {
+class _FakeDapByteTransport
+    implements DapByteTransport, DapProcessIdentitySource {
   final StreamController<List<int>> _incoming =
       StreamController<List<int>>.broadcast();
   final List<List<int>> sentBytes = <List<int>>[];
+
+  @override
+  RuntimeProcessHandleIdentity get processHandle =>
+      const RuntimeProcessHandleIdentity(
+        managerId: 'debug-adapter',
+        processHandleId: 'fixture-dap-process',
+        source: 'fixture',
+      );
 
   @override
   Stream<List<int>> get incomingBytes => _incoming.stream;

@@ -6,6 +6,8 @@ import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   test('runtime output channel snapshot filters visible channels', () {
     const channels = <RuntimeOutputChannelSummary>[
@@ -489,6 +491,57 @@ void main() {
       expect((await store.readHistory(workspaceId: 'demo')).entries, isEmpty);
     },
   );
+
+  test(
+    'runtime output producer bindings wire real streams and block the rest',
+    () async {
+      final buffer = RuntimeOutputLiveBuffer();
+      final bindings = RuntimeOutputProducerBindings(buffer: buffer);
+      final agentStream = StreamController<RuntimeOutputProducerEmission>();
+      addTearDown(bindings.dispose);
+      addTearDown(buffer.dispose);
+      addTearDown(agentStream.close);
+
+      bindings.wireAvailable(
+        emissions: <String, Stream<RuntimeOutputProducerEmission>>{
+          'agent': agentStream.stream,
+        },
+        unavailableReasons: const <String, String>{
+          'shell-manager': 'ShellManager execution is request-driven.',
+        },
+      );
+
+      agentStream.add(
+        RuntimeOutputProducerEmission(
+          message: 'agent collaboration ready',
+          timestamp: DateTime.utc(2026, 10, 5),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bindings.bindingFor('agent')?.active, isTrue);
+      expect(bindings.bindingFor('agent')?.defaultChannelId, 'runtime.agent');
+      expect(
+        bindings.bindingFor('shell-manager')?.status,
+        RuntimeOutputSubscriptionStatus.blocked,
+      );
+      expect(
+        bindings.bindingFor('shell-manager')?.message,
+        'ShellManager execution is request-driven.',
+      );
+      expect(
+        bindings.bindingFor('terminal-runtime')?.status,
+        RuntimeOutputSubscriptionStatus.blocked,
+      );
+      expect(
+        buffer.snapshot.visibleEvents.single.metadata['producerId'],
+        'agent',
+      );
+      expect(buffer.snapshot.visibleEvents.single.channelId, 'runtime.agent');
+      expect(bindings.toJson()['activeBindingCount'], 1);
+      expect(bindings.hasActiveBindings, isTrue);
+    },
+  );
 }
 
 Future<FoundationDataStore> _createDataStore() async {
@@ -496,7 +549,7 @@ Future<FoundationDataStore> _createDataStore() async {
     'vityo_runtime_output_history_test_',
   );
   addTearDown(() => tempRoot.delete(recursive: true));
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: tempRoot.path,

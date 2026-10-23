@@ -11,6 +11,8 @@ import 'package:vityo_app/src/view_ide/language/service/semantic_snapshot_provid
 import 'package:vityo_app/src/view_ide/language/service/styio_service_connector.dart';
 import 'package:vityo_app/src/ide/workspace/workspace.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   test(
     'workspace quick open ranks exact prefix contains and fuzzy matches',
@@ -73,6 +75,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 1,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/b.styio',
@@ -80,6 +83,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 2,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/c.styio',
@@ -87,6 +91,7 @@ void main() {
           afterText: 'value\n',
           replacementCount: 1,
           revision: 3,
+          workspaceRevision: 0,
         ),
       ],
     );
@@ -616,11 +621,15 @@ void main() {
       );
 
       expect(plan.shouldRefresh, isTrue);
+      expect(plan.receivedEventCount, 4);
       expect(plan.eventCount, 3);
       expect(plan.refreshEventCount, 1);
       expect(plan.ignoredEventCount, 1);
       expect(plan.nonRefreshableEventCount, 1);
       expect(plan.truncated, isTrue);
+      expect(plan.queueOverflowed, isTrue);
+      expect(plan.droppedEventCount, 1);
+      expect(plan.backpressured, isTrue);
       expect(
         (plan.toJson()['policy']! as Map<String, Object?>)['debounceMillis'],
         75,
@@ -629,6 +638,15 @@ void main() {
       expect(flushedBatch?.eventCount, 2);
       expect(flushedBatch?.shouldRefresh, isTrue);
       expect(flushedBatch?.toJson()['shouldRefresh'], isTrue);
+      final telemetry = WorkspaceSearchWatcherBackpressureTracker(
+        facts: FileSystemFacts.linuxDebianArm(),
+      ).recordBatch(flushedBatch!);
+      expect(
+        telemetry.state,
+        WorkspaceSearchWatcherBackpressureState.batchLimitReached,
+      );
+      expect(telemetry.receivedEventCount, 2);
+      expect(telemetry.droppedEventCount, 0);
       expect(
         retryPlan.action,
         WorkspaceSearchWatcherRecoveryAction.restartWatcher,
@@ -639,6 +657,100 @@ void main() {
         WorkspaceSearchWatcherRecoveryAction.disableWatcher,
       );
       expect(disablePlan.canRetry, isFalse);
+    },
+  );
+
+  test(
+    'workspace search watcher rebuilds and reattaches after typed overflow',
+    () async {
+      final store = InMemoryWorkspaceDocumentStore(
+        seededDocuments: const <String, DocumentState>{
+          'main.styio': DocumentState(
+            documentId: 'main.styio',
+            text: 'value := 1\n',
+            revision: 1,
+          ),
+        },
+      );
+      final controller = WorkspaceSearchIndexController(
+        service: WorkspaceSearchService(documentStore: store),
+      );
+      final fileSystemManager = _OverflowThenEventFileSystemManager();
+      final binding = WorkspaceSearchIndexFileSystemWatcherBinding(
+        controller: controller,
+        fileSystemManager: fileSystemManager,
+        workspaceRoot: '/workspace/vityo',
+        currentDocuments: () => const <DocumentState>[],
+        currentDocumentIds: () => const <String>['main.styio'],
+        watcherPolicy: const WorkspaceSearchWatcherPolicy(
+          debounceWindow: Duration.zero,
+          overflowRecoveryDelay: Duration.zero,
+        ),
+      );
+
+      final snapshots = await binding.watchAndRefresh().toList();
+      final overflowSnapshot = snapshots.firstWhere(
+        (snapshot) => snapshot.recoveryPlan != null && snapshot.ready,
+      );
+
+      expect(fileSystemManager.watchCount, 2);
+      expect(
+        snapshots.where(
+          (snapshot) =>
+              snapshot.status == WorkspaceSearchIndexWatcherStatus.listening,
+        ),
+        hasLength(2),
+      );
+      expect(overflowSnapshot.backpressure?.providerOverflowCount, 1);
+      expect(overflowSnapshot.backpressure?.droppedEventCount, 7);
+      expect(
+        overflowSnapshot.recoveryPlan?.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan,
+      );
+      expect(overflowSnapshot.recoveryPlan?.requiresIndexRebuild, isTrue);
+      expect(overflowSnapshot.recoveryPlan?.requiresWatcherRestart, isTrue);
+      expect(controller.snapshot.ready, isTrue);
+      expect(controller.searchCached(query: 'value').matches, hasLength(1));
+      expect(snapshots.last.status, WorkspaceSearchIndexWatcherStatus.stopped);
+    },
+  );
+
+  test(
+    'workspace search overflow recovery selects target watcher strategy',
+    () {
+      final linux = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: '/workspace',
+        facts: FileSystemFacts.linuxDebianArm(),
+      );
+      final macos = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: '/workspace',
+        facts: FileSystemFacts.linuxDebianArm().copyWith(
+          operatingSystem: 'macos',
+          distributionId: 'macos',
+          distributionName: 'macOS',
+        ),
+      );
+      final windows = WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+        workspaceRoot: r'C:\workspace',
+        facts: FileSystemFacts.windowsX64(),
+      );
+
+      expect(
+        linux.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.inotifyFullRescan,
+      );
+      expect(
+        macos.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.fseventsFullRescan,
+      );
+      expect(
+        windows.overflowStrategy,
+        WorkspaceSearchWatcherOverflowStrategy.readDirectoryChangesFullRescan,
+      );
+      expect(
+        windows.toJson()['overflowStrategy'],
+        'read-directory-changes-full-rescan',
+      );
     },
   );
 
@@ -1151,7 +1263,7 @@ Future<FoundationDataStore> _createDataStore() async {
     'vityo_workspace_search_history_test_',
   );
   addTearDown(() => tempRoot.delete(recursive: true));
-  final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
   final resourceManager = LocalResourceManager(
     facts: ResourceFacts.linuxDebianArm(
       systemTempPath: tempRoot.path,
@@ -1193,7 +1305,7 @@ class _FailingWorkspaceSearchStore implements WorkspaceDocumentStore {
   String? filePathForDocumentId(String documentId) => null;
 }
 
-class _FailingSaveWorkspaceSearchStore implements WorkspaceDocumentStore {
+class _FailingSaveWorkspaceSearchStore implements AtomicWorkspaceDocumentStore {
   final Map<String, DocumentState> _documents = <String, DocumentState>{
     'main.styio': const DocumentState(
       documentId: 'main.styio',
@@ -1207,15 +1319,70 @@ class _FailingSaveWorkspaceSearchStore implements WorkspaceDocumentStore {
     ),
   };
 
+  var _workspaceRevision = 0;
+
   @override
-  Future<DocumentState> loadDocument(String path) async => _documents[path]!;
+  Future<DocumentState> loadDocument(String path) async {
+    final document = _documents[path]!;
+    return DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
+  }
 
   @override
   Future<void> saveDocument(DocumentState document) async {
     if (document.documentId == 'fail-save.styio') {
       throw StateError('failed to save ${document.documentId}');
     }
-    _documents[document.documentId] = document;
+    _workspaceRevision += 1;
+    _documents[document.documentId] = DocumentState(
+      documentId: document.documentId,
+      text: document.text,
+      revision: document.revision,
+      workspaceRevision: _workspaceRevision,
+      baseDocumentRevision: document.revision,
+    );
+  }
+
+  @override
+  Future<WorkspaceDocumentCommitReceipt> saveDocumentsAtomically(
+    Iterable<DocumentState> documents, {
+    required int expectedWorkspaceRevision,
+    required Map<String, int> expectedDocumentRevisions,
+  }) async {
+    if (_workspaceRevision != expectedWorkspaceRevision) {
+      throw StateError('workspace_revision_conflict');
+    }
+    final pending = documents.toList(growable: false);
+    for (final document in pending) {
+      if (document.documentId == 'fail-save.styio') {
+        throw StateError('failed to save ${document.documentId}');
+      }
+      if (_documents[document.documentId]?.revision !=
+          expectedDocumentRevisions[document.documentId]) {
+        throw StateError('document_revision_conflict');
+      }
+    }
+    _workspaceRevision += 1;
+    final revisions = <String, int>{};
+    for (final document in pending) {
+      _documents[document.documentId] = DocumentState(
+        documentId: document.documentId,
+        text: document.text,
+        revision: document.revision,
+        workspaceRevision: _workspaceRevision,
+        baseDocumentRevision: document.revision,
+      );
+      revisions[document.documentId] = document.revision;
+    }
+    return WorkspaceDocumentCommitReceipt(
+      workspaceRevision: _workspaceRevision,
+      documentRevisions: revisions,
+    );
   }
 
   @override
@@ -1243,6 +1410,32 @@ class _FakeWorkspaceSearchFileSystemManager
     watchedPath = path;
     watchedRecursive = recursive;
     return events;
+  }
+}
+
+class _OverflowThenEventFileSystemManager extends UnsupportedFileSystemManager {
+  _OverflowThenEventFileSystemManager()
+    : super(facts: FileSystemFacts.linuxDebianArm());
+
+  int watchCount = 0;
+
+  @override
+  Stream<FileSystemManagerEvent> watch(
+    String path, {
+    bool recursive = false,
+  }) async* {
+    watchCount += 1;
+    if (watchCount == 1) {
+      throw const FileSystemWatchOverflowException(
+        operation: 'test.watch',
+        droppedEventCount: 7,
+      );
+    }
+    yield const FileSystemManagerEvent(
+      kind: FileSystemManagerEventKind.modified,
+      path: '/workspace/vityo/main.styio',
+      normalizedPath: '/workspace/vityo/main.styio',
+    );
   }
 }
 

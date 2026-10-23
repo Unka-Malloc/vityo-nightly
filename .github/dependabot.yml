@@ -30,6 +30,36 @@ updates:
       prefix: "deps"
     open-pull-requests-limit: 5
 
+  - package-ecosystem: "cargo"
+    directory: "/products/vityo_coding_agent"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "Asia/Shanghai"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "supply-chain"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "cargo"
+    directory: "/products/vityo_app/native/vityod"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:30"
+      timezone: "Asia/Shanghai"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "supply-chain"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 5
+
   - package-ecosystem: "npm"
     directory: "/prototype"
     schedule:

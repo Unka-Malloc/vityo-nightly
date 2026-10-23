@@ -10,6 +10,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 GATE_PATH = REPO_ROOT / "scripts" / "supply-chain-governance-gate.py"
 
 
@@ -74,6 +77,16 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
             "    directory: \"/prototype\"\n"
             "    schedule:\n"
             "      interval: \"weekly\"\n"
+            "    open-pull-requests-limit: 5\n"
+            "  - package-ecosystem: \"cargo\"\n"
+            "    directory: \"/products/vityo_coding_agent\"\n"
+            "    schedule:\n"
+            "      interval: \"weekly\"\n"
+            "    open-pull-requests-limit: 5\n"
+            "  - package-ecosystem: \"cargo\"\n"
+            "    directory: \"/products/vityo_app/native/vityod\"\n"
+            "    schedule:\n"
+            "      interval: \"weekly\"\n"
             "    open-pull-requests-limit: 5\n",
         )
         self._write_file(
@@ -105,8 +118,12 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
         self._write_file(root, "docs/specs/THIRD-PARTY.md")
         self._write_file(root, "products/vityo_app/pubspec.lock")
         self._write_file(root, "prototype/package-lock.json", json.dumps({"lockfileVersion": 3}))
+        self._write_file(root, "products/vityo_coding_agent/Cargo.toml")
+        self._write_file(root, "products/vityo_app/native/vityod/Cargo.toml")
         for script in self.gate.REQUIRED_GATE_SCRIPTS:
             self._write_file(root, script.as_posix(), "#!/usr/bin/env python3\n")
+        for source in self.gate.REQUIRED_POLICY_SOURCES:
+            self._write_file(root, source.as_posix(), "placeholder\n")
 
     def test_minimal_governance_tree_passes(self) -> None:
         with tempfile.TemporaryDirectory(prefix="supply-chain-", dir=REPO_ROOT) as tmp_name:
@@ -117,6 +134,19 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
 
         failures = [result for result in results if not result.ok and result.severity == "error"]
         self.assertEqual(failures, [])
+
+    def test_rust_notice_generator_sources_are_required(self) -> None:
+        for source in self.gate.REQUIRED_POLICY_SOURCES:
+            with self.subTest(source=source):
+                with tempfile.TemporaryDirectory(prefix="supply-chain-notices-") as tmp_name:
+                    root = Path(tmp_name)
+                    self._write_minimal_tree(root)
+                    (root / source).unlink()
+
+                    results = self.gate.check_policy_surfaces(root)
+
+                failed_names = {result.name for result in results if not result.ok}
+                self.assertIn(f"policy source: {source}", failed_names)
 
     def test_workflow_security_rejects_write_permissions_and_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory(prefix="supply-chain-", dir=REPO_ROOT) as tmp_name:
@@ -158,6 +188,8 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
         failed_names = {result.name for result in results if not result.ok}
         self.assertIn("dependabot update: pub /products/vityo_app", failed_names)
         self.assertIn("dependabot update: npm /prototype", failed_names)
+        self.assertIn("dependabot update: cargo /products/vityo_coding_agent", failed_names)
+        self.assertIn("dependabot update: cargo /products/vityo_app/native/vityod", failed_names)
 
     def test_secret_scan_flags_high_signal_tokens(self) -> None:
         with tempfile.TemporaryDirectory(prefix="supply-chain-", dir=REPO_ROOT) as tmp_name:
@@ -176,6 +208,7 @@ class SupplyChainGovernanceGateTest(unittest.TestCase):
             any(not result.ok and "GitHub classic token" in result.detail for result in results),
             results,
         )
+        self.assertFalse(any(token in result.detail for result in results))
 
 
 if __name__ == "__main__":

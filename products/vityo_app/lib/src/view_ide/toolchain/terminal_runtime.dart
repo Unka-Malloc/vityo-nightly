@@ -422,6 +422,7 @@ class ShellManagerRuntimeExecutionAdapter {
   Future<ShellManagerRuntimeExecutionResult> executeHandoff({
     required RuntimeExecutionHandoffBinding binding,
     required RuntimeOutputLiveBuffer buffer,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     if (binding.managerId != 'shell-manager') {
       return _controlResult(
@@ -447,6 +448,7 @@ class ShellManagerRuntimeExecutionAdapter {
         arguments: binding.handoff.arguments,
         environment: binding.handoff.environment,
         workingDirectory: binding.handoff.workingDirectory,
+        onStarted: onProcessStarted,
       ),
       buffer: buffer,
       channelId: binding.outputChannel.id,

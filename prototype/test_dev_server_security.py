@@ -10,7 +10,6 @@ import time
 import unittest
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import quote
@@ -22,6 +21,14 @@ SPEC = importlib.util.spec_from_file_location("dev_server", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 dev_server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(dev_server)
+
+
+class DevServerStartupTest(unittest.TestCase):
+    def test_local_bind_does_not_depend_on_reverse_dns(self) -> None:
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("unexpected DNS")):
+            with dev_server.LocalDevServer(("127.0.0.1", 0), dev_server.PrototypeHandler) as server:
+                self.assertEqual(server.server_name, "127.0.0.1")
+                self.assertGreater(server.server_port, 0)
 
 
 class DevServerPathUtilityTest(unittest.TestCase):
@@ -83,6 +90,20 @@ class DevServerPathUtilityTest(unittest.TestCase):
         self.assertTrue(dev_server.mutation_enabled())
         os.environ[dev_server.ENABLE_MUTATION_ENV] = "off"
         self.assertFalse(dev_server.mutation_enabled())
+
+        self.assertTrue(dev_server.host_is_loopback("127.0.0.1"))
+        self.assertTrue(dev_server.host_is_loopback("::1"))
+        self.assertTrue(dev_server.host_is_loopback("localhost."))
+        # Resolver-shorthand loopback literals bind loopback for real.
+        self.assertTrue(dev_server.host_is_loopback("127.1"))
+        self.assertTrue(dev_server.host_is_loopback("0x7f000001"))
+        self.assertFalse(dev_server.host_is_loopback("0.0.0.0"))
+        self.assertFalse(dev_server.host_is_loopback("192.0.2.10"))
+        self.assertFalse(dev_server.host_is_loopback("8.8.8.8"))
+        self.assertFalse(dev_server.host_is_loopback("devbox.lan"))
+        self.assertEqual(dev_server.normalize_hostname("[::1]"), "::1")
+
+        self.assertFalse(hasattr(dev_server, "remote_bind_permitted"))
 
     def test_workspace_loading_setting_and_path_resolution(self) -> None:
         relative_workspace = self.root / "relative"
@@ -202,11 +223,57 @@ class DevServerPathUtilityTest(unittest.TestCase):
             def server_close(self) -> None:
                 events.append("close")
 
-        with mock.patch.object(dev_server, "ThreadingHTTPServer", FakeServer):
+        with mock.patch.object(dev_server, "LocalDevServer", FakeServer):
             os.environ[dev_server.ENABLE_MUTATION_ENV] = "1"
             dev_server.main()
 
         self.assertEqual(events, ["init:('127.0.0.1', 4180)", "serve", "close"])
+
+    def test_main_refuses_remote_bind_without_configured_token(self) -> None:
+        previous_token_env = os.environ.get(dev_server.SESSION_TOKEN_ENV)
+        os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
+        try:
+            with mock.patch.object(
+                dev_server, "resolve_listen_address", return_value=("0.0.0.0", 4180)
+            ):
+                with self.assertRaises(SystemExit):
+                    dev_server.main()
+        finally:
+            if previous_token_env is None:
+                os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
+            else:
+                os.environ[dev_server.SESSION_TOKEN_ENV] = previous_token_env
+
+    def test_main_refuses_remote_bind_even_with_configured_token(self) -> None:
+        # A configured session token authenticates local API callers; it is
+        # not a license to expose the prototype tree over plain HTTP.
+        instances: list[object] = []
+
+        class FakeServer:
+            def __init__(self, *args, **kwargs):
+                instances.append(self)
+
+            def serve_forever(self) -> None:
+                raise KeyboardInterrupt
+
+            def server_close(self) -> None:
+                pass
+
+        previous_token_env = os.environ.get(dev_server.SESSION_TOKEN_ENV)
+        os.environ[dev_server.SESSION_TOKEN_ENV] = "shared-secret"
+        try:
+            with mock.patch.object(
+                dev_server, "resolve_listen_address", return_value=("192.0.2.10", 4180)
+            ), mock.patch.object(dev_server, "LocalDevServer", FakeServer):
+                with self.assertRaises(SystemExit):
+                    dev_server.main()
+        finally:
+            if previous_token_env is None:
+                os.environ.pop(dev_server.SESSION_TOKEN_ENV, None)
+            else:
+                os.environ[dev_server.SESSION_TOKEN_ENV] = previous_token_env
+
+        self.assertEqual(instances, [])
 
 
 class DevServerSecurityBoundaryTest(unittest.TestCase):
@@ -225,7 +292,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
         dev_server.WORKSPACE_ROOT = workspace.resolve()
         dev_server.WORKSPACE_CONFIG = Path(self.temp_dir.name) / ".workspace-root"
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), dev_server.PrototypeHandler)
+        self.server = dev_server.LocalDevServer(("127.0.0.1", 0), dev_server.PrototypeHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base_url = f"http://127.0.0.1:{self.server.server_port}"
@@ -266,9 +333,9 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             headers=request_headers,
             method=method,
         )
-        opener = urllib.request.build_opener()
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         if not follow_redirects:
-            opener = urllib.request.build_opener(_NoRedirectHandler)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirectHandler)
 
         for attempt in range(2 if retry_on_disconnect else 1):
             try:
@@ -755,6 +822,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
 
     def test_mutation_rejects_invalid_json_and_bad_content_length(self) -> None:
         os.environ[dev_server.ENABLE_MUTATION_ENV] = "1"
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
         request = urllib.request.Request(
             f"{self.base_url}/api/workspace/create-file",
@@ -763,7 +831,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:
@@ -779,7 +847,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:
@@ -796,7 +864,7 @@ class DevServerSecurityBoundaryTest(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with opener.open(request, timeout=5) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as error:

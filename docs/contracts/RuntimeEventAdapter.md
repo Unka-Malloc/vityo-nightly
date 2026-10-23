@@ -45,7 +45,7 @@ Artifact location uses the Pafio `--json` envelope `plan.build_root` and the Sty
 
 Replay summary reads `from_phase` / `to_phase` for transitions. Lanes whose v1 keys are absent (`message`, `file`, `thread_id`) fall back to kind-only labels. New v2 kinds degrade to the existing unsupported lane; extending runtime-surface interpretation of those kinds is out of scope.
 
-The hosted control-plane codec and hosted runtime-event adapter keep their own already-normalized envelopes and version lists. The `workflow_payload_version` execution-envelope drift is recorded and not fixed here.
+The hosted control-plane codec and hosted runtime-event adapter keep their own already-normalized envelopes and version lists. The `workflow_payload_version` execution-envelope drift is recorded here and is now fixed on the Vityo side (2026-10-05); see `docs/rollups/OBSERVABLE-DELIVERY-FOLLOW-UPS.md`.
 
 ---
 

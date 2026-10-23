@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/ide/editor/document_state.dart';
 import 'package:vityo_app/src/view_ide/language/language_contract.dart';
+import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'package:vityo_app/src/view_ide/language/service/language_service_foundation.dart';
 import 'package:vityo_app/src/view_ide/language/service/semantic_snapshot_provider.dart';
@@ -16,6 +17,12 @@ void main() {
     String? submittedQuery;
     WorkspaceSearchMatch? openedMatch;
     WorkspaceSymbolMatch? openedSymbolMatch;
+    var watcherRecovered = false;
+    final macosFacts = FileSystemFacts.linuxDebianArm().copyWith(
+      operatingSystem: 'macos',
+      distributionId: 'macos',
+      distributionName: 'macOS',
+    );
     final searchIndex = WorkspaceSearchIndex(
       documents: <WorkspaceSearchIndexDocument>[
         WorkspaceSearchIndexDocument.fromDocument(
@@ -65,6 +72,19 @@ void main() {
             ),
             workspaceFileCount: 2,
             searchIndex: searchIndex,
+            watcherSnapshot: WorkspaceSearchIndexWatcherSnapshot(
+              status: WorkspaceSearchIndexWatcherStatus.failed,
+              workspaceRoot: '/workspace/demo',
+              recursive: true,
+              backpressure: WorkspaceSearchWatcherBackpressureTelemetry.initial(
+                macosFacts,
+              ),
+              recoveryPlan: WorkspaceSearchWatcherRecoveryPlan.forOverflow(
+                workspaceRoot: '/workspace/demo',
+                facts: macosFacts,
+              ),
+              message: 'Watcher needs recovery.',
+            ),
             lastSearchQuery: 'needle',
             lastSearchScannedDocumentCount: 2,
             searchHistory: WorkspaceSearchHistory(
@@ -94,6 +114,9 @@ void main() {
             onOpenSymbolMatch: (match) async {
               openedSymbolMatch = match;
             },
+            onRecoverWatcher: () async {
+              watcherRecovered = true;
+            },
           ),
         ),
       ),
@@ -113,10 +136,17 @@ void main() {
     expect(find.text('whole-word'), findsOneWidget);
     expect(find.text('include src/**'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('workspace-search-history')),
+      find.byKey(const ValueKey('workspace-search-watcher-status')),
       findsOneWidget,
     );
-
+    expect(find.text('watch macos'), findsOneWidget);
+    expect(find.text('dropped 0'), findsOneWidget);
+    expect(find.text('Recovery: fsevents-full-rescan'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('workspace-search-watcher-recover')),
+    );
+    await tester.pump();
+    expect(watcherRecovered, isTrue);
     await tester.enterText(
       find.byKey(const ValueKey('workspace-search-query-input')),
       'lib',
@@ -128,7 +158,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('workspace-search-surface')),
-      const Offset(0, -360),
+      const Offset(0, -560),
     );
     await tester.pumpAndSettle();
 
@@ -136,6 +166,8 @@ void main() {
     expect(find.text('src/main.styio'), findsOneWidget);
     expect(find.text('src/lib.styio'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('src/main.styio'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('src/main.styio'));
     await tester.pump();
 
@@ -230,6 +262,7 @@ void main() {
           afterText: 'value := 1\n',
           replacementCount: 1,
           revision: 1,
+          workspaceRevision: 0,
         ),
         WorkspaceReplacePreviewDocument(
           documentId: 'src/lib.styio',
@@ -237,6 +270,7 @@ void main() {
           afterText: 'value := 2\n',
           replacementCount: 1,
           revision: 2,
+          workspaceRevision: 0,
         ),
       ],
     );

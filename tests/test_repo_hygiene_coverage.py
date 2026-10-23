@@ -30,6 +30,16 @@ class RepoHygieneCoverageTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
 
+    def test_delivery_documentation_requires_the_canonical_python_entrypoint(self) -> None:
+        required = {
+            marker
+            for markers in self.gate.REQUIRED_DOC_REFERENCES.values()
+            for marker in markers
+        }
+
+        self.assertIn("python3 scripts/vityo.py deliver", required)
+        self.assertEqual(self.gate.check_doc_references(), [])
+
     def test_run_git_invokes_git_in_repository_root(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
         with mock.patch.object(self.gate.subprocess, "run", return_value=completed) as run:
@@ -87,6 +97,16 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                 self.assertTrue(self.gate.has_forbidden_path_part("build/generated.txt"))
                 self.assertTrue(self.gate.has_forbidden_file_suffix("bin.zip"))
                 self.assertTrue(self.gate.is_allowed_binary("docs/assets/logo.png"))
+                self.assertTrue(
+                    self.gate.is_allowed_binary(
+                        "products/vityo_app/assets/fonts/plex/Mono.ttf"
+                    )
+                )
+                self.assertFalse(
+                    self.gate.is_allowed_binary(
+                        "products/vityo_app/assets/images/logo.png"
+                    )
+                )
                 self.assertFalse(self.gate.is_binary_file("ok/empty.txt"))
                 self.assertTrue(self.gate.is_binary_file("ok/nul.txt"))
                 self.assertTrue(self.gate.is_binary_file("ok/invalid.txt"))
@@ -345,7 +365,7 @@ class RepoHygieneCoverageTest(unittest.TestCase):
                     setattr(self.gate, name, value)
 
         joined = "\n".join(errors)
-        self.assertIn("shell runtime must not own render tab state marker", joined)
+        self.assertIn("shell runtime must not own presentation route state marker", joined)
         self.assertIn("must preserve render shell marker: enum BottomSurfaceTab", joined)
         self.assertIn("must preserve render shell marker: class ShellModel extends ShellRuntimeModel", joined)
 

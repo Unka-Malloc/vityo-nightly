@@ -67,8 +67,10 @@ class ShellAdapter {
 
   String quoteArgument(String value, ShellFamily family) {
     return switch (family) {
-      ShellFamily.bash || ShellFamily.sh || ShellFamily.zsh || ShellFamily.fish =>
-        _quotePosix(value),
+      ShellFamily.bash ||
+      ShellFamily.sh ||
+      ShellFamily.zsh ||
+      ShellFamily.fish => _quotePosix(value),
       ShellFamily.powershell => "'${value.replaceAll("'", "''")}'",
       ShellFamily.cmd => '"${value.replaceAll('"', '\\"')}"',
       ShellFamily.unknown => _quotePosix(value),
@@ -162,7 +164,7 @@ class ShellExecutionPlan {
       arguments: const <String>[],
       environment: const <String, String>{},
       workingDirectory: request.workingDirectory,
-      timeout: request.timeout ?? const Duration(seconds: 30),
+      timeout: request.timeout,
       family: ShellFamily.unknown,
       supported: false,
       unsupportedMessage: message,
@@ -174,7 +176,7 @@ class ShellExecutionPlan {
   final List<String> arguments;
   final Map<String, String> environment;
   final String? workingDirectory;
-  final Duration timeout;
+  final Duration? timeout;
   final ShellFamily family;
   final bool supported;
   final String? unsupportedMessage;

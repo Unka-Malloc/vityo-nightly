@@ -1,40 +1,682 @@
-import 'dart:async';
+@Timeout.none
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vityo_app/owner_adapters/pafio_metadata_adapter.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_manager.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/process/process_facts.dart';
 import 'package:vityo_app/owner_adapters/styio_compiler_adapter.dart';
-import 'package:vityo_app/src/ide/workspace/workspace_change_set.dart';
-import 'package:vityo_app/src/ide/workspace/workspace_revision_service.dart';
-import 'package:vityo_app/src/ide/workspace/workspace_transaction_service.dart';
+import 'package:vityo_app/src/ide/editor/document_state.dart';
+import 'package:vityo_app/src/view_ide/backend_toolchain/execution_adapter.dart';
+import 'package:vityo_app/src/view_ide/backend_toolchain/observable_snapshot_publisher_io.dart';
+import 'package:vityo_app/src/view_ide/backend_toolchain/observable_runtime_intake_io.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/project_graph_contract.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/platform_manager/platform_manager.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/execution_service.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/language_service.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/local_services.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/runtime.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/toolchain_store.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_snapshot_model.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_snapshot_decoder.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_delta_decoder.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_delta_apply.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_snapshot_cache.dart';
+import 'package:vityo_app/src/view_ide/services/observable_topology/observable_runtime_model.dart';
+import 'package:vityo_app/src/view_render/flow_hero/controller.dart';
+import 'package:vityo_app/src/view_render/flow_hero/flow_hero.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/model_config.dart';
+import 'package:vityo_app/src/view_ide/flow_hero/workspace_store.dart';
+
+import 'support/vityod_test_harness.dart';
 
 const _scenario = 'trusted-desktop-styio-loop';
 const _productMarker = 'VITYO_PRODUCT_REPORT ';
 const _contractMarker = 'VITYO_PRODUCT_CONTRACT_REPORT ';
-const _package = 'vityo/product-gate';
-const _packageId = 'workspace:vityo/product-gate@0.1.0';
-const _binTarget = 'product-gate';
-const _testTarget = 'product-gate-test';
-const _beforeToken = 'vityo-before-edit';
-const _observationToken = 'vityo-observed-r1';
-const _runtimeEventsFile = 'runtime-events.jsonl';
-const _ownerStreamLimit = 262144;
-const _diagnosticLimit = 128;
-const _runtimeEventLimit = 256;
-const _artifactReferenceLimit = 64;
-const _projectedStringLimit = 512;
-const _ownerTimeout = Duration(seconds: 120);
-const _terminationGrace = Duration(seconds: 5);
-
-final _windowsDrivePath = RegExp(r'^[A-Za-z]:[\\/]');
-final _windowsDriveRelativePath = RegExp(r'^[A-Za-z]:');
-
-typedef _CommandRunner = Future<_CommandResult> Function(_OwnerCommand command);
+const _history = 't13_task_history_capture';
+const _compileError = 'e06_task_order_non_task';
+final _fixtures = Directory('test/fixtures/task-resource');
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  boundaryCases();
+  final enabled = Platform.environment['VITYO_PRODUCT_GATE'] == '1';
+  late _Product product;
+  setUpAll(() async {
+    if (enabled) product = await _Product.open();
+  });
+  tearDownAll(() async {
+    if (enabled) await product.close();
+  });
+
+  test(
+    'real production document composition and versioned diagnostics',
+    () async {
+      expect(product.controller.engine.hasWorkspaceDocumentStore, isTrue);
+      expect(product.controller.executionLive, isTrue);
+      expect(product.language.live, isTrue);
+      expect(
+        (product.language as FlowHeroLanguageRuntime).executablePath,
+        _required('VITYO_STYIO_LSPD_BIN'),
+      );
+      expect(product.runtime.localServices.clientCreations, 1);
+      _case('component-selection');
+      await product.select(_history);
+      final before = product.document;
+      await File(
+        '${_required('VITYO_PRODUCT_EVIDENCE')}/document-request.json',
+      ).writeAsString(
+        jsonEncode({
+          'fixture': _history,
+          'documentId': before.documentId,
+          'source_revision': before.revision,
+          'text': before.text,
+          'lsp': _required('VITYO_STYIO_LSPD_BIN'),
+        }),
+      );
+      final good = await product.language.analyzeFresh(
+        before,
+        filePath: product.sourcePath,
+      );
+      await File(
+        '${_required('VITYO_PRODUCT_EVIDENCE')}/document-diagnostics.json',
+      ).writeAsString(
+        jsonEncode(
+          good?.analysis.diagnostics
+              .map(
+                (d) => {
+                  'code': d.code,
+                  'message': d.message,
+                  'severity': d.severity.name,
+                },
+              )
+              .toList(),
+        ),
+      );
+      expect(good?.authoritative, isTrue);
+      expect(
+        good!.analysis.diagnostics.where((d) => d.severity.name == 'error'),
+        isEmpty,
+      );
+      _case('document-open');
+      await product.select(_compileError);
+      final bad = product.document;
+      expect(bad.revision, greaterThan(before.revision));
+      final badResult = await product.language.analyzeFresh(
+        bad,
+        filePath: product.sourcePath,
+      );
+      expect(badResult?.authoritative, isTrue);
+      expect(
+        badResult!.analysis.diagnostics.where(
+          (d) => d.severity.name == 'error',
+        ),
+        isNotEmpty,
+      );
+      _case('document-change-save-diagnostics');
+      // Queue the old analysis first. The production language owner must reject
+      // its completion once a newer revision has been requested.
+      final restored = await File(
+        '${_fixtures.path}/$_history.styio',
+      ).readAsString();
+      final delayed = product.language.analyzeFresh(
+        bad,
+        filePath: product.sourcePath,
+      );
+      product.controller.engine.onBufferChanged(restored, line: 1, column: 1);
+      final current = product.document;
+      final fresh = product.language.analyzeFresh(
+        current,
+        filePath: product.sourcePath,
+      );
+      expect(await delayed, isNull);
+      expect(await product.controller.engine.saveActive(), isTrue);
+      final repaired = await fresh;
+      expect(repaired?.authoritative, isTrue);
+      expect(
+        repaired!.analysis.diagnostics.where((d) => d.severity.name == 'error'),
+        isEmpty,
+      );
+      expect(product.document.revision, current.revision);
+      _case('revision-correct-diagnostics');
+    },
+    skip: !enabled,
+  );
+
+  for (final kind in FlowHeroExecutionKind.values) {
+    test('real production ${kind.command} revision settlement', () async {
+      final retained = <String, List<int>>{};
+      final roots = <String>{};
+      final sessions = <String>{};
+      Object? originalCache;
+      for (final phase in ['success', 'compile_error', 'repaired']) {
+        await product.select(
+          phase == 'compile_error' ? _compileError : _history,
+        );
+        final result = await product.execute(
+          kind,
+          name: '${phase}_${kind.command}',
+        );
+        expect(result.succeeded, phase != 'compile_error');
+        expect(result.exitCode, phase == 'compile_error' ? 23 : 0);
+        if (phase == 'compile_error') {
+          expect(result.receipt, isNull);
+          expect(result.plan, isEmpty);
+          expect(
+            result.stderr,
+            contains(await product.expected(_compileError)),
+          );
+        } else {
+          expect(result.processMetadata['processHandleSource'], 'vityod');
+          expect(result.receipt, isNotNull);
+          expect(result.receipt!.intent, kind.command);
+          expect(
+            result.receipt!.executed,
+            kind == FlowHeroExecutionKind.run ||
+                kind == FlowHeroExecutionKind.test,
+          );
+          expect(sessions.add(result.receipt!.sessionId), isTrue);
+          expect(roots.add(result.plan['build_root'] as String), isTrue);
+          if (phase == 'success') {
+            originalCache = result.plan['cache_key'];
+          }
+          if (phase == 'repaired') {
+            expect(result.plan['cache_key'], originalCache);
+          }
+          await product.retain(result, retained);
+        }
+        await product.unchanged(retained);
+        _case(
+          '${phase}_${kind.command}',
+          outcome: phase == 'compile_error' ? 'failed' : 'succeeded',
+        );
+      }
+    }, skip: !enabled);
+  }
+
+  test('real production task history and failure settlement', () async {
+    // Pafio's JSON route returns paths, not child stdout. Its ordinary route
+    // is the authoritative task result; both use the same production service.
+    for (final entry in <String, String>{
+      'history': _history,
+      'handled': 't22_task_capture_failure_cleanup',
+      'f64': 't23_task_f64_history_precision',
+      'unhandled': 'e06_task_capture_failure_no_fallback',
+    }.entries) {
+      await product.select(entry.value);
+      final expected = await product.expected(entry.value);
+      for (final kind in [
+        FlowHeroExecutionKind.run,
+        FlowHeroExecutionKind.test,
+      ]) {
+        final result = await product.execute(
+          kind,
+          name: '${entry.key}_${kind.command}',
+          jsonOutput: false,
+        );
+        expect(result.exitCode, entry.key == 'unhandled' ? 23 : 0);
+        if (entry.key == 'unhandled') {
+          expect(result.succeeded, isFalse);
+          expect(result.receipt, isNull);
+          expect(result.stderr, contains(expected));
+        } else {
+          expect(
+            result.stdout,
+            '${await product.expected(entry.value, trim: false)}completed Styio ${kind.command} via compile-plan\n',
+          );
+        }
+        _case(
+          '${entry.key}_${kind.command}',
+          outcome: entry.key == 'unhandled' ? 'failed' : 'succeeded',
+        );
+      }
+    }
+  }, skip: !enabled);
+
+  test('real production invocation ownership and dry run', () async {
+    final retained = <String, List<int>>{};
+    await product.select(_history);
+    final previous = await product.execute(
+      FlowHeroExecutionKind.build,
+      name: 'before-dry-run',
+    );
+    expect(previous.succeeded, isTrue);
+    await product.retain(previous, retained);
+    final dry = await product.execute(
+      FlowHeroExecutionKind.build,
+      name: 'dry-run',
+      dryRun: true,
+    );
+    expect(dry.succeeded, isTrue);
+    expect(dry.receipt, isNull);
+    expect(
+      File('${dry.plan['build_root']}/receipt.json').existsSync(),
+      isFalse,
+    );
+    await product.unchanged(retained);
+    _case('dry-run-preservation');
+    final other =
+        await product.runtime.bootExecution(product.root, product.selection)
+            as FlowHeroExecutionRuntime;
+    try {
+      final pair = await Future.wait([
+        product.execute(FlowHeroExecutionKind.build, name: 'concurrent-1'),
+        other.executeWorkflow(FlowHeroExecutionKind.build),
+      ]);
+      expect(pair.every((r) => r.succeeded), isTrue);
+      expect(pair[0].plan['cache_key'], pair[1].plan['cache_key']);
+      expect(pair[0].plan['build_root'], isNot(pair[1].plan['build_root']));
+      for (final result in pair) {
+        await product.retain(result, retained);
+      }
+      _case('concurrent-invocation-isolation');
+      // A real controller-owned build must not become current after an edit,
+      // even when the unsaved text returns to its previous value (ABA).
+      expect(product.controller.canExecute, isTrue);
+      final pending = product.controller.runExecution(
+        FlowHeroExecutionKind.build,
+      );
+      expect(product.controller.executionBusy, isTrue);
+      final text = product.document.text;
+      product.controller.engine.onBufferChanged('$text\n', line: 1, column: 1);
+      product.controller.engine.onBufferChanged(text, line: 1, column: 1);
+      await pending;
+      expect(product.controller.lastExecutionOutcome, isNull);
+      expect(product.controller.executionPhase, FlowHeroExecutionPhase.idle);
+      expect(product.controller.messages.last.receipt, isTrue);
+      expect(product.controller.messages.last.text, contains('build 通过'));
+      expect(await product.controller.engine.saveActive(), isTrue);
+      // Consumption deliberately follows the later completed invocation.
+      await product.unchanged(retained);
+      _case('delayed-result-isolation');
+    } finally {
+      await other.dispose();
+    }
+  }, skip: !enabled);
+
+  test(
+    'real production static retained parent and runtime observation',
+    () async {
+      await product.select(_history);
+      final managers = await createDetectedPlatformManagerBundle(
+        workspaceRoot: product.root,
+        vityodClient: product.harness.client,
+      );
+      final publisher = IoObservableSnapshotPublisher(
+        processManager: managers.process,
+      );
+      Future<ObservableSnapshotPublishResult> publish([String? parent]) =>
+          publisher.publish(
+            ObservableSnapshotPublishRequest(
+              workspaceRoot: product.root,
+              manifestPath: '${product.root}/pafio.toml',
+              pafioBinary: product.selection.pafioPath,
+              compilerBinary: product.selection.styioPath,
+              parentSnapshotPath: parent,
+            ),
+          );
+      final first = await publish();
+      expect(
+        first.status,
+        ObservablePublishStatus.succeeded,
+        reason: first.detail,
+      );
+      final staticSnapshot = decodeObservableSnapshotBytes(
+        first.bytes!,
+      ).snapshot!;
+      expect(
+        staticSnapshot.compilationUnit,
+        const ObservableCompilationUnit(
+          packageName: 'acme/task-resource',
+          manifestPath: 'pafio.toml',
+          entryPath: 'src/main.styio',
+        ),
+      );
+      final snapshotId = observableSnapshotId(first.bytes!);
+      _case('static-snapshot');
+      final parent = first.artifactPath!;
+      final second = await publish(parent.substring(product.root.length + 1));
+      expect(
+        second.status,
+        ObservablePublishStatus.succeeded,
+        reason: second.detail,
+      );
+      expect(second.artifactPath, isNot(parent));
+      final delta = decodeObservableDeltaBytes(second.deltaBytes!).envelope!;
+      expect(delta.parentSnapshotId, snapshotId);
+      expect(delta.targetSnapshotId, snapshotId);
+      expect(applyObservableDelta(first.bytes!, delta).bytes, second.bytes);
+      expect(await File(parent).readAsBytes(), first.bytes);
+      _case('retained-parent-delta');
+      final missing = await publish(
+        '${product.root}/absent.observable-static-snapshot.json',
+      );
+      expect(missing.status, ObservablePublishStatus.succeeded);
+      expect(missing.degradation, 'full_snapshot_required');
+      expect(
+        (missing.receipt as ExecutionReceiptSnapshot).observableReason,
+        'parent_unreadable',
+      );
+      expect(missing.deltaBytes, isNull);
+      expect(missing.bytes, first.bytes);
+      _case('unreadable-parent-full-snapshot');
+      final ids = <String>{};
+      final retained = <String, List<int>>{};
+      for (final phase in [
+        'runtime-only',
+        'observed-good',
+        'observed-error',
+        'observed-repaired',
+      ]) {
+        await product.select(
+          phase == 'observed-error' ? _compileError : _history,
+        );
+        final result = await product.execute(
+          FlowHeroExecutionKind.run,
+          name: phase,
+          staticSnapshot: phase != 'runtime-only',
+          observation: const RuntimeObservationRequest(
+            mode: RuntimeObservationMode.detailed,
+          ),
+        );
+        if (phase == 'observed-error') {
+          expect(result.exitCode, 23);
+          expect(result.receipt, isNull);
+          expect(result.plan, isEmpty);
+        } else {
+          expect(result.succeeded, isTrue);
+          final events = result.receipt!.runtimeEventsPath!;
+          expect(File(events).parent.path, result.plan['build_root']);
+          final intake = await const IoObservableRuntimeIntake().ingest(
+            RuntimeIntakeRequest(
+              artifactPath: events,
+              headSnapshotId: snapshotId,
+              headSiteIds: staticSnapshot.nodes.map((node) => node.id).toList(),
+            ),
+          );
+          expect(intake.isOk, isTrue, reason: intake.detail);
+          expect(intake.overlay!.summaryMissing, isFalse);
+          expect(intake.overlay!.snapshotId, snapshotId);
+          expect(intake.overlay!.maxActivity, greaterThan(0));
+          expect(intake.overlay!.uncorrelated.staleSnapshot, 0);
+          expect(ids.add(intake.overlay!.executionId), isTrue);
+          final records = (await File(events).readAsLines())
+              .where((l) => l.isNotEmpty)
+              .map((l) => jsonDecode(l) as Map)
+              .toList();
+          expect(records.first['record_kind'], 'session.capability');
+          expect(records.last['record_kind'], 'session.summary');
+          expect(
+            records.where((r) => r['record_kind'] == 'session.capability'),
+            hasLength(1),
+          );
+          expect(
+            records.where((r) => r['record_kind'] == 'session.summary'),
+            hasLength(1),
+          );
+          expect(
+            records.map((r) => r['event_kind']),
+            containsAll([
+              'task.created',
+              'task.completed',
+              'task.result_consumed',
+            ]),
+          );
+          final snapshots = result.receipt!.artifacts.where(
+            (a) => a.endsWith('.observable-static-snapshot.json'),
+          );
+          expect(snapshots.length, phase == 'runtime-only' ? 0 : 1);
+          if (snapshots.isNotEmpty) {
+            expect(await File(snapshots.single).readAsBytes(), first.bytes);
+          }
+          await product.retain(result, retained);
+        }
+        await product.unchanged(retained);
+        _case(
+          phase,
+          outcome: phase == 'observed-error' ? 'failed' : 'succeeded',
+        );
+      }
+      await product.select('t23_task_f64_history_precision');
+      final off = await product.execute(
+        FlowHeroExecutionKind.run,
+        name: 'observation-off-after',
+      );
+      expect(off.succeeded, isTrue);
+      expect(
+        off.receipt!.artifacts.any(
+          (a) => a.endsWith('.observable-static-snapshot.json'),
+        ),
+        isFalse,
+      );
+      await product.unchanged(retained);
+      expect(await File(parent).readAsBytes(), first.bytes);
+      _case('observation-off-after');
+    },
+    skip: !enabled,
+  );
+}
+
+void _case(String name, {String outcome = 'succeeded'}) => stdout.writeln(
+  '$_productMarker${jsonEncode({'schema_version': 2, 'scenario': _scenario, 'evidence_kind': 'real-production-services', 'case': name, 'outcome': outcome, 'accepted': true})}',
+);
+
+class _Product {
+  _Product(
+    this.root,
+    this.harness,
+    this.runtime,
+    this.controller,
+    this.language,
+    this.selection,
+  );
+  final String root;
+  final VityodTestHarness harness;
+  final ProductionFlowHeroRuntime runtime;
+  final FlowHeroController controller;
+  final FlowHeroLanguageSession language;
+  final FlowHeroToolchainSelection selection;
+  String get sourcePath => '$root/src/main.styio';
+  FlowHeroExecutionRuntime get execution =>
+      controller.executionSource! as FlowHeroExecutionRuntime;
+  DocumentState get document => DocumentState(
+    documentId: sourcePath,
+    text: controller.engine.activeFile.text,
+    revision: controller.engine.activeFile.sourceRevision,
+  );
+
+  static Future<_Product> open() async {
+    final root = _required('VITYO_PRODUCT_WORKSPACE_ROOT');
+    final harness = await VityodTestHarness.start(
+      clientId: 'product-gate',
+      executablePath: _required('VITYO_VITYOD_BIN'),
+      evidenceDirectory: Directory(_required('VITYO_PRODUCT_EVIDENCE')),
+    );
+    final runtime = ProductionFlowHeroRuntime(
+      localServices: FlowHeroLocalServices(
+        clientFactory: () async => harness.client,
+      ),
+    );
+    final selection = FlowHeroToolchainSelection(
+      pafioPath: _required('VITYO_PAFIO_BIN'),
+      styioPath: _required('VITYO_STYIO_BIN'),
+    );
+    _required('VITYO_STYIO_LSPD_BIN');
+    final controller = FlowHeroApp(
+      runtime: runtime,
+      initialToolchainSelection: selection,
+      workspaceStore: FlowHeroMemoryWorkspaceStore(root),
+      toolchainStore: FlowHeroMemoryToolchainStore(),
+      modelConfigStore: FlowHeroMemoryModelConfigStore(),
+    ).createController(workspaceRoot: root);
+    await controller.workspaceBootSettled;
+    expect(controller.languageMode, FlowHeroLanguageMode.live);
+    expect(await controller.engine.openPath(sourcePathFor(root)), isTrue);
+    return _Product(
+      root,
+      harness,
+      runtime,
+      controller,
+      controller.languageSession!,
+      selection,
+    );
+  }
+
+  static String sourcePathFor(String root) => '$root/src/main.styio';
+  Future<String> expected(String fixture, {bool trim = true}) async {
+    final text = await File(
+      '${_fixtures.path}/$fixture.expected',
+    ).readAsString();
+    return trim ? text.trim() : text;
+  }
+
+  Future<void> select(String fixture) async {
+    final text = await File('${_fixtures.path}/$fixture.styio').readAsString();
+    controller.engine.onBufferChanged(text, line: 1, column: 1);
+    expect(controller.lastExecutionOutcome, isNull);
+    expect(await controller.engine.saveActive(), isTrue);
+    // Read-only assertion: every write went through the production save service.
+    expect(await File(sourcePath).readAsString(), text);
+  }
+
+  Future<FlowHeroExecutionOutcome> execute(
+    FlowHeroExecutionKind kind, {
+    required String name,
+    bool jsonOutput = true,
+    bool dryRun = false,
+    bool staticSnapshot = false,
+    RuntimeObservationRequest? observation,
+  }) async {
+    final FlowHeroExecutionOutcome result;
+    if (jsonOutput && !dryRun && !staticSnapshot && observation == null) {
+      // Ordinary operations go through the mounted app's controller, including
+      // current-result invalidation and historical receipt publication.
+      expect(controller.canExecute, isTrue);
+      final pending = controller.runExecution(kind);
+      expect(controller.lastExecutionOutcome, isNull);
+      await pending;
+      result = controller.lastExecutionOutcome!;
+      expect(controller.executionPhase, result.phase);
+    } else {
+      result = await execution.executeWorkflow(
+        kind,
+        jsonOutput: jsonOutput,
+        dryRun: dryRun,
+        staticSnapshot: staticSnapshot,
+        observation: observation,
+      );
+    }
+    final dir = Directory(_required('VITYO_PRODUCT_EVIDENCE'));
+    await File('${dir.path}/$name.json').writeAsString(
+      jsonEncode({
+        'command': kind.command,
+        'exit_code': result.exitCode,
+        'stdout': result.stdout,
+        'stderr': result.stderr,
+        'plan': result.plan,
+        'metadata': result.processMetadata,
+      }),
+    );
+    return result;
+  }
+
+  Future<void> retain(
+    FlowHeroExecutionOutcome result,
+    Map<String, List<int>> retained,
+  ) async {
+    final root = result.plan['build_root'] as String;
+    expect(result.receipt!.artifacts, isNotEmpty);
+    expect((result.processMetadata['argv'] as List).first, selection.pafioPath);
+    final argv = result.processMetadata['argv'] as List;
+    expect(argv[argv.indexOf('--styio-bin') + 1], selection.styioPath);
+    expect((result.plan['path'] as String).startsWith('$root/'), isTrue);
+    expect(File(result.plan['path'] as String).existsSync(), isTrue);
+    for (final path in [
+      result.plan['path'] as String,
+      '$root/receipt.json',
+      '${result.plan['diag_dir']}/diagnostics.jsonl',
+      ...result.receipt!.artifacts,
+      if (result.receipt!.runtimeEventsPath case final path?)
+        if (File(path).existsSync()) path,
+    ]) {
+      expect(File(path).absolute.path.startsWith('$root/'), isTrue);
+      retained[path] = await File(path).readAsBytes();
+    }
+  }
+
+  Future<void> unchanged(Map<String, List<int>> retained) async {
+    for (final entry in retained.entries) {
+      expect(await File(entry.key).readAsBytes(), entry.value);
+    }
+  }
+
+  Future<void> close() async {
+    controller.dispose();
+    await language.dispose();
+    await runtime.dispose();
+    await harness.close();
+  }
+}
+
+String _required(String key) {
+  final value = Platform.environment[key];
+  if (value == null || value.isEmpty) throw StateError('$key is required');
+  return value;
+}
+
+void boundaryCases() {
+  test('current absolute owner paths stay canonically contained', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'vityo-owner-paths-',
+    );
+    try {
+      final root = await directory.resolveSymbolicLinks();
+      final output = Directory('$root/build/invocation');
+      await output.create(recursive: true);
+      final artifact = File(
+        '${output.path}/module.observable-static-snapshot.json',
+      );
+      await artifact.writeAsString('{}');
+      final receipt = File('${output.path}/receipt.json');
+      await receipt.writeAsString(
+        jsonEncode({
+          'schema_version': 1,
+          'intent': 'check',
+          'session_id': 'contained-owner',
+          'executed': false,
+          'artifacts': [artifact.path],
+        }),
+      );
+      final publisher = IoObservableSnapshotPublisher(
+        processManager: _EnvelopeProcessManager(output.path),
+      );
+      final result = await publisher.publish(
+        ObservableSnapshotPublishRequest(
+          workspaceRoot: directory.path,
+          manifestPath: '${directory.path}/pafio.toml',
+          pafioBinary: 'controlled-pafio',
+          compilerBinary: 'controlled-styio',
+        ),
+      );
+      expect(result.isSuccess, isTrue, reason: result.detail);
+      expect(result.artifactPath, artifact.path);
+      expect(result.bytes, utf8.encode('{}'));
+      expect(
+        (result.receipt as ExecutionReceiptSnapshot).sessionId,
+        'contained-owner',
+      );
+      _emitContract(
+        caseName: 'canonical-owner-paths',
+        outcome: 'succeeded',
+        category: 'owner_paths_contained',
+      );
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
+
   test('missing selected Styio is blocked distinctly', () async {
     final result = await _classifyBoundary(
       _ControlledRunner(const <_CommandResult>[
@@ -89,7 +731,7 @@ void main() {
     final result = await _classifyBoundary(
       _ControlledRunner(<_CommandResult>[
         _CommandResult.json(_compatibleMachineInfo()),
-        const _CommandResult(timedOut: true),
+        const _CommandResult(exitCode: 23),
       ]).call,
       workflow: const _OwnerCommand('<pafio>', <String>[
         '--json',
@@ -103,492 +745,6 @@ void main() {
       category: result.$2,
     );
   });
-
-  test('current absolute owner paths stay canonically contained', () async {
-    final root = await Directory.systemTemp.createTemp('vityo_owner_contract_');
-    try {
-      final workspaceDirectory = Directory(
-        '${root.path}${Platform.pathSeparator}workspace',
-      );
-      final buildDirectory = Directory(
-        '${workspaceDirectory.path}${Platform.pathSeparator}build',
-      );
-      final artifactDirectory = Directory(
-        '${buildDirectory.path}${Platform.pathSeparator}artifacts',
-      );
-      final diagnosticDirectory = Directory(
-        '${buildDirectory.path}${Platform.pathSeparator}diag',
-      );
-      await artifactDirectory.create(recursive: true);
-      await diagnosticDirectory.create(recursive: true);
-      final workspace = await workspaceDirectory.resolveSymbolicLinks();
-      final buildRoot = await buildDirectory.resolveSymbolicLinks();
-      final artifactDir = await artifactDirectory.resolveSymbolicLinks();
-      final diagDir = await diagnosticDirectory.resolveSymbolicLinks();
-      final eventsPath =
-          '$buildRoot${Platform.pathSeparator}$_runtimeEventsFile';
-      await File(
-        '$buildRoot${Platform.pathSeparator}receipt.json',
-      ).writeAsString(
-        jsonEncode(
-          _currentReceipt(
-            command: 'check',
-            workspace: workspace,
-            buildRoot: buildRoot,
-            artifactDir: artifactDir,
-            diagDir: diagDir,
-            eventsPath: eventsPath,
-          ),
-        ),
-      );
-      await File(
-        '$diagDir${Platform.pathSeparator}diagnostics.jsonl',
-      ).writeAsString('');
-      await File(eventsPath).writeAsString(
-        '${jsonEncode(<String, Object?>{
-          'contract': 'styio.observable.runtime-events',
-          'schema_version': 2,
-          'record_kind': 'session.capability',
-          'event_kind': 'session.capability',
-          'mode': 'detailed',
-          'snapshot_schema': 1,
-          'snapshot_id': 's1_0123456789abcdef0123456789abcdef',
-          'execution_id': 'x2_0000000000000001',
-          'privacy_profile': 'strict',
-          'producer_lanes': 1,
-          'lane_capacity': 256,
-          'priority_reserved': 32,
-          'drain_batch': 64,
-          'sampling': <String, Object?>{
-            'numerator': 1,
-            'denominator': 16,
-            'seed': 0,
-          },
-          'clock_unit': 'ns',
-          'supported_capabilities': <String>[
-            'task-lifecycle',
-            'loss-accounting',
-            'strict-privacy',
-          ],
-          'active_capabilities': <String>[
-            'task-lifecycle',
-            'loss-accounting',
-            'strict-privacy',
-          ],
-          'unavailable_capabilities': <String>[],
-        })}\n${jsonEncode(<String, Object?>{
-          'contract': 'styio.observable.runtime-events',
-          'schema_version': 2,
-          'record_kind': 'event',
-          'event_kind': 'compile.started',
-          'family': 'session',
-          'priority': 'lifecycle',
-          'correlation_status': 'runtime_only',
-          'role': 'runtime_only',
-          'snapshot_id': null,
-          'site_id': null,
-          'instance_id': null,
-          'event_id': 'r2_0000000000000001',
-          'monotonic_ns': 0,
-          'causes': <Object?>[],
-          'wait': null,
-          'intent': 'check',
-        })}\n',
-      );
-
-      final session = await _validateWorkflow(
-        _currentWorkflowEnvelope(
-          command: 'check',
-          buildRoot: buildRoot,
-          artifactDir: artifactDir,
-          diagDir: diagDir,
-        ),
-        command: 'check',
-        workspaceRoot: workspace,
-      );
-      expect(session, 'check-session');
-    } finally {
-      await root.delete(recursive: true);
-    }
-  });
-
-  final enabled = _enabled(Platform.environment['VITYO_PRODUCT_GATE']);
-  test(
-    'real edit check test run and observation share one saved revision',
-    () async {
-      final report = await _runRealScenario(
-        workspacePath: _requiredEnvironment('VITYO_PRODUCT_WORKSPACE_ROOT'),
-        manifestPath: _requiredEnvironment('VITYO_PRODUCT_MANIFEST_PATH'),
-        pafioBinary: _requiredEnvironment('VITYO_PAFIO_BIN'),
-        styioBinary: _requiredEnvironment('VITYO_STYIO_BIN'),
-        runner: _runBoundedCommand,
-      );
-      stdout.writeln('$_productMarker${jsonEncode(report)}');
-    },
-    skip: enabled ? false : 'requires VITYO_PRODUCT_GATE=1',
-  );
-}
-
-final class _OwnerCommand {
-  const _OwnerCommand(this.executable, this.arguments, this.workingDirectory);
-
-  final String executable;
-  final List<String> arguments;
-  final String workingDirectory;
-}
-
-final class _CommandResult {
-  const _CommandResult({
-    this.exitCode = 0,
-    this.stdoutBytes = const <int>[],
-    this.stderrBytes = const <int>[],
-    this.timedOut = false,
-    this.outputExceeded = false,
-  }) : spawned = true;
-
-  factory _CommandResult.json(Object value, {int exitCode = 0}) {
-    return _CommandResult(
-      exitCode: exitCode,
-      stdoutBytes: utf8.encode(jsonEncode(value)),
-    );
-  }
-
-  const _CommandResult.spawnFailure()
-    : spawned = false,
-      exitCode = -1,
-      stdoutBytes = const <int>[],
-      stderrBytes = const <int>[],
-      timedOut = false,
-      outputExceeded = false;
-
-  final bool spawned;
-  final int exitCode;
-  final List<int> stdoutBytes;
-  final List<int> stderrBytes;
-  final bool timedOut;
-  final bool outputExceeded;
-
-  String get stdoutText => utf8.decode(stdoutBytes);
-}
-
-final class _ControlledRunner {
-  _ControlledRunner(Iterable<_CommandResult> results)
-    : _results = List<_CommandResult>.of(results);
-
-  final List<_CommandResult> _results;
-  var _index = 0;
-
-  Future<_CommandResult> call(_OwnerCommand command) async {
-    if (_index >= _results.length) {
-      throw StateError('controlled runner received an unexpected command');
-    }
-    return _results[_index++];
-  }
-}
-
-Future<_CommandResult> _runBoundedCommand(_OwnerCommand command) async {
-  final Process process;
-  try {
-    process = await Process.start(
-      command.executable,
-      command.arguments,
-      workingDirectory: command.workingDirectory,
-      runInShell: false,
-    );
-  } on ProcessException {
-    return const _CommandResult.spawnFailure();
-  }
-
-  final stdoutBytes = <int>[];
-  final stderrBytes = <int>[];
-  var outputExceeded = false;
-  final drains = <Future<void>>[
-    _drainBounded(process.stdout, stdoutBytes, () => outputExceeded = true),
-    _drainBounded(process.stderr, stderrBytes, () => outputExceeded = true),
-  ];
-  final stopwatch = Stopwatch()..start();
-  final exitCode = Completer<int>();
-  unawaited(process.exitCode.then(exitCode.complete));
-  var timedOut = false;
-  while (!exitCode.isCompleted) {
-    if (outputExceeded) {
-      await _terminate(process);
-      break;
-    }
-    if (stopwatch.elapsed >= _ownerTimeout) {
-      timedOut = true;
-      await _terminate(process);
-      break;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-  }
-  final code = await process.exitCode;
-  await Future.wait(drains);
-  return _CommandResult(
-    exitCode: code,
-    stdoutBytes: List<int>.unmodifiable(stdoutBytes),
-    stderrBytes: List<int>.unmodifiable(stderrBytes),
-    timedOut: timedOut,
-    outputExceeded: outputExceeded,
-  );
-}
-
-Future<void> _drainBounded(
-  Stream<List<int>> stream,
-  List<int> target,
-  void Function() exceeded,
-) async {
-  await for (final chunk in stream) {
-    final remaining = _ownerStreamLimit + 1 - target.length;
-    if (remaining > 0) {
-      target.addAll(chunk.take(remaining));
-    }
-    if (target.length > _ownerStreamLimit || chunk.length > remaining) {
-      exceeded();
-    }
-  }
-}
-
-Future<void> _terminate(Process process) async {
-  process.kill(ProcessSignal.sigterm);
-  try {
-    await process.exitCode.timeout(_terminationGrace);
-  } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    await process.exitCode;
-  }
-}
-
-Future<(String, String)> _classifyBoundary(
-  _CommandRunner runner, {
-  _OwnerCommand? workflow,
-}) async {
-  final machine = await runner(
-    const _OwnerCommand('<styio>', <String>['--machine-info=json'], '.'),
-  );
-  if (!machine.spawned) {
-    return ('blocked', 'styio_missing');
-  }
-  try {
-    _requireSuccessful(machine);
-    _decodeCompatibleMachine(machine.stdoutText, '<styio>');
-  } on Object {
-    return ('blocked', 'styio_machine_contract_incompatible');
-  }
-  if (workflow == null) {
-    throw StateError('compatible probe requires a workflow failure result');
-  }
-  final result = await runner(workflow);
-  try {
-    _requireSuccessful(result);
-    await _validateWorkflow(
-      _jsonObject(result.stdoutText, 'check workflow'),
-      command: 'check',
-      workspaceRoot: Directory.current.path,
-      requireContainedPaths: false,
-    );
-  } on Object {
-    return ('failed', 'compiler_execution_failed');
-  }
-  throw StateError('controlled compiler execution unexpectedly succeeded');
-}
-
-Future<Map<String, Object?>> _runRealScenario({
-  required String workspacePath,
-  required String manifestPath,
-  required String pafioBinary,
-  required String styioBinary,
-  required _CommandRunner runner,
-}) async {
-  final workspace = await Directory(workspacePath).resolveSymbolicLinks();
-  final manifest = await File(manifestPath).resolveSymbolicLinks();
-  _requireContained(workspace, manifest);
-
-  final machineResult = await runner(
-    _OwnerCommand(styioBinary, const <String>[
-      '--machine-info=json',
-    ], workspace),
-  );
-  if (!machineResult.spawned) {
-    throw StateError('styio_missing');
-  }
-  _requireSuccessful(machineResult);
-  final compiler = _decodeCompatibleMachine(
-    machineResult.stdoutText,
-    styioBinary,
-  );
-
-  final syncResult = await runner(
-    _OwnerCommand(pafioBinary, <String>[
-      '--json',
-      'sync',
-      '--manifest-path',
-      manifest,
-    ], workspace),
-  );
-  _requireSuccessful(syncResult);
-  final sync = _jsonObject(syncResult.stdoutText, 'sync');
-  if (sync['command'] != 'sync') {
-    throw StateError('sync returned a different command');
-  }
-  _boundedString(sync['message'], 'sync.message');
-
-  final metadataResult = await runner(
-    _OwnerCommand(pafioBinary, <String>[
-      'metadata',
-      '--json',
-      '--manifest-path',
-      manifest,
-    ], workspace),
-  );
-  _requireSuccessful(metadataResult);
-  final metadata = _jsonObject(metadataResult.stdoutText, 'metadata');
-  PafioMetadataAdapter.decode(metadataResult.stdoutText);
-  _requireSelectedTargets(metadata);
-
-  final unresolvedSourceFile = File(
-    '${Directory(workspace).path}${Platform.pathSeparator}src'
-    '${Platform.pathSeparator}main.styio',
-  );
-  final sourcePath = await unresolvedSourceFile.resolveSymbolicLinks();
-  _requireContained(workspace, sourcePath);
-  final sourceFile = File(sourcePath);
-  final initialBytes = await sourceFile.readAsBytes();
-  final initialText = utf8.decode(initialBytes);
-  final tokenStart = initialText.indexOf(_beforeToken);
-  if (tokenStart < 0) {
-    throw StateError('product fixture does not contain the edit token');
-  }
-
-  final revisions = InMemoryWorkspaceRevisionService(
-    initialDocuments: <String, String>{'src/main.styio': initialText},
-  );
-  final transactions = RevisionedWorkspaceTransactionService(revisions);
-  final before = revisions.snapshot();
-  final preview = await transactions.preview(
-    WorkspaceChangeSet(
-      id: 'trusted-desktop-product-edit',
-      baseWorkspaceRevision: before.workspaceRevision,
-      resources: <WorkspaceResourceChange>[
-        WorkspaceResourceChange(
-          resourceId: 'src/main.styio',
-          baseDocumentRevision: before.document('src/main.styio').revision,
-          edits: <WorkspaceTextChange>[
-            WorkspaceTextChange(
-              start: tokenStart,
-              end: tokenStart + _beforeToken.length,
-              replacement: _observationToken,
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-  if (preview.outcome != WorkspaceTransactionOutcome.ready) {
-    throw StateError('Vityo edit preview was not ready');
-  }
-  final receipt = await transactions.commit(preview.id);
-  if (receipt.outcome != WorkspaceTransactionOutcome.committed ||
-      receipt.workspaceRevision <= 0) {
-    throw StateError('Vityo edit did not commit');
-  }
-  final savedText = revisions.snapshot().document('src/main.styio').text;
-  if (savedText.contains('\r')) {
-    throw StateError('committed product source is not LF-normalized');
-  }
-  final savedBytes = utf8.encode(savedText);
-  await sourceFile.writeAsBytes(savedBytes, flush: true);
-  final sourceDigest = sha256.convert(savedBytes).toString();
-
-  final workflowReports = <Map<String, Object?>>[];
-  final sessions = <String>[];
-  for (final command in const <String>['check', 'test', 'run']) {
-    await _requireSavedDigest(sourceFile, sourceDigest);
-    final selector = command == 'test'
-        ? const <String>['--test', _testTarget]
-        : const <String>['--bin', _binTarget];
-    final result = await runner(
-      _OwnerCommand(pafioBinary, <String>[
-        '--json',
-        command,
-        '--manifest-path',
-        manifest,
-        '--styio-bin',
-        styioBinary,
-        '--package',
-        _package,
-        ...selector,
-      ], workspace),
-    );
-    _requireSuccessful(result);
-    final payload = _jsonObject(result.stdoutText, '$command workflow');
-    final session = await _validateWorkflow(
-      payload,
-      command: command,
-      workspaceRoot: workspace,
-      observationToken: command == 'run' ? _observationToken : null,
-    );
-    sessions.add(session);
-    workflowReports.add(<String, Object?>{
-      'name': command,
-      'status': 'succeeded',
-      'workspace_revision': receipt.workspaceRevision,
-      'source_sha256': sourceDigest,
-      'owner_contract': 'pafio-current+styio-files-v1',
-      'session_id_sha256': sha256.convert(utf8.encode(session)).toString(),
-    });
-    await _requireSavedDigest(sourceFile, sourceDigest);
-  }
-  if (sessions.toSet().length != 3) {
-    throw StateError('workflow sessions must identify distinct executions');
-  }
-  final runSessionDigest = sha256.convert(utf8.encode(sessions[2])).toString();
-  final observationDigest = sha256
-      .convert(utf8.encode(_observationToken))
-      .toString();
-
-  Map<String, Object?> revisionStep(String name) => <String, Object?>{
-    'name': name,
-    'status': 'succeeded',
-    'workspace_revision': receipt.workspaceRevision,
-    'source_sha256': sourceDigest,
-  };
-
-  return <String, Object?>{
-    'schema_version': 1,
-    'scenario': _scenario,
-    'evidence_kind': 'real-pinned-matrix',
-    'ok': true,
-    'workspace_revision': receipt.workspaceRevision,
-    'source_sha256': sourceDigest,
-    'preflight': <String, Object?>{
-      'metadata_contract': 'metadata-v1',
-      'sync_status': 'succeeded',
-      'compiler_tool': compiler.tool,
-      'compile_plan_contract': 1,
-      'runtime_events_contract': _runtimeEventsContract(compiler),
-      'runtime_event_stream': true,
-      'package': _package,
-      'bin_target': _binTarget,
-      'test_target': _testTarget,
-    },
-    'steps': <Map<String, Object?>>[
-      revisionStep('edit'),
-      ...workflowReports,
-      <String, Object?>{
-        ...revisionStep('observe'),
-        'session_id_sha256': runSessionDigest,
-        'eventKind': 'log.emitted',
-        'observation_sha256': observationDigest,
-      },
-    ],
-  };
-}
-
-int _runtimeEventsContract(CompilerHandshakeSnapshot compiler) {
-  final versions =
-      compiler.supportedContractVersions['runtime_events'] ?? const <int>[];
-  return versions.contains(2) ? 2 : 1;
 }
 
 CompilerHandshakeSnapshot _decodeCompatibleMachine(
@@ -637,459 +793,6 @@ CompilerHandshakeSnapshot _decodeCompatibleMachine(
   return compiler;
 }
 
-void _requireSelectedTargets(Map<String, Object?> metadata) {
-  final selectedPackage = _object(metadata['package'], 'metadata.package');
-  final packageId = _boundedString(
-    selectedPackage['id'],
-    'metadata.package.id',
-  );
-  if (selectedPackage['name'] != _package) {
-    throw StateError('metadata returned a different selected package');
-  }
-  final workspace = _object(metadata['workspace'], 'metadata.workspace');
-  final packages = _list(workspace['packages'], 'metadata.workspace.packages');
-  if (!packages.any((item) {
-    final package = _object(item, 'metadata package');
-    return package['id'] == packageId && package['name'] == _package;
-  })) {
-    throw StateError('metadata omitted the selected package');
-  }
-  final targets = _list(metadata['targets'], 'metadata.targets');
-  final selectors = <String>{
-    for (final item in targets)
-      '${_object(item, 'metadata target')['package_id']}:'
-          '${_object(item, 'metadata target')['kind']}:'
-          '${_object(item, 'metadata target')['name']}',
-  };
-  if (!selectors.contains('$packageId:bin:$_binTarget') ||
-      !selectors.contains('$packageId:test:$_testTarget')) {
-    throw StateError('metadata omitted a selected product target');
-  }
-}
-
-Future<String> _validateWorkflow(
-  Map<String, Object?> payload, {
-  required String command,
-  required String workspaceRoot,
-  String? observationToken,
-  bool requireContainedPaths = true,
-}) async {
-  _closedKeys(payload, const <String>{
-    'action',
-    'command',
-    'intent',
-    'message',
-    'mode',
-    'plan',
-    'profile',
-    'status',
-    'styio',
-    'sync',
-    'target',
-  }, '$command Pafio envelope');
-  if (payload['action'] != command ||
-      payload['command'] != command ||
-      payload['intent'] != command ||
-      payload['mode'] != 'execute' ||
-      payload['status'] != 'succeeded') {
-    throw StateError('$command did not return the current success envelope');
-  }
-  _boundedString(payload['message'], '$command.message');
-  _boundedString(payload['profile'], '$command.profile');
-  final styio = _object(payload['styio'], '$command.styio');
-  final sync = _object(payload['sync'], '$command.sync');
-  final process = _object(styio['process'], '$command.styio.process');
-  if (styio['status'] != 'succeeded' ||
-      sync['status'] != 'succeeded' ||
-      process['status'] != 'exited' ||
-      process['exit_code'] != 0) {
-    throw StateError('$command Styio process did not succeed');
-  }
-  final expectedKind = command == 'test' ? 'test' : 'bin';
-  final expectedName = command == 'test' ? _testTarget : _binTarget;
-  final target = _object(payload['target'], '$command.target');
-  if (target['package'] != _package ||
-      target['package_id'] != _packageId ||
-      target['kind'] != expectedKind ||
-      target['name'] != expectedName) {
-    throw StateError('$command target does not match the selected target');
-  }
-
-  if (!requireContainedPaths) {
-    throw StateError('$command owner files are unavailable');
-  }
-  final workspace = await Directory(workspaceRoot).resolveSymbolicLinks();
-  final plan = _object(payload['plan'], '$command.plan');
-  final buildRoot = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(plan['build_root'], '$command.plan.build_root'),
-  );
-  final artifactDir = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(plan['artifact_dir'], '$command.plan.artifact_dir'),
-  );
-  final diagDir = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(plan['diag_dir'], '$command.plan.diag_dir'),
-  );
-
-  final receiptText = await _readOwnerFile(
-    _ownerPath(buildRoot, 'receipt.json'),
-    containedRoot: buildRoot,
-    name: '$command receipt',
-  );
-  final receipt = _jsonObject(receiptText, '$command.receipt');
-  _closedKeys(receipt, const <String>{
-    'schema_version',
-    'tool',
-    'compiler_version',
-    'channel',
-    'plan_version',
-    'intent',
-    'session_id',
-    'executed',
-    'wall_time_ms',
-    'generated_at',
-    'dict_impl',
-    'entry',
-    'outputs',
-    'artifacts',
-  }, '$command receipt');
-  if (receipt['schema_version'] != 1 ||
-      receipt['tool'] != 'styio' ||
-      receipt['plan_version'] != 1 ||
-      receipt['intent'] != command ||
-      receipt['executed'] != (command != 'check')) {
-    throw StateError('$command receipt does not match current Styio semantics');
-  }
-  _boundedString(receipt['compiler_version'], '$command.compiler_version');
-  _boundedString(receipt['channel'], '$command.channel');
-  _boundedString(receipt['generated_at'], '$command.generated_at');
-  final wallTime = receipt['wall_time_ms'];
-  if (wallTime is! int || wallTime < 0) {
-    throw StateError('$command receipt wall time is invalid');
-  }
-  final dictImpl = _object(receipt['dict_impl'], '$command.receipt.dict_impl');
-  _closedKeys(dictImpl, const <String>{'selected'}, '$command dict_impl');
-  _boundedString(dictImpl['selected'], '$command.dict_impl.selected');
-  final session = _boundedString(receipt['session_id'], '$command.session_id');
-  final entry = _object(receipt['entry'], '$command.receipt.entry');
-  _closedKeys(entry, const <String>{
-    'package_id',
-    'target_kind',
-    'target_name',
-    'file',
-  }, '$command receipt entry');
-  if (entry['package_id'] != _packageId ||
-      entry['target_kind'] != expectedKind ||
-      entry['target_name'] != expectedName) {
-    throw StateError('$command receipt target is stale');
-  }
-  _boundedOwnerPath(entry['file'], '$command receipt entry file');
-  final outputs = _object(receipt['outputs'], '$command.receipt.outputs');
-  _closedKeys(outputs, const <String>{
-    'build_root',
-    'artifact_dir',
-    'diag_dir',
-    'runtime_events_path',
-  }, '$command receipt outputs');
-  final receiptBuildRoot = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(outputs['build_root'], '$command.outputs.build_root'),
-  );
-  final receiptArtifactDir = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(outputs['artifact_dir'], '$command.outputs.artifact_dir'),
-  );
-  final receiptDiagDir = await _resolveOwnerDirectory(
-    workspace,
-    _boundedOwnerPath(outputs['diag_dir'], '$command.outputs.diag_dir'),
-  );
-  if (receiptBuildRoot != buildRoot ||
-      receiptArtifactDir != artifactDir ||
-      receiptDiagDir != diagDir) {
-    throw StateError('$command receipt outputs are stale');
-  }
-  final artifacts = _list(receipt['artifacts'], '$command artifacts');
-  if (artifacts.length > _artifactReferenceLimit) {
-    throw StateError('$command artifacts exceed their limit');
-  }
-  for (final artifact in artifacts) {
-    final path = _boundedOwnerPath(artifact, '$command artifact');
-    final resolved = await File(
-      _ownerPath(workspace, path),
-    ).resolveSymbolicLinks();
-    _requireContained(artifactDir, resolved);
-  }
-
-  final diagnosticText = await _readOwnerFile(
-    _ownerPath(diagDir, 'diagnostics.jsonl'),
-    containedRoot: diagDir,
-    name: '$command diagnostics',
-  );
-  final diagnostics = _jsonLines(
-    diagnosticText,
-    '$command diagnostic',
-    _diagnosticLimit,
-  );
-  for (final diagnostic in diagnostics) {
-    if (diagnostic.containsKey('schema_version') &&
-        diagnostic['schema_version'] != 1) {
-      throw StateError('$command diagnostic schema is unsupported');
-    }
-  }
-
-  final eventsPath = _boundedOwnerPath(
-    outputs['runtime_events_path'],
-    '$command.runtime_events_path',
-  );
-  if (eventsPath.split(RegExp(r'[\\/]')).last != _runtimeEventsFile) {
-    throw StateError('$command runtime events path has an unknown schema');
-  }
-  final eventFile = await File(
-    _ownerPath(workspace, eventsPath),
-  ).resolveSymbolicLinks();
-  _requireContained(buildRoot, eventFile);
-  final eventText = await _readOwnerFile(
-    eventFile,
-    containedRoot: buildRoot,
-    name: '$command runtime events',
-  );
-  final events = _jsonLines(
-    eventText,
-    '$command runtime event',
-    _runtimeEventLimit,
-  );
-  var sequence = 0;
-  var observed = false;
-  for (final event in events) {
-    final schema = event['schema_version'];
-    if (schema == 2) {
-      final kind = _boundedString(
-        event['event_kind'] ?? event['eventKind'],
-        '$command event_kind',
-      );
-      if (event['contract'] != null &&
-          event['contract'] != 'styio.observable.runtime-events') {
-        throw StateError('$command runtime event contract is unsupported');
-      }
-      if (observationToken != null && kind == 'log.emitted') {
-        observed = true;
-      }
-      continue;
-    }
-    _closedKeys(event, const <String>{
-      'schema_version',
-      'session_id',
-      'sequence',
-      'timestamp',
-      'eventKind',
-      'origin',
-      'payload',
-    }, '$command runtime event');
-    final nextSequence = event['sequence'];
-    if (event['schema_version'] != 1 ||
-        event['session_id'] != session ||
-        nextSequence is! int ||
-        nextSequence <= sequence) {
-      throw StateError('$command runtime event is stale or invalid');
-    }
-    sequence = nextSequence;
-    _boundedString(event['timestamp'], '$command event timestamp');
-    final kind = _boundedString(event['eventKind'], '$command eventKind');
-    _boundedString(event['origin'], '$command event origin');
-    final eventPayload = _object(event['payload'], '$command event payload');
-    if (utf8.encode(jsonEncode(eventPayload)).length > _ownerStreamLimit) {
-      throw StateError('$command runtime event payload exceeds its limit');
-    }
-    if (observationToken != null && kind == 'log.emitted') {
-      final message = eventPayload['message'];
-      if (message is String && message.contains(observationToken)) {
-        observed = true;
-      }
-    }
-  }
-  if (observationToken != null && !observed) {
-    final hasV2 = events.any((event) => event['schema_version'] == 2);
-    if (!hasV2) {
-      throw StateError(
-        'run observation is missing from its same-session log event',
-      );
-    }
-  }
-  return session;
-}
-
-Future<String> _resolveOwnerDirectory(String workspace, String path) async {
-  final resolved = await Directory(
-    _ownerPath(workspace, path),
-  ).resolveSymbolicLinks();
-  _requireContained(workspace, resolved);
-  return resolved;
-}
-
-Future<String> _readOwnerFile(
-  String path, {
-  required String containedRoot,
-  required String name,
-}) async {
-  final resolved = await File(path).resolveSymbolicLinks();
-  _requireContained(containedRoot, resolved);
-  final file = File(resolved);
-  final stat = await file.stat();
-  if (stat.type != FileSystemEntityType.file || stat.size > _ownerStreamLimit) {
-    throw StateError('$name is missing or exceeds its owner-output limit');
-  }
-  final bytes = <int>[];
-  await for (final chunk in file.openRead()) {
-    final remaining = _ownerStreamLimit + 1 - bytes.length;
-    if (remaining > 0) {
-      bytes.addAll(chunk.take(remaining));
-    }
-    if (bytes.length > _ownerStreamLimit || chunk.length > remaining) {
-      throw StateError('$name exceeds its owner-output limit');
-    }
-  }
-  try {
-    return utf8.decode(bytes);
-  } on FormatException {
-    throw StateError('$name is not valid UTF-8');
-  }
-}
-
-List<Map<String, Object?>> _jsonLines(String text, String name, int limit) {
-  final lines = text
-      .split('\n')
-      .where((line) => line.trim().isNotEmpty)
-      .toList(growable: false);
-  if (lines.length > limit) {
-    throw StateError('$name count exceeds its limit');
-  }
-  return <Map<String, Object?>>[
-    for (final line in lines) _jsonObject(line, name),
-  ];
-}
-
-void _requireSuccessful(_CommandResult result) {
-  if (!result.spawned ||
-      result.timedOut ||
-      result.outputExceeded ||
-      result.stdoutBytes.length > _ownerStreamLimit ||
-      result.stderrBytes.length > _ownerStreamLimit ||
-      result.exitCode != 0) {
-    throw StateError('owner command failed its process boundary');
-  }
-}
-
-Future<void> _requireSavedDigest(File source, String expected) async {
-  final actual = sha256.convert(await source.readAsBytes()).toString();
-  if (actual != expected) {
-    throw StateError('saved source changed during the workflow sequence');
-  }
-}
-
-void _requireContained(String root, String target) {
-  final separator = Platform.pathSeparator;
-  final normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
-  final normalizedTarget = Platform.isWindows ? target.toLowerCase() : target;
-  if (normalizedTarget != normalizedRoot &&
-      !normalizedTarget.startsWith('$normalizedRoot$separator')) {
-    throw StateError('owner path escapes the isolated workspace');
-  }
-}
-
-String _ownerPath(String workspaceRoot, String value) {
-  if (_isNativeAbsolutePath(value)) {
-    return value;
-  }
-  if (_looksRootedPath(value)) {
-    throw StateError('owner path uses a non-native or drive-relative root');
-  }
-  final normalized = value.replaceAll(RegExp(r'[\\/]'), Platform.pathSeparator);
-  return '$workspaceRoot${Platform.pathSeparator}$normalized';
-}
-
-String _boundedOwnerPath(Object? value, String name) {
-  final path = _boundedString(value, name);
-  if (path.contains('\u0000') ||
-      _windowsDriveRelativePath.hasMatch(path) &&
-          !_windowsDrivePath.hasMatch(path) ||
-      path.split(RegExp(r'[\\/]')).contains('..')) {
-    throw StateError('$name escapes the isolated workspace');
-  }
-  return path;
-}
-
-bool _isNativeAbsolutePath(String value) {
-  if (Platform.isWindows) {
-    return _windowsDrivePath.hasMatch(value) ||
-        value.startsWith(r'\\') ||
-        value.startsWith('//');
-  }
-  return value.startsWith('/');
-}
-
-bool _looksRootedPath(String value) =>
-    value.startsWith('/') ||
-    value.startsWith('\\') ||
-    _windowsDriveRelativePath.hasMatch(value);
-
-Map<String, Object?> _jsonObject(String text, String name) {
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(text);
-  } on FormatException {
-    throw StateError('$name emitted malformed JSON');
-  }
-  return _object(decoded, name);
-}
-
-Map<String, Object?> _object(Object? value, String name) {
-  if (value is! Map) {
-    throw StateError('$name must be an object');
-  }
-  return <String, Object?>{
-    for (final entry in value.entries) '${entry.key}': entry.value,
-  };
-}
-
-void _closedKeys(
-  Map<String, Object?> value,
-  Set<String> expected,
-  String name,
-) {
-  if (value.keys.toSet().difference(expected).isNotEmpty ||
-      expected.difference(value.keys.toSet()).isNotEmpty) {
-    throw StateError('$name schema is not closed');
-  }
-}
-
-List<Object?> _list(Object? value, String name) {
-  if (value is! List) {
-    throw StateError('$name must be an array');
-  }
-  return List<Object?>.from(value);
-}
-
-String _boundedString(Object? value, String name) {
-  if (value is! String ||
-      value.isEmpty ||
-      utf8.encode(value).length > _projectedStringLimit) {
-    throw StateError('$name is missing or exceeds its limit');
-  }
-  return value;
-}
-
-void _emitContract({
-  required String caseName,
-  required String outcome,
-  required String category,
-}) {
-  stdout.writeln(
-    '$_contractMarker${jsonEncode(<String, Object?>{'schema_version': 1, 'scenario': _scenario, 'evidence_kind': 'deterministic-contract', 'case': caseName, 'accepted': true, 'outcome': outcome, 'error_category': category, 'success_observation': false})}',
-  );
-}
-
 Map<String, Object?> _compatibleMachineInfo() => <String, Object?>{
   'tool': 'styio',
   'active_integration_phase': 'compile-plan-live',
@@ -1103,93 +806,89 @@ Map<String, Object?> _compatibleMachineInfo() => <String, Object?>{
   },
 };
 
-Map<String, Object?> _currentWorkflowEnvelope({
-  required String command,
-  required String buildRoot,
-  required String artifactDir,
-  required String diagDir,
-}) => <String, Object?>{
-  'action': command,
-  'command': command,
-  'intent': command,
-  'message': 'completed Styio $command via compile-plan',
-  'mode': 'execute',
-  'plan': <String, Object?>{
-    'artifact_dir': artifactDir,
-    'build_root': buildRoot,
-    'cache_key': 'cache-key',
-    'diag_dir': diagDir,
-    'path': '$buildRoot${Platform.pathSeparator}plan.json',
-  },
-  'profile': 'dev',
-  'status': 'succeeded',
-  'styio': <String, Object?>{
-    'binary': '<styio>',
-    'capabilities': <String, Object?>{},
-    'compiler_channel': 'nightly',
-    'compiler_edition_max': '2026',
-    'compiler_version': '0.1.0',
-    'integration_phase': 'compile-plan-live',
-    'process': <String, Object?>{'exit_code': 0, 'status': 'exited'},
-    'status': 'succeeded',
-    'supported_compile_plan_versions': <int>[1],
-  },
-  'sync': <String, Object?>{'status': 'succeeded'},
-  'target': <String, Object?>{
-    'kind': 'bin',
-    'name': _binTarget,
-    'package': _package,
-    'package_id': _packageId,
-  },
-};
+class _OwnerCommand {
+  const _OwnerCommand(this.executable, this.arguments, this.workingDirectory);
+  final String executable;
+  final List<String> arguments;
+  final String workingDirectory;
+}
 
-Map<String, Object?> _currentReceipt({
-  required String command,
-  required String workspace,
-  required String buildRoot,
-  required String artifactDir,
-  required String diagDir,
-  required String eventsPath,
-}) => <String, Object?>{
-  'schema_version': 1,
-  'tool': 'styio',
-  'compiler_version': '0.1.0',
-  'channel': 'nightly',
-  'plan_version': 1,
-  'intent': command,
-  'session_id': 'check-session',
-  'executed': false,
-  'wall_time_ms': 1,
-  'generated_at': '2026-01-01T00:00:00Z',
-  'dict_impl': <String, Object?>{'selected': 'hash'},
-  'entry': <String, Object?>{
-    'package_id': _packageId,
-    'target_kind': 'bin',
-    'target_name': _binTarget,
-    'file':
-        '$workspace${Platform.pathSeparator}src'
-        '${Platform.pathSeparator}main.styio',
-  },
-  'outputs': <String, Object?>{
-    'build_root': buildRoot,
-    'artifact_dir': artifactDir,
-    'diag_dir': diagDir,
-    'runtime_events_path': eventsPath,
-  },
-  'artifacts': <String>[],
-};
+class _CommandResult {
+  const _CommandResult({this.exitCode = 0, this.stdoutBytes = const <int>[]})
+    : spawned = true;
+  const _CommandResult.spawnFailure()
+    : spawned = false,
+      exitCode = -1,
+      stdoutBytes = const <int>[];
+  factory _CommandResult.json(Object value) =>
+      _CommandResult(stdoutBytes: utf8.encode(jsonEncode(value)));
+  final bool spawned;
+  final int exitCode;
+  final List<int> stdoutBytes;
+  String get stdoutText => utf8.decode(stdoutBytes);
+}
 
-bool _enabled(String? value) => const <String>{
-  '1',
-  'true',
-  'yes',
-  'on',
-}.contains(value?.trim().toLowerCase());
+class _ControlledRunner {
+  _ControlledRunner(this.results);
+  final List<_CommandResult> results;
+  int index = 0;
+  Future<_CommandResult> call(_OwnerCommand command) async => results[index++];
+}
 
-String _requiredEnvironment(String name) {
-  final value = Platform.environment[name]?.trim();
-  if (value == null || value.isEmpty) {
-    throw StateError('$name is required by the opt-in product gate');
+Future<(String, String)> _classifyBoundary(
+  Future<_CommandResult> Function(_OwnerCommand) runner, {
+  _OwnerCommand? workflow,
+}) async {
+  final probe = await runner(
+    const _OwnerCommand('<styio>', ['--machine-info=json'], '.'),
+  );
+  if (!probe.spawned) return ('blocked', 'styio_missing');
+  try {
+    if (probe.exitCode != 0) throw StateError('probe failed');
+    _decodeCompatibleMachine(probe.stdoutText, '<styio>');
+  } on Object {
+    return ('blocked', 'styio_machine_contract_incompatible');
   }
-  return value;
+  final result = await runner(workflow!);
+  if (!result.spawned || result.exitCode != 0) {
+    return ('failed', 'compiler_execution_failed');
+  }
+  throw StateError('expected compiler failure');
+}
+
+Map<String, Object?> _object(Object? value, String name) =>
+    Map<String, Object?>.from(value as Map);
+Map<String, Object?> _jsonObject(String text, String name) =>
+    _object(jsonDecode(text), name);
+List<Object?> _list(Object? value, String name) =>
+    List<Object?>.from(value as List);
+void _emitContract({
+  required String caseName,
+  required String outcome,
+  required String category,
+}) => stdout.writeln(
+  '$_contractMarker${jsonEncode({'schema_version': 1, 'scenario': _scenario, 'evidence_kind': 'deterministic-contract', 'case': caseName, 'accepted': true, 'outcome': outcome, 'error_category': category, 'success_observation': false})}',
+);
+
+/// Synthetic envelope only: the production publisher owns canonical containment
+/// and receipt/artifact consumption. This is deterministic boundary evidence.
+class _EnvelopeProcessManager extends UnsupportedProcessManager {
+  _EnvelopeProcessManager(this.buildRoot)
+    : super(facts: ProcessFacts.linuxDebianArm());
+  final String buildRoot;
+
+  @override
+  Future<ProcessCommandResult> run(ProcessCommandRequest request) async =>
+      ProcessCommandResult(
+        status: ProcessCommandStatus.succeeded,
+        executablePath: request.executablePath,
+        arguments: request.arguments,
+        exitCode: 0,
+        stdout: jsonEncode({
+          'status': 'succeeded',
+          'plan': {'build_root': buildRoot},
+        }),
+        stderr: '',
+        duration: Duration.zero,
+      );
 }

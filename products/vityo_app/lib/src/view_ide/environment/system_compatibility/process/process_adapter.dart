@@ -18,15 +18,22 @@ class ProcessAdapter {
   ProcessExecutionPlan plan(ProcessCommandRequest request) {
     final compatibility = adapt();
     if (!compatibility.supportsSpawn) {
-      return ProcessExecutionPlan.unsupported(request, 'Process spawning is not supported.');
+      return ProcessExecutionPlan.unsupported(
+        request,
+        'Process spawning is not supported.',
+      );
     }
     return ProcessExecutionPlan(
       request: request,
       executablePath: request.executablePath,
       arguments: request.arguments,
-      environment: compatibility.supportsEnvironmentOverlay ? request.environment : const <String, String>{},
-      workingDirectory: compatibility.supportsWorkingDirectory ? request.workingDirectory : null,
-      timeout: request.timeout ?? const Duration(seconds: 30),
+      environment: compatibility.supportsEnvironmentOverlay
+          ? request.environment
+          : const <String, String>{},
+      workingDirectory: compatibility.supportsWorkingDirectory
+          ? request.workingDirectory
+          : null,
+      timeout: request.timeout,
       standardInput: request.standardInput,
       supported: true,
     );
@@ -67,13 +74,16 @@ class ProcessExecutionPlan {
     this.unsupportedMessage,
   });
 
-  factory ProcessExecutionPlan.unsupported(ProcessCommandRequest request, String message) => ProcessExecutionPlan(
+  factory ProcessExecutionPlan.unsupported(
+    ProcessCommandRequest request,
+    String message,
+  ) => ProcessExecutionPlan(
     request: request,
     executablePath: '',
     arguments: const <String>[],
     environment: const <String, String>{},
     workingDirectory: null,
-    timeout: request.timeout ?? const Duration(seconds: 30),
+    timeout: request.timeout,
     standardInput: null,
     supported: false,
     unsupportedMessage: message,
@@ -84,7 +94,7 @@ class ProcessExecutionPlan {
   final List<String> arguments;
   final Map<String, String> environment;
   final String? workingDirectory;
-  final Duration timeout;
+  final Duration? timeout;
   final String? standardInput;
   final bool supported;
   final String? unsupportedMessage;

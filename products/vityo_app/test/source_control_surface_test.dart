@@ -274,4 +274,132 @@ R  src/old.styio -> src/new.styio
     );
     expect(find.text('Git status failed with exit code 128.'), findsOneWidget);
   });
+
+  testWidgets('merge editor confirms and applies one reviewed resolution', (
+    tester,
+  ) async {
+    const status = SourceControlStatusSnapshot(
+      providerKind: SourceControlProviderKind.git,
+      branchName: 'current',
+      changes: <SourceControlFileChange>[
+        SourceControlFileChange(
+          path: 'src/conflict.styio',
+          unstagedStatus: SourceControlFileStatus.conflicted,
+        ),
+      ],
+    );
+    final workflow = SourceControlMergeWorkflowPlan.fromStatus(status);
+    SourceControlConflictResolutionPlan? openedPlan;
+    SourceControlConflictResolutionPlan? appliedPlan;
+    SourceControlConflictResolutionKind? appliedKind;
+    String? appliedText;
+    int? appliedRevision;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SourceControlSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 900,
+            ),
+            workspaceFileCount: 1,
+            changedDocumentIds: const <String>[],
+            status: status,
+            mergeWorkflowPlan: workflow,
+            mergeEditorSnapshot: const SourceControlMergeEditorSnapshot(
+              providerKind: SourceControlProviderKind.git,
+              path: 'src/conflict.styio',
+              available: true,
+              baseText: 'base\n',
+              currentText: 'current\n',
+              incomingText: 'incoming\n',
+              workingText:
+                  '<<<<<<< HEAD\n'
+                  'current\n'
+                  '=======\n'
+                  'incoming\n'
+                  '>>>>>>> feature\n',
+              baseAvailable: true,
+              currentAvailable: true,
+              incomingAvailable: true,
+              workingExists: true,
+              workingRevision: 7,
+            ),
+            onOpenMergeEditor: (plan) async {
+              openedPlan = plan;
+            },
+            onApplyConflictResolution:
+                (plan, kind, resultText, expectedWorkingRevision) async {
+                  appliedPlan = plan;
+                  appliedKind = kind;
+                  appliedText = resultText;
+                  appliedRevision = expectedWorkingRevision;
+                },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('conflicts 1'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('source-control-merge-workflow')),
+      findsOneWidget,
+    );
+    expect(find.text('Base'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Incoming'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('source-control-apply-merge-result')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    Future<void> tapVisible(Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await tapVisible(
+      find.byKey(
+        const ValueKey('source-control-open-merge-editor-src/conflict.styio'),
+      ),
+    );
+    expect(openedPlan?.path, 'src/conflict.styio');
+
+    await tapVisible(find.byKey(const ValueKey('source-control-use-incoming')));
+    expect(find.text('incoming\n'), findsWidgets);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('source-control-apply-merge-result')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    await tapVisible(
+      find.byKey(const ValueKey('source-control-apply-merge-result')),
+    );
+    expect(
+      find.byKey(const ValueKey('source-control-merge-confirmation-dialog')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('source-control-confirm-merge-result')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(appliedPlan?.path, 'src/conflict.styio');
+    expect(appliedKind, SourceControlConflictResolutionKind.acceptIncoming);
+    expect(appliedText, isNull);
+    expect(appliedRevision, 7);
+  });
 }

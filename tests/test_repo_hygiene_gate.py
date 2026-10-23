@@ -23,6 +23,19 @@ def load_gate_module():
     return module
 
 
+class ProductIdentityPolicyTest(unittest.TestCase):
+    def test_agent_product_identity_uses_its_cargo_manifest(self) -> None:
+        gate = load_gate_module()
+        metadata = gate.REQUIRED_PROJECT_BRAND_METADATA
+        manifest = Path("products/vityo_coding_agent/Cargo.toml")
+        self.assertIn(manifest, metadata)
+        self.assertIn('name = "vityo-coding-agent"', metadata[manifest])
+        self.assertIn(
+            'description = "Standalone, model-neutral Vityo Coding Agent runtime"',
+            metadata[manifest],
+        )
+
+
 class ViewBoundaryImportPolicyTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gate = load_gate_module()
@@ -418,7 +431,7 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
         )
 
 
-    def test_shell_runtime_boundary_accepts_runtime_render_split(self) -> None:
+    def test_shell_runtime_boundary_accepts_runtime_workbench_route_split(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="shell-runtime-",
             dir=REPO_ROOT,
@@ -450,7 +463,7 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
-    def test_shell_runtime_boundary_rejects_render_tab_leak(self) -> None:
+    def test_shell_runtime_boundary_rejects_workbench_route_leak(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix="shell-runtime-",
             dir=REPO_ROOT,
@@ -461,7 +474,7 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
             runtime_root.mkdir(parents=True)
             render_shell.mkdir(parents=True)
             (runtime_root / "shell_runtime_model.dart").write_text(
-                "class ShellRuntimeModel { void route() { selectBottomTab(BottomSurfaceTab.debug); } }\n",
+                "class ShellRuntimeModel { void route() { selectWorkbenchRoute(BottomSurfaceTab.debug); } }\n",
                 encoding="utf-8",
             )
             (render_shell / "shell_model.dart").write_text(
@@ -481,9 +494,56 @@ class ViewBoundaryImportPolicyTest(unittest.TestCase):
                 self.gate.VIEW_RENDER_SHELL_ROOT = original_render_shell
 
         self.assertTrue(
-            any("shell runtime must not own render tab state" in error for error in errors),
+            any("shell runtime must not own presentation route state" in error for error in errors),
             errors,
         )
+
+    def test_intentional_binary_roots_allow_assets_and_reject_unrelated_files(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="intentional-binary-",
+            dir=REPO_ROOT,
+        ) as tmp_name:
+            tmp_root = Path(tmp_name)
+            original_root = self.gate.REPO_ROOT
+            self.gate.REPO_ROOT = tmp_root
+            try:
+                allowed_binary_paths = (
+                    ".impeccable/mocks/noise.png",
+                    ".impeccable/worlds/board.webp",
+                    "docs/review/interactive-editor-input/live.jpg",
+                    "products/vityo_app/assets/fonts/plex/Mono.ttf",
+                )
+                for relative_path in allowed_binary_paths:
+                    path = tmp_root / relative_path
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"\x00asset-fixture")
+
+                rejected = (
+                    tmp_root
+                    / "products/vityo_app/assets/images/unreviewed.png"
+                )
+                rejected.parent.mkdir(parents=True, exist_ok=True)
+                rejected.write_bytes(b"\x00asset-fixture")
+
+                self.assertTrue(
+                    all(
+                        self.gate.is_allowed_binary(path)
+                        for path in allowed_binary_paths
+                    )
+                )
+                errors = self.gate.check_worktree_files(
+                    [
+                        *allowed_binary_paths,
+                        "products/vityo_app/assets/images/unreviewed.png",
+                    ],
+                    max_file_bytes=self.gate.DEFAULT_MAX_FILE_BYTES,
+                )
+            finally:
+                self.gate.REPO_ROOT = original_root
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("unexpected binary file", errors[0])
+        self.assertIn("products/vityo_app/assets/images/unreviewed.png", errors[0])
 
     def test_view_ide_editor_accepts_submodule_facade_layout(self) -> None:
         with tempfile.TemporaryDirectory(

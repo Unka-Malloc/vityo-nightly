@@ -3,7 +3,7 @@
 **Purpose:** Define versioning and capability-negotiation rules across Vityo adapter contracts and the IDE-to-Agent protocol without assigning model/provider ownership to the IDE.
 
 **Owner:** Adapter contracts owner (`CODEOWNERS` → adapter-contracts domain)
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-03
 
 ---
 
@@ -138,6 +138,15 @@ Reference: `products/vityo_app/lib/src/view_ide/runtime/debug_workbench_contract
 Vityo's Agent boundary is the versioned JSON-RPC/ACP contract in
 `packages/vityo_agent_protocol`. It covers initialization, session creation/loading, prompts,
 cancellation, session updates, permission requests, and negotiated Vityo capability extensions.
+Compatible Agents use the same authorized capabilities. ACP v1 `fs/read_text_file` and
+`fs/write_text_file` cover client-managed files; `terminal/create`, `terminal/output`,
+`terminal/wait_for_exit`, `terminal/kill`, and `terminal/release` cover supported process
+interaction. Vityo advertises these methods only when the IDE has a real scoped operation route.
+The client routes them through the typed local daemon session gateway and a neutral IDE dispatcher
+to the selected open-buffer, workspace transaction, and PTY owners. Source-aware atomic edits use
+the existing revision-bound Vityo proposal extension. The first-party runtime explicitly rejects
+nonempty ACP `mcpServers` on session creation/loading with `-32003 MCP capability unavailable`; the
+retained RMCP modules do not establish production server attachment.
 
 Ownership rules:
 
@@ -146,8 +155,9 @@ Ownership rules:
 2. Vityo Coding Agent or another compatible Agent is the protocol server/runtime and owns
    model/provider routing, context selection, tool loops, Agent policy, durable sessions, and
    multi-Agent orchestration.
-3. The protocol carries proposals and receipts; it never grants the Agent direct access to the
-   IDE's source buffers or workspace mutation primitives.
+3. Protocol requests reach source or process state only through advertised, authorized client
+   operations and their owning services. They never grant the Agent direct access to IDE buffers,
+   Flutter widgets, or workspace mutation primitives.
 4. No Agent connection is a valid IDE state. It does not block editing, language service, build,
    test, run, or observation.
 5. Provider-specific contracts are runtime-internal and must not become IDE adapter contracts.

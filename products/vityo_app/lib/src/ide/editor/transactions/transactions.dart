@@ -79,11 +79,16 @@ class WorkspaceEditPrecondition {
   final int? expectedRevision;
   final String? expectedContentHash;
 
-  factory WorkspaceEditPrecondition.forDocument(DocumentState document) {
+  factory WorkspaceEditPrecondition.forDocument(
+    DocumentState document, {
+    bool includeContentHash = true,
+  }) {
     return WorkspaceEditPrecondition(
       documentId: document.documentId,
       expectedRevision: document.revision,
-      expectedContentHash: DocumentContentHash.compute(document.text),
+      expectedContentHash: includeContentHash
+          ? DocumentContentHash.compute(document.text)
+          : null,
     );
   }
 }
@@ -125,11 +130,15 @@ class WorkspaceEdit {
     required Iterable<WorkspaceTextEdit> edits,
     String? undoGroupId,
     String? label,
+    bool includeContentHash = true,
   }) {
     return WorkspaceEdit(
       source: source,
       edits: List<WorkspaceTextEdit>.unmodifiable(edits),
-      precondition: WorkspaceEditPrecondition.forDocument(document),
+      precondition: WorkspaceEditPrecondition.forDocument(
+        document,
+        includeContentHash: includeContentHash,
+      ),
       undoGroupId: undoGroupId,
       label: label,
     );
@@ -196,18 +205,24 @@ class EditorCommandTransaction {
 }
 
 class EditorTransactionResult {
-  const EditorTransactionResult({
+  EditorTransactionResult({
     required this.document,
     required this.validation,
     required this.appliedEditCount,
-    required this.contentHash,
+    String? contentHash,
     this.normalizedEdits = const <WorkspaceTextEdit>[],
-  });
+  }) : _contentHash = contentHash;
 
   final DocumentState document;
   final WorkspaceEditValidation validation;
   final int appliedEditCount;
-  final String contentHash;
+  String? _contentHash;
+
+  /// Content identity is only paid for by callers that consume it. Live local
+  /// input is already revision-checked synchronously and must not hash the
+  /// complete source twice per keystroke.
+  String get contentHash =>
+      _contentHash ??= DocumentContentHash.compute(document.text);
   final List<WorkspaceTextEdit> normalizedEdits;
 
   bool get isApplied => validation.isValid;
@@ -249,7 +264,6 @@ class EditorTransactionService {
         document: document,
         validation: normalized.validation,
         appliedEditCount: 0,
-        contentHash: DocumentContentHash.compute(document.text),
       );
     }
 
@@ -271,7 +285,6 @@ class EditorTransactionService {
       document: nextDocument,
       validation: WorkspaceEditValidation.ok,
       appliedEditCount: normalized.edits.length,
-      contentHash: DocumentContentHash.compute(nextSnapshot.text),
       normalizedEdits: normalized.edits,
     );
   }

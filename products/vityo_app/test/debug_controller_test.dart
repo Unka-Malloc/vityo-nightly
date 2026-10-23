@@ -1,14 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_adapter_launcher.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_adapter_session.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_adapter_transport.dart';
+import 'package:vityo_app/src/view_ide/debugger/debug_breakpoint_store.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_launch_contract.dart';
 import 'package:vityo_app/src/view_ide/debugger/debug_runtime_task_history.dart';
+import 'package:vityo_app/src/view_ide/environment/environment.dart';
+import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 import 'package:vityo_app/src/view_ide/runtime/runtime_output_channels.dart';
 import 'package:vityo_app/src/view_ide/shell_runtime/controllers/debug_controller.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
+
+import 'support/test_file_system_manager.dart';
 
 void main() {
   DapSessionSnapshot snapshot({
@@ -66,6 +72,99 @@ void main() {
       expect(start.message, contains('no toolchain manager'));
       expect(logs.first, contains('Added breakpoint'));
       expect(logs.last, start.message);
+    },
+  );
+
+  test(
+    'debug controller persists first-line breakpoints and language-neutral launch profiles',
+    () async {
+      final dataStore = await _createDataStore();
+      final breakpointStore = DebugBreakpointStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final launchStore = DebugLaunchConfigurationStore.fromDataStore(
+        dataStore: dataStore,
+      );
+      final firstOutput = RuntimeOutputLiveBuffer();
+      final first = DebugController.configured(
+        toolchainManager: null,
+        workspaceRoot: () => '/workspace/demo',
+        workspaceId: () => 'demo',
+        launcher: null,
+        runtimeOutputBuffer: firstOutput,
+        runtimeTaskHistoryBinder: const DebugRuntimeTaskHistoryBinder(),
+        runtimeTaskHistoryStore: null,
+        runtimeTaskHistoryWorkspaceId: 'demo',
+        runtimeTaskHistoryMaxEntries: 10,
+        breakpointStore: breakpointStore,
+        launchConfigurationStore: launchStore,
+        initialLaunchProfiles: _languageNeutralProfiles(),
+        log: (_) {},
+      );
+      await first.loadConfiguredState();
+      expect(
+        first.launchConfigurations.profiles.any(
+          (profile) =>
+              profile.metadata['languages'] is List &&
+              (profile.metadata['languages'] as List).contains('python'),
+        ),
+        isTrue,
+      );
+
+      expect((await first.selectLaunchProfile('python-dap')).applied, isTrue);
+      expect(
+        (await first.updateSelectedLaunchConfiguration(
+          programPath: 'src/main.py',
+          cwd: '/workspace/demo',
+          arguments: const <String>['--inspect value'],
+          stopOnEntry: true,
+        )).applied,
+        isTrue,
+      );
+      await first.saveBreakpoint(
+        filePath: '/workspace/demo/src/main.py',
+        line: 0,
+        enabled: false,
+      );
+      first.dispose();
+      await firstOutput.dispose();
+
+      final secondOutput = RuntimeOutputLiveBuffer();
+      final second = DebugController.configured(
+        toolchainManager: null,
+        workspaceRoot: () => '/workspace/demo',
+        workspaceId: () => 'demo',
+        launcher: null,
+        runtimeOutputBuffer: secondOutput,
+        runtimeTaskHistoryBinder: const DebugRuntimeTaskHistoryBinder(),
+        runtimeTaskHistoryStore: null,
+        runtimeTaskHistoryWorkspaceId: 'demo',
+        runtimeTaskHistoryMaxEntries: 10,
+        breakpointStore: breakpointStore,
+        launchConfigurationStore: launchStore,
+        initialLaunchProfiles: _languageNeutralProfiles(),
+        log: (_) {},
+      );
+      addTearDown(() async {
+        second.dispose();
+        await secondOutput.dispose();
+      });
+      await second.loadConfiguredState();
+
+      expect(second.breakpoints.single.line, 0);
+      expect(second.breakpoints.single.enabled, isFalse);
+      expect(second.selectedLaunchProfile?.id, 'python-dap');
+      expect(second.selectedLaunchProfile?.configuration.arguments, <String>[
+        '--inspect value',
+      ]);
+      expect(second.selectedLaunchProfile?.configuration.stopOnEntry, isTrue);
+      final configured = await second.startConfiguredSession();
+      expect(configured.applied, isTrue);
+      expect(second.session.debuggerId, 'python-dap');
+      expect(
+        second.session.launchConfiguration?.programPath,
+        '/workspace/demo/src/main.py',
+      );
     },
   );
 
@@ -313,4 +412,68 @@ final class _FakeDapByteTransport implements DapByteTransport {
     closed = true;
     await _incoming.close();
   }
+}
+
+List<DebugLaunchProfile> _languageNeutralProfiles() {
+  return <DebugLaunchProfile>[
+    DebugLaunchProfile.fromConfiguration(
+      id: 'javascript-dap',
+      displayName: 'JavaScript Debug Adapter',
+      configuration: const DebugLaunchConfiguration(
+        readiness: DebugLaunchReadiness.missingProgram,
+        reason: 'Select a JavaScript program.',
+        debuggerId: 'javascript-dap',
+        debuggerLabel: 'JavaScript Debug Adapter',
+        debuggerExecutablePath: '/debug/js-debug-adapter',
+        adapterProtocol: 'dap',
+        programPath: null,
+        cwd: '/workspace/demo',
+      ),
+      metadata: const <String, Object?>{
+        'languages': <String>['javascript', 'typescript'],
+      },
+    ),
+    DebugLaunchProfile.fromConfiguration(
+      id: 'python-dap',
+      displayName: 'Python Debug Adapter',
+      configuration: const DebugLaunchConfiguration(
+        readiness: DebugLaunchReadiness.missingProgram,
+        reason: 'Select a Python program.',
+        debuggerId: 'python-dap',
+        debuggerLabel: 'Python Debug Adapter',
+        debuggerExecutablePath: '/debug/debugpy-adapter',
+        adapterProtocol: 'dap',
+        programPath: null,
+        cwd: '/workspace/demo',
+      ),
+      metadata: const <String, Object?>{
+        'languages': <String>['python'],
+      },
+    ),
+  ];
+}
+
+Future<FoundationDataStore> _createDataStore() async {
+  final tempRoot = await Directory.systemTemp.createTemp(
+    'vityo_debug_controller_store_test_',
+  );
+  addTearDown(() async {
+    if (await tempRoot.exists()) {
+      await tempRoot.delete(recursive: true);
+    }
+  });
+  final fileSystemManager = TestFileSystemManager.linuxDebianArm();
+  final resourceManager = LocalResourceManager(
+    facts: ResourceFacts.linuxDebianArm(
+      systemTempPath: tempRoot.path,
+      homePath: tempRoot.path,
+    ),
+  );
+  return FoundationDataStore(
+    resourceCoordinator: FoundationResourceCoordinator(
+      resourceManager: resourceManager,
+      fileSystemManager: fileSystemManager,
+    ),
+    fileSystemManager: fileSystemManager,
+  );
 }

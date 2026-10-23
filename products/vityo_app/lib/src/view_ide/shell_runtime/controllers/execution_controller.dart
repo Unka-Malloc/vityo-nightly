@@ -6,6 +6,8 @@ import '../../../ide/editor/editor.dart';
 import '../../interaction/interaction.dart';
 import '../../language/language_contract.dart';
 import '../../platform/platform.dart';
+import '../../environment/system_compatibility/process/process_manager.dart';
+import '../../runtime/runtime.dart';
 import '../../toolchain/toolchain.dart';
 import '../../services/observable_topology/observable_topology.dart';
 import '../../../ide/workspace/workspace.dart';
@@ -49,6 +51,12 @@ class NativeToolCommandResult {
   final String message;
   final Map<String, Object?> metadata;
   final List<Diagnostic> diagnostics;
+
+  RuntimeProcessHandleIdentity? get processHandle =>
+      RuntimeProcessHandleIdentity.tryFromMetadata(
+        metadata,
+        managerId: 'toolchain-manager',
+      );
 }
 
 class NativeDocumentFormatResult {
@@ -99,6 +107,12 @@ class NativeToolResultRecord {
 
   String get commandId => command.name;
 
+  RuntimeProcessHandleIdentity? get processHandle =>
+      RuntimeProcessHandleIdentity.tryFromMetadata(
+        metadata,
+        managerId: 'toolchain-manager',
+      );
+
   WorkspaceDiagnosticsSnapshot toWorkspaceDiagnosticsSnapshot({
     String fallbackDocumentId = '',
     String providerId = '',
@@ -130,6 +144,7 @@ class NativeToolResultRecord {
       providerId: resolvedProviderId,
       message: message,
       diagnostics: workspaceDiagnostics,
+      producerProcessHandle: processHandle,
     );
   }
 
@@ -150,6 +165,7 @@ class NativeToolResultRecord {
   }
 
   Map<String, Object?> toJson() {
+    final handle = processHandle;
     return <String, Object?>{
       'commandId': commandId,
       'label': label,
@@ -158,6 +174,7 @@ class NativeToolResultRecord {
       'metadata': metadata,
       'diagnosticCount': diagnostics.length,
       'completedAt': completedAt.toIso8601String(),
+      if (handle != null) 'processHandle': handle.toJson(),
       'executionResult': toResultContract().toJson(),
     };
   }
@@ -235,6 +252,10 @@ final class ExecutionController extends ChangeNotifier {
 
   ExecutionAdapter _executionAdapter;
   ExecutionSession? _lastExecutionSession;
+  ProcessCommandHandle? _activeProcessHandle;
+  CancellableExecutionAdapter? _activeCancellationAdapter;
+  ProcessCommandCancellationResult? _lastExecutionCancellation;
+  bool _runActive = false;
   List<RuntimeEventEnvelope> _lastRuntimeEvents =
       const <RuntimeEventEnvelope>[];
   final List<NativeToolResultRecord> _nativeToolResults =
@@ -242,6 +263,14 @@ final class ExecutionController extends ChangeNotifier {
 
   ExecutionAdapter get executionAdapter => _executionAdapter;
   ExecutionSession? get lastExecutionSession => _lastExecutionSession;
+  ProcessCommandHandle? get activeProcessHandle => _activeProcessHandle;
+  ProcessCommandCancellationResult? get lastExecutionCancellation =>
+      _lastExecutionCancellation;
+  bool get runActive => _runActive;
+  bool get canCancelActiveExecution =>
+      _runActive &&
+      _activeProcessHandle?.processHandleId.trim().isNotEmpty == true &&
+      _activeCancellationAdapter != null;
   List<RuntimeEventEnvelope> get lastRuntimeEvents =>
       List<RuntimeEventEnvelope>.unmodifiable(_lastRuntimeEvents);
   List<NativeToolResultRecord> get nativeToolResults =>
@@ -300,6 +329,7 @@ final class ExecutionController extends ChangeNotifier {
     ToolchainRuntimeResult result,
   ) {
     return <String, Object?>{
+      ...nativeToolProcessIdentityMetadata(result),
       if (result.exitCode != null) 'exitCode': result.exitCode,
       'stdoutLength': result.stdout.length,
       'stderrLength': result.stderr.length,
@@ -307,6 +337,25 @@ final class ExecutionController extends ChangeNotifier {
         'stdoutPreview': _nativeToolOutputPreview(result.stdout),
       if (result.stderr.trim().isNotEmpty)
         'stderrPreview': _nativeToolOutputPreview(result.stderr),
+    };
+  }
+
+  Map<String, Object?> nativeToolProcessIdentityMetadata(
+    ToolchainRuntimeResult result,
+  ) {
+    final handle = RuntimeProcessHandleIdentity.tryFromMetadata(
+      result.metadata,
+      managerId: 'toolchain-manager',
+    );
+    if (handle == null) {
+      return const <String, Object?>{};
+    }
+    return <String, Object?>{
+      if (handle.processHandleId.isNotEmpty)
+        'processHandleId': handle.processHandleId,
+      if (handle.pid != null) 'pid': handle.pid,
+      if (handle.source.isNotEmpty) 'processHandleSource': handle.source,
+      ...handle.metadata,
     };
   }
 
@@ -429,7 +478,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(seconds: 45),
     );
     final diagnostics = clangTidyDiagnosticsFromOutput(
       output: '${result.stdout}\n${result.stderr}',
@@ -440,10 +488,12 @@ final class ExecutionController extends ChangeNotifier {
     final message = result.succeeded
         ? 'Run Static Analysis completed.'
         : 'Run Static Analysis failed${detail == null || detail.isEmpty ? '' : ': $detail'}.';
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     return NativeToolCommandResult(
       applied: result.succeeded,
       message: message,
       metadata: <String, Object?>{
+        ...processIdentity,
         'staticAnalysisResult': <String, Object?>{
           'runner': 'clang-tidy',
           'status': result.succeeded ? 'passed' : 'failed',
@@ -461,6 +511,7 @@ final class ExecutionController extends ChangeNotifier {
     required ToolchainManager manager,
     required NativeBuildWorkspaceLayout workspaceLayout,
     required String workspaceRoot,
+    ProcessCommandStartedCallback? onProcessStarted,
   }) async {
     final testDirectory = workspaceLayout.ctestDirectory;
     if (testDirectory == '.' &&
@@ -493,7 +544,7 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(seconds: 120),
+      onProcessStarted: onProcessStarted,
     );
     final testResult = <String, Object?>{
       ...ctestResultFromOutput(
@@ -505,12 +556,13 @@ final class ExecutionController extends ChangeNotifier {
       ...nativeToolProcessMetadata(result),
     };
     final detail = result.message?.trim();
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     return NativeToolCommandResult(
       applied: result.succeeded,
       message: result.succeeded
           ? 'Run Tests completed.'
           : 'Run Tests failed${detail == null || detail.isEmpty ? '' : ': $detail'}.',
-      metadata: <String, Object?>{'testResult': testResult},
+      metadata: <String, Object?>{...processIdentity, 'testResult': testResult},
     );
   }
 
@@ -527,8 +579,8 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: <String>['--assume-filename=$activeDocumentPath'],
       standardInput: document.text,
-      timeout: const Duration(seconds: 20),
     );
+    final processIdentity = nativeToolProcessIdentityMetadata(result);
     if (!result.succeeded) {
       final detail = result.message?.trim();
       return NativeDocumentFormatResult(
@@ -537,6 +589,7 @@ final class ExecutionController extends ChangeNotifier {
           message:
               'Format Active Document failed${detail == null || detail.isEmpty ? '' : ': $detail'}.',
           metadata: <String, Object?>{
+            ...processIdentity,
             'formatResult': <String, Object?>{
               'runner': 'clang-format',
               'status': 'failed',
@@ -557,6 +610,7 @@ final class ExecutionController extends ChangeNotifier {
             ? 'Format Active Document completed with empty formatter output.'
             : 'Format Active Document completed.',
         metadata: <String, Object?>{
+          ...processIdentity,
           'formatResult': <String, Object?>{
             'runner': 'clang-format',
             'status': 'passed',
@@ -598,7 +652,6 @@ final class ExecutionController extends ChangeNotifier {
         ),
         arguments: arguments,
         workingDirectory: workspaceRoot,
-        timeout: const Duration(minutes: 5),
       );
       return NativeBuildCommandResult(
         commandResult: _nativeBuildCommandResult(
@@ -632,7 +685,6 @@ final class ExecutionController extends ChangeNotifier {
         ),
         arguments: configureArguments,
         workingDirectory: workspaceRoot,
-        timeout: const Duration(minutes: 5),
       );
       configureResult = <String, Object?>{
         'runner': 'cmake',
@@ -646,6 +698,7 @@ final class ExecutionController extends ChangeNotifier {
             applied: false,
             message: _nativeToolFailureMessage('Run Build', configure.message),
             metadata: <String, Object?>{
+              ...nativeToolProcessIdentityMetadata(configure),
               'buildResult': <String, Object?>{
                 'runner': 'cmake',
                 'status': 'failed',
@@ -674,7 +727,6 @@ final class ExecutionController extends ChangeNotifier {
       ),
       arguments: arguments,
       workingDirectory: workspaceRoot,
-      timeout: const Duration(minutes: 5),
     );
     return NativeBuildCommandResult(
       commandResult: _nativeBuildCommandResult(
@@ -722,6 +774,7 @@ final class ExecutionController extends ChangeNotifier {
           ? 'Run Build completed.'
           : _nativeToolFailureMessage('Run Build', result.message),
       metadata: <String, Object?>{
+        ...nativeToolProcessIdentityMetadata(result),
         'buildResult': <String, Object?>{
           'runner': runner,
           'status': result.succeeded ? 'passed' : 'failed',
@@ -866,6 +919,10 @@ final class ExecutionController extends ChangeNotifier {
     required SelectionState selection,
     required String activeFilePath,
   }) async {
+    if (_runActive) {
+      log('Run skipped: an execution is already active.');
+      return;
+    }
     final routeSelection = selectBackendExecutionRoute(
       platformTarget: platformTarget,
       projectGraph: projectGraph,
@@ -900,41 +957,164 @@ final class ExecutionController extends ChangeNotifier {
       document: document,
       selection: selection,
     );
-    final session = await _executionAdapter.runActiveDocument(
-      platformTarget: platformTarget,
-      projectGraph: projectGraph,
-      document: document,
-      activeFilePath: activeFilePath,
+    final adapter = _executionAdapter;
+    _runActive = true;
+    _activeProcessHandle = null;
+    _activeCancellationAdapter = adapter is CancellableExecutionAdapter
+        ? adapter as CancellableExecutionAdapter
+        : null;
+    _lastExecutionCancellation = null;
+    _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+    _lastExecutionSession = ExecutionSession(
+      sessionId: 'starting:${projectGraph.id}',
+      kind: 'run',
+      status: ExecutionSessionStatus.running,
+      statusMessage: 'Starting the active run target…',
+      diagnostics: const <Diagnostic>[],
+      stdoutEvents: const <ExecutionLogEvent>[],
+      stderrEvents: const <ExecutionLogEvent>[],
+      unitRange: runUnit.range,
+      metadata: <String, Object?>{
+        'routeKind': routeSelection.routeKind.wireValue,
+        'adapterKind': routeSelection.adapterKind.wireValue,
+      },
     );
-    final rangedSession = _sessionWithRunUnit(session, runUnit);
-    _lastExecutionSession = rangedSession;
-    _lastRuntimeEvents = await runtimeEventAdapter
-        .sessionEvents(rangedSession.sessionId)
-        .toList();
-    log(
-      'Run unit ${runUnit.kind.name}: '
-      '${runUnit.range.start}-${runUnit.range.end}.',
-    );
-    log('Run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
-    for (final event in rangedSession.stdoutEvents.take(3)) {
-      log('stdout: ${event.message}');
-    }
-    for (final event in rangedSession.stderrEvents.take(3)) {
-      log('stderr: ${event.message}');
-    }
-    if (rangedSession.diagnostics.isNotEmpty) {
-      applyDiagnostics(rangedSession.diagnostics);
-      log(
-        'diagnostics: ${rangedSession.diagnostics.length} issue(s) returned by the execution route.',
-      );
-    }
-    if (_lastRuntimeEvents.isNotEmpty) {
-      log(
-        'runtime events: ${_lastRuntimeEvents.length} event(s) for session ${rangedSession.sessionId}.',
-      );
-      for (final event in _lastRuntimeEvents.take(4)) {
-        log('runtime: ${event.eventKind}');
+    notifyListeners();
+    try {
+      late ExecutionSession session;
+      try {
+        session = await adapter.runActiveDocument(
+          platformTarget: platformTarget,
+          projectGraph: projectGraph,
+          document: document,
+          activeFilePath: activeFilePath,
+          onProcessStarted: _bindActiveProcess,
+        );
+      } on Object catch (error) {
+        session = ExecutionSession(
+          sessionId: _activeProcessHandle?.processHandleId ?? 'run-failed',
+          kind: 'run',
+          status: ExecutionSessionStatus.failed,
+          statusMessage: 'Execution route failed before completion: $error',
+          diagnostics: const <Diagnostic>[],
+          stdoutEvents: const <ExecutionLogEvent>[],
+          stderrEvents: const <ExecutionLogEvent>[],
+          metadata: _activeProcessHandle?.toMetadata() ?? const {},
+        );
       }
+      var rangedSession = _sessionWithRunUnit(session, runUnit);
+      final cancellation = _lastExecutionCancellation;
+      if (cancellation?.accepted == true) {
+        rangedSession = rangedSession.copyWith(
+          status: ExecutionSessionStatus.cancelled,
+          statusMessage: cancellation!.message,
+          metadata: <String, Object?>{
+            ...rangedSession.metadata,
+            ...?_activeProcessHandle?.toMetadata(),
+            'cancellation': cancellation.toJson(),
+          },
+        );
+      }
+      _lastExecutionSession = rangedSession;
+      try {
+        _lastRuntimeEvents = await runtimeEventAdapter
+            .sessionEvents(rangedSession.sessionId)
+            .toList();
+      } on Object catch (error) {
+        _lastRuntimeEvents = const <RuntimeEventEnvelope>[];
+        log('Runtime event collection failed: $error');
+      }
+      log(
+        'Run unit ${runUnit.kind.name}: '
+        '${runUnit.range.start}-${runUnit.range.end}.',
+      );
+      log('Run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
+      for (final event in rangedSession.stdoutEvents.take(3)) {
+        log('stdout: ${event.message}');
+      }
+      for (final event in rangedSession.stderrEvents.take(3)) {
+        log('stderr: ${event.message}');
+      }
+      if (rangedSession.diagnostics.isNotEmpty) {
+        applyDiagnostics(rangedSession.diagnostics);
+        log(
+          'diagnostics: ${rangedSession.diagnostics.length} issue(s) returned by the execution route.',
+        );
+      }
+      if (_lastRuntimeEvents.isNotEmpty) {
+        log(
+          'runtime events: ${_lastRuntimeEvents.length} event(s) for session ${rangedSession.sessionId}.',
+        );
+        for (final event in _lastRuntimeEvents.take(4)) {
+          log('runtime: ${event.eventKind}');
+        }
+      }
+    } finally {
+      _runActive = false;
+      _activeProcessHandle = null;
+      _activeCancellationAdapter = null;
+      notifyListeners();
+    }
+  }
+
+  Future<ProcessCommandCancellationResult> cancelActiveExecution() async {
+    if (!_runActive) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'No execution is currently running.',
+      );
+    }
+    final handle = _activeProcessHandle;
+    if (handle == null || handle.processHandleId.trim().isEmpty) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'The execution process is still starting.',
+      );
+    }
+    final adapter = _activeCancellationAdapter;
+    if (adapter == null) {
+      return const ProcessCommandCancellationResult.unsupported(
+        message: 'The active execution route cannot be cancelled.',
+      );
+    }
+    final result = await adapter.cancelExecution(handle.processHandleId);
+    _lastExecutionCancellation = result;
+    if (result.accepted) {
+      final current = _lastExecutionSession;
+      if (current != null) {
+        _lastExecutionSession = current.copyWith(
+          status: ExecutionSessionStatus.cancelled,
+          statusMessage: result.message,
+          metadata: <String, Object?>{
+            ...current.metadata,
+            ...handle.toMetadata(),
+            'cancellation': result.toJson(),
+          },
+        );
+      }
+      log('Run cancellation accepted for ${handle.processHandleId}.');
+      notifyListeners();
+    } else {
+      log('Run cancellation rejected: ${result.message}');
+    }
+    return result;
+  }
+
+  void _bindActiveProcess(ProcessCommandHandle handle) {
+    if (!_runActive || !handle.available) {
+      return;
+    }
+    _activeProcessHandle = handle;
+    final current = _lastExecutionSession;
+    if (current != null) {
+      _lastExecutionSession = current.copyWith(
+        sessionId: handle.processHandleId.trim().isEmpty
+            ? current.sessionId
+            : handle.processHandleId,
+        statusMessage: 'Run target is active.',
+        metadata: <String, Object?>{
+          ...current.metadata,
+          ...handle.toMetadata(),
+        },
+      );
     }
     notifyListeners();
   }
@@ -1022,7 +1202,9 @@ final class ExecutionController extends ChangeNotifier {
       'Observed run unit ${runUnit.kind.name}: '
       '${runUnit.range.start}-${runUnit.range.end}.',
     );
-    log('Observed run ${rangedSession.status.name}: ${rangedSession.statusMessage}');
+    log(
+      'Observed run ${rangedSession.status.name}: ${rangedSession.statusMessage}',
+    );
     notifyListeners();
     return ObservedExecutionRun(
       session: rangedSession,
@@ -1036,16 +1218,6 @@ final class ExecutionController extends ChangeNotifier {
     ExecutionSession session,
     RunUnitSelection runUnit,
   ) {
-    return ExecutionSession(
-      sessionId: session.sessionId,
-      kind: session.kind,
-      status: session.status,
-      statusMessage: session.statusMessage,
-      diagnostics: session.diagnostics,
-      stdoutEvents: session.stdoutEvents,
-      stderrEvents: session.stderrEvents,
-      unitRange: runUnit.range,
-      receipt: session.receipt,
-    );
+    return session.copyWith(unitRange: runUnit.range);
   }
 }

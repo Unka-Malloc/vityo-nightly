@@ -6,19 +6,19 @@
 
 `test / smoke` runs the fast Flutter application and language-service smoke tests.
 
-`test / golden-standard` runs the full Flutter test suite, restores prototype and Flutter dependencies, and executes the repository docs and checkpoint health gates after all declared platform-adaptation gates pass.
+`test / golden-standard` runs `python3 scripts/vityo.py deliver` after all declared platform-adaptation gates pass. The shared pipeline restores and exercises the declared test roots, evaluates coverage, builds and packages the host candidate, installs it in the configured lane, and stops after startup evidence.
 
 ## Local Gate Profile
 
-`vityo-checkpoint-desktop-profile` is the repository-owned adaptation for the Vityo desktop client. It is maintained in this repository through `checkpoint-health.sh`, Flutter test coverage, prototype dependencies, and desktop client release evidence. The organization-level audit only verifies that this local profile is present and covered by `test / golden-standard`.
+`vityo-checkpoint-desktop-profile` is the repository-owned adaptation for the Vityo desktop client. It is maintained through the canonical Python delivery pipeline, Flutter test coverage, the permanent Prototype dependencies, and desktop package/startup evidence. The organization-level audit only verifies that this local profile is present and covered by `test / golden-standard`.
 
-Required local markers: repo-owned adaptation, checkpoint-health.sh, Flutter, prototype dependencies, desktop client.
+Required local markers: repo-owned adaptation, `python3 scripts/vityo.py deliver`, Flutter, Prototype dependencies, desktop client.
 
 ## Industry Gate Group
 
-`client / desktop-quality` is the role-specific gate group for the Vityo desktop client. It keeps Flutter tests, desktop platform behavior, dependency restoration, checkpoint health, and docs checks grouped under `test / golden-standard`.
+`client / desktop-quality` is the role-specific gate group for the Vityo desktop client. It keeps Flutter tests, desktop platform behavior, dependency restoration, the delivery pipeline, and docs checks grouped under `test / golden-standard`.
 
-Required evidence markers: flutter test, desktop platform, dependency restore, checkpoint health, docs gate.
+Required evidence markers: Flutter test, desktop platform, dependency restore, delivery pipeline, docs gate.
 
 ## Submit Readiness
 

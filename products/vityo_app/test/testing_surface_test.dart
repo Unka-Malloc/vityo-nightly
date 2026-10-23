@@ -93,6 +93,10 @@ void main() {
                   label: 'All CTest tests',
                   workspaceRoot: '/workspace/vityo',
                   providerId: 'ctest',
+                  metadata: <String, Object?>{
+                    'debuggerExecutablePath': '/usr/bin/lldb-dap',
+                    'programPath': '/workspace/vityo/build/tests',
+                  },
                 ),
                 TestRunConfiguration(
                   id: 'debug-parser',
@@ -139,6 +143,7 @@ void main() {
     expect(find.text('configs 2'), findsOneWidget);
     expect(find.text('selected all'), findsOneWidget);
     expect(find.text('config ready'), findsOneWidget);
+    expect(find.text('debug route ready'), findsOneWidget);
     expect(find.text('status failed'), findsOneWidget);
     expect(find.text('runner ctest'), findsOneWidget);
     expect(find.text('total 2'), findsOneWidget);
@@ -221,6 +226,43 @@ void main() {
     expect(selectedConfiguration?.id, 'debug-parser');
     expect(selectedFailedTest?['name'], 'parser rejects invalid resource');
     expect(diagnosticsOpenCount, 1);
+  });
+
+  testWidgets('testing surface blocks debug without a DAP route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TestingSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 800,
+            ),
+            nativeToolResults: const <NativeToolResultRecord>[],
+            configurationSet: const TestRunConfigurationSet(
+              workspaceId: 'demo',
+              selectedConfigurationId: 'all',
+              configurations: <TestRunConfiguration>[
+                TestRunConfiguration(
+                  id: 'all',
+                  label: 'All tests',
+                  workspaceRoot: '/workspace/vityo',
+                ),
+              ],
+            ),
+            onDebugConfiguration: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('debug route blocked'), findsOneWidget);
+    final button = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('testing-debug-selected-configuration')),
+    );
+    expect(button.onPressed, isNull);
   });
 
   testWidgets('testing surface renders provider discovery and run state', (

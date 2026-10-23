@@ -18,12 +18,24 @@ class ExtensionHostSupervisorExecutionPlan {
     String outputChannelId = '',
   }) {
     final command = _commandForSupervisorRecord(record, manifest);
+    final hostArguments = _stringListMetadata(
+      manifest?.metadata['hostArguments'],
+    );
+    final hostEnvironment = _stringMapMetadata(
+      manifest?.metadata['hostEnvironment'],
+    );
+    final hostWorkingDirectory = _stringMetadata(
+      manifest?.metadata['hostWorkingDirectory'],
+    );
     final definition = RuntimeTaskDefinition(
       id: 'extension.host.${record.extensionId}',
       label: 'Start extension host ${record.extensionId}',
       kind: RuntimeTaskKind.agent,
       command: record.active ? command : '',
-      arguments: const <String>[],
+      arguments: hostArguments,
+      workingDirectory: hostWorkingDirectory,
+      environment: hostEnvironment,
+      background: record.action != ExtensionHostSupervisorAction.none,
       metadata: <String, Object?>{
         'extensionHostSupervisor': true,
         'extensionId': record.extensionId,
@@ -31,15 +43,7 @@ class ExtensionHostSupervisorExecutionPlan {
         'supervisorStatus': record.status.wireValue,
         'supervisorAction': record.action.wireValue,
         if (manifest != null) 'entrypoint': manifest.entrypoint,
-        if (record.action == ExtensionHostSupervisorAction.runInProcess)
-          'TODO':
-              'Run in-process extension hosts through an isolated service container.',
-        if (record.action == ExtensionHostSupervisorAction.spawnLocalProcess)
-          'TODO':
-              'Spawn local extension hosts through a concrete process sandbox.',
-        if (record.action == ExtensionHostSupervisorAction.connectRemoteService)
-          'TODO':
-              'Connect remote extension hosts through a concrete service client.',
+        'hostLifecycle': 'supervised',
       },
     );
     final executionPlan = const RuntimeExecutionPlanner().plan(
@@ -91,6 +95,109 @@ class ExtensionHostSupervisorExecutionPlan {
       'binding': binding.toJson(),
     };
   }
+}
+
+class ExtensionHostStartupExecutionReceipt {
+  const ExtensionHostStartupExecutionReceipt({
+    required this.initialSnapshot,
+    required this.supervisorSnapshot,
+    required this.launchResults,
+    required this.telemetryEvents,
+    required this.executedAt,
+  });
+
+  final ExtensionHostSupervisorSnapshot initialSnapshot;
+  final ExtensionHostSupervisorSnapshot supervisorSnapshot;
+  final List<ExtensionHostSandboxLaunchResult> launchResults;
+  final List<ExtensionHostSupervisorTelemetryEvent> telemetryEvents;
+  final DateTime executedAt;
+
+  bool get ready {
+    return supervisorSnapshot.startingExtensionIds.isEmpty &&
+        supervisorSnapshot.failedExtensionIds.isEmpty &&
+        launchResults.every((result) => result.launched);
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'ready': ready,
+      'executedAt': executedAt.toIso8601String(),
+      'initialSnapshot': initialSnapshot.toJson(),
+      'supervisorSnapshot': supervisorSnapshot.toJson(),
+      'launchResults': launchResults
+          .map((result) => result.toJson())
+          .toList(growable: false),
+      'telemetryEvents': telemetryEvents
+          .map((event) => event.toJson())
+          .toList(growable: false),
+    };
+  }
+}
+
+class ExtensionHostStartupExecutor {
+  ExtensionHostStartupExecutor({required this.bridge, this.clock});
+
+  final ExtensionHostSupervisorExecutionBridge bridge;
+  final DateTime Function()? clock;
+
+  Future<ExtensionHostStartupExecutionReceipt> execute({
+    required ExtensionHostSupervisorSnapshot snapshot,
+    required ExtensionManifestRegistry manifestRegistry,
+    required RuntimeOutputLiveBuffer buffer,
+  }) async {
+    final executedAt = _now();
+    var nextSnapshot = snapshot;
+    final launches = <ExtensionHostSandboxLaunchResult>[];
+    final telemetry = <ExtensionHostSupervisorTelemetryEvent>[
+      ...snapshot.telemetryEvents,
+    ];
+    final supervisor = ExtensionHostSupervisor(clock: clock);
+
+    for (final record in snapshot.records.where(
+      (record) => record.status == ExtensionHostSupervisorStatus.starting,
+    )) {
+      final result = await bridge.launchSandboxForPlan(
+        plan: ExtensionHostSupervisorExecutionPlan.fromRecord(
+          record,
+          manifest: manifestRegistry.lookup(record.extensionId),
+        ),
+        buffer: buffer,
+        timestamp: executedAt,
+      );
+      launches.add(result);
+      nextSnapshot = result.launched
+          ? supervisor.markRunning(
+              snapshot: nextSnapshot,
+              extensionId: record.extensionId,
+              message: result.message,
+            )
+          : supervisor.markFailed(
+              snapshot: nextSnapshot,
+              extensionId: record.extensionId,
+              reason: result.message,
+            );
+      final nextRecord = nextSnapshot.lookup(record.extensionId);
+      if (nextRecord != null) {
+        telemetry.add(
+          ExtensionHostSupervisorTelemetryEvent.fromRecord(nextRecord),
+        );
+      }
+    }
+
+    return ExtensionHostStartupExecutionReceipt(
+      initialSnapshot: snapshot,
+      supervisorSnapshot: nextSnapshot,
+      launchResults: List<ExtensionHostSandboxLaunchResult>.unmodifiable(
+        launches,
+      ),
+      telemetryEvents: List<ExtensionHostSupervisorTelemetryEvent>.unmodifiable(
+        telemetry,
+      ),
+      executedAt: executedAt,
+    );
+  }
+
+  DateTime _now() => (clock ?? DateTime.now)().toUtc();
 }
 
 class ExtensionHostSupervisorExecutionBridge {
@@ -174,7 +281,9 @@ class ExtensionHostSupervisorExecutionBridge {
     ExtensionManifestRegistry? manifestRegistry,
   }) async {
     final results = <ExtensionHostSandboxLaunchResult>[];
-    for (final record in snapshot.records.where((record) => record.active)) {
+    for (final record in snapshot.records.where(
+      (record) => record.status == ExtensionHostSupervisorStatus.starting,
+    )) {
       results.add(
         await launchSandboxForPlan(
           plan: ExtensionHostSupervisorExecutionPlan.fromRecord(
@@ -415,7 +524,20 @@ class ExtensionHostSandboxLauncherRegistry {
     if (launcher == null) {
       return ExtensionHostSandboxLaunchResult.missingLauncher(request: request);
     }
-    final result = await launcher.launcher(request);
+    late final ExtensionHostSandboxLaunchResult result;
+    try {
+      result = await launcher.launcher(request);
+    } on Object catch (error) {
+      result = ExtensionHostSandboxLaunchResult.blocked(
+        request: request,
+        message:
+            '${launcher.label} failed to launch the extension host: '
+            '$error',
+        metadata: <String, Object?>{
+          'launcherError': error.runtimeType.toString(),
+        },
+      );
+    }
     return ExtensionHostSandboxLaunchResult(
       request: result.request,
       status: result.status,
@@ -469,4 +591,27 @@ RuntimeOutputChannelKind _outputKindForSupervisorTarget(
     RuntimeExecutionHandoffTarget.hostedExecutor =>
       RuntimeOutputChannelKind.runtimeEvents,
   };
+}
+
+List<String> _stringListMetadata(Object? value) {
+  if (value is! List) return const <String>[];
+  return value
+      .whereType<String>()
+      .map((item) => item.trim())
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}
+
+Map<String, String> _stringMapMetadata(Object? value) {
+  if (value is! Map) return const <String, String>{};
+  return <String, String>{
+    for (final entry in value.entries)
+      if (entry.key is String && entry.value is String)
+        (entry.key as String): entry.value as String,
+  };
+}
+
+String? _stringMetadata(Object? value) {
+  if (value is! String || value.trim().isEmpty) return null;
+  return value.trim();
 }

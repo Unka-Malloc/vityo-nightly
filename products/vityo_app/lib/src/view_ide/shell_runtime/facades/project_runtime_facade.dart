@@ -13,6 +13,52 @@ mixin ShellRuntimeProjectRuntimeFacade on ShellRuntimeFacadeHost {
       _moduleController.nativeModuleLoader;
   List<ModuleDefinition> get mountedModules => _moduleController.mountedModules;
   List<ModuleDefinition> get visibleModules => _moduleController.visibleModules;
+  List<ModuleLifecycleState> get moduleStates => _moduleController.moduleStates;
+
+  Future<void> enableModule(String moduleId) =>
+      _moduleController.enable(moduleId);
+  Future<void> disableModule(String moduleId) =>
+      _moduleController.disable(moduleId);
+  Future<void> trustModule(String moduleId) =>
+      _moduleController.trust(moduleId);
+
+  ExtensionMarketplaceIndex get extensionMarketplaceIndex =>
+      _extensionMarketplaceController.index;
+  ExtensionMarketplacePreferences get extensionMarketplacePreferences =>
+      _extensionMarketplaceController.preferences;
+  ExtensionManifestRegistry get installedExtensionRegistry =>
+      _extensionMarketplaceController.installedRegistry;
+  ExtensionMarketplaceInstallExecutionResult?
+  get lastExtensionMarketplaceInstallResult =>
+      _extensionMarketplaceController.lastInstallResult;
+  ExtensionMarketplaceIoBatchResult? get lastExtensionMarketplaceIoBatch =>
+      _extensionMarketplaceController.lastIoBatch;
+  String get extensionMarketplaceQuery => _extensionMarketplaceController.query;
+  String get extensionMarketplaceMessage =>
+      _extensionMarketplaceController.message;
+  bool get extensionMarketplaceBusy => _extensionMarketplaceController.busy;
+  bool get extensionMarketplaceAvailable =>
+      _extensionMarketplaceController.available;
+
+  Future<void> loadExtensionMarketplace() =>
+      _extensionMarketplaceController.load();
+
+  Future<void> saveExtensionMarketplacePreferences(
+    ExtensionMarketplacePreferences preferences,
+  ) => _extensionMarketplaceController.savePreferences(preferences);
+
+  Future<void> refreshExtensionMarketplace() =>
+      _extensionMarketplaceController.refreshIndex();
+
+  void setExtensionMarketplaceQuery(String query) =>
+      _extensionMarketplaceController.setQuery(query);
+
+  Future<void> installMarketplaceExtension(ExtensionInstallPlan plan) =>
+      _extensionMarketplaceController.install(plan);
+
+  Future<void> updateMarketplaceExtension(
+    ExtensionMarketplaceUpdatePlan plan,
+  ) => _extensionMarketplaceController.update(plan);
 
   List<NativeToolResultRecord> get nativeToolResults =>
       _executionController.nativeToolResults;
@@ -24,8 +70,13 @@ mixin ShellRuntimeProjectRuntimeFacade on ShellRuntimeFacadeHost {
       _executionController.runtimeEventAdapter;
   ExecutionSession? get lastExecutionSession =>
       _executionController.lastExecutionSession;
+  bool get executionRunActive => _executionController.runActive;
+  bool get executionCanCancel => _executionController.canCancelActiveExecution;
   List<RuntimeEventEnvelope> get lastRuntimeEvents =>
       _executionController.lastRuntimeEvents;
+
+  Future<ProcessCommandCancellationResult> cancelActiveExecution() =>
+      _executionController.cancelActiveExecution();
 
   DependencySourceCommandResult? get lastDependencySourceCommand =>
       _dependencySourceController.lastCommand;

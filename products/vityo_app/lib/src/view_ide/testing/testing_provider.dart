@@ -30,19 +30,31 @@ TestRunStatus testRunStatusFromWireValue(String? value) {
 class TestRunRequest {
   const TestRunRequest({
     required this.workspaceRoot,
+    this.configurationId = '',
+    this.configurationLabel = '',
+    this.providerId = '',
     this.targetId = '',
     this.filter = '',
     this.debug = false,
+    this.metadata = const <String, Object?>{},
   });
 
   final String workspaceRoot;
+  final String configurationId;
+  final String configurationLabel;
+  final String providerId;
   final String targetId;
   final String filter;
   final bool debug;
+  final Map<String, Object?> metadata;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'workspaceRoot': workspaceRoot,
+      if (configurationId.isNotEmpty) 'configurationId': configurationId,
+      if (configurationLabel.isNotEmpty)
+        'configurationLabel': configurationLabel,
+      if (providerId.isNotEmpty) 'providerId': providerId,
       if (targetId.isNotEmpty) 'targetId': targetId,
       if (filter.isNotEmpty) 'filter': filter,
       'debug': debug,
@@ -136,9 +148,13 @@ class TestRunConfiguration {
   TestRunRequest toRunRequest() {
     return TestRunRequest(
       workspaceRoot: workspaceRoot.trim(),
+      configurationId: id.trim(),
+      configurationLabel: label.trim(),
+      providerId: providerId.trim(),
       targetId: targetId.trim(),
       filter: filter.trim(),
       debug: debug,
+      metadata: metadata,
     );
   }
 
@@ -450,6 +466,23 @@ class TestDebugLaunchRoutePlanner {
     final debugConfiguration = configuration.debug
         ? configuration
         : configuration.copyWith(debug: true);
+    return launchConfiguration(debugConfiguration).toRoutePlan(
+      profileId: debugConfiguration.id.isEmpty
+          ? 'test-debug'
+          : 'test-debug.${debugConfiguration.id}',
+      taskId: debugConfiguration.id.isEmpty
+          ? 'debug.test'
+          : 'debug.test.${debugConfiguration.id}',
+      label: debugConfiguration.label,
+    );
+  }
+
+  DebugLaunchConfiguration launchConfiguration(
+    TestRunConfiguration configuration,
+  ) {
+    final debugConfiguration = configuration.debug
+        ? configuration
+        : configuration.copyWith(debug: true);
     final debuggerExecutablePath =
         _metadataString(
           debugConfiguration.metadata,
@@ -470,7 +503,7 @@ class TestDebugLaunchRoutePlanner {
     final missingExecutable =
         debuggerExecutablePath == null || debuggerExecutablePath.trim().isEmpty;
     final missingProgram = programPath == null || programPath.trim().isEmpty;
-    final launch = DebugLaunchConfiguration(
+    return DebugLaunchConfiguration(
       readiness: missingExecutable || missingProgram
           ? DebugLaunchReadiness.missingProgram
           : DebugLaunchReadiness.ready,
@@ -518,15 +551,6 @@ class TestDebugLaunchRoutePlanner {
         debugConfiguration.metadata,
         'environment',
       ),
-    );
-    return launch.toRoutePlan(
-      profileId: debugConfiguration.id.isEmpty
-          ? 'test-debug'
-          : 'test-debug.${debugConfiguration.id}',
-      taskId: debugConfiguration.id.isEmpty
-          ? 'debug.test'
-          : 'debug.test.${debugConfiguration.id}',
-      label: debugConfiguration.label,
     );
   }
 }
@@ -620,6 +644,47 @@ abstract class TestRunProvider {
   String get providerId;
 
   Future<TestRunResult> run(TestRunRequest request);
+}
+
+typedef TestRunProcessStartedCallback =
+    void Function(RuntimeProcessHandleIdentity processHandle);
+
+enum TestRunProcessKind { testRunner, debugAdapter }
+
+class TestRunProcessCancellationResult {
+  const TestRunProcessCancellationResult({
+    required this.accepted,
+    required this.processTerminated,
+    required this.message,
+    this.metadata = const <String, Object?>{},
+  });
+
+  final bool accepted;
+  final bool processTerminated;
+  final String message;
+  final Map<String, Object?> metadata;
+}
+
+abstract class ProcessAwareTestRunProvider extends TestRunProvider {
+  const ProcessAwareTestRunProvider();
+
+  TestRunProcessKind processKind(TestRunRequest request) {
+    return TestRunProcessKind.testRunner;
+  }
+
+  Future<TestRunResult> runWithProcessObserver(
+    TestRunRequest request, {
+    required TestRunProcessStartedCallback onProcessStarted,
+  });
+
+  Future<TestRunProcessCancellationResult> cancelProcess(
+    String processHandleId,
+  );
+
+  @override
+  Future<TestRunResult> run(TestRunRequest request) {
+    return runWithProcessObserver(request, onProcessStarted: (_) {});
+  }
 }
 
 abstract class TestDiscoveryProvider {
@@ -1029,7 +1094,7 @@ class TestingProviderRetryPlan {
     return TestingProviderRetryPlan(
       ready: enabledActions.isNotEmpty,
       message: enabledActions.isEmpty
-          ? '${snapshot.summary} TODO: register an active testing provider before retrying.'
+          ? '${snapshot.summary} Register an active testing provider before retrying.'
           : '${snapshot.summary} ${enabledActions.length} retry action${enabledActions.length == 1 ? '' : 's'} available.',
       actions: snapshot.retryActions,
     );
@@ -1109,7 +1174,7 @@ List<TestingProviderRetryAction> _retryActionsFromRecords(
           label: 'Configure $surface test provider',
           enabled: false,
           reason:
-              'No active $surface test provider is registered. TODO: register Styio, CTest, or custom testing adapters.',
+              'No active $surface test provider is registered. Register Styio, CTest, or a custom testing adapter.',
         ),
       );
       continue;

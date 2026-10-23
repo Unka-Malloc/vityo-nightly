@@ -6,18 +6,31 @@ import 'package:vityo_agent_protocol/vityo_agent_protocol.dart';
 import 'package:vityo_app/src/ide/agent_client/agent_client.dart';
 import 'package:vityo_app/src/ide/workbench/agent_collaboration/agent_collaboration_service.dart';
 import 'package:vityo_app/src/ide/workbench/agent_collaboration/collaboration_store.dart';
+import 'package:vityo_app/src/ide/workspace/workspace_change_set.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_revision_service.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_transaction_service.dart';
 
+import '../../../products/vityo_app/test/support/vityod_test_harness.dart';
+
+late VityodTestHarness _harness;
+
 Future<void> main() async {
-  await _canonicalAcpV1ContractRoundTrips();
-  await _concurrentConnectAndRemoteSessionRoutesRemainUnique();
-  await _negotiationConcurrentStreamingPermissionAndCancellation();
-  await _crossAgentIdentifiersRemainIsolated();
-  await _protocolChangeProposalRoutesThroughWorkbenchTransaction();
-  await _processFailureClearsWorkbenchPermissionState();
-  await _dynamicCapabilityRevocationAndReconnect();
-  await _boundedFailuresAreConnectionLocal();
+  if (!VityodTestHarness.isSupported) return;
+  _harness = await VityodTestHarness.start(
+    clientId: 'agent-client-protocol-acceptance',
+  );
+  try {
+    await _canonicalAcpV1ContractRoundTrips();
+    await _concurrentConnectAndRemoteSessionRoutesRemainUnique();
+    await _negotiationConcurrentStreamingPermissionAndCancellation();
+    await _crossAgentIdentifiersRemainIsolated();
+    await _protocolChangeProposalRoutesThroughWorkbenchTransaction();
+    await _processFailureClearsWorkbenchPermissionState();
+    await _dynamicCapabilityRevocationAndReconnect();
+    await _boundedFailuresAreConnectionLocal();
+  } finally {
+    await _harness.close();
+  }
 }
 
 /// REQ-IDE-005 / both criteria / schema and atomic-cutover seam.
@@ -145,7 +158,7 @@ Future<void> _negotiationConcurrentStreamingPermissionAndCancellation() async {
       'fixture must negotiate loadSession',
     );
     _expect(
-      connection.metadata['vityo.test/privateEnvironmentVisible'] == false,
+      connection.metadata.isEmpty,
       'supervised child must not inherit ambient private environment',
     );
 
@@ -178,11 +191,17 @@ Future<void> _negotiationConcurrentStreamingPermissionAndCancellation() async {
     );
     await registry.resolvePermission(
       permissions.last.id,
-      AgentPermissionDecision.allowOnce,
+      _permissionOptionId(
+        permissions.last.options,
+        AgentPermissionOptionKind.allowOnce,
+      ),
     );
     await registry.resolvePermission(
       permissions.first.id,
-      AgentPermissionDecision.allowOnce,
+      _permissionOptionId(
+        permissions.first.options,
+        AgentPermissionOptionKind.allowOnce,
+      ),
     );
     final results = await Future.wait(<Future<AcpPromptResult>>[
       firstPrompt,
@@ -245,7 +264,10 @@ Future<void> _negotiationConcurrentStreamingPermissionAndCancellation() async {
     await _expectClientFailure(
       () => registry.resolvePermission(
         pendingPermission.id,
-        AgentPermissionDecision.allowOnce,
+        _permissionOptionId(
+          pendingPermission.options,
+          AgentPermissionOptionKind.allowOnce,
+        ),
       ),
       'unknown_permission',
     );
@@ -304,7 +326,10 @@ Future<void> _crossAgentIdentifiersRemainIsolated() async {
     for (final permission in permissions.reversed) {
       await registry.resolvePermission(
         permission.id,
-        AgentPermissionDecision.allowOnce,
+        _permissionOptionId(
+          permission.options,
+          AgentPermissionOptionKind.allowOnce,
+        ),
       );
     }
     final results = await Future.wait(<Future<AcpPromptResult>>[
@@ -329,8 +354,47 @@ Future<void> _protocolChangeProposalRoutesThroughWorkbenchTransaction() async {
   final revisions = InMemoryWorkspaceRevisionService(
     initialDocuments: const <String, String>{'file': 'before'},
   );
-  final collaboration = AgentCollaborationService(
-    registry: _registry(<String, String>{'healthy': 'normal'}),
+  final proposalResponses = <String, Completer<Map<String, Object?>>>{};
+  late final AgentCollaborationService collaboration;
+  final operationPort = _ProposalOperationPort((operation) async {
+    final request = VityoWorkspaceChangeProposalRequest.fromJson(
+      operation.params,
+    );
+    final proposal = request.proposal;
+    final review = await collaboration.proposeChange(
+      sessionId: operation.sessionId,
+      changeSet: WorkspaceChangeSet(
+        id: proposal.id,
+        baseWorkspaceRevision: proposal.baseWorkspaceRevision,
+        resources: proposal.resources.map(
+          (resource) => WorkspaceResourceChange(
+            resourceId: resource.resourceId,
+            baseDocumentRevision: resource.baseDocumentRevision,
+            edits: resource.edits.map(
+              (edit) => WorkspaceTextChange(
+                start: edit.start,
+                end: edit.end,
+                replacement: edit.replacement,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (review.outcome != WorkspaceTransactionOutcome.ready) {
+      return VityoWorkspaceChangeProposalResponse(
+        proposalId: proposal.id,
+        outcome: VityoWorkspaceChangeOutcome.conflict,
+      ).toJson();
+    }
+    final response = Completer<Map<String, Object?>>();
+    proposalResponses[proposal.id] = response;
+    return response.future;
+  });
+  collaboration = AgentCollaborationService(
+    registry: _registry(<String, String>{
+      'healthy': 'normal',
+    }, operationPort: operationPort),
     transactions: RevisionedWorkspaceTransactionService(revisions),
     workspaceRoot: Directory.current.uri,
   );
@@ -349,14 +413,25 @@ Future<void> _protocolChangeProposalRoutesThroughWorkbenchTransaction() async {
         .pendingPermissions
         .values
         .single;
-    await permission.resolve(AgentPermissionDecision.allowOnce);
-    await prompt;
+    await permission.resolve(
+      _permissionOptionId(
+        permission.options,
+        AgentPermissionOptionKind.allowOnce,
+      ),
+    );
     await _eventually(
       () => collaboration.projection
           .session(opened.sessionId)
           .changeReviews
           .isNotEmpty,
       'protocol change proposal must reach the workbench projection',
+    );
+    _expect(
+      collaboration.projection
+          .session(opened.sessionId)
+          .timeline
+          .any((entry) => entry.label == 'approved:propose-change'),
+      'exact selected permission option must continue the correlated prompt',
     );
 
     final review = collaboration.projection
@@ -374,10 +449,31 @@ Future<void> _protocolChangeProposalRoutesThroughWorkbenchTransaction() async {
       changeSetId: review.changeSet.id,
       decision: AgentChangeReviewDecision.commit,
     );
+    final committedSnapshot = revisions.snapshot();
+    proposalResponses
+        .remove(review.changeSet.id)!
+        .complete(
+          VityoWorkspaceChangeProposalResponse(
+            proposalId: review.changeSet.id,
+            outcome: VityoWorkspaceChangeOutcome.committed,
+            workspaceRevision: committedSnapshot.workspaceRevision,
+            documentRevisions: <String, int>{
+              'file': committedSnapshot.document('file').revision,
+            },
+          ).toJson(),
+        );
     _expect(
       committed.outcome == WorkspaceTransactionOutcome.committed &&
-          revisions.snapshot().document('file').text == 'after',
+          committedSnapshot.document('file').text == 'after',
       'only explicit review may commit the protocol proposal',
+    );
+    await prompt;
+    _expect(
+      collaboration.projection
+          .session(opened.sessionId)
+          .timeline
+          .any((entry) => entry.label == 'proposal-receipt:committed'),
+      'the committed workspace receipt must return to the correlated Agent turn',
     );
   } finally {
     await collaboration.close();
@@ -472,6 +568,12 @@ Future<void> _dynamicCapabilityRevocationAndReconnect() async {
 
     final beforeGeneration = initial.generation;
     final beforeReconnect = session.snapshot;
+    _expect(
+      beforeReconnect.updates.any(
+        (update) => update.text?.contains('capabilities') ?? false,
+      ),
+      'completed prompt must reach the session projection before reconnect',
+    );
     final shutdown = await registry.disconnect('healthy');
     _expect(shutdown.terminated, 'explicit disconnect must reap the child');
     await _expectClientFailure(
@@ -494,15 +596,27 @@ Future<void> _dynamicCapabilityRevocationAndReconnect() async {
     );
     final loaded = loadedSessions.first;
     _expect(
-      registry.connection('healthy').generation > beforeGeneration &&
-          loadedSessions.every((candidate) => identical(candidate, loaded)) &&
-          loaded.id == session.id &&
-          loaded.snapshot.revision > beforeReconnect.revision &&
-          loaded.snapshot.updates.any(
-            (update) => update.text?.contains('capabilities') ?? false,
-          ) &&
-          loaded.snapshot.updates.last.payload['status'] == 'active',
-      'concurrent reconnect must coalesce and load one exact session',
+      registry.connection('healthy').generation > beforeGeneration,
+      'reconnect must advance the supervised process generation',
+    );
+    _expect(
+      loadedSessions.every((candidate) => identical(candidate, loaded)),
+      'concurrent reconnect must coalesce to one client projection',
+    );
+    _expect(loaded.id == session.id, 'reconnect must retain the session id');
+    _expect(
+      loaded.snapshot.revision > beforeReconnect.revision,
+      'reconnect must advance the session projection revision',
+    );
+    _expect(
+      loaded.snapshot.updates.any(
+        (update) => update.text?.contains('capabilities') ?? false,
+      ),
+      'reconnect must retain prior bounded session events',
+    );
+    _expect(
+      loaded.snapshot.updates.last.payload['status'] == 'active',
+      'reconnect must end with the daemon-restored active state',
     );
   } finally {
     await registry.close();
@@ -552,7 +666,10 @@ Future<void> _boundedFailuresAreConnectionLocal() async {
     final permission = await _next(registry.permissionRequests);
     await registry.resolvePermission(
       permission.id,
-      AgentPermissionDecision.allowOnce,
+      _permissionOptionId(
+        permission.options,
+        AgentPermissionOptionKind.allowOnce,
+      ),
     );
     _expect(
       (await prompt).stopReason == AcpStopReason.endTurn,
@@ -568,7 +685,10 @@ Future<void> _boundedFailuresAreConnectionLocal() async {
   }
 }
 
-AgentClientRegistry _registry(Map<String, String> modes) {
+AgentClientRegistry _registry(
+  Map<String, String> modes, {
+  AgentClientOperationPort? operationPort,
+}) {
   final fixture = File.fromUri(
     Platform.script.resolve(
       '../fixtures/vityo_app/agent_client/fake_agent.dart',
@@ -580,10 +700,12 @@ AgentClientRegistry _registry(Map<String, String> modes) {
         entry.key: AgentLaunchDescriptor(
           id: entry.key,
           executable: Platform.resolvedExecutable,
-          arguments: <String>['run', fixture.path, entry.value],
+          arguments: <String>[fixture.path, entry.value],
           workingDirectory: Directory.current.path,
         ),
     },
+    client: _harness.client,
+    operationPort: operationPort,
     policy: const AgentClientPolicy(
       maxMessageBytes: 64 * 1024,
       maxBufferedUpdatesPerSession: 32,
@@ -599,8 +721,39 @@ AgentClientRegistry _registry(Map<String, String> modes) {
   );
 }
 
+final class _ProposalOperationPort implements AgentClientOperationPort {
+  _ProposalOperationPort(this._dispatchProposal);
+
+  final Future<Map<String, Object?>> Function(AgentClientOperation operation)
+  _dispatchProposal;
+
+  @override
+  AgentClientOperationCapabilities get capabilities =>
+      AgentClientOperationCapabilities(workspaceChangeProposal: true);
+
+  @override
+  Future<Map<String, Object?>> dispatch(AgentClientOperation operation) {
+    if (operation.kind != AgentClientOperationKind.workspaceChangeProposal) {
+      throw AgentClientOperationFailure(
+        'unsupported_operation',
+        'The proposal fixture accepts only workspace proposals.',
+      );
+    }
+    return _dispatchProposal(operation);
+  }
+}
+
 Future<T> _next<T>(Stream<T> stream) =>
     stream.first.timeout(const Duration(seconds: 3));
+
+String _permissionOptionId(
+  List<AgentPermissionOption> options,
+  AgentPermissionOptionKind kind, {
+  int occurrence = 1,
+}) => options
+    .where((option) => option.kind == kind)
+    .elementAt(occurrence)
+    .optionId;
 
 Future<void> _eventually(bool Function() predicate, String message) async {
   final deadline = DateTime.now().add(const Duration(seconds: 3));

@@ -20,6 +20,12 @@
 
 ## 当前证据
 
+> **Path note (2026-10-03):** This document records facts as of 2026-04-17, when the
+> client root was `frontend/vityo_app/`. That directory is now `products/vityo_app/`,
+> the execution-adapter files cited below moved to `lib/src/view_ide/backend_toolchain/`,
+> and the surface files moved to `lib/src/view_render/runtime/`. The text below keeps its
+> original paths and conclusions and is not rewritten; use this note to locate them today.
+
 1. 实际文件 staging / restore 路径位于 [../frontend/vityo_app/lib/src/integration/execution_adapter_io.dart](../frontend/vityo_app/lib/src/integration/execution_adapter_io.dart)。
 2. 多文件 diagnostics range 丢失仍位于同一文件的 payload 解析路径中。
 3. published payload 失败后回退到 canonical inference 的逻辑位于 [../frontend/vityo_app/lib/src/integration/project_graph_adapter_io.dart](../frontend/vityo_app/lib/src/integration/project_graph_adapter_io.dart)。

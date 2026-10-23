@@ -2,24 +2,34 @@ import 'dart:io';
 
 import 'package:vityo_app/src/ide/agent_client/agent_client.dart';
 
+import '../test/support/vityod_test_harness.dart';
+
 Future<void> main() async {
+  if (!VityodTestHarness.isSupported) return;
   final fixture = File.fromUri(
     Platform.script.resolve(
       '../../../tests/acceptance/fixtures/vityo_app/agent_client/'
       'fake_agent.dart',
     ),
   );
+  final harness = await VityodTestHarness.start(
+    clientId: 'agent-protocol-integration',
+  );
+  // Run the SDK-only fixture directly; pub build-hook banners are not ACP.
   final registry = AgentClientRegistry(
     descriptors: <String, AgentLaunchDescriptor>{
       'fixture': AgentLaunchDescriptor(
         id: 'fixture',
         executable: Platform.resolvedExecutable,
-        arguments: <String>['run', fixture.path, 'normal'],
+        arguments: <String>[fixture.path, 'normal'],
         workingDirectory: Directory.current.path,
       ),
     },
+    client: harness.client,
     policy: const AgentClientPolicy(
-      requestTimeout: Duration(seconds: 3),
+      // Opening a connection includes spawning the Dart VM fixture, so the
+      // handshake gets the production request budget instead of a tight one.
+      requestTimeout: Duration(seconds: 30),
       allowedExtensions: <String>{
         '_vityo.dev/test/write',
         '_vityo.dev/test/status',
@@ -28,11 +38,10 @@ Future<void> main() async {
   );
   try {
     final connection = await registry.connect('fixture');
-    if (connection.protocolVersion != 1) {
-      throw StateError('ACP v1 negotiation failed');
-    }
-    if (registry.activeConnectionCount != 1) {
-      throw StateError('connection was not retained after initialize');
+    if (connection.protocolVersion != 1 ||
+        registry.activeConnectionCount != 1 ||
+        connection.metadata.isNotEmpty) {
+      throw StateError('daemon-owned ACP negotiation was not retained');
     }
     final session = await registry.newSession(
       agentId: 'fixture',
@@ -42,26 +51,29 @@ Future<void> main() async {
     final permission = await registry.permissionRequests.first.timeout(
       const Duration(seconds: 3),
     );
-    await registry.resolvePermission(
-      permission.id,
-      AgentPermissionDecision.allowOnce,
-    );
-    if ((await prompt).stopReason != 'end_turn') {
-      throw StateError('stdio prompt did not complete');
+    final allowOnceOptions = permission.options
+        .where((option) => option.kind == AgentPermissionOptionKind.allowOnce)
+        .toList(growable: false);
+    if (allowOnceOptions.length != 2 ||
+        allowOnceOptions[0].optionId == allowOnceOptions[1].optionId ||
+        !permission.options.any(
+          (option) => option.kind == AgentPermissionOptionKind.allowAlways,
+        ) ||
+        !permission.options.any(
+          (option) => option.kind == AgentPermissionOptionKind.rejectAlways,
+        )) {
+      throw StateError('offered permission options were not preserved');
     }
-    if (registry.activeConnectionCount != 1) {
-      throw StateError('connection was not retained after prompt');
+    final selectedOption = allowOnceOptions[1];
+    await registry.resolvePermission(permission.id, selectedOption.optionId);
+    if ((await prompt).stopReason != 'end_turn' ||
+        !session.snapshot.updates.any(
+          (update) => update.text == 'approved:integration',
+        )) {
+      throw StateError('daemon-owned prompt correlation did not complete');
     }
   } finally {
-    final activeBeforeClose = registry.activeConnectionCount;
-    final receipts = await registry.close();
-    if (activeBeforeClose == 1 &&
-        (receipts.length != 1 || !receipts.single.terminated)) {
-      throw StateError(
-        'supervised process was not reaped '
-        '(receipts=${receipts.length}, '
-        'terminated=${receipts.firstOrNull?.terminated})',
-      );
-    }
+    await registry.close();
+    await harness.close();
   }
 }

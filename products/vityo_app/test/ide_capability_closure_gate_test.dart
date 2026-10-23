@@ -24,7 +24,10 @@ void main() {
     expect(json['isFrameworkClosed'], isTrue);
     expect(json['isRuntimeMature'], isFalse);
     expect(json['isRuntimeContractMature'], isTrue);
-    expect(report.nonBlockingTodoCapabilityIds, contains('runtime.execution'));
+    expect(
+      report.nonBlockingTodoCapabilityIds,
+      isNot(contains('runtime.execution')),
+    );
     expect(
       report.runtimeMaturityBlockerCapabilityIds,
       isNot(contains('runtime.execution')),
@@ -45,11 +48,18 @@ void main() {
             id: entry.id,
             layer: entry.layer,
             title: entry.title,
-            status: entry.status,
+            status: entry.id == 'runtime.execution'
+                ? IdeCapabilityStatus.scaffolded
+                : entry.status,
             ownerPath: entry.ownerPath,
             summary: entry.summary,
-            todo: entry.todo,
-            runtimeMaturityBlocking: entry.needsFollowUp ? false : null,
+            todo: entry.id == 'runtime.execution'
+                ? 'TODO: detail-only runtime execution fixture.'
+                : entry.todo,
+            runtimeMaturityBlocking:
+                entry.id == 'runtime.execution' || entry.needsFollowUp
+                ? false
+                : null,
             references: entry.references,
             dependencies: entry.dependencies,
           ),

@@ -22,52 +22,49 @@ NIGHTLY_PACKAGE_FORMATS = {
     "macos": "dmg",
 }
 NIGHTLY_WORKFLOW_MARKERS = {
-    "linux": ("package-nightly.py --platform linux", "sudo dpkg -i", "xvfb-run -a vityo"),
-    "windows": ("package-nightly.py --platform windows", "install.ps1", "Start-Process"),
-    "macos": ("package-nightly.py --platform macos", "hdiutil attach", "Contents/MacOS/Vityo"),
+    "linux": ("scripts/vityo.py deliver --mode ci --platform linux",),
+    "windows": ("scripts/vityo.py deliver --mode ci --platform windows",),
+    "macos": ("scripts/vityo.py deliver --mode ci --platform macos",),
 }
 PRODUCT_MATRIX_WORKFLOW_MARKERS = {
     "linux": (
-        "VITYO_PRODUCT_PLATFORM: linux",
         "product-gate-linux.json",
-        "dart run tests/acceptance/vityo_app/trusted_desktop_styio_loop_acceptance_test.dart --report build/evidence/product-gate-linux.json --platform linux",
-        "scripts/run-native-pty-matrix.py",
-        "--platform linux",
-        "--pty-report build/evidence/native-pty-linux.json",
+        "native-pty-linux.json",
         "product-matrix-linux.json",
+        "startup-linux.json",
     ),
     "windows": (
-        "VITYO_PRODUCT_PLATFORM: windows",
         "product-gate-windows.json",
-        "dart run tests/acceptance/vityo_app/trusted_desktop_styio_loop_acceptance_test.dart --report build/evidence/product-gate-windows.json --platform windows",
-        "scripts/run-native-pty-matrix.py",
-        "--platform windows",
-        "--pty-report build/evidence/native-pty-windows.json",
+        "native-pty-windows.json",
         "product-matrix-windows.json",
+        "startup-windows.json",
     ),
     "macos": (
-        "VITYO_PRODUCT_PLATFORM: macos",
         "product-gate-macos.json",
-        "dart run tests/acceptance/vityo_app/trusted_desktop_styio_loop_acceptance_test.dart --report build/evidence/product-gate-macos.json --platform macos",
-        "scripts/run-native-pty-matrix.py",
-        "--platform macos",
-        "--pty-report build/evidence/native-pty-macos.json",
+        "native-pty-macos.json",
         "product-matrix-macos.json",
+        "startup-macos.json",
     ),
 }
 RELEASE_VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 REQUIRED_RELEASE_FILES = (
-    Path("scripts/delivery-gate.sh"),
-    Path("scripts/checkpoint-health.sh"),
+    Path("scripts/vityo.py"),
+    Path("scripts/vityo_architecture.py"),
+    Path("scripts/vityo_quality.py"),
+    Path("scripts/package-nightly.py"),
+    Path("products/vityo_coding_agent/Cargo.toml"),
+    Path("products/vityo_coding_agent/Cargo.lock"),
+    Path("products/vityo_app/native/vityod/Cargo.toml"),
+    Path("products/vityo_app/native/vityod/Cargo.lock"),
     Path(".github/workflows/local-ci-gate.yml"),
     Path(".github/workflows/project-coverage-gate.yml"),
     Path("products/vityo_app/README.md"),
     Path("products/vityo_app/pubspec.yaml"),
-    Path("scripts/package-nightly.py"),
     Path("scripts/ecosystem-product-gate.py"),
     Path("scripts/run-native-pty-matrix.py"),
     Path("scripts/record-product-matrix-evidence.py"),
+    Path("scripts/vityo_toolchains.py"),
     Path("packaging/README.md"),
     Path("toolchain/product-matrix.json"),
     TOOLING_MANIFEST_PATH,
@@ -567,6 +564,21 @@ def check_nightly_packaging(repo_root: Path) -> list[CheckResult]:
         and bool(re.fullmatch(r"[0-9a-f]{40}", str(repositories.get(name))))
         for name in ("styio", "pafio")
     )
+    resolver_path = repo_root / "scripts/vityo_toolchains.py"
+    resolver_text = read_text(resolver_path) if resolver_path.is_file() else ""
+    pinned_resolver_ok = all(
+        marker in resolver_text
+        for marker in (
+            "toolchain/product-matrix.json",
+            '"build" / "toolchains"',
+            '"git", "clone"',
+            '"git", "fetch"',
+            '"git", "checkout", "--detach"',
+            "def ensure_pinned_checkout(",
+            "def provision(",
+            "def validate_executable(",
+        )
+    )
     results.extend(
         [
             CheckResult(
@@ -585,11 +597,9 @@ def check_nightly_packaging(repo_root: Path) -> list[CheckResult]:
                 "fixed" if fixed_commits_ok else "missing or mutable",
             ),
             CheckResult(
-                "Product matrix pinned checkouts",
-                "steps.product-matrix.outputs.styio" in workflow_text
-                and "steps.product-matrix.outputs.pafio" in workflow_text,
-                "present" if "steps.product-matrix.outputs.styio" in workflow_text
-                and "steps.product-matrix.outputs.pafio" in workflow_text else "missing",
+                "Product matrix pinned source provisioning",
+                pinned_resolver_ok,
+                "present" if pinned_resolver_ok else "missing",
             ),
             CheckResult(
                 "Independent platform jobs",
@@ -642,6 +652,57 @@ def check_nightly_packaging(repo_root: Path) -> list[CheckResult]:
             sources_ok = sources_ok and valid
             if not valid:
                 source_detail.append(f"{key}={relative or 'missing'}")
+        agent = config.get("coding_agent")
+        agent = agent if isinstance(agent, dict) else {}
+        agent_targets = {
+            "linux": "x86_64-unknown-linux-gnu",
+            "windows": "x86_64-pc-windows-msvc",
+            "macos": "native-apple-darwin",
+        }
+        agent_package_paths = {
+            "linux": "components/vityo-coding-agent",
+            "windows": "components/vityo-coding-agent.exe",
+            "macos": "Contents/Helpers/vityo-coding-agent",
+        }
+        agent_source = (
+            "products/vityo_coding_agent/target/release/vityo-coding-agent.exe"
+            if platform == "windows"
+            else "products/vityo_coding_agent/target/release/vityo-coding-agent"
+        )
+        agent_runtime_libraries = {
+            "linux": ["glibc", "libssl.so.3"],
+            "windows": ["vcruntime140.dll"],
+            "macos": [],
+        }
+        agent_ok = (
+            agent.get("target") == agent_targets[platform]
+            and agent.get("source_relative_path") == agent_source
+            and agent.get("package_relative_path") == agent_package_paths[platform]
+            and agent.get("required_runtime_libraries") == agent_runtime_libraries[platform]
+            and is_safe_relative_path(agent.get("package_relative_path"))
+        )
+        daemon = config.get("vityod")
+        daemon = daemon if isinstance(daemon, dict) else {}
+        daemon_package_paths = {
+            "linux": "components/vityod",
+            "windows": "components/vityod.exe",
+            "macos": "Contents/Helpers/vityod",
+        }
+        daemon_source = (
+            "products/vityo_app/native/vityod/target/release/vityod.exe"
+            if platform == "windows"
+            else "products/vityo_app/native/vityod/target/release/vityod"
+        )
+        daemon_ok = (
+            daemon.get("source_relative_path") == daemon_source
+            and daemon.get("package_relative_path") == daemon_package_paths[platform]
+            and is_safe_relative_path(daemon.get("package_relative_path"))
+        )
+        notice_paths = {
+            "linux": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
+            "windows": "licenses/RUST-THIRD-PARTY-NOTICES.txt",
+            "macos": "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt",
+        }
         build_path = config.get("build_relative_path")
         signing_ok = signing_status in {"configured", "explicit-gap"} and (
             signing_status == "configured" or isinstance(signing_reason, str) and bool(signing_reason.strip())
@@ -655,6 +716,9 @@ def check_nightly_packaging(repo_root: Path) -> list[CheckResult]:
                 CheckResult(f"Nightly {platform} package format", config.get("package_format") == NIGHTLY_PACKAGE_FORMATS[platform], str(config.get("package_format", "missing"))),
                 CheckResult(f"Nightly {platform} build path", is_safe_relative_path(build_path), str(build_path or "missing")),
                 CheckResult(f"Nightly {platform} package sources", sources_ok, "present" if sources_ok else ", ".join(source_detail)),
+                CheckResult(f"Nightly {platform} Coding Agent component", agent_ok, "present" if agent_ok else "target or executable path is invalid"),
+                CheckResult(f"Nightly {platform} daemon component", daemon_ok, "present" if daemon_ok else "executable path is invalid"),
+                CheckResult(f"Nightly {platform} Rust notices destination", config.get("rust_notices_path") == notice_paths[platform], str(config.get("rust_notices_path", "missing"))),
                 CheckResult(f"Nightly {platform} signing policy", signing_ok, str(signing_status or "missing")),
                 CheckResult(f"Nightly {platform} automatic update policy", update_policy_ok, str(automatic_updates).lower()),
             ]

@@ -14,6 +14,13 @@ abstract final class AcpMethod {
   static const sessionCancel = 'session/cancel';
   static const sessionUpdate = 'session/update';
   static const sessionRequestPermission = 'session/request_permission';
+  static const fsReadTextFile = 'fs/read_text_file';
+  static const fsWriteTextFile = 'fs/write_text_file';
+  static const terminalCreate = 'terminal/create';
+  static const terminalOutput = 'terminal/output';
+  static const terminalWaitForExit = 'terminal/wait_for_exit';
+  static const terminalKill = 'terminal/kill';
+  static const terminalRelease = 'terminal/release';
   static const capabilitiesChanged =
       '${vityoAcpExtensionPrefix}capabilities_changed';
 }
@@ -417,10 +424,6 @@ final class VityoWorkspaceChangeProposal {
     return proposal;
   }
 
-  factory VityoWorkspaceChangeProposal.fromNotificationParams(
-    Map<String, Object?> params,
-  ) => VityoWorkspaceChangeProposal.fromJson(params['proposal']);
-
   final String id;
   final int baseWorkspaceRevision;
   final List<VityoResourceChange> resources;
@@ -448,9 +451,6 @@ final class VityoWorkspaceChangeProposal {
         .toList(growable: false),
   };
 
-  Map<String, Object?> toNotificationParamsJson(String sessionId) =>
-      <String, Object?>{'sessionId': sessionId, 'proposal': toJson()};
-
   void _validate() {
     if (id.isEmpty ||
         id.length > 256 ||
@@ -463,6 +463,136 @@ final class VityoWorkspaceChangeProposal {
             resources.length) {
       throw ArgumentError('Workspace change proposal is invalid.');
     }
+  }
+}
+
+/// Params for the capability-gated, correlated workspace proposal request.
+final class VityoWorkspaceChangeProposalRequest {
+  VityoWorkspaceChangeProposalRequest({
+    required this.sessionId,
+    required this.proposal,
+  }) {
+    if (sessionId.isEmpty || sessionId.length > 256) {
+      throw ArgumentError.value(sessionId, 'sessionId');
+    }
+  }
+
+  factory VityoWorkspaceChangeProposalRequest.fromJson(Object? value) {
+    final json = _requiredObjectValue(value, 'workspace proposal request');
+    return VityoWorkspaceChangeProposalRequest(
+      sessionId: _requiredBoundedString(json, 'sessionId', 256),
+      proposal: VityoWorkspaceChangeProposal.fromJson(json['proposal']),
+    );
+  }
+
+  final String sessionId;
+  final VityoWorkspaceChangeProposal proposal;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'sessionId': sessionId,
+    'proposal': proposal.toJson(),
+  };
+}
+
+enum VityoWorkspaceChangeOutcome { committed, rejected, conflict, failed }
+
+/// Correlated result returned only after the IDE review and transaction end.
+final class VityoWorkspaceChangeProposalResponse {
+  VityoWorkspaceChangeProposalResponse({
+    required this.proposalId,
+    required this.outcome,
+    this.workspaceRevision,
+    Map<String, int>? documentRevisions,
+    this.code,
+  }) : documentRevisions = documentRevisions == null
+           ? null
+           : Map<String, int>.unmodifiable(documentRevisions);
+
+  factory VityoWorkspaceChangeProposalResponse.fromJson(Object? value) {
+    final json = _requiredObjectValue(value, 'workspace proposal response');
+    final rawOutcome = _requiredString(json, 'outcome');
+    final outcome = switch (rawOutcome) {
+      'committed' => VityoWorkspaceChangeOutcome.committed,
+      'rejected' => VityoWorkspaceChangeOutcome.rejected,
+      'conflict' => VityoWorkspaceChangeOutcome.conflict,
+      'failed' => VityoWorkspaceChangeOutcome.failed,
+      _ => throw const AgentProtocolException(
+        'malformed_message',
+        'workspace proposal outcome is invalid',
+      ),
+    };
+    final rawWorkspaceRevision = json['workspaceRevision'];
+    if (rawWorkspaceRevision != null &&
+        (rawWorkspaceRevision is! int || rawWorkspaceRevision < 0)) {
+      throw const AgentProtocolException(
+        'malformed_message',
+        'workspaceRevision must be a non-negative integer',
+      );
+    }
+    final rawDocumentRevisions = json['documentRevisions'];
+    Map<String, int>? documentRevisions;
+    if (rawDocumentRevisions != null) {
+      if (rawDocumentRevisions is! Map) {
+        throw const AgentProtocolException(
+          'malformed_message',
+          'documentRevisions must be an object',
+        );
+      }
+      documentRevisions = <String, int>{};
+      for (final entry in rawDocumentRevisions.entries) {
+        final resourceId = entry.key;
+        final revision = entry.value;
+        if (resourceId is! String || revision is! int || revision < 0) {
+          throw const AgentProtocolException(
+            'malformed_message',
+            'documentRevisions entries are invalid',
+          );
+        }
+        documentRevisions[resourceId] = revision;
+      }
+    }
+    final rawCode = json['code'];
+    if (rawCode != null && (rawCode is! String || rawCode.length > 128)) {
+      throw const AgentProtocolException(
+        'malformed_message',
+        'workspace proposal code is invalid',
+      );
+    }
+    return VityoWorkspaceChangeProposalResponse(
+      proposalId: _requiredBoundedString(json, 'proposalId', 256),
+      outcome: outcome,
+      workspaceRevision: rawWorkspaceRevision as int?,
+      documentRevisions: documentRevisions,
+      code: rawCode as String?,
+    );
+  }
+
+  final String proposalId;
+  final VityoWorkspaceChangeOutcome outcome;
+  final int? workspaceRevision;
+  final Map<String, int>? documentRevisions;
+  final String? code;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'proposalId': proposalId,
+    'outcome': outcome.name,
+    if (workspaceRevision != null) 'workspaceRevision': workspaceRevision,
+    if (documentRevisions != null) 'documentRevisions': documentRevisions,
+    if (code != null) 'code': code,
+  };
+
+  bool validatesFor(VityoWorkspaceChangeProposal proposal) {
+    if (proposalId != proposal.id) return false;
+    if (outcome != VityoWorkspaceChangeOutcome.committed) {
+      return workspaceRevision == null && documentRevisions == null;
+    }
+    final revisions = documentRevisions;
+    return workspaceRevision != null &&
+        revisions != null &&
+        revisions.length == proposal.resources.length &&
+        proposal.resources.every(
+          (resource) => revisions.containsKey(resource.resourceId),
+        );
   }
 }
 

@@ -25,6 +25,7 @@ class ObservableGraphController extends ChangeNotifier {
     required ObservableProjectGraphProvider projectGraph,
     required bool ioPlatform,
     FileSystemManager? fileSystemManager,
+    PlatformManagerBundle? platformManagers,
     Stream<FileSystemManagerEvent>? watchStream,
     ObservableSnapshotCache? cache,
     ObservableChangeSource? changeSource,
@@ -39,24 +40,44 @@ class ObservableGraphController extends ChangeNotifier {
        _projectGraph = projectGraph,
        _ioPlatform = ioPlatform,
        _fileSystemManager = fileSystemManager,
+       _platformManagers = platformManagers,
        _injectedWatch = watchStream,
        _cache = cache ?? ObservableSnapshotCache(),
        _changeSource = changeSource ?? const IdSetComparisonChangeSource(),
        _delay = delay ?? Future<void>.delayed,
        _clock = clock ?? DateTime.now,
-       _resolvePafio = resolvePafio ?? resolvePafioBinary,
+       _resolvePafio = resolvePafio,
        _runtimeIntake = runtimeIntake;
 
   final ObservableSnapshotPublisher _publisher;
   final ObservableProjectGraphProvider _projectGraph;
   final bool _ioPlatform;
   final FileSystemManager? _fileSystemManager;
+  final PlatformManagerBundle? _platformManagers;
   final Stream<FileSystemManagerEvent>? _injectedWatch;
   final ObservableSnapshotCache _cache;
   final ObservableChangeSource _changeSource;
   final ObservableDelay _delay;
   final DateTime Function() _clock;
-  final ObservablePafioResolver _resolvePafio;
+  final ObservablePafioResolver? _resolvePafio;
+
+  /// Resolves the Pafio executable.
+  ///
+  /// An injected resolver wins. Otherwise discovery runs through the platform
+  /// managers, which own process execution, and a missing manager bundle is a
+  /// refusal to guess rather than a silent fallback to `PATH`.
+  Future<String?> _resolvePafioBinary() async {
+    final injected = _resolvePafio;
+    if (injected != null) {
+      return injected();
+    }
+    final managers = _platformManagers;
+    if (managers == null) {
+      return null;
+    }
+    return resolvePafioBinary(managers, environment: readHostEnvironment());
+  }
+
   final ObservableRuntimeIntake? _runtimeIntake;
   final Duration debounce;
   final ObservableLineageWindow _window = ObservableLineageWindow();
@@ -119,7 +140,8 @@ class ObservableGraphController extends ChangeNotifier {
     notifyListeners();
   }
 
-  String? resolvedAnchorPath(String nodeId) => _resolveAnchor(nodeId)?.absolutePath;
+  String? resolvedAnchorPath(String nodeId) =>
+      _resolveAnchor(nodeId)?.absolutePath;
 
   RuntimeObservationDecision get runtimeObservationDecision {
     final graph = _projectGraph();
@@ -245,7 +267,8 @@ class ObservableGraphController extends ChangeNotifier {
       return;
     }
     final siteIds = [
-      for (final node in _state.projection?.nodes ?? const <ProjectedGraphNode>[])
+      for (final node
+          in _state.projection?.nodes ?? const <ProjectedGraphNode>[])
         node.id,
     ];
     final RuntimeIntakeResult result;
@@ -383,7 +406,7 @@ class ObservableGraphController extends ChangeNotifier {
       _applyNegotiationRejection(decision);
       return false;
     }
-    final pafio = await _resolvePafio();
+    final pafio = await _resolvePafioBinary();
     if (pafio == null || pafio.trim().isEmpty) {
       _applyNegotiationRejection(
         ObservableNegotiationDecision.reject(
@@ -460,8 +483,8 @@ class ObservableGraphController extends ChangeNotifier {
   }
 
   void _scheduleDebouncedRefresh() {
-    final token = ++_debounceGeneration;
-    unawaited(_debounceThenRun(token));
+    final ticket = ++_debounceGeneration;
+    unawaited(_debounceThenRun(ticket));
   }
 
   Future<void> _debounceThenRun(int token) async {
@@ -499,7 +522,7 @@ class ObservableGraphController extends ChangeNotifier {
 
     // Reuse the negotiated pafio binary; probe again only when negotiation
     // never resolved one (e.g. a manual refresh after a missing toolchain).
-    final pafio = _pafioBinary ?? await _resolvePafio();
+    final pafio = _pafioBinary ?? await _resolvePafioBinary();
     final compiler = graph.activeCompiler;
     if (generation != _generation || _disposed) {
       return;
@@ -885,9 +908,10 @@ class ObservableGraphController extends ChangeNotifier {
       ObservableLineageWindowEntry(
         snapshotId: identity.snapshotId,
         parentSnapshotId: previousIdentity?.snapshotId,
-        changeSource: changeSet?.source ??
-            ObservableChangeSetSource.idSetComparison,
-        changeSet: changeSet ??
+        changeSource:
+            changeSet?.source ?? ObservableChangeSetSource.idSetComparison,
+        changeSet:
+            changeSet ??
             const ObservableChangeSet(
               addedNodeIds: <String>[],
               removedNodeIds: <String>[],

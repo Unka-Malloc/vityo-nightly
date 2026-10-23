@@ -15,6 +15,13 @@ mixin ShellRuntimeSourceControlFacade on ShellRuntimeFacadeHost {
       _sourceControlController.historySnapshot;
   SourceControlPartialPatchResult? get sourceControlHunkActionResult =>
       _sourceControlController.hunkActionResult;
+  SourceControlMergeWorkflowPlan get sourceControlMergeWorkflowPlan =>
+      _sourceControlController.mergeWorkflowPlan;
+  SourceControlMergeEditorSnapshot? get sourceControlMergeEditorSnapshot =>
+      _sourceControlController.mergeEditorSnapshot;
+  SourceControlConflictResolutionResult?
+  get sourceControlConflictResolutionResult =>
+      _sourceControlController.lastConflictResolutionResult;
   SourceControlCommitDraft? get sourceControlCommitDraft =>
       _sourceControlController.commitDraft;
   SourceControlCommitDialogState? get sourceControlCommitDialogState =>
@@ -50,6 +57,25 @@ mixin ShellRuntimeSourceControlFacade on ShellRuntimeFacadeHost {
 
   Future<SourceControlBranchSnapshot> refreshSourceControlBranches() =>
       _sourceControlController.refreshBranches();
+
+  Future<SourceControlMergeEditorSnapshot> openSourceControlMergeEditor(
+    SourceControlConflictResolutionPlan plan,
+  ) => _sourceControlController.openMergeEditor(plan);
+
+  Future<SourceControlConflictResolutionResult> resolveSourceControlConflict({
+    required SourceControlConflictResolutionPlan plan,
+    required SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
+  }) => _sourceControlController.resolveConflict(
+    plan: plan,
+    kind: kind,
+    resultText: resultText,
+    expectedWorkingRevision: expectedWorkingRevision,
+  );
+
+  void closeSourceControlMergeEditor() =>
+      _sourceControlController.closeMergeEditor();
 
   Future<SourceControlBranchSwitchPlan> planSourceControlBranchSwitch(
     String targetBranch,

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../ide/workspace/source_control_commit_draft_store.dart';
+import '../../ide/workspace/source_control_merge_editor.dart';
 import '../../ide/workspace/source_control_status.dart';
 import '../platform/viewport_profile.dart';
+import '../theme/vityo_theme.dart';
 
 class SourceControlSurface extends StatelessWidget {
   const SourceControlSurface({
@@ -20,6 +22,9 @@ class SourceControlSurface extends StatelessWidget {
     this.adapterRegistry,
     this.lastHunkActionResult,
     this.pendingHunkDiscardConfirmation,
+    this.mergeWorkflowPlan,
+    this.mergeEditorSnapshot,
+    this.lastConflictResolutionResult,
     this.onOpenFile,
     this.onSaveAll,
     this.onRefresh,
@@ -31,6 +36,9 @@ class SourceControlSurface extends StatelessWidget {
     this.onConfirmDiffAction,
     this.onSelectHunkAction,
     this.onConfirmHunkDiscard,
+    this.onOpenMergeEditor,
+    this.onApplyConflictResolution,
+    this.onCloseMergeEditor,
   });
 
   final ViewportProfile viewportProfile;
@@ -47,6 +55,9 @@ class SourceControlSurface extends StatelessWidget {
   final SourceControlPartialPatchResult? lastHunkActionResult;
   final SourceControlHunkDiscardConfirmationPlan?
   pendingHunkDiscardConfirmation;
+  final SourceControlMergeWorkflowPlan? mergeWorkflowPlan;
+  final SourceControlMergeEditorSnapshot? mergeEditorSnapshot;
+  final SourceControlConflictResolutionResult? lastConflictResolutionResult;
   final Future<void> Function(String documentId)? onOpenFile;
   final Future<void> Function()? onSaveAll;
   final Future<void> Function()? onRefresh;
@@ -61,6 +72,16 @@ class SourceControlSurface extends StatelessWidget {
   final Future<void> Function(SourceControlDiffHunkActionPlan plan)?
   onSelectHunkAction;
   final Future<void> Function()? onConfirmHunkDiscard;
+  final Future<void> Function(SourceControlConflictResolutionPlan plan)?
+  onOpenMergeEditor;
+  final Future<void> Function(
+    SourceControlConflictResolutionPlan plan,
+    SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
+  )?
+  onApplyConflictResolution;
+  final VoidCallback? onCloseMergeEditor;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +108,11 @@ class SourceControlSurface extends StatelessWidget {
             ? null
             : SourceControlDiffWindowBinding(snapshot: diffPreview!));
     final activeDiffWindow = activeDiffWindowBinding?.window;
+    final activeMergeWorkflow =
+        mergeWorkflowPlan ??
+        (status == null
+            ? null
+            : SourceControlMergeWorkflowPlan.fromStatus(status!));
 
     return Card(
       key: const ValueKey('source-control-surface'),
@@ -99,7 +125,7 @@ class SourceControlSurface extends StatelessWidget {
               Text('Source Control', style: theme.textTheme.titleLarge),
               const SizedBox(height: 6),
               Text(
-                'Local IDE change surface backed by dirty editor documents and injectable SCM providers. Stage, unstage, branch switch planning, history summaries, and commit dialog state are surfaced here. TODO: add richer diff confirmation.',
+                'Review working-tree changes, stage precise hunks, inspect history, switch branches, and resolve Git conflicts without leaving the IDE.',
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 10),
@@ -146,6 +172,12 @@ class SourceControlSurface extends StatelessWidget {
                     Chip(label: Text('staged ${stagedPaths.length}')),
                   if (status != null)
                     Chip(label: Text('unstaged ${unstagedPaths.length}')),
+                  if ((activeMergeWorkflow?.conflictCount ?? 0) > 0)
+                    Chip(
+                      label: Text(
+                        'conflicts ${activeMergeWorkflow!.conflictCount}',
+                      ),
+                    ),
                 ],
               ),
               if (commitDraft != null ||
@@ -230,6 +262,19 @@ class SourceControlSurface extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
+              if (activeMergeWorkflow?.canOpenMergeWorkflow == true) ...[
+                _SourceControlMergeWorkflow(
+                  viewportProfile: viewportProfile,
+                  workflowPlan: activeMergeWorkflow!,
+                  editorSnapshot: mergeEditorSnapshot,
+                  lastResult: lastConflictResolutionResult,
+                  dirtyDocumentPaths: changedDocumentIds,
+                  onOpenMergeEditor: onOpenMergeEditor,
+                  onApplyResolution: onApplyConflictResolution,
+                  onCloseMergeEditor: onCloseMergeEditor,
+                ),
+                const SizedBox(height: 12),
+              ],
               if (gitChanges.isNotEmpty) ...[
                 Text('Git Changes', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -389,6 +434,502 @@ class SourceControlSurface extends StatelessWidget {
   }
 }
 
+class _SourceControlMergeWorkflow extends StatefulWidget {
+  const _SourceControlMergeWorkflow({
+    required this.viewportProfile,
+    required this.workflowPlan,
+    required this.editorSnapshot,
+    required this.lastResult,
+    required this.dirtyDocumentPaths,
+    required this.onOpenMergeEditor,
+    required this.onApplyResolution,
+    required this.onCloseMergeEditor,
+  });
+
+  final ViewportProfile viewportProfile;
+  final SourceControlMergeWorkflowPlan workflowPlan;
+  final SourceControlMergeEditorSnapshot? editorSnapshot;
+  final SourceControlConflictResolutionResult? lastResult;
+  final List<String> dirtyDocumentPaths;
+  final Future<void> Function(SourceControlConflictResolutionPlan plan)?
+  onOpenMergeEditor;
+  final Future<void> Function(
+    SourceControlConflictResolutionPlan plan,
+    SourceControlConflictResolutionKind kind,
+    String? resultText,
+    int? expectedWorkingRevision,
+  )?
+  onApplyResolution;
+  final VoidCallback? onCloseMergeEditor;
+
+  @override
+  State<_SourceControlMergeWorkflow> createState() =>
+      _SourceControlMergeWorkflowState();
+}
+
+class _SourceControlMergeWorkflowState
+    extends State<_SourceControlMergeWorkflow> {
+  late final TextEditingController _resultController;
+  SourceControlConflictResolutionKind _selectedKind =
+      SourceControlConflictResolutionKind.markResolved;
+  bool _applying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resultController = TextEditingController(
+      text: widget.editorSnapshot?.workingText ?? '',
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _SourceControlMergeWorkflow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final previous = oldWidget.editorSnapshot;
+    final next = widget.editorSnapshot;
+    if (previous?.path != next?.path ||
+        previous?.workingRevision != next?.workingRevision ||
+        previous?.workingText != next?.workingText) {
+      _selectedKind = SourceControlConflictResolutionKind.markResolved;
+      _resultController.value = TextEditingValue(
+        text: next?.workingText ?? '',
+        selection: TextSelection.collapsed(
+          offset: next?.workingText.length ?? 0,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _resultController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final snapshot = widget.editorSnapshot;
+    final activePlan = snapshot == null ? null : _planForPath(snapshot.path);
+    final dirtyEditor =
+        activePlan != null &&
+        widget.dirtyDocumentPaths.contains(activePlan.path);
+    final resultHasMarkers =
+        SourceControlConflictMarkerResolver.hasUnresolvedMarkers(
+          _resultController.text,
+        );
+    final canApply =
+        !_applying &&
+        snapshot?.available == true &&
+        activePlan != null &&
+        !dirtyEditor &&
+        widget.onApplyResolution != null &&
+        (_selectedKind != SourceControlConflictResolutionKind.markResolved ||
+            !resultHasMarkers);
+
+    return Container(
+      key: const ValueKey('source-control-merge-workflow'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer.withValues(alpha: 0.13),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: 0.34),
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.merge_type_rounded, color: theme.colorScheme.error),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Merge Conflicts',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              Chip(label: Text('${widget.workflowPlan.conflictCount} files')),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Inspect base, current, and incoming content. Every write is confirmed per file, revision-checked, then staged only after the workspace save succeeds.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 180),
+            child: ListView.separated(
+              key: const ValueKey('source-control-conflict-list'),
+              shrinkWrap: true,
+              itemCount: widget.workflowPlan.conflictPlans.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 6),
+              itemBuilder: (context, index) {
+                final plan = widget.workflowPlan.conflictPlans[index];
+                final isActive = snapshot?.path == plan.path;
+                final hasDirtyEditor = widget.dirtyDocumentPaths.contains(
+                  plan.path,
+                );
+                return Material(
+                  color: isActive
+                      ? theme.colorScheme.primaryContainer
+                      : theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  child: ListTile(
+                    key: ValueKey('source-control-conflict-${plan.path}'),
+                    dense: true,
+                    leading: Icon(
+                      isActive
+                          ? Icons.merge_rounded
+                          : Icons.warning_amber_rounded,
+                    ),
+                    title: Text(plan.path),
+                    subtitle: Text(
+                      hasDirtyEditor
+                          ? 'Unsaved editor buffer must be handled first.'
+                          : 'Three-way merge is ready for review.',
+                    ),
+                    trailing: OutlinedButton.icon(
+                      key: ValueKey(
+                        'source-control-open-merge-editor-${plan.path}',
+                      ),
+                      onPressed:
+                          plan.canResolve && widget.onOpenMergeEditor != null
+                          ? () => widget.onOpenMergeEditor!(plan)
+                          : null,
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: Text(isActive ? 'Reload' : 'Open'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (snapshot != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Merge Editor · ${snapshot.path}',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('source-control-close-merge-editor'),
+                  tooltip: 'Close merge editor',
+                  onPressed: widget.onCloseMergeEditor,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            if (!snapshot.available)
+              Text(
+                snapshot.message,
+                key: const ValueKey('source-control-merge-editor-error'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              )
+            else ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Chip(
+                    label: Text(
+                      snapshot.workingRevision == null
+                          ? 'working deleted'
+                          : 'revision ${snapshot.workingRevision}',
+                    ),
+                  ),
+                  if (snapshot.hasUnresolvedMarkers)
+                    const Chip(label: Text('working tree has markers')),
+                  if (!snapshot.baseAvailable)
+                    const Chip(label: Text('base unavailable')),
+                  if (!snapshot.currentAvailable)
+                    const Chip(label: Text('current deletes file')),
+                  if (!snapshot.incomingAvailable)
+                    const Chip(label: Text('incoming deletes file')),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final paneWidth = constraints.maxWidth >= 900
+                      ? (constraints.maxWidth - 16) / 3
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      SizedBox(
+                        width: paneWidth,
+                        child: _MergeSourcePane(
+                          title: 'Base',
+                          text: snapshot.baseText,
+                          available: snapshot.baseAvailable,
+                        ),
+                      ),
+                      SizedBox(
+                        width: paneWidth,
+                        child: _MergeSourcePane(
+                          title: 'Current',
+                          text: snapshot.currentText,
+                          available: snapshot.currentAvailable,
+                        ),
+                      ),
+                      SizedBox(
+                        width: paneWidth,
+                        child: _MergeSourcePane(
+                          title: 'Incoming',
+                          text: snapshot.incomingText,
+                          available: snapshot.incomingAvailable,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('source-control-use-current'),
+                    onPressed: () => _selectResolution(
+                      SourceControlConflictResolutionKind.acceptCurrent,
+                    ),
+                    icon: const Icon(Icons.arrow_downward_rounded),
+                    label: Text(
+                      snapshot.currentAvailable
+                          ? 'Use Current'
+                          : 'Accept Current Deletion',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    key: const ValueKey('source-control-use-incoming'),
+                    onPressed: () => _selectResolution(
+                      SourceControlConflictResolutionKind.acceptIncoming,
+                    ),
+                    icon: const Icon(Icons.arrow_downward_rounded),
+                    label: Text(
+                      snapshot.incomingAvailable
+                          ? 'Use Incoming'
+                          : 'Accept Incoming Deletion',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    key: const ValueKey('source-control-use-both'),
+                    onPressed:
+                        snapshot.previewTextFor(
+                              SourceControlConflictResolutionKind.acceptBoth,
+                            ) ==
+                            null
+                        ? null
+                        : () => _selectResolution(
+                            SourceControlConflictResolutionKind.acceptBoth,
+                          ),
+                    icon: const Icon(Icons.call_merge_rounded),
+                    label: const Text('Use Both'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const ValueKey('source-control-merge-result'),
+                controller: _resultController,
+                minLines: widget.viewportProfile.isMobile ? 6 : 8,
+                maxLines: widget.viewportProfile.isMobile ? 10 : 14,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: VityoTheme.monoFontFamily,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Resolved result',
+                  helperText:
+                      'Editing this result switches to a custom resolution.',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                onChanged: (_) {
+                  if (_selectedKind !=
+                      SourceControlConflictResolutionKind.markResolved) {
+                    setState(() {
+                      _selectedKind =
+                          SourceControlConflictResolutionKind.markResolved;
+                    });
+                  } else {
+                    setState(() {});
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              if (dirtyEditor)
+                Text(
+                  'Save or discard the unsaved editor buffer before applying this resolution.',
+                  key: const ValueKey('source-control-merge-dirty-block'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                )
+              else if (_selectedKind ==
+                      SourceControlConflictResolutionKind.markResolved &&
+                  resultHasMarkers)
+                Text(
+                  'Remove every remaining conflict marker before applying a custom result.',
+                  key: const ValueKey('source-control-merge-marker-block'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              const SizedBox(height: 6),
+              FilledButton.icon(
+                key: const ValueKey('source-control-apply-merge-result'),
+                onPressed: canApply ? () => _confirmApply(activePlan) : null,
+                icon: _applying
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.task_alt_rounded),
+                label: Text(
+                  _applying ? 'Applying...' : 'Apply Resolution & Stage',
+                ),
+              ),
+            ],
+          ],
+          if (widget.lastResult case final result?) ...[
+            const SizedBox(height: 10),
+            Container(
+              key: const ValueKey('source-control-conflict-result'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: result.accepted
+                    ? theme.colorScheme.secondaryContainer
+                    : theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(result.message, style: theme.textTheme.bodySmall),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  SourceControlConflictResolutionPlan? _planForPath(String path) {
+    for (final plan in widget.workflowPlan.conflictPlans) {
+      if (plan.path == path) return plan;
+    }
+    return null;
+  }
+
+  void _selectResolution(SourceControlConflictResolutionKind kind) {
+    final snapshot = widget.editorSnapshot;
+    if (snapshot == null) return;
+    final preview = snapshot.previewTextFor(kind);
+    if (preview == null) return;
+    setState(() {
+      _selectedKind = kind;
+      _resultController.value = TextEditingValue(
+        text: preview,
+        selection: TextSelection.collapsed(offset: preview.length),
+      );
+    });
+  }
+
+  Future<void> _confirmApply(SourceControlConflictResolutionPlan plan) async {
+    final snapshot = widget.editorSnapshot;
+    if (snapshot == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          key: const ValueKey('source-control-merge-confirmation-dialog'),
+          title: const Text('Apply merge resolution?'),
+          content: Text(
+            '${plan.path}\n\nThis writes the reviewed result and stages only this file. The working revision is checked before the write.',
+          ),
+          actions: [
+            TextButton(
+              key: const ValueKey('source-control-cancel-merge-result'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const ValueKey('source-control-confirm-merge-result'),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Apply & Stage'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _applying = true);
+    try {
+      await widget.onApplyResolution?.call(
+        plan,
+        _selectedKind,
+        _selectedKind == SourceControlConflictResolutionKind.markResolved
+            ? _resultController.text
+            : null,
+        snapshot.workingRevision,
+      );
+    } finally {
+      if (mounted) setState(() => _applying = false);
+    }
+  }
+}
+
+class _MergeSourcePane extends StatelessWidget {
+  const _MergeSourcePane({
+    required this.title,
+    required this.text,
+    required this.available,
+  });
+
+  final String title;
+  final String text;
+  final bool available;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 150,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.labelLarge),
+          const SizedBox(height: 6),
+          Expanded(
+            child: SingleChildScrollView(
+              child: SelectableText(
+                available ? text : 'File is deleted on this side.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: VityoTheme.monoFontFamily,
+                  color: available ? null : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DiffConfirmationControls extends StatelessWidget {
   const _DiffConfirmationControls({
     required this.snapshot,
@@ -424,7 +965,7 @@ class _DiffConfirmationControls extends StatelessWidget {
           Text('Diff confirmation', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            'Confirm actions only after the visible diff review summary has been loaded. TODO: add per-hunk selection before executing partial actions.',
+            'Apply a whole-file action here, or use the hunk controls below for a narrower change.',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -598,7 +1139,7 @@ class _DiffHunkActionSelection extends StatelessWidget {
               ),
           if (hunks.length > 6)
             Text(
-              'TODO: virtualize older diff hunk rows.',
+              'Showing the first 6 of ${hunks.length} hunks.',
               style: theme.textTheme.bodySmall,
             ),
         ],
@@ -916,7 +1457,7 @@ class _HistorySummary extends StatelessWidget {
             _HistoryEntryTile(entry: entry),
           if (snapshot.entries.length > 5)
             Text(
-              'TODO: virtualize older history rows.',
+              'Showing the latest 5 of ${snapshot.entries.length} entries.',
               style: theme.textTheme.bodySmall,
             ),
         ],
@@ -937,7 +1478,6 @@ class _HistoryEntryTile extends StatelessWidget {
       'revision ${entry.revision}',
       if (entry.author.isNotEmpty) 'author ${entry.author}',
       if (entry.authoredAt.isNotEmpty) 'authored ${entry.authoredAt}',
-      'TODO: wire commit diff preview for this history row.',
     ];
     // Material localizes ink/splash so ExpansionTile's ListTile is not
     // obscured by the parent history card's colored DecoratedBox.

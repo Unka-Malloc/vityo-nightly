@@ -6,6 +6,8 @@ import 'package:vityo_app/src/view_ide/debugger/debug_launch_contract.dart';
 import 'package:vityo_app/src/view_ide/environment/environment.dart';
 import 'package:vityo_app/src/view_ide/foundation/foundation.dart';
 
+import 'support/test_file_system_manager.dart';
+
 void main() {
   test('debug breakpoint set replaces file breakpoints deterministically', () {
     const set = DebugBreakpointSet(
@@ -37,15 +39,16 @@ void main() {
           )
           .toList(growable: false),
       <String>[
+        '/workspace/main.styio:0:true',
         '/workspace/main.styio:2:false',
         '/workspace/main.styio:4:true',
         '/workspace/other.styio:9:true',
       ],
     );
-    expect(next.breakpointsForFile('/workspace/main.styio'), hasLength(2));
+    expect(next.breakpointsForFile('/workspace/main.styio'), hasLength(3));
     expect(
       DebugBreakpointSet.fromJson(next.toJson()).breakpoints,
-      hasLength(3),
+      hasLength(4),
     );
   });
 
@@ -58,7 +61,7 @@ void main() {
         await tempRoot.delete(recursive: true);
       }
     });
-    final fileSystemManager = LocalFileSystemManager.linuxDebianArmForTest();
+    final fileSystemManager = TestFileSystemManager.linuxDebianArm();
     final resourceManager = LocalResourceManager(
       facts: ResourceFacts.linuxDebianArm(
         systemTempPath: tempRoot.path,

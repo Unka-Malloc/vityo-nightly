@@ -146,7 +146,7 @@ void main() {
 
       expect(result.status, HostedBackendRetryActionExecutionStatus.completed);
       expect(result.successful, isTrue);
-      expect(result.message, 'project graph refreshed');
+      expect(result.message, 'Hosted backend connection restored.');
       expect(client.projectGraphWorkspaceIds, <String>['hosted-demo']);
 
       final output = HostedBackendRetryRuntimeOutputBinding(
@@ -183,7 +183,7 @@ void main() {
     );
 
     expect(result.status, HostedBackendRetryActionExecutionStatus.unsupported);
-    expect(result.message, contains('reopen endpoint is not published'));
+    expect(result.message, 'This hosted backend action is not available yet.');
     expect(result.endpointPlan?.published, isFalse);
     expect(result.toJson()['endpointPlan'], isA<Map<String, Object?>>());
     expect(client.projectGraphWorkspaceIds, isEmpty);

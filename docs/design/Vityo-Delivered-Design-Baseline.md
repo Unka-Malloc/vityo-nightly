@@ -214,7 +214,7 @@ Environment Layer
   -> Configuration Store / File System Manager / Toolchain / Execution
 ```
 
-The accepted file-system-to-editor shape is documented in [vertical-lines/README.md](./vertical-lines/README.md) and [architecture-views/vertical-flow-diagrams/editor/README.md](./architecture-views/vertical-flow-diagrams/editor/README.md). The short form is:
+The accepted file-system-to-editor shape is documented in [architecture-views/vertical-flow-diagrams/editor/README.md](./architecture-views/vertical-flow-diagrams/editor/README.md). The short form is:
 
 ```text
 File System Manager

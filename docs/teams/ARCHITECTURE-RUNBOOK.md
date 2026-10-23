@@ -2,7 +2,7 @@
 
 **Purpose:** Define the architecture domain owner's responsibilities, owned paths, review checklist, and required gates for Vityo system architecture governance.
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-10-03
 
 ## Mission
 
@@ -32,6 +32,13 @@ Key SSOTs:
 6. `已实现决策摘要 -> ../adr/IMPLEMENTED-DECISIONS.md`
 
 ## Daily Workflow
+
+Flow Hero consumes the registered Agent operation/lifecycle contract, platform launch-path
+facade, workspace document contract, and platform workspace-store factory. Concrete
+platform adapters stay behind that factory; transaction failures live in the public
+document contract. Those entrypoints retain ownership in the IDE/daemon layers;
+their registration does not allow arbitrary IDE implementation imports or Agent runtime
+ownership in presentation.
 
 1. Review PRs touching architecture-owned paths against the review checklist.
 2. Run `python3 scripts/check_architecture_boundaries.py` on any `view_ide` / `view_render` changes.

@@ -68,10 +68,8 @@ class WorkspaceCodeActionItem {
   final String detail;
   final List<WorkspaceCodeActionDocumentPreview> documents;
 
-  int get editCount => documents.fold(
-    0,
-    (count, document) => count + document.editCount,
-  );
+  int get editCount =>
+      documents.fold(0, (count, document) => count + document.editCount);
 
   int get changedFileCount => documents.length;
 
@@ -100,10 +98,8 @@ class WorkspaceCodeActionsResult {
 
   int get actionCount => actions.length;
 
-  int get editCount => actions.fold(
-    0,
-    (count, action) => count + action.editCount,
-  );
+  int get editCount =>
+      actions.fold(0, (count, action) => count + action.editCount);
 
   int get matchedFileCount => actions
       .expand((action) => action.documents.map((document) => document.filePath))
@@ -195,9 +191,20 @@ class WorkspaceCodeActionsService {
       if (before == null || before.text == document.text) {
         continue;
       }
-      await documentStore.saveDocument(document);
       changedDocuments[document.documentId] = document;
     }
+    await saveWorkspaceDocuments(
+      documentStore,
+      changedDocuments.values,
+      expectedWorkspaceRevision: expectedWorkspaceRevisionForDocuments(
+        preview.persistedDocuments.values,
+      ),
+      expectedDocumentRevisions: <String, int>{
+        for (final documentId in changedDocuments.keys)
+          documentId:
+              preview.persistedDocuments[documentId]!.baseDocumentRevision,
+      },
+    );
 
     return WorkspaceCodeActionApplyResult(
       preview: preview.result,
@@ -218,14 +225,16 @@ class WorkspaceCodeActionsService {
     required WorkspaceCodeActionsQuery query,
     required Map<String, DocumentState> overlayDocuments,
   }) async {
-    final documents = await _loadIndexableDocuments(
+    final loaded = await _loadIndexableDocuments(
       filePaths: filePaths,
       query: query,
       overlayDocuments: overlayDocuments,
     );
+    final documents = loaded.analysisDocuments;
     if (documents.isEmpty) {
       return _WorkspaceCodeActionsPreview(
         documents: const <DocumentState>[],
+        persistedDocuments: const <String, DocumentState>{},
         candidates: const <_WorkspaceCodeActionCandidate>[],
         result: WorkspaceCodeActionsResult(
           query: query,
@@ -233,8 +242,7 @@ class WorkspaceCodeActionsService {
           filesSearched: 0,
           diagnosticsScanned: 0,
           actions: const <WorkspaceCodeActionItem>[],
-          message:
-              'Code Actions requires at least one Styio workspace file.',
+          message: 'Code Actions requires at least one Styio workspace file.',
         ),
       );
     }
@@ -242,17 +250,16 @@ class WorkspaceCodeActionsService {
     final analysis = _projectLanguageService.analyzeProject(documents);
     final fixes = _projectLanguageService
         .workspaceQuickFixesForProjectDiagnostics(
-      documents: documents,
-      diagnostics: analysis.diagnostics,
-      analysis: analysis,
-    );
-    final allCandidates = _buildCandidates(
-      documents: documents,
-      fixes: fixes,
-    );
+          documents: documents,
+          diagnostics: analysis.diagnostics,
+          analysis: analysis,
+        );
+    final allCandidates = _buildCandidates(documents: documents, fixes: fixes);
     final normalizedPattern = _normalizedPattern(query.pattern);
     final filteredCandidates = allCandidates
-        .where((candidate) => _matchesPattern(candidate.item, normalizedPattern))
+        .where(
+          (candidate) => _matchesPattern(candidate.item, normalizedPattern),
+        )
         .toList(growable: false);
     final maxResults = query.maxResults <= 0 ? 50 : query.maxResults;
     final limitedCandidates = filteredCandidates
@@ -266,6 +273,7 @@ class WorkspaceCodeActionsService {
 
     return _WorkspaceCodeActionsPreview(
       documents: documents,
+      persistedDocuments: loaded.persistedDocuments,
       candidates: List<_WorkspaceCodeActionCandidate>.unmodifiable(
         limitedCandidates,
       ),
@@ -286,7 +294,7 @@ class WorkspaceCodeActionsService {
     );
   }
 
-  Future<List<DocumentState>> _loadIndexableDocuments({
+  Future<_WorkspaceCodeActionDocuments> _loadIndexableDocuments({
     required List<String> filePaths,
     required WorkspaceCodeActionsQuery query,
     required Map<String, DocumentState> overlayDocuments,
@@ -295,12 +303,25 @@ class WorkspaceCodeActionsService {
         .where((filePath) => _isIndexable(filePath, query))
         .toList(growable: false);
     final documents = <DocumentState>[];
+    final persistedDocuments = <String, DocumentState>{};
     for (final filePath in uniqueFilePaths) {
-      documents.add(
-        overlayDocuments[filePath] ?? await documentStore.loadDocument(filePath),
-      );
+      final persisted = await documentStore.loadDocument(filePath);
+      persistedDocuments[persisted.documentId] = persisted;
+      final overlay = overlayDocuments[filePath];
+      if (overlay != null &&
+          (overlay.baseDocumentRevision != persisted.revision ||
+              (overlay.workspaceRevision != null &&
+                  overlay.workspaceRevision != persisted.workspaceRevision))) {
+        throw StateError('document_revision_conflict');
+      }
+      documents.add(overlay ?? persisted);
     }
-    return documents;
+    return _WorkspaceCodeActionDocuments(
+      analysisDocuments: List<DocumentState>.unmodifiable(documents),
+      persistedDocuments: Map<String, DocumentState>.unmodifiable(
+        persistedDocuments,
+      ),
+    );
   }
 
   static List<_WorkspaceCodeActionCandidate> _buildCandidates({
@@ -327,9 +348,10 @@ class WorkspaceCodeActionsService {
         if (document == null) {
           continue;
         }
-        final firstEdit = [...documentPreview.edits]..sort(
-          (first, second) => first.range.start.compareTo(second.range.start),
-        );
+        final firstEdit = [...documentPreview.edits]
+          ..sort(
+            (first, second) => first.range.start.compareTo(second.range.start),
+          );
         final range = firstEdit.first.range;
         final position = document.positionForOffset(range.start);
         documentPreviews.add(
@@ -394,10 +416,7 @@ class WorkspaceCodeActionsService {
     return unique;
   }
 
-  static bool _isIndexable(
-    String filePath,
-    WorkspaceCodeActionsQuery query,
-  ) {
+  static bool _isIndexable(String filePath, WorkspaceCodeActionsQuery query) {
     final normalized = _displayPath(filePath).toLowerCase();
     if (!normalized.endsWith('.styio')) {
       return false;
@@ -429,16 +448,20 @@ class WorkspaceCodeActionsService {
         item.detail.toLowerCase().contains(normalizedPattern) ||
         item.documents.any(
           (document) =>
-              _displayPath(document.filePath).toLowerCase().contains(
-                normalizedPattern,
-              ) ||
+              _displayPath(
+                document.filePath,
+              ).toLowerCase().contains(normalizedPattern) ||
               document.previewText.toLowerCase().contains(normalizedPattern),
         );
   }
 
   static String _nextActionId(String label, Map<String, int> idCounts) {
     final base = _slug(label);
-    final count = idCounts.update(base, (value) => value + 1, ifAbsent: () => 1);
+    final count = idCounts.update(
+      base,
+      (value) => value + 1,
+      ifAbsent: () => 1,
+    );
     return count == 1 ? base : '$base-$count';
   }
 
@@ -511,20 +534,29 @@ class WorkspaceCodeActionsService {
 class _WorkspaceCodeActionsPreview {
   const _WorkspaceCodeActionsPreview({
     required this.documents,
+    required this.persistedDocuments,
     required this.candidates,
     required this.result,
   });
 
   final List<DocumentState> documents;
+  final Map<String, DocumentState> persistedDocuments;
   final List<_WorkspaceCodeActionCandidate> candidates;
   final WorkspaceCodeActionsResult result;
 }
 
-class _WorkspaceCodeActionCandidate {
-  const _WorkspaceCodeActionCandidate({
-    required this.fix,
-    required this.item,
+class _WorkspaceCodeActionDocuments {
+  const _WorkspaceCodeActionDocuments({
+    required this.analysisDocuments,
+    required this.persistedDocuments,
   });
+
+  final List<DocumentState> analysisDocuments;
+  final Map<String, DocumentState> persistedDocuments;
+}
+
+class _WorkspaceCodeActionCandidate {
+  const _WorkspaceCodeActionCandidate({required this.fix, required this.item});
 
   final StyioProjectWorkspaceFix fix;
   final WorkspaceCodeActionItem item;
@@ -552,8 +584,7 @@ class _GlobMatcher {
     for (var index = 0; index < glob.length; index += 1) {
       final char = glob[index];
       if (char == '*') {
-        final isDoubleStar =
-            index + 1 < glob.length && glob[index + 1] == '*';
+        final isDoubleStar = index + 1 < glob.length && glob[index + 1] == '*';
         if (isDoubleStar) {
           index += 1;
           if (index + 1 < glob.length && glob[index + 1] == '/') {

@@ -696,6 +696,16 @@ WorkspaceSearchWatcherRecoveryPlan? _workspaceSearchWatcherRecoveryPlanFromJson(
     (candidate) => candidate.name == actionName,
     orElse: () => WorkspaceSearchWatcherRecoveryAction.none,
   );
+  final overflowStrategyName = json['overflowStrategy'] as String?;
+  WorkspaceSearchWatcherOverflowStrategy? overflowStrategy;
+  if (overflowStrategyName != null) {
+    for (final candidate in WorkspaceSearchWatcherOverflowStrategy.values) {
+      if (candidate.wireValue == overflowStrategyName) {
+        overflowStrategy = candidate;
+        break;
+      }
+    }
+  }
   return WorkspaceSearchWatcherRecoveryPlan(
     action: action,
     workspaceRoot: json['workspaceRoot'] as String? ?? '',
@@ -705,6 +715,13 @@ WorkspaceSearchWatcherRecoveryPlan? _workspaceSearchWatcherRecoveryPlanFromJson(
         json['canRetry'] as bool? ??
         (action == WorkspaceSearchWatcherRecoveryAction.restartWatcher ||
             action == WorkspaceSearchWatcherRecoveryAction.rebuildIndex),
+    overflowStrategy: overflowStrategy,
+    requiresIndexRebuild:
+        json['requiresIndexRebuild'] as bool? ??
+        action == WorkspaceSearchWatcherRecoveryAction.rebuildIndex,
+    requiresWatcherRestart:
+        json['requiresWatcherRestart'] as bool? ??
+        action == WorkspaceSearchWatcherRecoveryAction.restartWatcher,
     message: json['message'] as String? ?? '',
   );
 }

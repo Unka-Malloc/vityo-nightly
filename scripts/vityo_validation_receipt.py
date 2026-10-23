@@ -1,11 +1,10 @@
-"""Schema and persistence boundary for Vityo validation receipts."""
+"""Build and atomically persist current-invocation validation reports."""
 
 from __future__ import annotations
 
 import json
 import os
 import pathlib
-import re
 import tempfile
 from collections.abc import Mapping, Sequence
 
@@ -14,13 +13,11 @@ REQUIRED_IDE_REQUIREMENTS = tuple(
     f"REQ-IDE-{index:03d}" for index in range(1, 9)
 )
 SUPPORTED_HOST_PLATFORMS = ("windows", "macos", "linux")
-MAX_RECEIPT_BYTES = 256 * 1024
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
+MAX_REPORT_BYTES = 256 * 1024
 
 
-class ValidationReceiptError(ValueError):
-    """Bounded stable failure raised for an invalid validation receipt."""
+class ValidationReportError(ValueError):
+    """Stable, safe error raised while building a validation report."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
@@ -30,110 +27,86 @@ class ValidationReceiptError(ValueError):
 def validate_full_suite_plan(plan: Sequence[Mapping[str, object]]) -> None:
     requirements: list[str] = []
     suites: list[str] = []
+    runners: list[str] = []
     for item in plan:
         requirement = item.get("requirement")
         suite = item.get("suite")
-        if not isinstance(requirement, str) or not isinstance(suite, str):
-            raise ValidationReceiptError(
+        runner = item.get("runner")
+        if not all(isinstance(value, str) for value in (requirement, suite, runner)):
+            raise ValidationReportError(
                 "invalid_requirement_mapping",
-                "each full-suite entry requires string requirement and suite",
+                "each full-suite entry requires requirement, suite, and runner names",
             )
         requirements.append(requirement)
         suites.append(suite)
+        runners.append(runner)
     if (
         tuple(requirements) != REQUIRED_IDE_REQUIREMENTS
-        or len(set(requirements)) != len(requirements)
         or len(set(suites)) != len(suites)
-        or any(not suite.strip() for suite in suites)
+        or len(set(runners)) != len(runners)
+        or any(not value.strip() for value in (*suites, *runners))
     ):
-        raise ValidationReceiptError(
+        raise ValidationReportError(
             "invalid_requirement_mapping",
             "full-suite mapping must contain each IDE requirement once",
         )
 
 
-def _validate_outcomes(
+def _validate_ide_outcomes(
     outcomes: Mapping[str, Mapping[str, object]],
 ) -> None:
     if tuple(outcomes) != REQUIRED_IDE_REQUIREMENTS:
-        raise ValidationReceiptError(
+        raise ValidationReportError(
             "missing_requirement_outcome",
-            "receipt must contain every IDE requirement in canonical order",
+            "report must contain every IDE requirement in canonical order",
         )
     for requirement, outcome in outcomes.items():
-        if outcome.get("status") not in {"passed", "failed", "blocked"}:
-            raise ValidationReceiptError(
+        if outcome.get("status") not in {"passed", "failed", "not-run"}:
+            raise ValidationReportError(
                 "invalid_requirement_outcome",
-                f"{requirement} has no truthful terminal status",
+                f"{requirement} has no truthful execution status",
             )
-        if not isinstance(outcome.get("suite"), str):
-            raise ValidationReceiptError(
+        for key in ("suite", "runner"):
+            value = outcome.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationReportError(
+                    "invalid_requirement_outcome",
+                    f"{requirement} has no {key} reference",
+                )
+        duration = outcome.get("duration_ms")
+        if type(duration) is not int or duration < 0:
+            raise ValidationReportError(
                 "invalid_requirement_outcome",
-                f"{requirement} has no suite reference",
+                f"{requirement} has no valid execution duration",
             )
 
 
-def _validate_digest(value: str, field: str) -> None:
-    if not _SHA256.fullmatch(value):
-        raise ValidationReceiptError(
-            "invalid_evidence_digest",
-            f"{field} must be lowercase SHA-256",
-        )
-
-
-def build_ide_receipt(
+def build_ide_report(
     *,
-    start_fingerprint: str,
-    end_fingerprint: str,
-    commit: str,
     platform: str,
     outcomes: Mapping[str, Mapping[str, object]],
-    protocol_schema_sha256: str,
-    acceptance_fixtures_sha256: str,
     failure_code: str | None = None,
 ) -> dict[str, object]:
-    if not _SHA256.fullmatch(start_fingerprint):
-        raise ValidationReceiptError(
-            "invalid_source_fingerprint",
-            "start fingerprint must be lowercase SHA-256",
+    if not isinstance(platform, str) or not platform.strip():
+        raise ValidationReportError("invalid_platform", "host platform is missing")
+    _validate_ide_outcomes(outcomes)
+    passed = all(outcome["status"] == "passed" for outcome in outcomes.values())
+    if not passed and failure_code is None:
+        failure_code = next(
+            (
+                str(outcome["failure_code"])
+                for outcome in outcomes.values()
+                if outcome.get("failure_code")
+            ),
+            "suite_failed",
         )
-    if start_fingerprint != end_fingerprint:
-        raise ValidationReceiptError(
-            "source_fingerprint_drift",
-            "declared sources changed during full validation",
-        )
-    if not _COMMIT.fullmatch(commit):
-        raise ValidationReceiptError(
-            "invalid_commit",
-            "commit must be a hexadecimal object identifier",
-        )
-    if platform not in SUPPORTED_HOST_PLATFORMS:
-        raise ValidationReceiptError(
-            "invalid_platform",
-            "validation platform is unsupported",
-        )
-    _validate_digest(protocol_schema_sha256, "protocol_schema_sha256")
-    _validate_digest(
-        acceptance_fixtures_sha256,
-        "acceptance_fixtures_sha256",
-    )
-    _validate_outcomes(outcomes)
-    overall_status = (
-        "passed"
-        if all(outcome["status"] == "passed" for outcome in outcomes.values())
-        else "failed"
-    )
     return {
         "schema_version": 1,
         "product": "vityo",
         "suite": "full",
-        "status": overall_status,
-        "failure_code": None if overall_status == "passed" else failure_code,
-        "commit": commit,
+        "status": "passed" if passed else "failed",
+        "failure_code": None if passed else failure_code,
         "platform": platform,
-        "source_fingerprint": start_fingerprint,
-        "protocol_schema_sha256": protocol_schema_sha256,
-        "acceptance_fixtures_sha256": acceptance_fixtures_sha256,
         "requirements": {
             requirement: dict(outcome)
             for requirement, outcome in outcomes.items()
@@ -141,58 +114,7 @@ def build_ide_receipt(
     }
 
 
-def build_ide_failure_receipt(
-    *,
-    failure_code: str,
-    commit: str | None,
-    platform: str | None,
-    source_fingerprint: str | None,
-    protocol_schema_sha256: str | None,
-    acceptance_fixtures_sha256: str | None,
-    outcomes: Mapping[str, Mapping[str, object]],
-) -> dict[str, object]:
-    _validate_outcomes(outcomes)
-    if commit is not None and not _COMMIT.fullmatch(commit):
-        commit = None
-    if (
-        platform is not None
-        and platform not in SUPPORTED_HOST_PLATFORMS
-    ):
-        platform = None
-    if (
-        source_fingerprint is not None
-        and not _SHA256.fullmatch(source_fingerprint)
-    ):
-        source_fingerprint = None
-    if (
-        protocol_schema_sha256 is not None
-        and not _SHA256.fullmatch(protocol_schema_sha256)
-    ):
-        protocol_schema_sha256 = None
-    if (
-        acceptance_fixtures_sha256 is not None
-        and not _SHA256.fullmatch(acceptance_fixtures_sha256)
-    ):
-        acceptance_fixtures_sha256 = None
-    return {
-        "schema_version": 1,
-        "product": "vityo",
-        "suite": "full",
-        "status": "failed",
-        "failure_code": failure_code,
-        "commit": commit,
-        "platform": platform,
-        "source_fingerprint": source_fingerprint,
-        "protocol_schema_sha256": protocol_schema_sha256,
-        "acceptance_fixtures_sha256": acceptance_fixtures_sha256,
-        "requirements": {
-            requirement: dict(outcome)
-            for requirement, outcome in outcomes.items()
-        },
-    }
-
-
-def write_receipt_atomic(
+def write_report_atomic(
     destination: pathlib.Path,
     payload: Mapping[str, object],
 ) -> None:
@@ -205,10 +127,10 @@ def write_receipt_atomic(
         ).encode("utf-8")
         + b"\n"
     )
-    if len(encoded) > MAX_RECEIPT_BYTES:
-        raise ValidationReceiptError(
-            "receipt_too_large",
-            "validation receipt exceeds the bounded artifact size",
+    if len(encoded) > MAX_REPORT_BYTES:
+        raise ValidationReportError(
+            "report_too_large",
+            "validation report exceeds the bounded artifact size",
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: pathlib.Path | None = None

@@ -110,6 +110,50 @@ void main() {
     expect(invalid.hasCode(ModuleManifestSecurityCode.checksumMismatch), isFalse);
   });
 
+  test('validator fails closed when a required signature has no verifier', () {
+    final manifest = _signedManifest();
+
+    const verifierless = ModuleManifestSecurityValidator(
+      policy: ModuleManifestSecurityPolicy(
+        requireActivation: true,
+        allowedPermissions: <String>{'file.read', 'network'},
+        allowedChannels: <String>{'stable', 'nightly'},
+        platform: 'macos',
+        currentEngineVersion: '1.5.0',
+      ),
+    );
+    final result = verifierless.validateJson(manifest);
+    final state = ModuleManifestSecurityState.fromValidation(
+      moduleId: 'agent.surface.basic',
+      version: '1.2.3',
+      result: result,
+    );
+
+    expect(result.isValid, isFalse);
+    expect(result.hasCode(ModuleManifestSecurityCode.signatureInvalid), isTrue);
+    expect(state.quarantined, isTrue);
+    expect(state.canActivate, isFalse);
+  });
+
+  test('validator ignores a signature it is not required to verify', () {
+    final manifest = _signedManifest();
+
+    const relaxed = ModuleManifestSecurityValidator(
+      policy: ModuleManifestSecurityPolicy(
+        requireSignature: false,
+        requireActivation: true,
+        allowedPermissions: <String>{'file.read', 'network'},
+        allowedChannels: <String>{'stable', 'nightly'},
+        platform: 'macos',
+        currentEngineVersion: '1.5.0',
+      ),
+    );
+    final result = relaxed.validateJson(manifest);
+
+    expect(result.isValid, isTrue);
+    expect(result.hasCode(ModuleManifestSecurityCode.signatureInvalid), isFalse);
+  });
+
   test('validator blocks incompatible engine versions', () {
     final manifest = _signedManifest(<String, Object?>{
       'engine': '>=2.0.0 <3.0.0',

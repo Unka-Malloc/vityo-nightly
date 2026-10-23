@@ -17,9 +17,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     env:
-      PYTHON_BIN: python
       VITYO_PYTHON_VERSION: "3.13.5"
-      VITYO_NODE_VERSION: "24.15.0"
       VITYO_FLUTTER_VERSION: "3.41.7"
 
     steps:
@@ -29,214 +27,37 @@ jobs:
           fetch-depth: 0
           path: vityo-nightly
 
-      - name: Resolve sibling checkout ref
-        id: sibling-ref
-        shell: bash
-        run: |
-          requested="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
-            requested="${{ github.base_ref }}"
-          fi
-          for ref in "$requested" stable nightly; do
-            if git ls-remote --exit-code --heads https://github.com/Unka-Malloc/styio-nightly.git "$ref" >/dev/null 2>&1; then
-              echo "ref=$ref" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-          echo "No common sibling checkout ref found for '$requested' or fallbacks 'stable'/'nightly'." >&2
-          exit 1
-
-      - name: Checkout Styio sibling repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
-        with:
-          repository: Unka-Malloc/styio-nightly
-          ref: ${{ steps.sibling-ref.outputs.ref }}
-          path: styio-nightly
-
       - name: Set up standardized Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: ${{ env.VITYO_PYTHON_VERSION }}
 
-      - name: Set up standardized Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+      - name: Set up Rust 1.88 toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f  # v2.0.0, community-maintained
         with:
-          node-version: ${{ env.VITYO_NODE_VERSION }}
+          toolchain: "1.88.0"
 
       - name: Set up standardized Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2
         with:
           flutter-version: ${{ env.VITYO_FLUTTER_VERSION }}
 
-      - name: Set up MSVC command environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756  # v1
-        with:
-          arch: x64
-
-      - name: Install CI Chrome
-        id: setup-chrome
-        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd  # v2
-        with:
-          chrome-version: stable
-
-      - name: Install CMake, Ninja, and LLVM 18 development package
-        uses: mamba-org/setup-micromamba@add3a49764cedee8ee24e82dfde87f5bc2914462  # v2
-        with:
-          environment-name: styio-llvm18
-          cache-environment: true
-          create-args: >-
-            cmake
-            ninja
-            llvm=18.1.8
-            llvmdev=18.1.8
-            clang-tools=18.1.8
-            zlib
-            libxml2
-            zstd
-
-      - name: Locate LLVM 18
-        shell: pwsh
-        run: |
-          $condaPrefix = Join-Path $env:MAMBA_ROOT_PREFIX "envs\styio-llvm18"
-          if (!(Test-Path $condaPrefix) -and $env:CONDA_PREFIX) {
-            $condaPrefix = $env:CONDA_PREFIX
-          }
-          if (!(Test-Path $condaPrefix)) {
-            throw "micromamba environment was not found"
-          }
-
-          $llvmRoot = Join-Path $condaPrefix "Library"
-          $llvmConfig = Join-Path $llvmRoot "lib\cmake\llvm\LLVMConfig.cmake"
-          if (!(Test-Path $llvmConfig)) {
-            throw "LLVMConfig.cmake was not found in $llvmRoot"
-          }
-
-          $llvmDir = Split-Path -Parent $llvmConfig
-
-          Add-Content $env:GITHUB_PATH (Join-Path $llvmRoot "bin")
-          Add-Content $env:GITHUB_PATH (Join-Path $condaPrefix "Scripts")
-          Add-Content $env:GITHUB_ENV "LLVM_DIR=$llvmDir"
-          Add-Content $env:GITHUB_ENV "STYIO_NATIVE_TOOLCHAIN_ROOT=$llvmRoot"
-
-          $diaLib = Get-ChildItem -Path (Join-Path $env:ProgramFiles "Microsoft Visual Studio") -Recurse -Filter diaguids.lib -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -like "*\DIA SDK\lib\amd64\diaguids.lib" } |
-            Select-Object -First 1
-          if (!$diaLib) {
-            throw "MSVC DIA SDK diaguids.lib was not found"
-          }
-          $vsInstallDir = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $diaLib.FullName)))
-          Add-Content $env:GITHUB_ENV "VSINSTALLDIR=$vsInstallDir"
-
-      - name: Verify standardized Windows toolchain
-        shell: powershell
-        run: |
-          python --version | Select-String -Pattern "$env:VITYO_PYTHON_VERSION"
-          node --version | Select-String -Pattern "v$env:VITYO_NODE_VERSION"
-          npm --version
-          $flutterVersionOutput = flutter --version
-          $flutterVersion = ($flutterVersionOutput -split "`r?`n" | Where-Object { $_ -like "Flutter *" } | Select-Object -First 1)
-          if (!$flutterVersion) { throw "Flutter version line not found: $flutterVersionOutput" }
-          $flutterVersion | Select-String -Pattern "$env:VITYO_FLUTTER_VERSION"
-          flutter config --enable-web --enable-windows-desktop
-          & "${{ steps.setup-chrome.outputs.chrome-path }}" --version
-
-      - name: Restore repository dependencies
+      - name: Restore workspace dependencies
         working-directory: vityo-nightly
         shell: powershell
-        run: |
-          python -m pip install coverage
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-workspace.ps1 -Platforms web,windows -SkipPlatformBootstrap
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-workspace.ps1 -Platforms windows -SkipPlatformBootstrap
 
-      - name: Build Styio language fixture parser on Windows
-        working-directory: styio-nightly
-        shell: powershell
-        run: |
-          cmake -S . -B build/default -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR="$env:LLVM_DIR" -DSTYIO_NATIVE_TOOLCHAIN_ROOT="$env:STYIO_NATIVE_TOOLCHAIN_ROOT" -DSTYIO_NATIVE_TOOLCHAIN_MODE=auto
-          cmake --build build/default --target styio --config Debug
-
-      - name: Resolve Styio executable path
-        id: styio-bin
-        shell: bash
-        working-directory: styio-nightly
-        run: |
-          styio_path="$(find build/default -type f -name styio.exe | head -n 1)"
-          if [[ -z "$styio_path" ]]; then
-            echo "No built styio executable found under build/default." >&2
-            exit 1
-          fi
-          absolute_path="$PWD/$styio_path"
-          "$absolute_path" --version || true
-          echo "path=$absolute_path" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve CI refs
-        id: ci_refs
-        shell: bash
+      - name: Build and package Windows candidate
         working-directory: vityo-nightly
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "+refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}"
-            BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-              RANGE="HEAD^..HEAD"
-            else
-              BASE_REF="HEAD"
-              RANGE="HEAD"
-            fi
-          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
-            if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-              BASE_REF="HEAD^"
-            else
-              BASE_REF="HEAD"
-            fi
-            RANGE="HEAD"
-          else
-            BASE_REF="${{ github.event.before }}"
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-          echo "base_ref=${BASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Run Vityo nightly Windows CI gate
-        working-directory: vityo-nightly
-        shell: bash
-        env:
-          CHROME_EXECUTABLE: ${{ steps.setup-chrome.outputs.chrome-path }}
-          VITYO_CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-          STYIO: ${{ steps.styio-bin.outputs.path }}
-        run: >
-          bash scripts/delivery-gate.sh
-          --mode push
-          --base "${{ steps.ci_refs.outputs.base_ref }}"
-          --range "${{ steps.ci_refs.outputs.range }}"
-          --skip-audit
-
-      - name: Run Flutter analyze
-        working-directory: vityo-nightly/products/vityo_app
         shell: powershell
-        run: flutter analyze
+        run: python scripts/vityo.py build --mode ci --platform windows
 
-      - name: Build native Windows release target
-        working-directory: vityo-nightly/products/vityo_app
-        shell: powershell
-        run: flutter build windows --release
-
-      - name: Upload Windows coverage reports
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        with:
-          name: vityo-coverage-reports-windows
-          path: |
-            vityo-nightly/.coverage
-            vityo-nightly/products/vityo_app/coverage/lcov.info
-          if-no-files-found: ignore
-
-      - name: Upload Windows build artifact
+      - name: Upload Windows build and package
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: vityo-windows-release
-          path: vityo-nightly/products/vityo_app/build/windows/**/*
+          path: |
+            vityo-nightly/products/vityo_app/build/windows/**/*
+            vityo-nightly/build/nightly/*
           if-no-files-found: ignore

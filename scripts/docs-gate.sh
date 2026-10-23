@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Convenience entrypoint for the docs/process gate on a Unix host.
+#
+# The gate itself is implemented in `scripts/docs_gate.py`, which delivery calls
+# directly: that keeps the gate runnable on Windows, where `bash` in PATH can
+# resolve to a WSL launcher with no distribution installed. This script exists for
+# interactive use and forwards its arguments, so the two entrypoints cannot drift.
 set -euo pipefail
 
 usage() {
@@ -16,82 +22,17 @@ Options:
 USAGE
 }
 
-log() {
-  echo "[docs-gate] $*"
-}
-
-run_cmd() {
-  log "$*"
-  "$@"
-}
-
-default_upstream_base() {
-  git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true
-}
-
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
-
-MODE="worktree"
-BASE_REF=""
-SKIP_ECOSYSTEM=0
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --mode)
-      MODE="$2"
-      shift 2
-      ;;
-    --base)
-      BASE_REF="$2"
-      shift 2
-      ;;
-    --skip-ecosystem)
-      SKIP_ECOSYSTEM=1
-      shift
-      ;;
+for arg in "$@"; do
+  case "$arg" in
     -h|--help)
       usage
       exit 0
       ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage >&2
-      exit 2
-      ;;
   esac
 done
 
-TEAM_CMD=("$PYTHON_BIN" scripts/team-docs-gate.py)
-case "$MODE" in
-  worktree)
-    ;;
-  staged)
-    TEAM_CMD+=(--mode staged)
-    ;;
-  push)
-    if [[ -z "$BASE_REF" ]]; then
-      BASE_REF="$(default_upstream_base)"
-    fi
-    if [[ -z "$BASE_REF" ]]; then
-      echo "push mode requires --base <ref> or a configured upstream branch" >&2
-      exit 2
-    fi
-    TEAM_CMD+=(--base "$BASE_REF")
-    ;;
-  *)
-    echo "Unsupported mode: $MODE" >&2
-    usage >&2
-    exit 2
-    ;;
-esac
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
-run_cmd "${TEAM_CMD[@]}"
-run_cmd env VITYO_SKIP_TEAM_DOC_GATE=1 "$PYTHON_BIN" scripts/docs-audit.py
-if [[ "$SKIP_ECOSYSTEM" -eq 1 ]]; then
-  log "ecosystem CLI doc consistency check skipped"
-else
-  run_cmd "$PYTHON_BIN" scripts/ecosystem-cli-doc-gate.py --non-blocking
-fi
-log "all checks passed"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+exec "$PYTHON_BIN" scripts/docs_gate.py --python-bin "$PYTHON_BIN" "$@"

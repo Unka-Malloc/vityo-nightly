@@ -10,14 +10,24 @@ extension ShellLayoutModeX on ShellLayoutMode {
   };
 }
 
-enum ShellLayoutRegion { topBar, activityRail, editor, bottomPanel, statusBar }
+enum ShellLayoutRegion {
+  topBar,
+  activityRail,
+  primarySidebar,
+  editor,
+  bottomPanel,
+  auxiliaryPanel,
+  statusBar,
+}
 
 extension ShellLayoutRegionX on ShellLayoutRegion {
   String get wireValue => switch (this) {
     ShellLayoutRegion.topBar => 'top-bar',
     ShellLayoutRegion.activityRail => 'activity-rail',
+    ShellLayoutRegion.primarySidebar => 'primary-sidebar',
     ShellLayoutRegion.editor => 'editor',
     ShellLayoutRegion.bottomPanel => 'bottom-panel',
+    ShellLayoutRegion.auxiliaryPanel => 'auxiliary-panel',
     ShellLayoutRegion.statusBar => 'status-bar',
   };
 }
@@ -104,29 +114,31 @@ class ShellPanelContribution {
     required this.surfaceId,
     required this.capabilities,
     required this.status,
-    this.bottomTab,
+    this.route,
     this.defaultVisible = true,
     this.metadata = const <String, Object?>{},
     this.todo = '',
   });
 
-  factory ShellPanelContribution.bottomPanel({
-    required BottomSurfaceTab tab,
+  factory ShellPanelContribution.routedPanel({
+    required String id,
     required String title,
+    required ShellLayoutRegion region,
     required String surfaceId,
     required List<String> capabilities,
-    ShellPanelContributionStatus status = ShellPanelContributionStatus.wired,
+    required ShellPanelContributionStatus status,
+    required BottomSurfaceTab route,
     Map<String, Object?> metadata = const <String, Object?>{},
     String todo = '',
   }) {
     return ShellPanelContribution(
-      id: 'bottom.${tab.name}',
+      id: id,
       title: title,
-      region: ShellLayoutRegion.bottomPanel,
+      region: region,
       surfaceId: surfaceId,
       capabilities: capabilities,
       status: status,
-      bottomTab: tab,
+      route: route,
       metadata: metadata,
       todo: todo,
     );
@@ -138,26 +150,26 @@ class ShellPanelContribution {
   final String surfaceId;
   final List<String> capabilities;
   final ShellPanelContributionStatus status;
-  final BottomSurfaceTab? bottomTab;
+  final BottomSurfaceTab? route;
   final bool defaultVisible;
   final Map<String, Object?> metadata;
   final String todo;
 
   ShellPanelDescriptor toPanelDescriptor({
-    required BottomSurfaceTab activeBottomTab,
+    required BottomSurfaceTab activeWorkbenchRoute,
   }) {
     return ShellPanelDescriptor(
       id: id,
       title: title,
       region: region,
-      visible: defaultVisible,
-      active: bottomTab == activeBottomTab,
+      visible: defaultVisible && route == activeWorkbenchRoute,
+      active: route == activeWorkbenchRoute,
       metadata: <String, Object?>{
         ...metadata,
         'surfaceId': surfaceId,
         'capabilities': capabilities,
         'contributionStatus': status.wireValue,
-        if (bottomTab != null) 'bottomTab': bottomTab!.name,
+        if (route != null) 'route': route!.name,
       },
       todo: todo,
     );
@@ -172,7 +184,7 @@ class ShellPanelContribution {
       'capabilities': capabilities,
       'status': status.wireValue,
       'defaultVisible': defaultVisible,
-      if (bottomTab != null) 'bottomTab': bottomTab!.name,
+      if (route != null) 'route': route!.name,
       if (metadata.isNotEmpty) 'metadata': metadata,
       if (todo.isNotEmpty) 'todo': todo,
     };
@@ -214,15 +226,15 @@ class ShellPanelContributionRegistry {
 
   factory ShellPanelContributionRegistry.defaultIdePanels() {
     return ShellPanelContributionRegistry(
-      contributions: _defaultBottomPanelContributions(),
+      contributions: _defaultPanelContributions(),
     );
   }
 
   static const List<String> coreIdePanelIds = <String>[
     'bottom.problems',
-    'bottom.search',
-    'bottom.settings',
-    'bottom.extensions',
+    'primary.search',
+    'primary.settings',
+    'primary.extensions',
     'bottom.debug',
     'bottom.agent',
   ];
@@ -246,19 +258,6 @@ class ShellPanelContributionRegistry {
       }
     }
     return null;
-  }
-
-  List<ShellPanelDescriptor> descriptorsForRegion({
-    required ShellLayoutRegion region,
-    required BottomSurfaceTab activeBottomTab,
-  }) {
-    return _contributions
-        .where((contribution) => contribution.region == region)
-        .map(
-          (contribution) =>
-              contribution.toPanelDescriptor(activeBottomTab: activeBottomTab),
-        )
-        .toList(growable: false);
   }
 
   ShellPanelContributionCoverage coverageForCoreIdePanels() {
@@ -296,7 +295,7 @@ class ShellPanelContributionRegistry {
 class ShellLayoutPlan {
   const ShellLayoutPlan({
     required this.mode,
-    required this.activeBottomTab,
+    required this.activeWorkbenchRoute,
     required this.panels,
     this.todo = '',
   });
@@ -304,20 +303,24 @@ class ShellLayoutPlan {
   factory ShellLayoutPlan.fromJson(Map<String, Object?> json) {
     return ShellLayoutPlan(
       mode: _modeFromWire(json['mode']),
-      activeBottomTab: _bottomTabFromWire(json['activeBottomTab']),
+      activeWorkbenchRoute: _routeFromWire(json['activeWorkbenchRoute']),
       panels: _jsonPanels(json['panels']),
       todo: json['todo'] as String? ?? '',
     );
   }
 
   factory ShellLayoutPlan.forViewport({
-    required BottomSurfaceTab activeBottomTab,
+    required BottomSurfaceTab activeWorkbenchRoute,
     required bool compact,
     ShellPanelContributionRegistry? panelRegistry,
   }) {
     final mode = compact ? ShellLayoutMode.compact : ShellLayoutMode.desktop;
     final contributions =
         panelRegistry ?? ShellPanelContributionRegistry.defaultIdePanels();
+    final activePrimaryRoute =
+        _panelRegion(activeWorkbenchRoute) == ShellLayoutRegion.primarySidebar
+        ? activeWorkbenchRoute
+        : BottomSurfaceTab.navigate;
     final panels = <ShellPanelDescriptor>[
       const ShellPanelDescriptor(
         id: 'top-bar',
@@ -330,9 +333,9 @@ class ShellLayoutPlan {
         title: 'Activity Rail',
         region: ShellLayoutRegion.activityRail,
         visible: !compact,
-        todo: compact
-            ? 'TODO: expose compact activity actions through a mobile command surface.'
-            : '',
+        metadata: const <String, Object?>{
+          'compactFallbackSurfaceId': 'compact-workbench-navigation',
+        },
       ),
       const ShellPanelDescriptor(
         id: 'editor',
@@ -341,10 +344,15 @@ class ShellLayoutPlan {
         visible: true,
         active: true,
       ),
-      ...contributions.descriptorsForRegion(
-        region: ShellLayoutRegion.bottomPanel,
-        activeBottomTab: activeBottomTab,
-      ),
+      for (final contribution in contributions.contributions)
+        if (contribution.region == ShellLayoutRegion.primarySidebar)
+          contribution
+              .toPanelDescriptor(activeWorkbenchRoute: activeWorkbenchRoute)
+              .copyWith(visible: contribution.route == activePrimaryRoute)
+        else
+          contribution.toPanelDescriptor(
+            activeWorkbenchRoute: activeWorkbenchRoute,
+          ),
       const ShellPanelDescriptor(
         id: 'status-bar',
         title: 'Status Bar',
@@ -354,27 +362,25 @@ class ShellLayoutPlan {
     ];
     return ShellLayoutPlan(
       mode: mode,
-      activeBottomTab: activeBottomTab,
+      activeWorkbenchRoute: activeWorkbenchRoute,
       panels: panels,
-      todo:
-          'TODO: mature diagnostics, search, settings, extensions, debug, and agent panel internals behind ShellPanelContributionRegistry renderers.',
     );
   }
 
   final ShellLayoutMode mode;
-  final BottomSurfaceTab activeBottomTab;
+  final BottomSurfaceTab activeWorkbenchRoute;
   final List<ShellPanelDescriptor> panels;
   final String todo;
 
   ShellLayoutPlan copyWith({
     ShellLayoutMode? mode,
-    BottomSurfaceTab? activeBottomTab,
+    BottomSurfaceTab? activeWorkbenchRoute,
     List<ShellPanelDescriptor>? panels,
     String? todo,
   }) {
     return ShellLayoutPlan(
       mode: mode ?? this.mode,
-      activeBottomTab: activeBottomTab ?? this.activeBottomTab,
+      activeWorkbenchRoute: activeWorkbenchRoute ?? this.activeWorkbenchRoute,
       panels: panels ?? this.panels,
       todo: todo ?? this.todo,
     );
@@ -403,7 +409,7 @@ class ShellLayoutPlan {
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'mode': mode.wireValue,
-      'activeBottomTab': activeBottomTab.name,
+      'activeWorkbenchRoute': activeWorkbenchRoute.name,
       'visiblePanelIds': visiblePanelIds,
       'panels': panels.map((panel) => panel.toJson()).toList(growable: false),
       if (todo.isNotEmpty) 'todo': todo,
@@ -411,90 +417,202 @@ class ShellLayoutPlan {
   }
 }
 
-List<ShellPanelContribution> _defaultBottomPanelContributions() {
+/// Maps each workbench route to the IDE capability entry that owns its
+/// maturity. Routes without an entry are reported as scaffolded instead of
+/// claiming production readiness.
+String? _routeCapabilityId(BottomSurfaceTab tab) {
+  return switch (tab) {
+    BottomSurfaceTab.runtime => 'presentation.output-panel',
+    BottomSurfaceTab.terminal => 'runtime.terminal',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'interaction.command-palette',
+    BottomSurfaceTab.navigate => 'workspace.file-explorer',
+    BottomSurfaceTab.quickOpen => 'interaction.search',
+    BottomSurfaceTab.outline => 'service.styio-language',
+    BottomSurfaceTab.search ||
+    BottomSurfaceTab.locations => 'interaction.search',
+    BottomSurfaceTab.problems => 'presentation.problems-panel',
+    BottomSurfaceTab.testing => 'interaction.testing',
+    BottomSurfaceTab.debug => 'debugger.dap',
+    BottomSurfaceTab.agent => 'agent.workbench',
+    BottomSurfaceTab.sourceControl => 'interaction.source-control',
+    BottomSurfaceTab.extensions => 'extension.marketplace',
+    BottomSurfaceTab.observable => 'service.observable-topology',
+    BottomSurfaceTab.settings => 'toolchain.manager',
+    // Language-navigation routes have no wired shell surface yet. They stay
+    // unmapped so their panel contributions report scaffolded instead of
+    // borrowing another capability's readiness.
+    _ => null,
+  };
+}
+
+List<ShellPanelContribution> _defaultPanelContributions() {
+  final capabilityById = <String, IdeCapabilityDescriptor>{
+    for (final entry in const VityoIdeCapabilityFramework().snapshot().entries)
+      entry.id: entry,
+  };
   return BottomSurfaceTab.values
       .map((tab) {
-        final panelId = 'bottom.${tab.name}';
+        final region = _panelRegion(tab);
+        final panelId = _panelId(tab);
+        final capabilityId = _routeCapabilityId(tab);
+        final capability = capabilityId == null
+            ? null
+            : capabilityById[capabilityId];
         final metadata = <String, Object?>{
           'coreIdePanel': ShellPanelContributionRegistry.coreIdePanelIds
               .contains(panelId),
+          if (capabilityId != null) 'capabilityId': capabilityId,
         };
-        return ShellPanelContribution.bottomPanel(
-          tab: tab,
-          title: _bottomTabTitle(tab),
-          surfaceId: _bottomTabSurfaceId(tab),
-          capabilities: _bottomTabCapabilities(tab),
+        return ShellPanelContribution.routedPanel(
+          id: panelId,
+          title: _routeTitle(tab),
+          region: region,
+          surfaceId: _routeSurfaceId(tab),
+          capabilities: _routeCapabilities(tab),
+          status: _panelStatusFromCapability(capability),
+          route: tab,
           metadata: metadata,
-          todo: _bottomTabPanelTodo(tab),
+          todo: capability?.todo ?? _missingPanelCapabilityTodo(tab),
         );
       })
       .toList(growable: false);
 }
 
+ShellPanelContributionStatus _panelStatusFromCapability(
+  IdeCapabilityDescriptor? capability,
+) {
+  if (capability == null) {
+    return ShellPanelContributionStatus.scaffolded;
+  }
+  return switch (capability.status) {
+    IdeCapabilityStatus.ready => ShellPanelContributionStatus.production,
+    IdeCapabilityStatus.wired => ShellPanelContributionStatus.wired,
+    IdeCapabilityStatus.scaffolded ||
+    IdeCapabilityStatus.todo => ShellPanelContributionStatus.scaffolded,
+  };
+}
+
+String _missingPanelCapabilityTodo(BottomSurfaceTab tab) {
+  return 'TODO: no IDE capability entry owns the ${tab.name} workbench route yet.';
+}
+
 class ShellLayoutPreferences {
   const ShellLayoutPreferences({
     required this.workspaceId,
-    this.activeBottomTab = BottomSurfaceTab.agent,
+    this.activeWorkbenchRoute = BottomSurfaceTab.navigate,
     this.hiddenPanelIds = const <String>{},
     this.pinnedPanelIds = const <String>{},
-    this.bottomPanelExpanded = true,
+    this.primarySidebarVisible = true,
+    this.primarySidebarWidth = defaultPrimarySidebarWidth,
+    this.bottomPanelExpanded = false,
+    this.bottomPanelHeight = defaultBottomPanelHeight,
     this.updatedAt,
   });
+
+  static const double minPrimarySidebarWidth = 196;
+  static const double maxPrimarySidebarWidth = 480;
+  static const double defaultPrimarySidebarWidth = 240;
+  static const double minBottomPanelHeight = 132;
+  static const double maxBottomPanelHeight = 560;
+  static const double defaultBottomPanelHeight = 220;
 
   factory ShellLayoutPreferences.fromJson(Map<String, Object?> json) {
     return ShellLayoutPreferences(
       workspaceId: json['workspaceId'] as String? ?? '',
-      activeBottomTab: _bottomTabFromWire(json['activeBottomTab']),
+      activeWorkbenchRoute: _routeFromWire(json['activeWorkbenchRoute']),
       hiddenPanelIds: _jsonStringSet(json['hiddenPanelIds']),
       pinnedPanelIds: _jsonStringSet(json['pinnedPanelIds']),
-      bottomPanelExpanded: json['bottomPanelExpanded'] as bool? ?? true,
+      primarySidebarVisible: json['primarySidebarVisible'] as bool? ?? true,
+      primarySidebarWidth: _normalizedDimension(
+        json['primarySidebarWidth'],
+        fallback: defaultPrimarySidebarWidth,
+        minimum: minPrimarySidebarWidth,
+        maximum: maxPrimarySidebarWidth,
+      ),
+      bottomPanelExpanded: json['bottomPanelExpanded'] as bool? ?? false,
+      bottomPanelHeight: _normalizedDimension(
+        json['bottomPanelHeight'],
+        fallback: defaultBottomPanelHeight,
+        minimum: minBottomPanelHeight,
+        maximum: maxBottomPanelHeight,
+      ),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '')?.toUtc(),
     );
   }
 
   final String workspaceId;
-  final BottomSurfaceTab activeBottomTab;
+  final BottomSurfaceTab activeWorkbenchRoute;
   final Set<String> hiddenPanelIds;
   final Set<String> pinnedPanelIds;
+  final bool primarySidebarVisible;
+  final double primarySidebarWidth;
   final bool bottomPanelExpanded;
+  final double bottomPanelHeight;
   final DateTime? updatedAt;
 
   ShellLayoutPreferences copyWith({
     String? workspaceId,
-    BottomSurfaceTab? activeBottomTab,
+    BottomSurfaceTab? activeWorkbenchRoute,
     Set<String>? hiddenPanelIds,
     Set<String>? pinnedPanelIds,
+    bool? primarySidebarVisible,
+    double? primarySidebarWidth,
     bool? bottomPanelExpanded,
+    double? bottomPanelHeight,
     DateTime? updatedAt,
   }) {
     return ShellLayoutPreferences(
       workspaceId: workspaceId ?? this.workspaceId,
-      activeBottomTab: activeBottomTab ?? this.activeBottomTab,
+      activeWorkbenchRoute: activeWorkbenchRoute ?? this.activeWorkbenchRoute,
       hiddenPanelIds: hiddenPanelIds ?? this.hiddenPanelIds,
       pinnedPanelIds: pinnedPanelIds ?? this.pinnedPanelIds,
+      primarySidebarVisible:
+          primarySidebarVisible ?? this.primarySidebarVisible,
+      primarySidebarWidth: primarySidebarWidth ?? this.primarySidebarWidth,
       bottomPanelExpanded: bottomPanelExpanded ?? this.bottomPanelExpanded,
+      bottomPanelHeight: bottomPanelHeight ?? this.bottomPanelHeight,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
   ShellLayoutPlan applyTo(ShellLayoutPlan plan) {
-    final activeBottomPanelId = 'bottom.${activeBottomTab.name}';
+    final activePrimaryRoute =
+        _panelRegion(activeWorkbenchRoute) == ShellLayoutRegion.primarySidebar
+        ? activeWorkbenchRoute
+        : BottomSurfaceTab.navigate;
     return plan.copyWith(
-      activeBottomTab: activeBottomTab,
+      activeWorkbenchRoute: activeWorkbenchRoute,
       panels: plan.panels
           .map((panel) {
+            final routeName = panel.metadata['route'] as String?;
+            final routeVisible = switch (panel.region) {
+              ShellLayoutRegion.primarySidebar =>
+                routeName == activePrimaryRoute.name,
+              ShellLayoutRegion.bottomPanel =>
+                routeName == activeWorkbenchRoute.name,
+              _ => panel.visible,
+            };
             final metadata = <String, Object?>{
               ...panel.metadata,
               if (pinnedPanelIds.contains(panel.id)) 'pinned': true,
-              if (panel.region == ShellLayoutRegion.bottomPanel)
+              if (panel.region == ShellLayoutRegion.primarySidebar)
+                'primarySidebarWidth': primarySidebarWidth,
+              if (panel.region ==
+                  ShellLayoutRegion.bottomPanel) ...<String, Object?>{
                 'bottomPanelExpanded': bottomPanelExpanded,
+                'bottomPanelHeight': bottomPanelHeight,
+              },
             };
             return panel.copyWith(
-              visible: hiddenPanelIds.contains(panel.id)
+              visible:
+                  (panel.region == ShellLayoutRegion.primarySidebar &&
+                          !primarySidebarVisible) ||
+                      hiddenPanelIds.contains(panel.id)
                   ? false
-                  : panel.visible,
-              active: panel.region == ShellLayoutRegion.bottomPanel
-                  ? panel.id == activeBottomPanelId
+                  : routeVisible,
+              active: routeName != null
+                  ? routeName == activeWorkbenchRoute.name
                   : panel.active,
               metadata: metadata,
             );
@@ -506,10 +624,13 @@ class ShellLayoutPreferences {
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'workspaceId': workspaceId,
-      'activeBottomTab': activeBottomTab.name,
+      'activeWorkbenchRoute': activeWorkbenchRoute.name,
       'hiddenPanelIds': _sortedStrings(hiddenPanelIds),
       'pinnedPanelIds': _sortedStrings(pinnedPanelIds),
+      'primarySidebarVisible': primarySidebarVisible,
+      'primarySidebarWidth': primarySidebarWidth,
       'bottomPanelExpanded': bottomPanelExpanded,
+      'bottomPanelHeight': bottomPanelHeight,
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
   }
@@ -619,11 +740,11 @@ class ShellLayoutPreferenceController {
     _setPreferences(preferences);
   }
 
-  void selectBottomTab(BottomSurfaceTab tab) {
-    if (_preferences.activeBottomTab == tab) {
+  void selectWorkbenchRoute(BottomSurfaceTab tab) {
+    if (_preferences.activeWorkbenchRoute == tab) {
       return;
     }
-    _setPreferences(_preferences.copyWith(activeBottomTab: tab));
+    _setPreferences(_preferences.copyWith(activeWorkbenchRoute: tab));
   }
 
   void setPanelVisible(String panelId, {required bool visible}) {
@@ -648,17 +769,54 @@ class ShellLayoutPreferenceController {
     _setPreferences(_preferences.copyWith(pinnedPanelIds: pinnedPanelIds));
   }
 
-  void setBottomPanelExpanded(bool expanded) {
+  bool setPrimarySidebarVisible(bool visible) {
+    if (_preferences.primarySidebarVisible == visible) {
+      return false;
+    }
+    _setPreferences(_preferences.copyWith(primarySidebarVisible: visible));
+    return true;
+  }
+
+  bool setPrimarySidebarWidth(double width) {
+    final normalized = width
+        .clamp(
+          ShellLayoutPreferences.minPrimarySidebarWidth,
+          ShellLayoutPreferences.maxPrimarySidebarWidth,
+        )
+        .toDouble();
+    if ((_preferences.primarySidebarWidth - normalized).abs() < 0.5) {
+      return false;
+    }
+    _setPreferences(_preferences.copyWith(primarySidebarWidth: normalized));
+    return true;
+  }
+
+  bool setBottomPanelExpanded(bool expanded) {
     if (_preferences.bottomPanelExpanded == expanded) {
-      return;
+      return false;
     }
     _setPreferences(_preferences.copyWith(bottomPanelExpanded: expanded));
+    return true;
+  }
+
+  bool setBottomPanelHeight(double height) {
+    final normalized = height
+        .clamp(
+          ShellLayoutPreferences.minBottomPanelHeight,
+          ShellLayoutPreferences.maxBottomPanelHeight,
+        )
+        .toDouble();
+    if ((_preferences.bottomPanelHeight - normalized).abs() < 0.5) {
+      return false;
+    }
+    _setPreferences(_preferences.copyWith(bottomPanelHeight: normalized));
+    return true;
   }
 
   ShellLayoutPlan planForViewport({required bool compact}) {
     return _preferences.applyTo(
       ShellLayoutPlan.forViewport(
-        activeBottomTab: _preferences.activeBottomTab,
+        activeWorkbenchRoute: _preferences.activeWorkbenchRoute,
         compact: compact,
       ),
     );
@@ -678,25 +836,58 @@ class ShellLayoutRenderBinding {
   const ShellLayoutRenderBinding({
     required this.mode,
     required this.viewportKey,
-    required this.activeBottomPanelId,
+    required this.activePanelId,
     required this.visiblePanelIds,
+    required this.primarySidebarVisible,
+    required this.primarySidebarWidth,
     required this.bottomPanelExpanded,
+    required this.bottomPanelHeight,
     required this.compactActivityFallback,
   });
 
   factory ShellLayoutRenderBinding.fromPlan(ShellLayoutPlan plan) {
-    final activeBottomPanelId = 'bottom.${plan.activeBottomTab.name}';
-    final activeBottomPanel = plan.panelById(activeBottomPanelId);
+    ShellPanelDescriptor? activePanel;
+    for (final panel in plan.panels) {
+      if (panel.metadata['route'] == plan.activeWorkbenchRoute.name) {
+        activePanel = panel;
+        break;
+      }
+    }
+    ShellPanelDescriptor? primarySidebar;
+    for (final panel in plan.panels) {
+      if (panel.region == ShellLayoutRegion.primarySidebar &&
+          (panel.metadata['route'] == plan.activeWorkbenchRoute.name ||
+              panel.metadata['route'] == BottomSurfaceTab.navigate.name)) {
+        primarySidebar = panel;
+        if (panel.metadata['route'] == plan.activeWorkbenchRoute.name) {
+          break;
+        }
+      }
+    }
+    ShellPanelDescriptor? bottomLayoutPanel;
+    for (final panel in plan.panels) {
+      if (panel.region == ShellLayoutRegion.bottomPanel) {
+        bottomLayoutPanel = panel;
+        break;
+      }
+    }
     final viewportKey = plan.mode == ShellLayoutMode.compact
         ? 'shell-viewport-mobile'
         : 'shell-viewport-${plan.mode.wireValue}';
     return ShellLayoutRenderBinding(
       mode: plan.mode,
       viewportKey: viewportKey,
-      activeBottomPanelId: activeBottomPanelId,
+      activePanelId: activePanel?.id ?? 'editor',
       visiblePanelIds: plan.visiblePanelIds,
+      primarySidebarVisible: primarySidebar?.visible ?? false,
+      primarySidebarWidth:
+          primarySidebar?.metadata['primarySidebarWidth'] as double? ??
+          ShellLayoutPreferences.defaultPrimarySidebarWidth,
       bottomPanelExpanded:
-          activeBottomPanel?.metadata['bottomPanelExpanded'] as bool? ?? true,
+          bottomLayoutPanel?.metadata['bottomPanelExpanded'] as bool? ?? false,
+      bottomPanelHeight:
+          bottomLayoutPanel?.metadata['bottomPanelHeight'] as double? ??
+          ShellLayoutPreferences.defaultBottomPanelHeight,
       compactActivityFallback:
           plan.panelById('activity-rail')?.visible == false &&
           plan.mode == ShellLayoutMode.compact,
@@ -705,9 +896,12 @@ class ShellLayoutRenderBinding {
 
   final ShellLayoutMode mode;
   final String viewportKey;
-  final String activeBottomPanelId;
+  final String activePanelId;
   final List<String> visiblePanelIds;
+  final bool primarySidebarVisible;
+  final double primarySidebarWidth;
   final bool bottomPanelExpanded;
+  final double bottomPanelHeight;
   final bool compactActivityFallback;
 
   bool isPanelVisible(String panelId) {
@@ -718,9 +912,12 @@ class ShellLayoutRenderBinding {
     return <String, Object?>{
       'mode': mode.wireValue,
       'viewportKey': viewportKey,
-      'activeBottomPanelId': activeBottomPanelId,
+      'activePanelId': activePanelId,
       'visiblePanelIds': visiblePanelIds,
+      'primarySidebarVisible': primarySidebarVisible,
+      'primarySidebarWidth': primarySidebarWidth,
       'bottomPanelExpanded': bottomPanelExpanded,
+      'bottomPanelHeight': bottomPanelHeight,
       'compactActivityFallback': compactActivityFallback,
     };
   }
@@ -738,28 +935,31 @@ ShellLayoutRegion _regionFromWire(Object? value) {
   return switch (value) {
     'top-bar' => ShellLayoutRegion.topBar,
     'activity-rail' => ShellLayoutRegion.activityRail,
+    'primary-sidebar' => ShellLayoutRegion.primarySidebar,
     'editor' => ShellLayoutRegion.editor,
     'bottom-panel' => ShellLayoutRegion.bottomPanel,
+    'auxiliary-panel' => ShellLayoutRegion.auxiliaryPanel,
     'status-bar' => ShellLayoutRegion.statusBar,
     _ => ShellLayoutRegion.editor,
   };
 }
 
-BottomSurfaceTab _bottomTabFromWire(Object? value) {
+BottomSurfaceTab _routeFromWire(Object? value) {
   final name = value as String? ?? '';
   for (final tab in BottomSurfaceTab.values) {
     if (tab.name == name) {
       return tab;
     }
   }
-  return BottomSurfaceTab.agent;
+  return BottomSurfaceTab.navigate;
 }
 
-String _bottomTabTitle(BottomSurfaceTab tab) {
+String _routeTitle(BottomSurfaceTab tab) {
   return switch (tab) {
     BottomSurfaceTab.runtime => 'Runtime',
     BottomSurfaceTab.terminal => 'Terminal',
-    BottomSurfaceTab.commands => 'Command Palette',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'Command Palette',
     BottomSurfaceTab.agent => 'Agent',
     BottomSurfaceTab.sourceControl => 'Source Control',
     BottomSurfaceTab.search => 'Search',
@@ -769,17 +969,20 @@ String _bottomTabTitle(BottomSurfaceTab tab) {
     BottomSurfaceTab.extensions => 'Extensions',
     BottomSurfaceTab.debug => 'Debug',
     BottomSurfaceTab.navigate => 'Navigate',
+    BottomSurfaceTab.quickOpen => 'Quick Open',
+    BottomSurfaceTab.outline => 'Outline',
     BottomSurfaceTab.settings => 'Settings',
     BottomSurfaceTab.locations => 'Locations',
     _ => '',
   };
 }
 
-String _bottomTabSurfaceId(BottomSurfaceTab tab) {
+String _routeSurfaceId(BottomSurfaceTab tab) {
   return switch (tab) {
     BottomSurfaceTab.runtime => 'runtime.output',
     BottomSurfaceTab.terminal => 'terminal.session',
-    BottomSurfaceTab.commands => 'commands.palette',
+    BottomSurfaceTab.commands ||
+    BottomSurfaceTab.commandPalette => 'commands.palette',
     BottomSurfaceTab.agent => 'agent.activity',
     BottomSurfaceTab.sourceControl => 'source-control.changes',
     BottomSurfaceTab.search => 'workspace.search',
@@ -789,23 +992,23 @@ String _bottomTabSurfaceId(BottomSurfaceTab tab) {
     BottomSurfaceTab.extensions => 'extensions.marketplace',
     BottomSurfaceTab.debug => 'debug.console',
     BottomSurfaceTab.navigate => 'navigate.quick',
+    BottomSurfaceTab.quickOpen => 'navigate.quick',
+    BottomSurfaceTab.outline => 'workspace.outline',
     BottomSurfaceTab.settings => 'settings.workspace',
     BottomSurfaceTab.locations => 'locations.list',
     _ => '',
   };
 }
 
-List<String> _bottomTabCapabilities(BottomSurfaceTab tab) {
+List<String> _routeCapabilities(BottomSurfaceTab tab) {
   return switch (tab) {
     BottomSurfaceTab.runtime => const <String>[
       'runtime-output',
       'task-activity',
     ],
     BottomSurfaceTab.terminal => const <String>['terminal', 'pty-session'],
-    BottomSurfaceTab.commands => const <String>[
-      'command-search',
-      'command-execution',
-    ],
+    BottomSurfaceTab.commands || BottomSurfaceTab.commandPalette =>
+      const <String>['command-search', 'command-execution'],
     BottomSurfaceTab.agent => const <String>[
       'agent-activity',
       'coding-session-history',
@@ -832,37 +1035,38 @@ List<String> _bottomTabCapabilities(BottomSurfaceTab tab) {
       'marketplace',
     ],
     BottomSurfaceTab.debug => const <String>['debug-console', 'debug-session'],
-    BottomSurfaceTab.navigate => const <String>[
+    BottomSurfaceTab.navigate || BottomSurfaceTab.quickOpen => const <String>[
       'quick-navigate',
       'fuzzy-file-search',
     ],
+    BottomSurfaceTab.outline => const <String>['outline', 'document-symbols'],
     BottomSurfaceTab.settings => const <String>[
       'settings',
       'toolchain-configuration',
-    ],
-    BottomSurfaceTab.locations => const <String>[
-      'recent-locations',
-      'location-history',
     ],
     _ => const <String>[],
   };
 }
 
-String _bottomTabPanelTodo(BottomSurfaceTab tab) {
+ShellLayoutRegion _panelRegion(BottomSurfaceTab tab) {
   return switch (tab) {
-    BottomSurfaceTab.search =>
-      'TODO: add production-scale virtualized search result rendering.',
-    BottomSurfaceTab.problems =>
-      'TODO: add virtualized multi-file diagnostics diff expansion.',
-    BottomSurfaceTab.settings =>
-      'TODO: bind all recovery and credential configuration routes.',
-    BottomSurfaceTab.extensions =>
-      'TODO: render marketplace IO progress and lifecycle policy persistence.',
-    BottomSurfaceTab.debug =>
-      'TODO: expose launch configuration editing and adapter process controls.',
-    BottomSurfaceTab.agent =>
-      'TODO: add long-running coding session timeline virtualization.',
-    _ => '',
+    BottomSurfaceTab.navigate ||
+    BottomSurfaceTab.quickOpen ||
+    BottomSurfaceTab.search ||
+    BottomSurfaceTab.sourceControl ||
+    BottomSurfaceTab.extensions ||
+    BottomSurfaceTab.settings => ShellLayoutRegion.primarySidebar,
+    _ => ShellLayoutRegion.bottomPanel,
+  };
+}
+
+String _panelId(BottomSurfaceTab tab) {
+  if (tab == BottomSurfaceTab.navigate) {
+    return 'primary.explorer';
+  }
+  return switch (_panelRegion(tab)) {
+    ShellLayoutRegion.primarySidebar => 'primary.${tab.name}',
+    _ => 'bottom.${tab.name}',
   };
 }
 
@@ -903,4 +1107,14 @@ Set<String> _jsonStringSet(Object? value) {
 List<String> _sortedStrings(Iterable<String> values) {
   final sorted = values.toList(growable: false)..sort();
   return sorted;
+}
+
+double _normalizedDimension(
+  Object? value, {
+  required double fallback,
+  required double minimum,
+  required double maximum,
+}) {
+  final number = value is num ? value.toDouble() : fallback;
+  return number.clamp(minimum, maximum).toDouble();
 }

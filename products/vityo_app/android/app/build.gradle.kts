@@ -40,7 +40,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = gradleIntOverride("vityoAndroidMinSdk", "VITYO_ANDROID_MIN_SDK")
-            ?: flutter.minSdkVersion
+            ?: maxOf(23, flutter.minSdkVersion)
         targetSdk = gradleIntOverride("vityoAndroidTargetSdk", "VITYO_ANDROID_TARGET_SDK")
             ?: flutter.targetSdkVersion
         versionCode = flutter.versionCode

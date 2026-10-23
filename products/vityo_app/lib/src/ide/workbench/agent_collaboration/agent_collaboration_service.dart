@@ -139,10 +139,10 @@ final class AgentCollaborationService implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
     _requireBinding(sessionId);
-    await _registry.resolvePermission(permissionId, decision);
+    await _registry.resolvePermission(permissionId, optionId);
   }
 
   Future<AgentChangeReviewProjection> proposeChange({
@@ -258,34 +258,6 @@ final class AgentCollaborationService implements AgentWorkbenchCommandPort {
     try {
       final snapshot = session.snapshot;
       await store.apply(snapshot);
-      for (final update in snapshot.updates) {
-        if (update.kind != VityoCapability.workspaceChangeProposal) {
-          continue;
-        }
-        final proposal = VityoWorkspaceChangeProposal.fromNotificationParams(
-          update.payload,
-        );
-        await store.proposeChange(
-          sessionId: session.id,
-          changeSet: WorkspaceChangeSet(
-            id: proposal.id,
-            baseWorkspaceRevision: proposal.baseWorkspaceRevision,
-            resources: proposal.resources.map(
-              (resource) => WorkspaceResourceChange(
-                resourceId: resource.resourceId,
-                baseDocumentRevision: resource.baseDocumentRevision,
-                edits: resource.edits.map(
-                  (edit) => WorkspaceTextChange(
-                    start: edit.start,
-                    end: edit.end,
-                    replacement: edit.replacement,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }
     } on CollaborationFailure catch (failure) {
       if (failure.code != 'stale_snapshot') {
         rethrow;
@@ -408,10 +380,10 @@ final class _DeferredCommandPort implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) => _port.resolvePermission(
     sessionId: sessionId,
     permissionId: permissionId,
-    decision: decision,
+    optionId: optionId,
   );
 }

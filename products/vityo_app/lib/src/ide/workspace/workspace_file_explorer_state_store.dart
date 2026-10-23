@@ -63,6 +63,10 @@ class WorkspaceFileExplorerState {
   WorkspaceFileExplorerState revealPath(String path) {
     final normalizedPath = _normalizePath(path);
     return copyWith(
+      expandedPaths: <String>{
+        ...expandedPaths,
+        ..._parentDirectoryPaths(normalizedPath),
+      }.toList(growable: false),
       selectedPath: normalizedPath,
       revealedPath: normalizedPath,
       updatedAt: DateTime.now().toUtc(),
@@ -209,4 +213,26 @@ List<String> _sortedPaths(Iterable<String> paths) {
 
 String _normalizePath(String path) {
   return path.trim().replaceAll('\\', '/');
+}
+
+List<String> _parentDirectoryPaths(String path) {
+  final normalizedPath = _normalizePath(path);
+  final segments = normalizedPath
+      .split('/')
+      .where((segment) => segment.isNotEmpty)
+      .toList(growable: false);
+  if (segments.length < 2) {
+    return const <String>[];
+  }
+  final parents = <String>[];
+  final absolutePrefix = normalizedPath.startsWith('//')
+      ? '//'
+      : normalizedPath.startsWith('/')
+      ? '/'
+      : '';
+  for (var index = 1; index < segments.length; index += 1) {
+    final parent = segments.take(index).join('/');
+    parents.add('$absolutePrefix$parent');
+  }
+  return parents;
 }

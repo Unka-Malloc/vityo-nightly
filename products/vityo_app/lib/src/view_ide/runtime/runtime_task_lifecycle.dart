@@ -338,10 +338,31 @@ class RuntimeTaskLifecycleController {
     );
   }
 
+  RuntimeTaskSnapshot recordProgress(
+    String taskId, {
+    required String message,
+    Map<String, Object?> metadata = const <String, Object?>{},
+  }) {
+    final current = _snapshots[taskId];
+    if (current == null) {
+      throw StateError('Runtime task $taskId is not registered.');
+    }
+    if (!current.active) {
+      throw StateError('Runtime task $taskId is no longer active.');
+    }
+    return _transition(
+      taskId,
+      current.status,
+      message: message,
+      metadata: metadata,
+    );
+  }
+
   RuntimeTaskSnapshot complete(
     String taskId, {
     int exitCode = 0,
     String? message,
+    Map<String, Object?> metadata = const <String, Object?>{},
   }) {
     return _transition(
       taskId,
@@ -353,6 +374,7 @@ class RuntimeTaskLifecycleController {
               : 'Task $taskId failed with exit code $exitCode.'),
       finishedAt: _clock(),
       exitCode: exitCode,
+      metadata: metadata,
     );
   }
 

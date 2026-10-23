@@ -35,6 +35,12 @@ Language is split into five submodules:
 `backend_toolchain/` owns the toolchain, execution, hosted-control-plane,
 dependency, deployment, and capability adapter layer.
 
+`environment/system_compatibility/` owns detected platform facts and the nine
+platform-manager adapters. Its default live-probe registry performs safe,
+disposable checks without external network access or user-file writes. Probe
+failures become typed Settings routes through `PlatformManagerSettingsSurface`;
+the render layer only displays and dispatches those routes.
+
 `editor/` owns document state, selection state, render-plan metadata, and the
 editor controller. Widget painting and input presentation remain outside this
 layer. Editor internals are split into:

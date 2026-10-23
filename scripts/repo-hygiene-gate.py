@@ -62,6 +62,10 @@ FORBIDDEN_FILE_SUFFIXES = (
 )
 
 ALLOWED_BINARY_GLOBS = (
+    # Retained authored design references and review captures.
+    ".impeccable/mocks/*.png",
+    ".impeccable/review/*.png",
+    ".impeccable/worlds/*.webp",
     "docs/assets/*.gif",
     "docs/assets/*.jpeg",
     "docs/assets/*.jpg",
@@ -83,6 +87,11 @@ ALLOWED_BINARY_GLOBS = (
     "prototype/*.png",
     "reference-images/*.JPG",
     "reference-images/*.png",
+    "docs/review/interactive-editor-input/*.png",
+    "docs/review/interactive-editor-input/*.jpg",
+    # Bundled app typography. Keep this limited to the maintained font roots.
+    "products/vityo_app/assets/fonts/*.ttf",
+    "products/vityo_app/assets/fonts/plex/*.ttf",
 )
 
 REQUIRED_GITIGNORE_PATTERNS = (
@@ -130,12 +139,12 @@ REQUIRED_DOC_REFERENCES = {
     ),
     Path("docs/assets/workflow/REPO-HYGIENE.md"): (
         "scripts/repo-hygiene-gate.py",
-        "scripts/delivery-gate.sh",
+        "python3 scripts/vityo.py deliver",
     ),
     Path("docs/teams/DOCS-DELIVERY-RUNBOOK.md"): (
         "scripts/repo-hygiene-gate.py",
         "scripts/docs-gate.sh",
-        "scripts/delivery-gate.sh",
+        "python3 scripts/vityo.py deliver",
     ),
 }
 
@@ -152,9 +161,9 @@ REQUIRED_PROJECT_BRAND_METADATA = {
         "description: Pure, versioned protocol types shared by Vityo",
     ),
     Path("packaging/vityo/desktop-delivery.json"): '"product": "vityo"',
-    Path("products/vityo_coding_agent/pubspec.yaml"): (
-        "name: vityo_coding_agent",
-        "description: Standalone, model-neutral Vityo Coding Agent runtime.",
+    Path("products/vityo_coding_agent/Cargo.toml"): (
+        'name = "vityo-coding-agent"',
+        'description = "Standalone, model-neutral Vityo Coding Agent runtime"',
     ),
     Path("products/vityo_app/android/app/src/main/AndroidManifest.xml"): 'android:label="Vityo"',
     Path("products/vityo_app/ios/Runner/Info.plist"): (
@@ -267,6 +276,7 @@ VIEW_IDE_LANGUAGE_BARREL = (
     "export 'semantic_snapshot_panel.dart';",
     "export 'diagnostics/diagnostics.dart';",
     "export 'features/features.dart';",
+    "export 'lsp/lsp.dart';",
     "export 'semantic/styio_symbol_index.dart';",
     "export 'service/language_analysis_scheduler.dart';",
     "export 'service/legacy_project_document_rule_provider.dart';",
@@ -502,10 +512,10 @@ def check_shell_runtime_boundary() -> list[str]:
 
     if runtime_model.exists():
         text = runtime_model.read_text(encoding="utf-8")
-        for needle in ("BottomSurfaceTab", "selectBottomTab("):
+        for needle in ("BottomSurfaceTab", "selectWorkbenchRoute("):
             if needle in text:
                 errors.append(
-                    f"{runtime_model.relative_to(REPO_ROOT).as_posix()}: shell runtime must not own render tab state marker {needle}"
+                    f"{runtime_model.relative_to(REPO_ROOT).as_posix()}: shell runtime must not own presentation route state marker {needle}"
                 )
     if render_model.exists():
         text = render_model.read_text(encoding="utf-8")

@@ -1,7 +1,8 @@
-enum VityoThemePreset { parchment, graphite }
+enum VityoThemePreset { obsidian, parchment, graphite }
 
 class VityoThemeOverride {
   const VityoThemeOverride({
+    this.preset,
     this.canvas,
     this.panel,
     this.ink,
@@ -9,13 +10,28 @@ class VityoThemeOverride {
     this.muted,
   });
 
+  final String? preset;
   final int? canvas;
   final int? panel;
   final int? ink;
   final int? accent;
   final int? muted;
 
+  VityoThemePreset? get presetValue {
+    final name = preset;
+    if (name == null) {
+      return null;
+    }
+    for (final value in VityoThemePreset.values) {
+      if (value.name == name) {
+        return value;
+      }
+    }
+    return null;
+  }
+
   VityoThemeOverride copyWith({
+    String? preset,
     int? canvas,
     int? panel,
     int? ink,
@@ -23,6 +39,7 @@ class VityoThemeOverride {
     int? muted,
   }) {
     return VityoThemeOverride(
+      preset: preset ?? this.preset,
       canvas: canvas ?? this.canvas,
       panel: panel ?? this.panel,
       ink: ink ?? this.ink,
@@ -33,6 +50,7 @@ class VityoThemeOverride {
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
+      if (preset != null) 'preset': preset,
       if (canvas != null) 'canvas': canvas,
       if (panel != null) 'panel': panel,
       if (ink != null) 'ink': ink,
@@ -43,6 +61,7 @@ class VityoThemeOverride {
 
   factory VityoThemeOverride.fromJson(Map<String, Object?> json) {
     return VityoThemeOverride(
+      preset: json['preset'] is String ? json['preset'] as String : null,
       canvas: _colorFromJson(json['canvas']),
       panel: _colorFromJson(json['panel']),
       ink: _colorFromJson(json['ink']),

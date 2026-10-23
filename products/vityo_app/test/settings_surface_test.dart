@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/view_ide/environment/configuration/vityo_theme_override.dart';
+import 'package:vityo_app/src/view_ide/environment/configuration/platform_secure_credential_storage.dart';
+import 'package:vityo_app/src/view_ide/environment/system_compatibility/system_compatibility.dart';
 import 'package:vityo_app/src/view_ide/platform/platform_target.dart';
 import 'package:vityo_app/src/view_ide/commands/commands.dart';
 import 'package:vityo_app/src/view_ide/interaction/interaction.dart';
+import 'package:vityo_app/src/view_ide/module_host/module_host.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_catalog.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_configuration_store.dart';
 import 'package:vityo_app/src/view_ide/toolchain/toolchain_manager.dart';
@@ -12,6 +15,118 @@ import 'package:vityo_app/src/view_render/platform/platform.dart';
 import 'package:vityo_app/src/view_render/settings/settings_surface.dart';
 
 void main() {
+  testWidgets(
+    'settings surface runs platform checks and opens recovery section',
+    (tester) async {
+      const health = PlatformManagerHealthSnapshot(
+        targetId: 'settings-platform-test',
+        ready: false,
+        components: <PlatformManagerComponentHealth>[
+          PlatformManagerComponentHealth(
+            managerKey: 'fileSystem',
+            ready: true,
+            message: 'File system live read succeeded.',
+            operationId: 'platform.fileSystem.live-operation',
+          ),
+          PlatformManagerComponentHealth(
+            managerKey: 'shell',
+            ready: false,
+            message: 'Shell live command is blocked.',
+            operationId: 'platform.shell.live-operation',
+            description: 'Run a no-output command through the selected shell.',
+            recoveryActions: <PlatformManagerRecoveryAction>[
+              PlatformManagerRecoveryAction(
+                id: 'platform.shell.open-settings',
+                label: 'Review Shell settings',
+                managerKey: 'shell',
+                message: 'Select a shell profile.',
+                metadata: <String, Object?>{'settingsSectionId': 'shell'},
+              ),
+            ],
+          ),
+        ],
+        probeSource: 'platform-live-operation-registry',
+      );
+      final settings = PlatformManagerSettingsSurface.fromHealthSnapshot(
+        health,
+      );
+      var refreshCount = 0;
+      String? selectedSection;
+      PlatformManagerRecoveryActionRoute? handledRoute;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SettingsSurface(
+              viewportProfile: resolveViewportProfile(
+                platformTarget: PlatformTarget.macos,
+                width: 1200,
+                height: 900,
+              ),
+              toolchainStatus: const ToolchainStatusSurface(
+                source: 'test',
+                severity: ToolchainStatusSeverity.ready,
+                title: 'Toolchain ready',
+                message: 'Ready.',
+                recoveryActions: <ToolchainRecoveryAction>[],
+              ),
+              platformManagerSettings: settings,
+              credentialStorageSettings: const CredentialStorageSettingsSurface(
+                platformLabel: 'macOS',
+                backendLabel: 'macOS Keychain',
+                productionReady: true,
+                persistent: true,
+                safeForLongLivedSecrets: true,
+                message: 'Keychain verification passed.',
+              ),
+              onRefreshPlatformManagers: () async {
+                refreshCount += 1;
+              },
+              onSelectPlatformSettingsSection: (sectionId) {
+                selectedSection = sectionId;
+              },
+              onPlatformRecoveryRoute: (route) {
+                handledRoute = route;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('settings-platform-managers-card')),
+        findsOneWidget,
+      );
+      expect(find.text('1/2 live checks ready'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings-credential-storage-card')),
+        findsOneWidget,
+      );
+      expect(find.text('Protected'), findsOneWidget);
+      expect(find.text('macOS Keychain · macOS'), findsOneWidget);
+
+      final shellSection = find.byKey(
+        const ValueKey('settings-platform-section-shell'),
+      );
+      await tester.tap(shellSection);
+      await tester.pump();
+      expect(selectedSection, 'shell');
+
+      final recovery = find.byKey(
+        const ValueKey(
+          'settings-platform-recovery-platform.shell.open-settings',
+        ),
+      );
+      await tester.tap(recovery);
+      await tester.pump();
+      expect(handledRoute?.settingsSectionId, 'shell');
+
+      await tester.tap(find.byKey(const ValueKey('settings-platform-refresh')));
+      await tester.pump();
+      expect(refreshCount, 1);
+    },
+  );
+
   testWidgets('settings surface saves persisted theme accent override', (
     tester,
   ) async {
@@ -136,6 +251,7 @@ void main() {
     expect(savedOverride?.ink, isNull);
     expect(savedOverride?.muted, isNull);
     expect(savedOverride?.toJson(), <String, Object?>{
+      'preset': 'graphite',
       'canvas': 0xFF101820,
       'panel': 0xFFFAFAFA,
       'accent': 0xFF00A878,
@@ -434,7 +550,7 @@ void main() {
     expect(handledActions, <String>['select-existing-toolchain']);
 
     final bootstrapSettingsButton = find.byKey(
-        const ValueKey(
+      const ValueKey(
         'settings-toolchain-bootstrap-settings-select-existing-toolchain',
       ),
     );
@@ -601,6 +717,141 @@ void main() {
 
     expect(selectedClangCppVersions, <String>['clang-17:23', 'clang-18:20']);
   });
+
+  testWidgets('toolchain installer requires an explicit review confirmation', (
+    tester,
+  ) async {
+    var executionCount = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SettingsSurface(
+            viewportProfile: resolveViewportProfile(
+              platformTarget: PlatformTarget.macos,
+              width: 1200,
+              height: 800,
+            ),
+            toolchainStatus: const ToolchainStatusSurface(
+              source: 'manager-report',
+              severity: ToolchainStatusSeverity.unavailable,
+              title: 'Toolchain unavailable',
+              message: 'Review an installer plan.',
+              recoveryActions: <ToolchainRecoveryAction>[],
+            ),
+            toolchainInstallPlan: const ToolchainInstallPlanSurface(
+              status: 'planned',
+              mode: 'externalCommand',
+              kind: 'compiler',
+              actionable: true,
+              externalCommand: '/usr/bin/true',
+              requiresConfirmation: true,
+            ),
+            onExecuteToolchainInstallPlan: () async {
+              executionCount += 1;
+            },
+          ),
+        ),
+      ),
+    );
+
+    final review = find.byKey(
+      const ValueKey('settings-toolchain-execute-install-plan'),
+    );
+    await tester.ensureVisible(review);
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('settings-toolchain-install-confirmation')),
+      findsOneWidget,
+    );
+    expect(executionCount, 0);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('settings-toolchain-install-confirmation-cancel'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(executionCount, 0);
+
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('settings-toolchain-install-confirmation-confirm'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(executionCount, 1);
+  });
+
+  testWidgets(
+    'extension marketplace settings save lifecycle policy and refresh index',
+    (tester) async {
+      ExtensionMarketplacePreferences? saved;
+      var refreshCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SettingsSurface(
+              viewportProfile: resolveViewportProfile(
+                platformTarget: PlatformTarget.macos,
+                width: 1200,
+                height: 900,
+              ),
+              toolchainStatus: const ToolchainStatusSurface(
+                source: 'test',
+                severity: ToolchainStatusSeverity.ready,
+                title: 'Toolchain ready',
+                message: 'Ready.',
+                recoveryActions: <ToolchainRecoveryAction>[],
+              ),
+              extensionMarketplacePreferences:
+                  const ExtensionMarketplacePreferences(
+                    workspaceId: 'settings-marketplace',
+                  ),
+              extensionMarketplaceMessage: 'Marketplace settings loaded.',
+              onSaveExtensionMarketplacePreferences: (preferences) async {
+                saved = preferences;
+              },
+              onRefreshExtensionMarketplace: () async {
+                refreshCount += 1;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey('settings-extension-marketplace')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('settings-extension-marketplace-index-url')),
+        'https://extensions.example/index.json',
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey('settings-extension-marketplace-activate-trusted'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-extension-marketplace-save')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('settings-extension-marketplace-refresh')),
+      );
+      await tester.pump();
+
+      expect(saved?.indexUrl, 'https://extensions.example/index.json');
+      expect(saved?.enableAfterInstall, isTrue);
+      expect(saved?.trustVerifiedListings, isTrue);
+      expect(saved?.activateTrustedAfterInstall, isTrue);
+      expect(refreshCount, 1);
+    },
+  );
 }
 
 Color _swatchColor(WidgetTester tester, String keyName) {

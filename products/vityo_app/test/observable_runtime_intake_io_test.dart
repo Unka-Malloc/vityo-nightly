@@ -16,7 +16,7 @@ void main() {
   test('IO intake of the canonical fixture is value-equal on repeats', () async {
     final intake = const IoObservableRuntimeIntake();
     final request = RuntimeIntakeRequest(
-      artifactPath: observableRuntimeFixturePath('canonical.jsonl'),
+      artifactPath: observableRuntimeFixturePath('canonical.ndjson'),
       headSnapshotId: _snapshot,
       headSiteIds: const <String>[_taskSite, _awaitSite],
     );
@@ -33,7 +33,7 @@ void main() {
     final result = await intake.ingest(
       RuntimeIntakeRequest(
         artifactPath: observableRuntimeVityoFixturePath(
-          'missing-capability-record.jsonl',
+          'missing-capability-record.ndjson',
         ),
         headSnapshotId: _snapshot,
         headSiteIds: const <String>[_taskSite, _awaitSite],
@@ -52,7 +52,7 @@ void main() {
       }
     });
     final file = File('${temp.path}${Platform.pathSeparator}runtime-events.jsonl');
-    await file.writeAsString(readObservableRuntimeFixture('canonical.jsonl'));
+    await file.writeAsString(readObservableRuntimeFixture('canonical.ndjson'));
     final result = await const IoObservableRuntimeIntake().ingest(
       RuntimeIntakeRequest(
         artifactPath: file.path,

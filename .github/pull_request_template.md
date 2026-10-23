@@ -1,43 +1,19 @@
-## Summary
+## Change
 
-- 
+- User behavior or requirement:
+- Owner surfaces and contracts changed:
+- Producers, consumers, and owner documents updated:
 
-## Owner Surfaces
+## Tests And CI
 
-- [ ] Architecture / IDE boundary
-- [ ] Runtime / agent
-- [ ] Module / platform
-- [ ] Adapter / contracts
-- [ ] Shell / editor
-- [ ] Theme / UX
-- [ ] Governance / security / release
-- [ ] Docs / delivery
+- Deterministic test(s) added or updated:
+- Test root discovered by the canonical runner, or standalone suite entry added:
+- Focused commands and results:
+- Applicable full regression and result:
+- Configured but unobserved or intentionally out-of-scope lanes:
 
-## Compatibility And Product Boundaries
+## Compatibility And Risk
 
-- [ ] Public schema or contract change is documented in `docs/governance/API-COMPATIBILITY.md`
-- [ ] Deprecation has replacement path, removal target, and release-note impact
-- [ ] Product-line boundaries pass `python3 scripts/check_product_line_boundaries.py`
-- [ ] Removed package identities or forwarding roots were not recreated
-
-## Security And Performance
-
-- [ ] Sandbox, secret, redaction, module manifest security, or agent permission changes are documented
-- [ ] Security-sensitive changes pass `python3 scripts/check_security_baseline.py`
-- [ ] Performance-sensitive changes pass `python3 scripts/check_performance_budgets.py`
-- [ ] Benchmark regression evidence is attached when `scripts/performance-gate.py` applies
-
-## Validation
-
-- [ ] `python3 scripts/docs-index.py --write`
-- [ ] `python3 -m pytest tests/test_docs_tooling_coverage.py`
-- [ ] `python3 scripts/check_architecture_boundaries.py`
-- [ ] `python3 scripts/check_product_line_boundaries.py`
-- [ ] `python3 scripts/check_security_baseline.py`
-- [ ] `python3 scripts/check_performance_budgets.py`
-- [ ] `python3 scripts/release-readiness-gate.py --skip-build`
-- [ ] `git diff --check`
-
-## Residual Risk
-
-- 
+- Published contract, user-data, dependency, security, or performance impact (if applicable):
+- Remaining decisions or acceptance that require a separately authorized task:
+- Exact candidate revision and CI evidence, when the push is authorized:

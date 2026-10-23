@@ -2,7 +2,7 @@
 
 **Purpose:** Define ownership for runtime/debug surfaces and the IDE-side Agent Workbench without assigning Agent-runtime execution to the IDE.
 
-**Last updated:** 2026-09-05
+**Last updated:** 2026-10-03
 
 ## Mission
 
@@ -12,13 +12,17 @@ orchestration; those belong to the compatible Agent runtime.
 
 ## Owned Surface
 
+Pending Agent terminal output and exit waits settle when the session is cancelled or
+closed, the terminal is released, the operation port closes, or the daemon transport
+disconnects. These lifecycle transitions do not impose a wall-clock execution limit.
+
 Primary paths:
 
 1. `products/vityo_app/lib/src/view_ide/runtime/`
 2. `products/vityo_app/lib/src/ide/agent_client/`
-   - `agent_client_registry.dart` — supervised protocol connections, correlated sessions, permissions, and reconnect
-   - `agent_process_supervisor.dart` — bounded stdio process lifecycle and orphan-free shutdown
-   - `mcp/` and `tools/` — root-scoped context/tool export, grants, redaction, and audit receipts
+   - `agent_client_registry.dart` — thin daemon gateway, immutable session projections, permission presentation, and reconnect coalescing
+   - `mcp/vityod_mcp_gateway.dart` — typed access to daemon-owned root-scoped tools and grants
+   - `native/vityod/crates/vityod-agent-host/` — bounded ACP process lifecycle, correlation, capability enforcement, and orphan-free shutdown
 3. `products/vityo_app/lib/src/ide/workbench/agent_collaboration/`
 4. `products/vityo_app/lib/src/presentation/agent_workbench/`
 5. `products/vityo_app/lib/src/view_render/runtime/`
@@ -26,7 +30,7 @@ Primary paths:
    - `runtime_event_log.dart` — append-only runtime event log with ring buffer projection
 Review dependency, not an owned path:
 
-1. `products/vityo_coding_agent/lib/src/`
+1. `products/vityo_coding_agent/src/` — independent Rust runtime; see the [Agent Runtime Runbook](./AGENT-RUNTIME-RUNBOOK.md).
 2. `packages/vityo_agent_protocol/`
 
 Key SSOTs:
@@ -46,14 +50,18 @@ Key SSOTs:
    runtime surface. Do not add model/provider credentials or Agent-runtime prompt configuration to
    IDE-owned state.
 5. Do not add provider routes, provider SDKs, model credentials, tool loops, policy stores,
-   durable-session stores, or multi-Agent orchestration to the IDE.
+   durable-session stores, or multi-Agent orchestration to the IDE. The Coding Agent is the
+   independent Rust ACP process; the shared Dart protocol package remains its client binding.
 6. runtime replay、debug lane 和 hosted execution 摘要必须消费 `view_ide/backend_toolchain` adapter payload，不得回读已移除入口或上游 human stderr。
-7. IDE-side Agent connections belong to `ide/agent_client`, collaboration projections to
+7. IDE-side Agent presentation belongs to `ide/agent_client`, collaboration projections to
    `ide/workbench/agent_collaboration`, and Flutter presentation to
-   `presentation/agent_workbench`; durable session and execution state belong to the companion
-   Agent runtime.
-8. UI surfaces may display only redacted protocol context and receipt summaries. Accepted source
-   changes must pass through IDE-owned workspace transactions.
+   `presentation/agent_workbench`; `vityod` supervises the ACP process and owns daemon workspace
+   and process services, while the independent Rust Agent owns provider, policy, loop, and session
+   state.
+8. UI surfaces may display only redacted protocol context and receipt summaries. Preserve supplied
+   ACP permission `optionId`/`name`/`kind` and return the selected ID exactly. Review source-change
+   proposals as a correlated diff and commit through the existing workspace transaction owner;
+   details live in the [security and supply-chain policy](../governance/SECURITY-AND-SUPPLY-CHAIN.md).
 9. Protocol permission/change semantics or IDE MCP/tool-security changes must update
    [../governance/SECURITY-AND-SUPPLY-CHAIN.md](../governance/SECURITY-AND-SUPPLY-CHAIN.md).
 

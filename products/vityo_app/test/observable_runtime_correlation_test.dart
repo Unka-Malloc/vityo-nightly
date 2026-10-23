@@ -24,8 +24,8 @@ void main() {
   }
 
   test('canonical fold is complete with exact site facts and runtime-only queue', () {
-    final first = overlayOf('canonical.jsonl');
-    final second = overlayOf('canonical.jsonl');
+    final first = overlayOf('canonical.ndjson');
+    final second = overlayOf('canonical.ndjson');
     expect(first, second);
     expect(first.presentation.isComplete, isTrue);
     expect(first.activitySource, RuntimeActivitySource.aggregateShards);
@@ -48,20 +48,20 @@ void main() {
   });
 
   test('unknown-site and stale-snapshot never land on a head site', () {
-    final unknown = overlayOf('unknown-site.jsonl', vityo: true);
+    final unknown = overlayOf('unknown-site.ndjson', vityo: true);
     expect(unknown.uncorrelated.unknownSite, 1);
     expect(unknown.uncorrelated.unknownSiteIds, contains(_unknownSite));
     expect(unknown.sites[_unknownSite], isNull);
     expect(unknown.sites[_taskSite]!.instancesCreated, 1);
 
-    final stale = overlayOf('stale-snapshot.jsonl', vityo: true);
+    final stale = overlayOf('stale-snapshot.ndjson', vityo: true);
     expect(stale.uncorrelated.staleSnapshot, 1);
     expect(stale.uncorrelated.staleSnapshotIds, contains(_staleSnapshot));
     expect(stale.sites[_taskSite]!.instancesCreated, 1);
   });
 
   test('runtime-only waits count per reason', () {
-    final overlay = overlayOf('runtime-only-waits.jsonl', vityo: true);
+    final overlay = overlayOf('runtime-only-waits.ndjson', vityo: true);
     expect(overlay.uncorrelated.runtimeOnly, 3);
     expect(overlay.uncorrelated.runtimeOnlyWaits[RuntimeWaitReason.runnable], 1);
     expect(overlay.uncorrelated.runtimeOnlyWaits[RuntimeWaitReason.task], 1);
@@ -72,15 +72,15 @@ void main() {
   });
 
   test('unmatched wait end is counted', () {
-    final overlay = overlayOf('wait-end-without-begin.jsonl', vityo: true);
+    final overlay = overlayOf('wait-end-without-begin.ndjson', vityo: true);
     expect(overlay.counters.unmatchedWaitEnds, 1);
     expect(overlay.presentation.kind, RuntimePresentationKind.partial);
     expect(overlay.presentation.classes, contains('unmatched_waits'));
   });
 
   test('aggregate and detailed fixtures yield equal per-site activity', () {
-    final aggregate = overlayOf('aggregate-mode.jsonl', vityo: true);
-    final detailed = overlayOf('detailed-equivalent.jsonl', vityo: true);
+    final aggregate = overlayOf('aggregate-mode.ndjson', vityo: true);
+    final detailed = overlayOf('detailed-equivalent.ndjson', vityo: true);
     expect(
       aggregate.sites[_taskSite]!.activity(aggregate.activitySource),
       detailed.sites[_taskSite]!.activity(detailed.activitySource),
@@ -96,7 +96,7 @@ void main() {
   });
 
   test('sampled mode shows the producer ratio', () {
-    final overlay = overlayOf('sampled-mode.jsonl', vityo: true);
+    final overlay = overlayOf('sampled-mode.ndjson', vityo: true);
     expect(overlay.mode, RuntimeObservationMode.sampled);
     expect(overlay.capability!.sampling.numerator, 1);
     expect(overlay.capability!.sampling.denominator, 16);
@@ -104,7 +104,7 @@ void main() {
   });
 
   test('failures and queue pressure attribute through lifecycle and causes', () {
-    final overlay = overlayOf('failures-and-queue-pressure.jsonl', vityo: true);
+    final overlay = overlayOf('failures-and-queue-pressure.ndjson', vityo: true);
     final task = overlay.sites[_taskSite]!;
     expect(task.instancesCreated, 1);
     expect(task.instancesFailed, 1);
@@ -116,22 +116,22 @@ void main() {
   });
 
   test('summary-missing conservation and mismatch yield partial classes', () {
-    final missing = overlayOf('summary-missing.jsonl', vityo: true);
+    final missing = overlayOf('summary-missing.ndjson', vityo: true);
     expect(missing.summaryMissing, isTrue);
     expect(missing.presentation.classes, contains('summary_missing'));
 
-    final conservation = overlayOf('conservation-violation.jsonl', vityo: true);
+    final conservation = overlayOf('conservation-violation.ndjson', vityo: true);
     expect(conservation.counters.conservationViolations, greaterThan(0));
     expect(conservation.presentation.classes, contains('accounting_mismatch'));
 
-    final mismatch = overlayOf('emitted-mismatch.jsonl', vityo: true);
+    final mismatch = overlayOf('emitted-mismatch.ndjson', vityo: true);
     expect(mismatch.counters.emittedCountMismatches, greaterThan(0));
     expect(mismatch.presentation.classes, contains('accounting_mismatch'));
   });
 
   test('disabled-mode stream joins nothing and names no snapshot', () {
     final stream = decodeRuntimeStream(
-      readObservableRuntimeVityoFixture('disabled-mode.jsonl').split('\n'),
+      readObservableRuntimeVityoFixture('disabled-mode.ndjson').split('\n'),
     );
     expect(stream.isOk, isTrue);
     final overlay = foldRuntimeOverlay(

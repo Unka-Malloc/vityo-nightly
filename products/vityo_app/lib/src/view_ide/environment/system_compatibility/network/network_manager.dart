@@ -273,9 +273,11 @@ abstract class NetworkManager {
     required Map<String, Object?> body,
     Duration timeout = const Duration(seconds: 10),
   });
+
+  /// A null timeout lets a payload transfer finish without a fixed deadline.
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   });
   NetworkOperationFailure? failureForText(
     NetworkTextResponse response, {
@@ -343,7 +345,7 @@ class UnsupportedNetworkManager implements NetworkManager {
   @override
   Future<NetworkBinaryResponse> getBytes(
     Uri uri, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration? timeout = const Duration(seconds: 10),
   }) async => NetworkBinaryResponse(
     status: NetworkRequestStatus.blocked,
     uri: uri,

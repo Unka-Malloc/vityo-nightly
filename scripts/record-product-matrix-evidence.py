@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import sys
 import hashlib
 import json
 import re
@@ -13,15 +15,6 @@ EXPECTED_GATE = "vityo-desktop-product-gate"
 EXPECTED_CAPABILITY = "trusted-desktop-ide-loop"
 EXPECTED_SCENARIO = "trusted-desktop-styio-loop"
 EXPECTED_PLATFORMS = {"linux", "macos", "windows"}
-EXPECTED_CONTRACTS = (
-    ("missing-styio", "blocked", "styio_missing"),
-    (
-        "incompatible-machine-contract",
-        "blocked",
-        "styio_machine_contract_incompatible",
-    ),
-    ("compiler-execution-failure", "failed", "compiler_execution_failed"),
-)
 EXPECTED_PTY_CAPABILITY = "desktop-native-pty"
 EXPECTED_PTY_SCENARIOS = {
     "tty-identity",
@@ -34,8 +27,7 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 MAX_JSON_INPUT_BYTES = 1_048_576
 MAX_GATE_REPORT_BYTES = 65_536
-EXPECTED_SOURCE_DIGEST = hashlib.sha256(b'>_("vityo-observed-r1")\n').hexdigest()
-EXPECTED_OBSERVATION_DIGEST = hashlib.sha256(b"vityo-observed-r1").hexdigest()
+MAX_CLEAN_CHECKOUT_ENTRIES = 20
 
 
 def git_head(repository: Path) -> str:
@@ -54,8 +46,16 @@ def require_clean_checkout(repository: Path, *, name: str) -> None:
         capture_output=True,
         text=True,
     ).stdout
-    if status.strip():
-        raise ValueError(f"{name} checkout contains uncommitted changes")
+    entries = [line for line in status.splitlines() if line.strip()]
+    if not entries:
+        return
+    listed = entries[:MAX_CLEAN_CHECKOUT_ENTRIES]
+    detail = "\n".join(f"  {entry}" for entry in listed)
+    if len(entries) > len(listed):
+        detail = f"{detail}\n  ... and {len(entries) - len(listed)} more"
+    raise ValueError(
+        f"{name} checkout contains uncommitted changes:\n{detail}"
+    )
 
 
 def load_json_object(path: Path) -> dict[str, object]:
@@ -114,7 +114,7 @@ def validate_gate_report(report: dict[str, object], *, platform: str) -> None:
     if report.get("capability") != EXPECTED_CAPABILITY:
         raise ValueError("gate report has an unexpected capability scope")
     if (
-        report.get("evidence_kind") != "real-pinned-matrix"
+        report.get("evidence_kind") != "real-production-services"
         or report.get("ok") is not True
         or report.get("required") is not True
         or report.get("skipped") is not False
@@ -151,131 +151,17 @@ def validate_gate_report(report: dict[str, object], *, platform: str) -> None:
     scenarios = report_section.get("scenarios")
     contract_count = report_section.get("contract_case_count")
     contracts = report_section.get("contract_cases")
-    if (
-        type(scenario_count) is not int
-        or scenario_count != 1
-        or not isinstance(scenarios, list)
-        or len(scenarios) != 1
-        or type(contract_count) is not int
-        or contract_count != 3
-        or not isinstance(contracts, list)
-        or len(contracts) != 3
-    ):
-        raise ValueError("gate report must contain one scenario and three contracts")
-    _validate_scenario_summary(scenarios[0])
-    for contract, expected in zip(contracts, EXPECTED_CONTRACTS, strict=True):
-        if (
-            not isinstance(contract, dict)
-            or set(contract) != {
-                "schema_version",
-                "scenario",
-                "evidence_kind",
-                "case",
-                "accepted",
-                "outcome",
-                "error_category",
-                "success_observation",
-            }
-            or type(contract.get("schema_version")) is not int
-            or contract.get("schema_version") != 1
-            or contract.get("scenario") != EXPECTED_SCENARIO
-            or contract.get("evidence_kind") != "deterministic-contract"
-            or contract.get("case") != expected[0]
-            or contract.get("accepted") is not True
-            or contract.get("outcome") != expected[1]
-            or contract.get("error_category") != expected[2]
-            or contract.get("success_observation") is not False
-        ):
-            raise ValueError("gate report contains an invalid contract case")
-
-
-def _validate_scenario_summary(value: object) -> None:
-    if not isinstance(value, dict):
-        raise ValueError("gate report scenario must be an object")
-    if set(value) != {
-        "schema_version",
-        "scenario",
-        "evidence_kind",
-        "ok",
-        "workspace_revision",
-        "source_sha256",
-        "preflight",
-        "steps",
-    }:
-        raise ValueError("gate report scenario schema is not closed")
-    revision = value.get("workspace_revision")
-    digest = value.get("source_sha256")
-    steps = value.get("steps")
-    if (
-        value.get("scenario") != EXPECTED_SCENARIO
-        or type(value.get("schema_version")) is not int
-        or value.get("schema_version") != 1
-        or value.get("evidence_kind") != "real-pinned-matrix"
-        or value.get("ok") is not True
-        or type(revision) is not int
-        or revision != 1
-        or digest != EXPECTED_SOURCE_DIGEST
-        or not isinstance(steps, list)
-        or len(steps) != 5
-    ):
-        raise ValueError("gate report scenario correlation is incomplete")
-    preflight = value.get("preflight")
-    runtime_events_contract = (
-        preflight.get("runtime_events_contract") if isinstance(preflight, dict) else None
-    )
-    expected_preflight = {
-        "metadata_contract": "metadata-v1",
-        "sync_status": "succeeded",
-        "compiler_tool": "styio",
-        "compile_plan_contract": 1,
-        "runtime_events_contract": runtime_events_contract,
-        "runtime_event_stream": True,
-        "package": "vityo/product-gate",
-        "bin_target": "product-gate",
-        "test_target": "product-gate-test",
-    }
-    if (
-        preflight != expected_preflight
-        or type(runtime_events_contract) is not int
-        or runtime_events_contract not in {1, 2}
-    ):
-        raise ValueError("gate report scenario preflight is incomplete")
-    names = ("edit", "check", "test", "run", "observe")
-    sessions: list[str] = []
-    for index, step in enumerate(steps):
-        expected_keys = {"name", "status", "workspace_revision", "source_sha256"}
-        if 1 <= index <= 3:
-            expected_keys.update({"owner_contract", "session_id_sha256"})
-        if index == 4:
-            expected_keys.update({"session_id_sha256", "eventKind", "observation_sha256"})
-        if (
-            not isinstance(step, dict)
-            or set(step) != expected_keys
-            or step.get("name") != names[index]
-            or step.get("status") != "succeeded"
-            or type(step.get("workspace_revision")) is not int
-            or step.get("workspace_revision") != revision
-            or step.get("source_sha256") != digest
-        ):
-            raise ValueError("gate report scenario step is stale or incomplete")
-        if 1 <= index <= 3:
-            session = step.get("session_id_sha256")
-            if (
-                step.get("owner_contract") != "pafio-current+styio-files-v1"
-                or not isinstance(session, str)
-                or DIGEST.fullmatch(session) is None
-            ):
-                raise ValueError("gate report workflow session is invalid")
-            sessions.append(session)
-    observe = steps[4]
-    assert isinstance(observe, dict)
-    if (
-        len(set(sessions)) != 3
-        or observe.get("session_id_sha256") != sessions[2]
-        or observe.get("eventKind") != "log.emitted"
-        or observe.get("observation_sha256") != EXPECTED_OBSERVATION_DIGEST
-    ):
-        raise ValueError("gate report observation is not bound to the run session")
+    if (type(scenario_count) is not int or not isinstance(scenarios, list)
+            or scenario_count != len(scenarios) or type(contract_count) is not int
+            or not isinstance(contracts, list) or contract_count != len(contracts)):
+        raise ValueError("gate report counts do not match its cases")
+    # One admission implementation owns the required cases and safe projection.
+    path = Path(__file__).with_name("ecosystem-product-gate.py")
+    spec = importlib.util.spec_from_file_location("vityo_product_report_contract", path)
+    gate = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = gate
+    spec.loader.exec_module(gate)
+    gate.validate_product_reports(scenarios, contracts)
 
 
 def validate_pins(
@@ -315,8 +201,12 @@ def validate_pty_report(
         raise ValueError("native PTY report provider does not match the platform")
     if report.get("vityoCommit") != vityo_commit:
         raise ValueError("native PTY report does not match the Vityo commit")
-    if report.get("ptyDependency") != {"name": "pty2", "version": "0.5.2"}:
-        raise ValueError("native PTY report does not use the fixed PTY dependency")
+    if report.get("ptyDependency") != {
+        "name": "portable-pty",
+        "version": "0.9.0",
+        "owner": "vityod",
+    }:
+        raise ValueError("native PTY report does not use the fixed vityod PTY dependency")
     if report.get("ok") is not True:
         raise ValueError("native PTY matrix did not pass")
     scenarios = report.get("scenarios")

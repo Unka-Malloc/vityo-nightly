@@ -29,7 +29,7 @@ void main() {
     expect(ids, contains('presentation.shell'));
     expect(
       entriesById['interaction.search']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['service.language-result-cache']?.summary,
@@ -37,23 +37,20 @@ void main() {
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('match-level navigation callback'),
+      contains('match navigation'),
+    );
+    expect(entriesById['interaction.search']?.summary, contains('quick open'));
+    expect(
+      entriesById['interaction.search']?.summary,
+      contains('symbol search'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('file quick open service'),
+      contains('replace preview'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('symbol search service'),
-    );
-    expect(
-      entriesById['interaction.search']?.summary,
-      contains('replace preview contract'),
-    );
-    expect(
-      entriesById['interaction.search']?.summary,
-      contains('typed command input routing'),
+      contains('typed command routing'),
     );
     expect(
       entriesById['interaction.search']?.summary,
@@ -61,31 +58,32 @@ void main() {
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('persisted result filter state'),
+      contains('persisted expansion/history/filter models'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherPolicy'),
+      contains('Debounce/queue/ignore policy'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherRecoveryPlan'),
+      contains('FileSystemWatchOverflowException'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherEventBatchController'),
+      contains('batched refresh plans'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherRecoveryStore'),
+      contains('DataStore-backed recovery persistence'),
     );
     expect(
       entriesById['interaction.search']?.summary,
-      contains('WorkspaceSearchWatcherStreamBatcher'),
+      contains('timer-backed stream flushing'),
     );
+    expect(entriesById['interaction.search']?.todo, isEmpty);
     expect(
-      entriesById['interaction.search']?.todo,
-      contains('production watcher backpressure telemetry'),
+      entriesById['interaction.search']?.summary,
+      contains('ReadDirectoryChangesW'),
     );
     expect(entriesById['interaction.search']?.runtimeMaturityBlocking, isFalse);
     expect(
@@ -128,9 +126,10 @@ void main() {
       entriesById['interaction.source-control']?.summary,
       contains('SourceControlConflictResolutionProviderRegistry'),
     );
+    expect(entriesById['interaction.source-control']?.todo, isEmpty);
     expect(
-      entriesById['interaction.source-control']?.todo,
-      contains('merge editor UI'),
+      entriesById['interaction.source-control']?.summary,
+      contains('three-way Merge Editor'),
     );
     expect(
       entriesById['interaction.source-control']?.runtimeMaturityBlocking,
@@ -138,36 +137,38 @@ void main() {
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('PlatformManagerRecoveryActionRouter settings routes'),
+      contains('PlatformManagerRecoveryActionRouter'),
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('manager live-operation probe metadata'),
+      contains('structured probe metadata'),
     );
     expect(
       entriesById['environment.platform']?.summary,
-      contains('PlatformManagerLiveOperationProbeRegistry'),
+      contains('PlatformManagerLiveOperationProbeRegistry.defaults'),
     );
     expect(
-      entriesById['environment.platform']?.todo,
-      contains('live-operation smoke callbacks'),
+      entriesById['environment.platform']?.status,
+      IdeCapabilityStatus.ready,
     );
+    expect(entriesById['environment.platform']?.todo, isEmpty);
     expect(
       entriesById['environment.platform']?.runtimeMaturityBlocking,
       isFalse,
     );
     expect(
       entriesById['environment.credential-store']?.summary,
-      contains('audit retention policies'),
+      contains('PlatformSecureJsonCredentialStorageAdapter'),
     );
     expect(
       entriesById['environment.credential-store']?.summary,
       contains('PlatformSecureCredentialStorageAdapterRegistry'),
     );
     expect(
-      entriesById['environment.credential-store']?.todo,
-      contains('production adapters'),
+      entriesById['environment.credential-store']?.status,
+      IdeCapabilityStatus.ready,
     );
+    expect(entriesById['environment.credential-store']?.todo, isEmpty);
     expect(
       entriesById['environment.credential-store']?.runtimeMaturityBlocking,
       isFalse,
@@ -254,22 +255,21 @@ void main() {
       contains('language-service refresh callback fallback'),
     );
     expect(
-      entriesById['service.semantic-snapshot']?.todo,
-      contains(
-        'platform-specific StyioService process/service implementations',
-      ),
+      entriesById['service.semantic-snapshot']?.summary,
+      contains('ToolchainManager and the vityod local service'),
     );
+    expect(entriesById['service.semantic-snapshot']?.todo, isEmpty);
     expect(
       entriesById['service.semantic-snapshot']?.runtimeMaturityBlocking,
       isFalse,
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedBackendRetryActionExecutor'),
+      contains('HostedBackendController'),
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedBackendRetryEndpointPlan'),
+      contains('active control-plane client'),
     );
     expect(
       entriesById['service.remote-service']?.summary,
@@ -277,11 +277,12 @@ void main() {
     );
     expect(
       entriesById['service.remote-service']?.summary,
-      contains('HostedControlPlaneRetryTransport'),
+      contains('concrete Settings UI'),
     );
+    expect(entriesById['service.remote-service']?.todo, isEmpty);
     expect(
-      entriesById['service.remote-service']?.todo,
-      contains('hosted settings recovery handlers'),
+      entriesById['service.remote-service']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['service.remote-service']?.runtimeMaturityBlocking,
@@ -299,9 +300,11 @@ void main() {
       entriesById['editor.rendering']?.summary,
       contains('concrete ScrollController facts'),
     );
+    expect(entriesById['editor.rendering']?.todo, isEmpty);
+    expect(entriesById['editor.rendering']?.status, IdeCapabilityStatus.ready);
     expect(
-      entriesById['editor.rendering']?.todo,
-      contains('high-volume editor layer backend'),
+      entriesById['editor.rendering']?.summary,
+      contains('complete document scroll range'),
     );
     expect(entriesById['editor.rendering']?.runtimeMaturityBlocking, isFalse);
     expect(
@@ -334,11 +337,24 @@ void main() {
     );
     expect(
       entriesById['workspace.file-explorer']?.summary,
-      contains('shell sidebar renders confirmation apply/cancel controls'),
+      contains('single file-tree authority'),
     );
     expect(
-      entriesById['workspace.file-explorer']?.todo,
-      contains('watcher overflow/backpressure telemetry'),
+      entriesById['workspace.file-explorer']?.summary,
+      contains('WorkspaceFileExplorerWatchTelemetry'),
+    );
+    expect(
+      entriesById['workspace.file-explorer']?.summary,
+      contains('non-bypassable WorkspaceFileExplorerBatchActionPlan'),
+    );
+    expect(
+      entriesById['workspace.file-explorer']?.summary,
+      contains('hermetic Linux and Windows'),
+    );
+    expect(entriesById['workspace.file-explorer']?.todo, isEmpty);
+    expect(
+      entriesById['workspace.file-explorer']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['workspace.file-explorer']?.runtimeMaturityBlocking,
@@ -398,9 +414,10 @@ void main() {
       entriesById['interaction.diagnostics']?.summary,
       contains('ShellRuntime diagnostics producer cancellation bridge'),
     );
+    expect(entriesById['interaction.diagnostics']?.todo, isEmpty);
     expect(
-      entriesById['interaction.diagnostics']?.todo,
-      contains('processHandleId/pid metadata'),
+      entriesById['interaction.diagnostics']?.status,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.diagnostics']?.runtimeMaturityBlocking,
@@ -426,6 +443,7 @@ void main() {
       entriesById['workspace.diagnostics']?.summary,
       contains('WorkspaceQuickFixTelemetryStore persisted review outcomes'),
     );
+    expect(entriesById['workspace.diagnostics']?.todo, isEmpty);
     expect(entriesById['runtime.terminal']?.status, IdeCapabilityStatus.wired);
     expect(
       entriesById['runtime.terminal']?.summary,
@@ -464,9 +482,15 @@ void main() {
       entriesById['debugger.dap']?.summary,
       contains('DebugSessionTerminationExecutor'),
     );
+    expect(entriesById['debugger.dap']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['debugger.dap']?.todo, isEmpty);
     expect(
-      entriesById['debugger.dap']?.todo,
-      contains('production process-kill handlers'),
+      entriesById['debugger.dap']?.summary,
+      contains('first-line-safe breakpoint'),
+    );
+    expect(
+      entriesById['debugger.dap']?.summary,
+      contains('Windows JavaScript'),
     );
     expect(entriesById['debugger.dap']?.runtimeMaturityBlocking, isFalse);
     expect(
@@ -488,14 +512,33 @@ void main() {
       contains('install execution recovery action rendering'),
     );
     expect(
-      entriesById['toolchain.manager']?.todo,
-      contains('ToolchainBootstrapExecutionBridge'),
+      entriesById['toolchain.manager']?.summary,
+      contains('ToolchainProjectValidationRunner'),
+    );
+    expect(entriesById['toolchain.manager']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['toolchain.manager']?.todo, isEmpty);
+    expect(
+      entriesById['toolchain.manager']?.summary,
+      contains('hermetic Linux and Windows'),
     );
     expect(entriesById['toolchain.manager']?.runtimeMaturityBlocking, isFalse);
     expect(
       entriesById['extension.manifest']?.summary,
       contains('ExtensionActivationPlan'),
     );
+    expect(
+      entriesById['extension.manifest']?.summary,
+      contains('ExtensionHostStartupExecutor'),
+    );
+    expect(
+      entriesById['extension.manifest']?.summary,
+      contains('browser Workers'),
+    );
+    expect(
+      entriesById['extension.manifest']?.status,
+      IdeCapabilityStatus.ready,
+    );
+    expect(entriesById['extension.manifest']?.todo, isEmpty);
     expect(entriesById['extension.manifest']?.runtimeMaturityBlocking, isFalse);
     expect(
       entriesById['extension.marketplace']?.summary,
@@ -507,7 +550,7 @@ void main() {
     );
     expect(
       entriesById['interaction.testing']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.testing']?.summary,
@@ -549,10 +592,7 @@ void main() {
       entriesById['interaction.testing']?.summary,
       contains('FailedTestDebugProcessHandleBinder'),
     );
-    expect(
-      entriesById['interaction.testing']?.todo,
-      contains('processHandleId/pid metadata'),
-    );
+    expect(entriesById['interaction.testing']?.todo, isEmpty);
     expect(
       entriesById['interaction.testing']?.runtimeMaturityBlocking,
       isFalse,
@@ -584,9 +624,15 @@ void main() {
       contains('ShellManager/ProcessManager cancellation adapter factories'),
     );
     expect(
-      entriesById['runtime.execution']?.todo,
-      contains('processHandleId/pid metadata'),
+      entriesById['runtime.execution']?.summary,
+      contains('Production vityod task starts return a stable processHandleId'),
     );
+    expect(
+      entriesById['runtime.execution']?.summary,
+      contains('Native macOS Run/Stop clicks'),
+    );
+    expect(entriesById['runtime.execution']?.status, IdeCapabilityStatus.ready);
+    expect(entriesById['runtime.execution']?.todo, isEmpty);
     expect(entriesById['runtime.execution']?.runtimeMaturityBlocking, isFalse);
     expect(
       entriesById['interaction.language-service-status']?.summary,
@@ -604,7 +650,7 @@ void main() {
     );
     expect(
       entriesById['interaction.source-control']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['interaction.source-control']?.summary,
@@ -624,12 +670,17 @@ void main() {
     );
     expect(
       entriesById['extension.marketplace']?.status,
-      IdeCapabilityStatus.scaffolded,
+      IdeCapabilityStatus.ready,
     );
     expect(
       entriesById['extension.marketplace']?.summary,
       contains('enable/disable/trust actions'),
     );
+    expect(
+      entriesById['extension.marketplace']?.summary,
+      contains('matching SHA-256 integrity'),
+    );
+    expect(entriesById['extension.marketplace']?.todo, isEmpty);
     expect(
       entriesById['interaction.command-palette']?.status,
       IdeCapabilityStatus.wired,
@@ -679,9 +730,10 @@ void main() {
       contains('Flutter TextSpan/TextStyle binding'),
     );
     expect(
-      entriesById['editor.rendering']?.todo,
-      contains('Flutter ListView preview renderer'),
+      entriesById['editor.rendering']?.summary,
+      contains('flutter-fixed-extent-virtual-list'),
     );
+    expect(entriesById['editor.rendering']?.todo, isEmpty);
     expect(
       entriesById['workspace.edit-application']?.status,
       IdeCapabilityStatus.wired,

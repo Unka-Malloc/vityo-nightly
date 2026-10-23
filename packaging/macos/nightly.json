@@ -6,6 +6,29 @@
   "build_relative_path": "products/vityo_app/build/macos/Build/Products/Release/Vityo.app",
   "icon_relative_path": "products/vityo_app/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png",
   "installer_definition": "packaging/macos/create-dmg.sh",
-  "signing": {"status": "explicit-gap", "reason": "Nightly Developer ID and notarization credentials are not configured."},
+  "vityod": {
+    "target": "native-apple-darwin",
+    "source_relative_path": "products/vityo_app/native/vityod/target/release/vityod",
+    "package_relative_path": "Contents/Helpers/vityod",
+    "required_runtime_libraries": [],
+    "manifest_relative_path": "Contents/Resources/vityod-component.json"
+  },
+  "coding_agent": {
+    "target": "native-apple-darwin",
+    "source_relative_path": "products/vityo_coding_agent/target/release/vityo-coding-agent",
+    "package_relative_path": "Contents/Helpers/vityo-coding-agent",
+    "required_runtime_libraries": []
+  },
+  "pafio": {
+    "target": "native-apple-darwin",
+    "package_relative_path": "Contents/Helpers/pafio",
+    "required_runtime_libraries": [],
+    "manifest_relative_path": "Contents/Resources/pafio-component.json"
+  },
+  "rust_notices_path": "Contents/Resources/licenses/RUST-THIRD-PARTY-NOTICES.txt",
+  "signing": {
+    "status": "explicit-gap",
+    "reason": "Nightly Developer ID and notarization credentials are not configured."
+  },
   "automatic_updates": false
 }

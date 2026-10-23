@@ -102,7 +102,10 @@ void main() {
     expect(snapshot.virtualizedRowWindow.containsLine(0), isTrue);
     expect(snapshot.viewportBinding.boundToScrollController, isFalse);
     expect(snapshot.renderPipelinePlan.canRender, isTrue);
-    expect(snapshot.renderPipelinePlan.rendererKind, 'virtualized-layer-stack');
+    expect(
+      snapshot.renderPipelinePlan.rendererKind,
+      EditorRenderPipelinePlan.flutterLayerListRenderer,
+    );
     expect(restored.virtualizedRowWindow.totalLineCount, 2);
     expect(restored.viewportBinding.viewportLineCapacity, 80);
     expect(restored.renderPipelinePlan.renderWindow.totalLineCount, 2);
@@ -113,7 +116,7 @@ void main() {
       isA<Map<String, Object?>>(),
     );
     expect(restored.toJson()['hasCodeActionWidget'], isFalse);
-    expect(restored.toJson()['todo'], contains('scroll controller viewport'));
+    expect(restored.toJson()['todo'], isNull);
   });
 
   test('editor render snapshot exposes code action widget availability', () {
@@ -169,7 +172,7 @@ void main() {
     expect(restored.codeActionWidget.primaryLabel, isNotEmpty);
     expect(
       (restored.toJson()['codeActionWidget']! as Map<String, Object?>)['todo'],
-      contains('lightbulb popup'),
+      isNull,
     );
   });
 
@@ -211,7 +214,10 @@ void main() {
     expect(binding.toWindow(totalLineCount: 1000).renderLineCount, 90);
     expect(plan.canRender, isFalse);
     expect(plan.usingFallback, isTrue);
-    expect(plan.rendererKind, 'plain-text-fallback');
+    expect(
+      plan.rendererKind,
+      EditorRenderPipelinePlan.flutterPlainTextFallbackRenderer,
+    );
     expect(plan.toJson()['fallbackReason'], contains('above limit 50'));
     expect(restored.renderWindow.renderLineCount, 90);
     expect(restored.usingFallback, isTrue);
@@ -231,6 +237,62 @@ void main() {
     expect(binding.viewportLineCapacity, 10);
     expect(binding.overscanLineCount, 6);
     expect(binding.toJson()['todo'], isNull);
+  });
+
+  test('editor render plan selects the concrete high-volume backend', () {
+    const binding = EditorRenderViewportBinding(
+      viewportFirstLine: 50000,
+      viewportLineCapacity: 30,
+      overscanLineCount: 8,
+      scrollOffsetPixels: 1300000,
+      lineHeightPixels: 26,
+      boundToScrollController: true,
+    );
+    final plan = EditorRenderPipelinePlan.fromRenderFacts(
+      renderPlan: EditorRenderPlan.foundation(),
+      lineCount: 100000,
+      viewportBinding: binding,
+    );
+
+    expect(plan.canRender, isTrue);
+    expect(
+      plan.rendererKind,
+      EditorRenderPipelinePlan.flutterVirtualListRenderer,
+    );
+    expect(plan.renderWindow.containsLine(50000), isTrue);
+    expect(plan.toJson()['todo'], isNull);
+  });
+
+  test('editor render snapshot accepts live viewport facts', () {
+    final controller = EditorSessionController(
+      initialDocument: DocumentState(
+        documentId: 'live-viewport.styio',
+        text: List<String>.generate(120, (index) => 'line $index').join('\n'),
+        revision: 4,
+      ),
+      languageService: const LocalStyioLanguageService(),
+    );
+    addTearDown(controller.dispose);
+    const binding = EditorRenderViewportBinding(
+      viewportFirstLine: 48,
+      viewportLineCapacity: 24,
+      overscanLineCount: 6,
+      scrollOffsetPixels: 1248,
+      lineHeightPixels: 26,
+      boundToScrollController: true,
+    );
+
+    final snapshot = EditorRenderSnapshot.fromController(
+      controller,
+      viewportBinding: binding,
+    );
+    final restored = EditorRenderSnapshot.fromJson(snapshot.toJson());
+
+    expect(restored.viewportBinding.boundToScrollController, isTrue);
+    expect(restored.viewportBinding.scrollOffsetPixels, 1248);
+    expect(restored.virtualizedRowWindow.startLine, 42);
+    expect(restored.virtualizedRowWindow.endLineExclusive, 78);
+    expect(restored.toJson()['todo'], isNull);
   });
 
   testWidgets('editor surface exposes bound scroll viewport facts', (

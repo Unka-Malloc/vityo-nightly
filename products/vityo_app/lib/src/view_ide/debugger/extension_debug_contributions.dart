@@ -55,13 +55,12 @@ class ExtensionDebugContribution {
       route.contribution.metadata,
       'programPath',
     );
+    final adapterProtocol =
+        _metadataString(route.contribution.metadata, 'adapterProtocol') ??
+        'dap';
     final configuration = DebugLaunchConfiguration(
-      readiness: programPath == null
-          ? DebugLaunchReadiness.missingProgram
-          : DebugLaunchReadiness.ready,
-      reason: programPath == null
-          ? 'Debugger contribution $debuggerId is missing metadata.programPath.'
-          : 'Debugger contribution $debuggerId is ready.',
+      readiness: DebugLaunchReadiness.missingProgram,
+      reason: 'Debugger contribution $debuggerId is not configured.',
       debuggerId: debuggerId,
       debuggerLabel: debuggerLabel,
       debuggerExecutablePath: executablePath,
@@ -69,9 +68,7 @@ class ExtensionDebugContribution {
         route.contribution.metadata,
         'debuggerArguments',
       ),
-      adapterProtocol:
-          _metadataString(route.contribution.metadata, 'adapterProtocol') ??
-          'dap',
+      adapterProtocol: adapterProtocol,
       programPath: programPath,
       cwd: _metadataString(route.contribution.metadata, 'cwd') ?? '',
       arguments: _metadataStringList(route.contribution.metadata, 'arguments'),
@@ -80,13 +77,15 @@ class ExtensionDebugContribution {
         'environment',
       ),
       stopOnEntry: route.contribution.metadata['stopOnEntry'] == true,
-    );
+    ).reconfigure();
     return ExtensionDebugContribution(
       extensionId: route.extensionId,
       contributionId: route.contribution.id,
       target: route.registryTargetId,
       status: ExtensionDebugContributionStatus.ready,
-      message: 'Debugger contribution ${route.contribution.id} is ready.',
+      message: configuration.ready
+          ? 'Debugger contribution ${route.contribution.id} is ready.'
+          : configuration.reason,
       profile: DebugLaunchProfile.fromConfiguration(
         id: debuggerId,
         displayName: debuggerLabel,

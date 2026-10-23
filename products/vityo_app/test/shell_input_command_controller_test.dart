@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_controller.dart';
 import 'package:vityo_app/src/ide/workspace/workspace_document_store.dart';
+import 'package:vityo_app/src/ide/workspace/workspace_file_explorer_controller.dart';
+import 'package:vityo_app/src/ide/workspace/workspace_file_operations.dart';
 import 'package:vityo_app/src/view_ide/backend_toolchain/project_graph_contract.dart';
 import 'package:vityo_app/src/view_ide/commands/app_commands.dart';
 import 'package:vityo_app/src/view_ide/shell_runtime/controllers/shell_input_command_controller.dart';
@@ -109,12 +111,20 @@ ShellInputCommandController _controller({
   );
   final workspaceController = WorkspaceController(projectSnapshot: graph);
   final documentStore = InMemoryWorkspaceDocumentStore();
-  return ShellInputCommandController(
-    workspaceFileCommands: WorkspaceFileCommandController(
+  final explorerController = WorkspaceFileExplorerController(
+    workspaceController: workspaceController,
+    operationService: WorkspaceFileOperationService(
       workspaceController: workspaceController,
       documentStore: documentStore,
+    ),
+  );
+  return ShellInputCommandController(
+    workspaceFileCommands: WorkspaceFileCommandController(
+      explorerController: explorerController,
       openWorkspaceFile: (_) async => false,
       reloadActiveDocument: () async {},
+      runWithoutWorkspaceReload: (action) => action(),
+      isWorkspaceFileDirty: (_) => false,
     ),
     blockedReasonForCommand: (_) => null,
     executeCommand: (_) async {},

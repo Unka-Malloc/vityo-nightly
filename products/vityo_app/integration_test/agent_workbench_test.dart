@@ -16,12 +16,18 @@ Future<void> main() async {
       store.apply(_snapshot('second', 'Second task')),
     ]);
     await store.addPermission(
-      const AgentPermissionRequest(
+      AgentPermissionRequest(
         id: 'permission',
         agentId: 'fixture',
         sessionId: 'second',
         toolCallId: 'tool-permission',
-        options: <String>{'allow_once'},
+        options: const <AgentPermissionOption>[
+          AgentPermissionOption(
+            optionId: 'offered-allow-id',
+            name: 'Allow once',
+            kind: AgentPermissionOptionKind.allowOnce,
+          ),
+        ],
       ),
     );
     if (store.projection.sessions.length != 2 ||
@@ -32,9 +38,10 @@ Future<void> main() async {
     await store.resolvePermission(
       sessionId: 'second',
       permissionId: 'permission',
-      decision: AgentPermissionDecision.allowOnce,
+      optionId: 'offered-allow-id',
     );
     if (commands.permissionSessions.single != 'second' ||
+        commands.permissionOptionIds.single != 'offered-allow-id' ||
         store.projection.attentionCount != 0) {
       throw StateError('permission was not routed to its owning session');
     }
@@ -63,6 +70,7 @@ AgentSessionSnapshot _snapshot(String sessionId, String title) =>
 
 final class _Commands implements AgentWorkbenchCommandPort {
   final List<String> permissionSessions = <String>[];
+  final List<String> permissionOptionIds = <String>[];
 
   @override
   Future<void> cancel(String sessionId) async {}
@@ -74,9 +82,10 @@ final class _Commands implements AgentWorkbenchCommandPort {
   Future<void> resolvePermission({
     required String sessionId,
     required String permissionId,
-    required AgentPermissionDecision decision,
+    required String optionId,
   }) async {
     permissionSessions.add(sessionId);
+    permissionOptionIds.add(optionId);
   }
 
   @override

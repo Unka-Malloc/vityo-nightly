@@ -118,6 +118,9 @@ mixin ShellRuntimeWorkspaceIntelligenceFacade on ShellRuntimeFacadeHost {
   Future<bool> searchWorkspace(String query) =>
       _workspaceSearchController.search(query);
 
+  Future<void> recoverWorkspaceSearchWatcher() =>
+      _workspaceSearchController.recoverWatcher();
+
   Future<WorkspaceReplacePreview?> previewWorkspaceReplace({
     required String query,
     required String replacement,

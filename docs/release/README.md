@@ -15,6 +15,7 @@ Formal launch closure still requires the release owner to attach production arti
 - [local-validation-evidence.md](./local-validation-evidence.md) records local gate evidence and blockers observed on this branch.
 - [linux-release-packaging.md](./linux-release-packaging.md) defines Linux desktop packaging requirements.
 - [windows-release-packaging.md](./windows-release-packaging.md) defines Windows desktop packaging requirements.
+- [macos-release-signing.md](./macos-release-signing.md) defines the macOS Developer ID signing and notarization credential interface.
 
 ## Rules
 

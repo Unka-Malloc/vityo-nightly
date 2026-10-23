@@ -2,9 +2,11 @@
 
 **Purpose:** Define the directory outline for Vityo by horizontal architecture layer, covering current design docs, current implementation anchors, and intended implementation homes. Vertical flows are design views only and must not become implementation roots.
 
-**Last updated:** 2026-05-17
+**Last updated:** 2026-10-02
 
 **Status:** Draft for review
+
+> This remains a proposed directory view, not a migration authorization. Current source ownership is defined by [Vityo-System-Architecture.md](./Vityo-System-Architecture.md) and [ADR-0010](../adr/ADR-0010-vityo-view-ide-view-render-boundary.md). Existing owner roots remain active unless a separately accepted architecture decision changes them.
 
 ## 1. Rule
 
@@ -484,15 +486,23 @@ docs/design/environment/
 Current implementation anchors:
 
 ```text
+products/vityo_app/lib/main.dart
+products/vityo_app/lib/src/app/
+products/vityo_app/lib/src/ide/editor/
+products/vityo_app/lib/src/ide/workspace/
+products/vityo_app/lib/src/ide/agent_client/
+products/vityo_app/lib/src/ide/workbench/agent_collaboration/
 products/vityo_app/lib/src/view_ide/backend_toolchain/
-products/vityo_app/lib/src/platform/
-products/vityo_app/lib/src/view_ide/backend_toolchain/
+products/vityo_app/lib/src/view_ide/language/
+products/vityo_app/lib/src/view_ide/environment/
+products/vityo_app/lib/src/view_ide/module_host/
 products/vityo_app/lib/src/view_ide/platform/
 products/vityo_app/lib/src/view_ide/shell_runtime/
-products/vityo_app/lib/src/runtime/
-products/vityo_app/lib/src/view_ide/module_host/
-products/vityo_app/lib/src/view_ide/module_host/
-toolchain/
+products/vityo_app/lib/src/view_render/
+products/vityo_app/lib/src/platform/
+products/vityo_coding_agent/
+packages/vityo_agent_protocol/
+prototype/
 ```
 
 Intended implementation outline:
@@ -610,23 +620,14 @@ Do not create view_ide/vertical_lines/ or a vertical-lines runtime module.
 A vertical flow may be drawn for review, but its concrete modules must be placed in horizontal layers.
 ```
 
-## 11. Current Legacy / Compatibility Paths
+## 11. Current And Retired Source Roots
 
-Some current paths are legacy anchors or compatibility exports. They should not keep growing as new architecture roots.
-
-```text
-products/vityo_app/lib/src/ide/editor/              # existing editor anchor; migrate into horizontal interaction/service/appearance/environment modules over time
-products/vityo_app/lib/src/view_ide/language/            # existing language anchor; migrate into view_ide/service/styio_language_service over time
-products/vityo_app/lib/src/view_ide/backend_toolchain/   # existing backend/toolchain anchor; can remain as product adapter facade
-products/vityo_app/lib/src/view_ide/backend_toolchain/         # compatibility exports only
-```
-
-Rule:
-
-```text
-New code should prefer view_ide/<layer> or view_render/<appearance-domain>.
-Compatibility exports may remain, but should not become new implementation roots.
-```
+The current owners above are active source roots, including `ide/editor/`, `ide/workspace/`,
+`ide/agent_client/`, `view_ide/language/`, and `view_ide/backend_toolchain/`. This draft does not
+classify them as compatibility façades or require their migration to a proposed future directory
+tree. The old top-level `backend_toolchain/`, `editor/`, `language/`, and `integration/` import
+roots remain retired under [ADR-0010](../adr/ADR-0010-vityo-view-ide-view-render-boundary.md).
+No replacement shim or duplicate implementation root is introduced.
 
 ## 12. Naming Conventions
 

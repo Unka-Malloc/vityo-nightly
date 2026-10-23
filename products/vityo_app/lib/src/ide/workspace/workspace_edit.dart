@@ -1406,18 +1406,32 @@ class WorkspaceEditApplier {
           );
         }
         if (exists) {
-          rollbackOriginals[operation.documentId] = await workspaceDocumentStore
-              .loadDocument(operation.documentId);
+          // Overwriting keeps the observed snapshot so the store can reject a
+          // concurrent change instead of replacing a fabricated revision.
+          final original = await workspaceDocumentStore.loadDocument(
+            operation.documentId,
+          );
+          rollbackOriginals[operation.documentId] = original;
+          await workspaceDocumentStore.saveDocument(
+            DocumentState(
+              documentId: operation.documentId,
+              text: operation.text,
+              revision: original.revision + 1,
+              encoding: original.encoding,
+              workspaceRevision: original.workspaceRevision,
+              baseDocumentRevision: original.revision,
+            ),
+          );
         } else {
           rollbackCreatedDocumentIds.add(operation.documentId);
+          await workspaceDocumentStore.saveDocument(
+            DocumentState(
+              documentId: operation.documentId,
+              text: operation.text,
+              revision: 0,
+            ),
+          );
         }
-        await workspaceDocumentStore.saveDocument(
-          DocumentState(
-            documentId: operation.documentId,
-            text: operation.text,
-            revision: 0,
-          ),
-        );
         createdDocumentIds.add(operation.documentId);
       } else {
         final exists = await workspaceDocumentStore.documentExists(

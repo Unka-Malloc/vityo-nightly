@@ -8,6 +8,8 @@ import 'package:vityo_app/src/view_ide/language/service/simple_styio_language_se
 import 'package:vityo_app/src/view_render/editor/editor.dart';
 import 'package:vityo_app/src/view_render/platform/platform.dart';
 
+import 'support/editor_widget_test_driver.dart';
+
 void main() {
   testWidgets('editor surface renders external file conflict recovery', (
     tester,
@@ -231,7 +233,7 @@ void main() {
       ),
     );
 
-    await _focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     expect(controller.selection.start, 1);
@@ -329,7 +331,7 @@ loose
         ),
       ),
     );
-    await _focusSourceBuffer(tester);
+    await tester.focusEditorSource();
 
     controller.selectCollapsed(text.indexOf('pri)') + 3);
     await tester.pump();
@@ -474,18 +476,4 @@ value = blend(price, tax)
       );
     }
   });
-}
-
-Future<void> _focusSourceBuffer(WidgetTester tester) async {
-  final sourceSurface = find.byKey(const ValueKey('source-buffer-surface'));
-  final sourceFocus = find.ancestor(
-    of: sourceSurface,
-    matching: find.byType(Focus),
-  );
-  if (sourceFocus.evaluate().isNotEmpty) {
-    tester.widget<Focus>(sourceFocus.first).focusNode?.requestFocus();
-  } else {
-    await tester.tap(sourceSurface);
-  }
-  await tester.pump();
 }
