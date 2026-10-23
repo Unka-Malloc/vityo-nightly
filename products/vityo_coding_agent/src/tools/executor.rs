@@ -1180,11 +1180,16 @@ fn parse_secret_reference(value: &str) -> Option<SecretReference> {
 }
 
 /// Field names whose values carry credentials in tool arguments, output,
-/// and approval surfaces. "authorization" is matched exactly rather than as
-/// a substring so "author"/"oauth"-style names are not misclassified.
+/// and approval surfaces. Flag and header punctuation is normalized to
+/// separators before matching so `api-key`, `X-API-Key`, and
+/// `proxy-authorization` classify the same as `api_key`/`authorization`.
 fn credential_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name == "authorization"
+    let normalized: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if matches!(ch, '-' | ' ' | '.') { '_' } else { ch })
+        .collect();
+    normalized.contains("authorization")
         || [
             "token",
             "password",
@@ -1194,26 +1199,44 @@ fn credential_name(name: &str) -> bool {
             "apikey",
         ]
         .iter()
-        .any(|part| name.contains(part))
+        .any(|part| normalized.contains(part))
+}
+
+/// A bare flag (no inline `=`/`:` value) whose following argv element is
+/// the credential value, e.g. `--api-key`, `--token`, `--password`.
+fn credential_flag_text(text: &str) -> bool {
+    let flag = text.trim_start_matches('-');
+    !flag.is_empty()
+        && flag.len() < text.len()
+        && !flag.contains(|ch: char| ch == ':' || ch == '=')
+        && credential_name(flag)
 }
 
 /// String values that are or embed a credential: Authorization schemes and
-/// `name=value`/`name: value` forms whose key is credential-shaped once
-/// flag/header punctuation is normalized to separators.
+/// any `name=value`/`name: value` segment whose name is credential-shaped,
+/// including URL query parameters and `name=value` values that carry their
+/// own `name:` pair (such as `--header=Authorization: Basic …`).
 fn credential_text(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     if lower.starts_with("bearer ") || lower.starts_with("basic ") {
         return true;
     }
-    let Some(split) = lower.find(|ch: char| ch == ':' || ch == '=') else {
-        return false;
-    };
-    let normalized: String = lower[..split]
-        .trim_start_matches('-')
-        .chars()
-        .map(|ch| if matches!(ch, '-' | ' ' | '.') { '_' } else { ch })
-        .collect();
-    normalized.contains("authorization") || credential_name(&normalized)
+    for segment in lower.split(|ch: char| matches!(ch, '&' | '?' | ';' | ' ' | '\t')) {
+        let Some(split) = segment.find(|ch: char| ch == ':' || ch == '=') else {
+            continue;
+        };
+        if !segment[..split].is_empty() && credential_name(&segment[..split]) {
+            return true;
+        }
+        if segment.as_bytes()[split] == b'=' {
+            if let Some(inner) = segment[split + 1..].find(':') {
+                if credential_name(&segment[split + 1..split + 1 + inner]) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, String>) -> bool {
@@ -1222,7 +1245,18 @@ fn contains_raw_credential(arguments: &JsonObject, declared: &BTreeMap<String, S
             Value::Object(object) => object
                 .iter()
                 .any(|(name, value)| scan(value, Some(name), declared)),
-            Value::Array(items) => items.iter().any(|item| scan(item, key, declared)),
+            Value::Array(items) => {
+                // A credential flag marks the next argv element as its value.
+                let mut pending_value = false;
+                items.iter().any(|item| {
+                    if pending_value {
+                        return true;
+                    }
+                    pending_value =
+                        matches!(item, Value::String(text) if credential_flag_text(text));
+                    scan(item, key, declared)
+                })
+            }
             Value::String(text) => {
                 if text.starts_with("secret://") {
                     return key.is_none_or(|key| !declared.contains_key(key));
@@ -1249,12 +1283,25 @@ pub(crate) fn redact_output(value: &Value, secrets: &[String]) -> Value {
                     .map(|(key, value)| (key.clone(), redact(value, Some(key), secrets)))
                     .collect(),
             ),
-            Value::Array(items) => Value::Array(
-                items
-                    .iter()
-                    .map(|value| redact(value, key, secrets))
-                    .collect(),
-            ),
+            Value::Array(items) => {
+                let mut pending_value = false;
+                Value::Array(
+                    items
+                        .iter()
+                        .map(|item| {
+                            if pending_value {
+                                pending_value = false;
+                                return Value::String("[redacted]".to_owned());
+                            }
+                            pending_value = matches!(
+                                item,
+                                Value::String(text) if credential_flag_text(text)
+                            );
+                            redact(item, key, secrets)
+                        })
+                        .collect(),
+                )
+            }
             Value::String(text)
                 if credential_text(text)
                     || secrets
@@ -1470,5 +1517,75 @@ mod approval_tests {
             .await;
         assert!(matches!(preflight, Err(failure) if failure.code == ToolFailureCode::PolicyDenied));
         assert_eq!(adapter.0.load(Ordering::Relaxed), 1);
+    }
+}
+
+#[cfg(test)]
+mod credential_detection_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn credential_name_covers_header_and_flag_punctuation() {
+        for name in [
+            "authorization",
+            "Authorization",
+            "X-API-Key",
+            "api-key",
+            "proxy-authorization",
+            "access_token",
+        ] {
+            assert!(credential_name(name), "{name}");
+        }
+        for name in ["author", "path", "command", "cwd"] {
+            assert!(!credential_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn credential_text_covers_url_query_and_wrapped_headers() {
+        for text in [
+            "Authorization: Basic dXNlcjpwYXNz",
+            "https://api.example/?api_key=secret-value",
+            "--header=Authorization: Basic dXNlcjpwYXNz",
+            "--api-key=abcdef",
+            "Bearer abcdef",
+        ] {
+            assert!(credential_text(text), "{text}");
+        }
+        for text in ["https://api.example/path", "path=/tmp/work", "--force"] {
+            assert!(!credential_text(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn argv_flag_pairs_are_detected_and_redacted() {
+        let arguments = json!({
+            "args": ["--api-key", "secret-value", "--force"],
+            "headers": {"X-API-Key": "header-secret"},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(contains_raw_credential(&arguments, &BTreeMap::new()));
+
+        let shown = redact_output(&Value::Object(arguments), &[]);
+        assert_eq!(shown["args"][0], json!("--api-key"));
+        assert_eq!(shown["args"][1], json!("[redacted]"));
+        assert_eq!(shown["args"][2], json!("--force"));
+        assert_eq!(shown["headers"]["X-API-Key"], json!("[redacted]"));
+    }
+
+    #[test]
+    fn credential_text_stays_clean_on_ordinary_urls_and_paths() {
+        let arguments = json!({
+            "args": ["--url", "https://api.example/download", "--retry", "3"],
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(!contains_raw_credential(&arguments, &BTreeMap::new()));
+        let shown = redact_output(&Value::Object(arguments), &[]);
+        assert_eq!(shown["args"][1], json!("https://api.example/download"));
     }
 }

@@ -7,6 +7,7 @@ import ipaddress
 import os
 import secrets
 import shutil
+import socket
 import sys
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -86,7 +87,16 @@ def host_is_loopback(host: str) -> bool:
     try:
         return ipaddress.ip_address(candidate.strip("[]")).is_loopback
     except ValueError:
-        return normalize_hostname(candidate) == "localhost"
+        pass
+    if normalize_hostname(candidate) == "localhost":
+        return True
+    # inet_aton accepts the shorthand forms the resolver binds (127.1,
+    # 0x7f000001, …); a dotted name that never parses stays untrusted.
+    try:
+        packed = socket.inet_aton(candidate)
+    except (OSError, ValueError):
+        return False
+    return packed[0] == 127
 
 
 def parse_cookie_header(raw_cookie: str | None) -> dict[str, str]:
