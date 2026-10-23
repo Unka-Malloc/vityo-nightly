@@ -985,7 +985,7 @@ void main() {
         '${temp.path}${Platform.pathSeparator}runtime-events.jsonl',
       );
       await artifact.writeAsString(
-        readObservableRuntimeFixture('canonical.jsonl')
+        readObservableRuntimeFixture('canonical.ndjson')
             .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
             .replaceAll('n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', nodes.first.id)
             .replaceAll('n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', nodes[1].id),

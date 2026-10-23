@@ -296,7 +296,7 @@ void main() {
     final response = protocol.decode(
       document: document,
       stdout: File(
-        'test/fixtures/styio_service/facts_envelope.jsonl',
+        'test/fixtures/styio_service/facts_envelope.ndjson',
       ).readAsStringSync(),
       stderr: '',
       exitCode: 0,

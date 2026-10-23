@@ -596,7 +596,7 @@ void main() {
     final artifact = File(
       '${temp.path}${Platform.pathSeparator}runtime-events.jsonl',
     );
-    final substituted = readObservableRuntimeFixture('canonical.jsonl')
+    final substituted = readObservableRuntimeFixture('canonical.ndjson')
         .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
         .replaceAll('n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', taskSite)
         .replaceAll('n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', awaitSite);
@@ -666,7 +666,7 @@ void main() {
     await controller.completeObservation(
       sessionFailed: false,
       runtimeEventsPath: observableRuntimeVityoFixturePath(
-        'missing-capability-record.jsonl',
+        'missing-capability-record.ndjson',
       ),
     );
     expect(controller.state.runtime.phase, RuntimeOverlayPhase.rejected);
@@ -685,7 +685,7 @@ void main() {
     final mismatch = File(
       '${temp.path}${Platform.pathSeparator}runtime-events.jsonl',
     );
-    await mismatch.writeAsString(readObservableRuntimeFixture('canonical.jsonl'));
+    await mismatch.writeAsString(readObservableRuntimeFixture('canonical.ndjson'));
     expect(controller.beginObservation(RuntimeObservationMode.aggregate), isTrue);
     await controller.completeObservation(
       sessionFailed: false,
@@ -703,7 +703,7 @@ void main() {
       '${temp.path}${Platform.pathSeparator}overlaid.jsonl',
     );
     await overlaid.writeAsString(
-      readObservableRuntimeFixture('canonical.jsonl')
+      readObservableRuntimeFixture('canonical.ndjson')
           .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
           .replaceAll(
             'n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -807,7 +807,7 @@ void main() {
       '${temp.path}${Platform.pathSeparator}runtime-events.jsonl',
     );
     await artifact.writeAsString(
-      readObservableRuntimeFixture('canonical.jsonl')
+      readObservableRuntimeFixture('canonical.ndjson')
           .replaceAll('s1_0123456789abcdef0123456789abcdef', snapshotId)
           .replaceAll('n1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', nodes.first.id)
           .replaceAll('n1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', nodes[1].id),
@@ -856,7 +856,7 @@ void main() {
     );
     // The producer's disabled-mode shape: capability snapshot_id is null.
     await artifact.writeAsString(
-      readObservableRuntimeVityoFixture('disabled-mode.jsonl'),
+      readObservableRuntimeVityoFixture('disabled-mode.ndjson'),
     );
     expect(controller.beginObservation(RuntimeObservationMode.aggregate), isTrue);
     await controller.completeObservation(
