@@ -16,7 +16,7 @@ name = "vityo-coding-agent"
 path = "src/main.rs"
 
 [dependencies]
-agent-client-protocol = { version = "=2.2.0", default-features = false }
+agent-client-protocol = { version = "=3.6.0", default-features = false }
 async-openai = { version = "=0.42.1", default-features = false, features = ["chat-completion", "native-tls"] }
 async-trait = "0.1.89"
 fs2 = { version = "=0.4.3", default-features = false }
