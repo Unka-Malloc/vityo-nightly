@@ -13,7 +13,7 @@ dependencies:
   ffi: ^2.2.0
   file_selector: ^1.0.3
   flutter_secure_storage: ^11.0.0
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   shared_preferences: ^2.5.5
   path_provider: ^2.1.5
   cryptography: ^2.9.0
